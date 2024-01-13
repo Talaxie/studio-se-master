@@ -1,7 +1,7 @@
 # Studio-se-master
-http://www.talend.com
+http://www.deilink.fr
 
-![alt text](https://www.talend.com/wp-content/uploads/2016/07/talend-logo.png "Talend")
+![alt text](https://www.deilink.fr/image/talaxie_logo.jpg "Talend")
 
 > Content
 
@@ -97,6 +97,6 @@ See the [CONTRIBUTORS.md](./CONTRIBUTORS.md) file for details.
 
 ## License
 
-Copyright (c) 2006-2019 Talend
+Copyright (c) 2006-2024 Talaxie
 
 Licensed under the Apache v2 and GPLv2 License
