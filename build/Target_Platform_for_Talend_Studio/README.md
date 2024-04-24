@@ -50,7 +50,7 @@ First, Eclipse p2 repository (main one):
 Once it's done, build can be tested locally (modify pom / set url of folder using file:// as prefix instead of URL)
 If everything is ok, target can be deployed to nexus, using for example:
 
-mvn deploy:deploy-file -Dfile=/Applications/java/talend/TargetPlatformE44/p2site/TargetPlatform.zip -DgroupId=org.talend.repo -DartifactId=eclipse-p2-repo -Dversion=4.18.0 -Dpackaging=zip -Durl=https://artifacts-oss.talend.com/nexus/content/repositories/TalendOpenSourceSnapshot -DrepositoryId=talend_nexus_deployment
+mvn deploy:deploy-file -Dfile=/Applications/java/talend/TargetPlatformE44/p2site/TargetPlatform.zip -DgroupId=org.talend.repo -DartifactId=eclipse-p2-repo -Dversion=4.18.0 -Dpackaging=zip -Durl=https://artifacts-oss.talend.com/repository/talaxie -DrepositoryId=talend_nexus_deployment
 (prefer use the original version of eclipse instead of talend version)
 
 Nexus p2 repository will be available at https://artifacts-oss.talend.com/nexus/content/unzip/TalendP2UnzipOpenSourceRelease/org/talend/repo/eclipse-p2-repo/4.18.0/eclipse-p2-repo-4.18.0.zip-unzip/
