@@ -1,14 +1,14 @@
 # Studio-se-master
 http://www.deilink.fr
 
-![alt text](https://www.deilink.fr/image/talaxie_logo.jpg "Talend")
+![alt text](https://www.deilink.fr/image/talaxie_logo.jpg "Talaxie")
 
 > Content
 
-Master repos using gitslave for aggregating the full Talend Studio open source repositories
+Master repos using gitslave for aggregating the full Talaxie Studio open source repositories
 
 This folder is a GitSlave root folder.
-It is a simple git repo but allows working with all Talend Studio open source repositories as slaves.
+It is a simple git repo but allows working with all Talaxie Studio open source repositories as slaves.
 
 Install GitSlave
 ================
@@ -80,7 +80,7 @@ If you want to only build one or any number of products you may use one or many 
 
 ## Support
 
-You can ask for help on our [Forum](http://www.talend.com/services/global-technical-support).
+You can ask for help on our [Forum](http://www.deilink.fr/services/global-technical-support).
 
 
 ## Contributing
@@ -97,6 +97,6 @@ See the [CONTRIBUTORS.md](./CONTRIBUTORS.md) file for details.
 
 ## License
 
-Copyright (c) 2006-2024 Talaxie
+Copyright (c) 2023-2024 Talaxie
 
 Licensed under the Apache v2 and GPLv2 License
