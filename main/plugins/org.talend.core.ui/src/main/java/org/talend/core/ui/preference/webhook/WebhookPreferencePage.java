@@ -10,7 +10,7 @@
 // 9 rue Pages 92150 Suresnes, France
 //
 // ============================================================================
-package org.talend.core.ui.preference.collector;
+package org.talend.core.ui.preference.webhook;
 
 import java.beans.PropertyChangeEvent;
 import java.io.File;
