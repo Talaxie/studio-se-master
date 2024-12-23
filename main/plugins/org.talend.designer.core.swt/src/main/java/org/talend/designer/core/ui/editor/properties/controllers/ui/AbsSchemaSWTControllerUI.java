@@ -436,6 +436,7 @@ public abstract class AbsSchemaSWTControllerUI extends AbsRepositorySWTControlle
     public RepositoryReviewBusinessHandler openRepositoryReviewDialog(RepositoryReviewBusinessHandler handler) {
         RepositoryReviewDialog dialog = new RepositoryReviewDialog(handler, composite.getShell());
         int open = dialog.open();
+        handler.setResult(dialog.getResult());
         handler.setOpenResult(open);
         return handler;
     }
