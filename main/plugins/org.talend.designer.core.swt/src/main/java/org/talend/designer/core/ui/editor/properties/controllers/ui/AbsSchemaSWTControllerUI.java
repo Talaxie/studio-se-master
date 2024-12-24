@@ -412,6 +412,7 @@ public abstract class AbsSchemaSWTControllerUI extends AbsRepositorySWTControlle
     public ModelSelectionBusinessHandler openModelSelectionDialog(ModelSelectionBusinessHandler handler) {
         ModelSelectionDialog modelSelect = new ModelSelectionDialog(handler, composite.getShell());
         int open = modelSelect.open();
+        handler.setOptionValue(modelSelect.getOptionValue());
         handler.setOpenResult(open);
         return handler;
     }
@@ -436,6 +437,7 @@ public abstract class AbsSchemaSWTControllerUI extends AbsRepositorySWTControlle
     public RepositoryReviewBusinessHandler openRepositoryReviewDialog(RepositoryReviewBusinessHandler handler) {
         RepositoryReviewDialog dialog = new RepositoryReviewDialog(handler, composite.getShell());
         int open = dialog.open();
+        handler.setResult(dialog.getResult());
         handler.setOpenResult(open);
         return handler;
     }
