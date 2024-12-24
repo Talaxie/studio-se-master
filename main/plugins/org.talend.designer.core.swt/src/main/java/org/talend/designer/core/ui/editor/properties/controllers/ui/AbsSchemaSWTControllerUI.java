@@ -412,6 +412,7 @@ public abstract class AbsSchemaSWTControllerUI extends AbsRepositorySWTControlle
     public ModelSelectionBusinessHandler openModelSelectionDialog(ModelSelectionBusinessHandler handler) {
         ModelSelectionDialog modelSelect = new ModelSelectionDialog(handler, composite.getShell());
         int open = modelSelect.open();
+        handler.setOptionValue(modelSelect.getOptionValue());
         handler.setOpenResult(open);
         return handler;
     }
