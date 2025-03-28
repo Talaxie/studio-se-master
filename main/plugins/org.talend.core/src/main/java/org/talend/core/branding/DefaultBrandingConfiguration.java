@@ -119,6 +119,7 @@ public class DefaultBrandingConfiguration implements IBrandingConfiguration {
             //        String schedulerViewId = "org.talend.scheduler.views.Scheduler"; //$NON-NLS-1$
             String contextsViewId = "org.talend.designer.core.ui.views.ContextsView"; //$NON-NLS-1$
             String gefPaletteViewId = "org.eclipse.gef.ui.palette_view"; //$NON-NLS-1$
+            String marketPlaceViewId = "org.talend.designer.codegen.view.MarketplaceViewPart"; //$NON-NLS-1$
             String jobSettingsViewId = "org.talend.designer.core.ui.views.jobsettings.JobSettingsView"; //$NON-NLS-1$
             String springViewId = "org.talend.camel.designer.spring.view"; //$NON-NLS-1$
             //        String jobHierarchyViewId = "org.talend.designer.core.ui.hierarchy.JobHierarchyViewPart"; //$NON-NLS-1$
@@ -128,7 +129,6 @@ public class DefaultBrandingConfiguration implements IBrandingConfiguration {
             IFolderLayout leftTopLayout = layout.createFolder("navigatorLayout", IPageLayout.LEFT, new Float(0.3), //$NON-NLS-1$
                     IPageLayout.ID_EDITOR_AREA);
             leftTopLayout.addView(repositoryId);
-            // leftTopLayout.addView(navigatorId);
 
             // leftBottomLayout
             IFolderLayout leftBottomLayout = layout.createFolder("outlineCodeLayout", IPageLayout.BOTTOM, new Float(0.6), //$NON-NLS-1$
@@ -140,6 +140,7 @@ public class DefaultBrandingConfiguration implements IBrandingConfiguration {
             IFolderLayout rightTopLayout = layout.createFolder("paletteLayout", IPageLayout.RIGHT, new Float(0.8), //$NON-NLS-1$
                     IPageLayout.ID_EDITOR_AREA);
             rightTopLayout.addView(gefPaletteViewId);
+            rightTopLayout.addView(marketPlaceViewId);
 
             // bottomLayout
             IFolderLayout bottomLayout = layout.createFolder("bottomLayout", IPageLayout.BOTTOM, new Float(0.6), //$NON-NLS-1$

@@ -731,6 +731,8 @@ public class Webhook {
 					component.put("origine", componentJson.getString("origine"));
 					component.put("url", componentJson.getString("url"));
 					component.put("urlZip", componentJson.getString("urlZip"));
+					component.put("type", componentJson.getString("type"));
+					component.put("urlArchive", componentJson.getString("urlArchive"));
                     components.add(component);
 				}
             }
