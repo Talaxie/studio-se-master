@@ -25,6 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.log4j.Logger;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -94,8 +96,8 @@ import org.talend.core.model.utils.JavaResourcesHelper;
 import org.talend.core.prefs.ITalendCorePrefConstants;
 import org.talend.core.repository.constants.FileConstants;
 import org.talend.core.runtime.CoreRuntimePlugin;
-import org.talend.core.ui.context.nattableTree.ContextNatTableUtils;
 import org.talend.core.ui.CoreUIPlugin;
+import org.talend.core.ui.context.nattableTree.ContextNatTableUtils;
 import org.talend.core.ui.export.ArchiveFileExportOperationFullPath;
 import org.talend.core.ui.export.FileSystemExporterFullPath;
 import org.talend.core.ui.webService.Webhook;
@@ -118,8 +120,6 @@ import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobScriptsManag
 import org.talend.repository.ui.wizards.exportjob.util.ExportJobUtil;
 import org.talend.repository.utils.EmfModelUtils;
 import org.talend.repository.utils.JobVersionUtils;
-
-import org.eclipse.core.runtime.Status;
 
 /**
  * Page of the Job Scripts Export Wizard. <br/>
@@ -444,7 +444,6 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
 
         final Combo versionCombo = new Combo(versionGroup, SWT.PUSH);
 
-
         String[] allVersions = JobVersionUtils.getAllVersions(nodes[0]);
         Arrays.sort(allVersions);
         String currentVersion = JobVersionUtils.getCurrentVersion(nodes[0]);
@@ -459,9 +458,10 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             @Override
             public void widgetSelected(SelectionEvent e) {
                 selectedJobVersion = versionCombo.getText();
-                if(selectedJobVersion.equals(currentVersion) || selectedJobVersion.equals(RelationshipItemBuilder.LATEST_VERSION)){
+                if (selectedJobVersion.equals(currentVersion)
+                        || selectedJobVersion.equals(RelationshipItemBuilder.LATEST_VERSION)) {
                     executeTestsButton.setEnabled(true);
-                }else{
+                } else {
                     executeTestsButton.setEnabled(false);
                     executeTestsButton.setSelection(false);
                 }
@@ -616,11 +616,9 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         jobScriptGD.horizontalSpan = 3;
         jobScriptButton.setLayoutData(jobScriptGD);
 
-        if (
-            CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED) ||
-            CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED) ||
-            CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_SCRIPT_ENABLED)
-        ) {
+        if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED)
+                || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)
+                || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_SCRIPT_ENABLED)) {
             webhookButton = new Button(optionsComposite, SWT.CHECK | SWT.LEFT);
             webhookButton.setText("Webhook"); //$NON-NLS-1$
             webhookButton.setFont(font);
@@ -1475,45 +1473,29 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             return false;
         }
 
+        final AtomicBoolean isBuildJobWithMavenOk = new AtomicBoolean(true);
         JobExportType jobExportType = getCurrentExportType1();
-        if (JobExportType.POJO.equals(jobExportType) ||
-            JobExportType.MSESB.equals(jobExportType) ||
-            JobExportType.OSGI.equals(jobExportType) ||
-            JobExportType.IMAGE.equals(jobExportType) ||
-            JobExportType.MSESB_IMAGE.equals(jobExportType)
-        ) {
+        if (JobExportType.POJO.equals(jobExportType) || JobExportType.MSESB.equals(jobExportType)
+                || JobExportType.OSGI.equals(jobExportType) || JobExportType.IMAGE.equals(jobExportType)
+                || JobExportType.MSESB_IMAGE.equals(jobExportType)) {
             // TODO Jean Cazaux
             /*
-            String message = "Info export job #1\n"; //$NON-NLS-1$
-            // message += "getCheckNodes: " + Arrays.asList(getCheckNodes()) + "\n";
-            message += "selectedJobVersion: " + selectedJobVersion + "\n";
-            // message += "manager: " + manager + "\n";
-            message += "Context: " + processItem.getProcess().getDefaultContext() + "\n";
-            message += "originalRootFolderName: " + originalRootFolderName + "\n";
-            message += "getProcessType: " + getProcessType() + "\n";
-            message += "jobExportType: " + jobExportType + "\n";
-            MessageDialog messageDialog = new MessageDialog(
-                DisplayUtils.getDefaultShell(false),
-                "Talaxie - export de la build vers EtlTool", //$NON-NLS-1$
-                null,
-                message, //$NON-NLS-1$
-                MessageDialog.CONFIRM,
-                new String[] {
-                    IDialogConstants.OK_LABEL,
-                    IDialogConstants.CANCEL_LABEL
-                },
-                0
-            ); //$NON-NLS-1$
-            if (messageDialog.open() == 0) {
-                // TODO
-            }
-            */
+             * String message = "Info export job #1\n"; //$NON-NLS-1$ // message += "getCheckNodes: " +
+             * Arrays.asList(getCheckNodes()) + "\n"; message += "selectedJobVersion: " + selectedJobVersion + "\n"; //
+             * message += "manager: " + manager + "\n"; message += "Context: " +
+             * processItem.getProcess().getDefaultContext() + "\n"; message += "originalRootFolderName: " +
+             * originalRootFolderName + "\n"; message += "getProcessType: " + getProcessType() + "\n"; message +=
+             * "jobExportType: " + jobExportType + "\n"; MessageDialog messageDialog = new MessageDialog(
+             * DisplayUtils.getDefaultShell(false), "Talaxie - export de la build vers EtlTool", //$NON-NLS-1$ null,
+             * message, //$NON-NLS-1$ MessageDialog.CONFIRM, new String[] { IDialogConstants.OK_LABEL,
+             * IDialogConstants.CANCEL_LABEL }, 0 ); //$NON-NLS-1$ if (messageDialog.open() == 0) { // TODO }
+             */
 
             IRunnableWithProgress worker = new IRunnableWithProgress() {
 
                 @Override
                 public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
-                    buildJobWithMaven(jobExportType, monitor);
+                    isBuildJobWithMavenOk.set(buildJobWithMaven(jobExportType, monitor));
                 }
             };
             try {
@@ -1564,7 +1546,7 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         }
 
         // see bug 7181
-        if (zipOption != null && zipOption.equals("true")) { //$NON-NLS-1$
+        if (isBuildJobWithMavenOk.get() && zipOption != null && zipOption.equals("true")) { //$NON-NLS-1$
             // unzip
             try {
                 String zipFile;
@@ -1594,8 +1576,9 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         }
 
         // Export to EtlTool
-        if (isAddWebhook()) {
+        if (isBuildJobWithMavenOk.get() && isAddWebhook()) {
             IRunnableWithProgress worker = new IRunnableWithProgress() {
+
                 @Override
                 public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
                     exportWebhook(monitor);
@@ -1627,8 +1610,8 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                 @Override
                 public void run() {
                     String contextTemp = (contextCombo == null || contextCombo.isDisposed())
-                        ? processItem.getProcess().getDefaultContext()
-                        : contextCombo.getText();
+                            ? processItem.getProcess().getDefaultContext()
+                            : contextCombo.getText();
                     context.append(contextTemp);
                     String destinationValue = getDestinationValue();
                     destination.append(destinationValue);
@@ -1647,18 +1630,12 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             exportChoiceMap.put(ExportChoice.addStatistics, Boolean.TRUE);
 
             /*
-			if (LOGGER.isInfoEnabled()) {
-				LOGGER.info("-- buildJobs");
-				LOGGER.info(destinationStr);
-				LOGGER.info(checkedNodes);
-				LOGGER.info(getDefaultFileName());
-				LOGGER.info(getSelectedJobVersion());
-				LOGGER.info(context.toString());
-				LOGGER.info(exportChoiceMap);
-				LOGGER.info(jobExportType);
-			}
-            */
-            return BuildJobManager.getInstance().buildJobs(destinationStr, checkedNodes, getDefaultFileName(), getSelectedJobVersion(), context.toString(), exportChoiceMap, jobExportType, monitor);
+             * if (LOGGER.isInfoEnabled()) { LOGGER.info("-- buildJobs"); LOGGER.info(destinationStr);
+             * LOGGER.info(checkedNodes); LOGGER.info(getDefaultFileName()); LOGGER.info(getSelectedJobVersion());
+             * LOGGER.info(context.toString()); LOGGER.info(exportChoiceMap); LOGGER.info(jobExportType); }
+             */
+            return BuildJobManager.getInstance().buildJobs(destinationStr, checkedNodes, getDefaultFileName(),
+                    getSelectedJobVersion(), context.toString(), exportChoiceMap, jobExportType, monitor);
 
         } catch (Exception e) {
             Display.getDefault().asyncExec(new Runnable() {
@@ -1933,30 +1910,25 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         try {
             String projectLabel = ProjectManager.getInstance().getCurrentProject().getTechnicalLabel();
             List<String> defaultFileName = getDefaultFileName();
-            HashMap<String, String>  jobData = Webhook.export(manager.getDestinationPath(), projectLabel, defaultFileName.get(0), selectedJobVersion, selectedNexusRepo, monitor);
-            
+            HashMap<String, String> jobData = Webhook.export(manager.getDestinationPath(), projectLabel, defaultFileName.get(0),
+                    selectedJobVersion, selectedNexusRepo, monitor);
+
             Display.getDefault().asyncExec(new Runnable() {
 
                 @Override
                 public void run() {
                     try {
-                        if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
+                        if (CoreUIPlugin.getDefault().getPreferenceStore()
+                                .getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
                             String message = "Voulez-vous ouvrir le job sur EtlTool ?\n"; //$NON-NLS-1$
                             message += "Projet: " + jobData.get("Projet") + "\n";
                             message += "Sequenceur: " + jobData.get("Sequenceur") + "\n";
                             message += "Version: " + jobData.get("JobVersion") + "\n";
-                            MessageDialog messageDialog = new MessageDialog(
-                                getShell(),
-                                "Talaxie - export de la build vers EtlTool", //$NON-NLS-1$
-                                null,
-                                message, //$NON-NLS-1$
-                                MessageDialog.CONFIRM,
-                                new String[] {
-                                    IDialogConstants.OK_LABEL,
-                                    IDialogConstants.CANCEL_LABEL
-                                },
-                                0
-                            ); //$NON-NLS-1$
+                            MessageDialog messageDialog = new MessageDialog(getShell(),
+                                    "Talaxie - export de la build vers EtlTool", //$NON-NLS-1$
+                                    null, message, // $NON-NLS-1$
+                                    MessageDialog.CONFIRM,
+                                    new String[] { IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL }, 0); // $NON-NLS-1$
                             if (messageDialog.open() == 0) {
                                 URL jobURL = new URL(Webhook.getJobUrl(jobData));
                                 PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(jobURL);
