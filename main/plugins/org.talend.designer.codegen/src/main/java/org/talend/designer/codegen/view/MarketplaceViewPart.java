@@ -12,7 +12,10 @@
 // ============================================================================
 package org.talend.designer.codegen.view;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -23,6 +26,7 @@ import java.util.concurrent.Executors;
 
 import org.apache.log4j.Logger;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.swt.SWT;
@@ -430,17 +434,34 @@ public class MarketplaceViewPart extends ViewPart {
             // Get component archive file
             String workspaceLocation = ResourcesPlugin.getWorkspace().getRoot().getLocation().toOSString();
             if (component.get("type").equals("car")) {
-                
-                System.out.println("Préparation pour téléchargement du composant Talaxy");
+
+                LOGGER.info("Préparation pour téléchargement du composant " + component.get("name"));
                 String componentCarPath = workspaceLocation + File.separator + component.get("name") + ".car";
+                LOGGER.info("componentCarPath: " + componentCarPath);
+
                 Webhook.downloadFile(component.get("urlArchive"), componentCarPath);
-                // /Users/eclitech/workspace/runtime-TOS_macos_DI/deilink-ai-0.0.1-SNAPSHOT.car
-                
-                
-                //java -jar /Users/eclitech/workspace/runtime-TOS_macos_DI/deilink-ai-0.0.1-SNAPSHOT.car studio-deploy /Users/eclitech/Documents/Temp
-                
-                System.out.println("composant Talaxy téléchargé!");
-                
+
+                LOGGER.info("component.get(\"urlArchive\"): " + component.get("urlArchive"));
+
+                String home = null;
+                try {
+                    URL url = Platform.getInstallLocation().getURL();
+                    home = new File(url.toURI()).getAbsolutePath();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                LOGGER.info("Eclipse install folder: " + home);
+
+                URL installURL = Platform.getInstallLocation().getURL();
+                String installDir = (new File(installURL.getPath())).getAbsolutePath();
+                LOGGER.info("installDir: " + installDir);
+
+                if (runCarDeploy(componentCarPath, installDir) == 0) {
+                    File componentFile = new File(componentCarPath);
+                    componentFile.delete();
+                    LOGGER.info("Composant " + component.get("name") + "installé");
+                } else
+                    LOGGER.info("Erreur durant l'installation du Composant " + component.get("name"));
 
             } else {
                 String componentZipPath = workspaceLocation + File.separator + component.get("name") + ".zip";
@@ -461,6 +482,39 @@ public class MarketplaceViewPart extends ViewPart {
 
         }
         return true;
+    }
+
+    public static int runCarDeploy(String componentCarPath, String installDir) {
+        // Construire la commande avec des arguments correctement quotés
+        String[] command = { "java", "-jar", componentCarPath, "studio-deploy", "--location", installDir };
+
+        ProcessBuilder builder = new ProcessBuilder(command);
+
+        // Important : hériter de l'environnement système
+        builder.redirectErrorStream(true); // merge stdout/stderr
+
+        try {
+            Process process = builder.start();
+
+            // Lire la sortie du process
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    LOGGER.info("[car deploy] " + line); // ou logger dans ton app
+                }
+            }
+
+            int exitCode = process.waitFor();
+            LOGGER.info("Process finished with code: " + exitCode);
+            return exitCode;
+
+        } catch (IOException | InterruptedException e) {
+            if (LOGGER.isInfoEnabled()) {
+                LOGGER.info("-- componentInstall error");
+                LOGGER.info(e);
+            }
+            return -1;
+        }
     }
 
     private Boolean componentsUninstall(HashMap<String, String> component) {
