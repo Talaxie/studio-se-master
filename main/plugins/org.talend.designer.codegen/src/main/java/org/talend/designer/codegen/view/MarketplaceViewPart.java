@@ -443,15 +443,6 @@ public class MarketplaceViewPart extends ViewPart {
 
                 LOGGER.info("component.get(\"urlArchive\"): " + component.get("urlArchive"));
 
-                String home = null;
-                try {
-                    URL url = Platform.getInstallLocation().getURL();
-                    home = new File(url.toURI()).getAbsolutePath();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                LOGGER.info("Eclipse install folder: " + home);
-
                 URL installURL = Platform.getInstallLocation().getURL();
                 String installDir = (new File(installURL.getPath())).getAbsolutePath();
                 LOGGER.info("installDir: " + installDir);
@@ -485,12 +476,10 @@ public class MarketplaceViewPart extends ViewPart {
     }
 
     public static int runCarDeploy(String componentCarPath, String installDir) {
-        // Construire la commande avec des arguments correctement quotés
+
         String[] command = { "java", "-jar", componentCarPath, "studio-deploy", "--location", installDir };
 
         ProcessBuilder builder = new ProcessBuilder(command);
-
-        // Important : hériter de l'environnement système
         builder.redirectErrorStream(true); // merge stdout/stderr
 
         try {
@@ -500,7 +489,7 @@ public class MarketplaceViewPart extends ViewPart {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    LOGGER.info("[car deploy] " + line); // ou logger dans ton app
+                    LOGGER.info("[car deploy] " + line);
                 }
             }
 
