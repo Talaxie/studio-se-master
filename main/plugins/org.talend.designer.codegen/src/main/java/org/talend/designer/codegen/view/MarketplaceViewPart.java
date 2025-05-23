@@ -17,7 +17,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -168,7 +171,8 @@ public class MarketplaceViewPart extends ViewPart {
                 componentInstalleds = new ArrayList<>();
                 for (HashMap<String, String> component : components) {
                     Path componentDirectory = Path.of(getComponentPath(), component.get("name"));
-                    if (new File(componentDirectory.toString()).exists()) {
+                    if (new File(componentDirectory.toString()).exists()
+                            || new File(componentDirectory.toString() + ".car").exists()) {
                         componentInstalleds.add(component);
                     } else {
                         componentUninstalleds.add(component);
@@ -455,11 +459,30 @@ public class MarketplaceViewPart extends ViewPart {
                 System.out.println("installDir: " + installDir);
 
                 if (runCarDeploy(componentCarPath, installDir) == 0) {
+                    // On ne supprime pas le fichier car quand le composant est installé car sa présence va permettre de
+                    // détecter que le composant est installé
+                    System.out.println("Composant " + component.get("name") + "installé");
+
+                    Path source = Paths.get(componentCarPath);
+                    System.out.println("component.get(\"name\") = " + component.get("name"));
+                    System.out.println("getComponentPath() =" + getComponentPath());
+                    System.out.println("componentCarPath =" + componentCarPath);
+
+                    Path target = Path.of(getComponentPath(), component.get("name") + ".car");
+
+                    try {
+                        Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+                        System.out.println("Fichier déplacé !");
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                } else {
+                    System.out.println("Suppression du fichier " + componentCarPath);
                     File componentFile = new File(componentCarPath);
                     componentFile.delete();
-                    System.out.println("Composant " + component.get("name") + "installé");
-                } else
                     return false;
+                }
 
             } else {
                 String componentZipPath = workspaceLocation + File.separator + component.get("name") + ".zip";
@@ -533,6 +556,11 @@ public class MarketplaceViewPart extends ViewPart {
             File componentFile = new File(componentDirectory.toString());
             if (componentFile.exists()) {
                 FilesUtils.removeFolder(componentFile, true);
+            }
+
+            componentFile = new File(componentDirectory.toString() + ".car");
+            if (componentFile.exists()) {
+                FilesUtils.removeFile(componentFile);
             }
         } catch (Exception e) {
             e.printStackTrace();
