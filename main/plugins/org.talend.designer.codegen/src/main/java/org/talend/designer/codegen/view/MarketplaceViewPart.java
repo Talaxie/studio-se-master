@@ -372,7 +372,8 @@ public class MarketplaceViewPart extends ViewPart {
                     removeButton.addListener(SWT.Selection, event -> {
                         removeButton.setEnabled(false);
                         removeButton.setText("Removing...");
-                        componentsUninstall(component);
+                        if (componentsUninstall(component))
+                            promptRestartIfNeeded("Désinstallation du composant OK\nSouhaitez-vous redémarrer maintenant pour mettre à jour le marketplace?");
                         removeButton.setText("Removed");
                     });
 
@@ -459,8 +460,7 @@ public class MarketplaceViewPart extends ViewPart {
                 System.out.println("installDir: " + installDir);
 
                 if (runCarDeploy(componentCarPath, installDir) == 0) {
-                    // On ne supprime pas le fichier car quand le composant est installé car sa présence va permettre de
-                    // détecter que le composant est installé
+
                     System.out.println("Composant " + component.get("name") + "installé");
 
                     Path source = Paths.get(componentCarPath);
@@ -470,6 +470,7 @@ public class MarketplaceViewPart extends ViewPart {
 
                     Path target = Path.of(getComponentPath(), component.get("name") + ".car");
 
+                    //On deplace le .car dans le dossier component, sa présence permet de savoir que le composant est installé
                     try {
                         Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
                         System.out.println("Fichier déplacé !");
@@ -503,6 +504,9 @@ public class MarketplaceViewPart extends ViewPart {
             return false;
 
         }
+        
+        promptRestartIfNeeded(
+                "L'installation du composant OK\nSouhaitez-vous redémarrer maintenant pour activer le composant dans la palette ?");
         return true;
     }
 
@@ -549,6 +553,18 @@ public class MarketplaceViewPart extends ViewPart {
             return -1;
         }
     }
+    
+    public static void promptRestartIfNeeded(String message) {
+        Display.getDefault().asyncExec(() -> {
+            boolean restart = MessageDialog.openQuestion(
+                PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(),
+                "Redémarrage nécessaire pour la prise en compte des composants",message
+            );
+            if (restart) {
+                PlatformUI.getWorkbench().restart();
+            }
+        });
+    }
 
     private Boolean componentsUninstall(HashMap<String, String> component) {
         try {
@@ -564,6 +580,7 @@ public class MarketplaceViewPart extends ViewPart {
             }
         } catch (Exception e) {
             e.printStackTrace();
+            return false;
         }
         return true;
     }
