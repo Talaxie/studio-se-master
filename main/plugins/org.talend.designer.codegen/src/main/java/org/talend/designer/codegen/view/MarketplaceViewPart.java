@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 import org.apache.log4j.Logger;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.Platform;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.swt.SWT;
@@ -254,8 +255,13 @@ public class MarketplaceViewPart extends ViewPart {
                     installButton.addListener(SWT.Selection, event -> {
                         installButton.setEnabled(false);
                         installButton.setText("Installation...");
-                        componentInstall(component);
-                        installButton.setText("Installé");
+                        if (componentInstall(component))
+                            installButton.setText("Installé");
+                        else {
+                            installButton.setText("Installer");
+                            installButton.setEnabled(true);
+                        }
+
                     });
 
                     // Version
@@ -435,24 +441,25 @@ public class MarketplaceViewPart extends ViewPart {
             String workspaceLocation = ResourcesPlugin.getWorkspace().getRoot().getLocation().toOSString();
             if (component.get("type").equals("car")) {
 
-                LOGGER.info("Préparation pour téléchargement du composant " + component.get("name"));
+                StringBuilder sb = new StringBuilder();
+                System.out.println("Préparation pour téléchargement du composant " + component.get("name"));
                 String componentCarPath = workspaceLocation + File.separator + component.get("name") + ".car";
-                LOGGER.info("componentCarPath: " + componentCarPath);
+                System.out.println("componentCarPath: " + componentCarPath);
 
                 Webhook.downloadFile(component.get("urlArchive"), componentCarPath);
 
-                LOGGER.info("component.get(\"urlArchive\"): " + component.get("urlArchive"));
+                System.out.println("component.get(\"urlArchive\"): " + component.get("urlArchive"));
 
                 URL installURL = Platform.getInstallLocation().getURL();
                 String installDir = (new File(installURL.getPath())).getAbsolutePath();
-                LOGGER.info("installDir: " + installDir);
+                System.out.println("installDir: " + installDir);
 
                 if (runCarDeploy(componentCarPath, installDir) == 0) {
                     File componentFile = new File(componentCarPath);
                     componentFile.delete();
-                    LOGGER.info("Composant " + component.get("name") + "installé");
+                    System.out.println("Composant " + component.get("name") + "installé");
                 } else
-                    LOGGER.info("Erreur durant l'installation du Composant " + component.get("name"));
+                    return false;
 
             } else {
                 String componentZipPath = workspaceLocation + File.separator + component.get("name") + ".zip";
@@ -470,6 +477,7 @@ public class MarketplaceViewPart extends ViewPart {
                 LOGGER.info("-- componentInstall error");
                 LOGGER.info(e);
             }
+            return false;
 
         }
         return true;
@@ -477,7 +485,14 @@ public class MarketplaceViewPart extends ViewPart {
 
     public static int runCarDeploy(String componentCarPath, String installDir) {
 
+        StringBuilder sb = new StringBuilder();
         String[] command = { "java", "-jar", componentCarPath, "studio-deploy", "--location", installDir };
+
+        sb.append("Execution de la commande: ");
+        for (String string : command) {
+            sb.append(string + " ");
+        }
+        sb.append("\n");
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true); // merge stdout/stderr
@@ -489,12 +504,18 @@ public class MarketplaceViewPart extends ViewPart {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    LOGGER.info("[car deploy] " + line);
+                    sb.append("[car deploy] " + line + "\n");
                 }
             }
 
             int exitCode = process.waitFor();
-            LOGGER.info("Process finished with code: " + exitCode);
+            sb.append("Process finished with code: " + exitCode);
+
+            if (exitCode != 0) {
+                String errorMessage = ("Erreur durant l'installation du Composant ");
+                MessageDialog.openError(PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(), errorMessage,
+                        sb.toString());
+            }
             return exitCode;
 
         } catch (IOException | InterruptedException e) {
