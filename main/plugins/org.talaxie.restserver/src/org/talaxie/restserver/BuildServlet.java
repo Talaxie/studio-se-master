@@ -17,6 +17,11 @@ public class BuildServlet extends HttpServlet {
 
         System.out.println("[REST] Build triggered with payload: " + body);
         
+//        curl -X POST http://localhost:8080/build \
+//            -H "Content-Type: application/json" \
+//            -d '{"project":"MyProject","job":"Job1"}'
+
+        
             try {
 //                String project = queryParams.get("project");
 //                String master = queryParams.get("master");
@@ -30,7 +35,7 @@ public class BuildServlet extends HttpServlet {
                 String master = "JOB04_000_JobEtl_Master";
                 String version = "version";
                 String nexusRepo = "nexusRepo";
-                String fileLocation = "/Users/eclitech/JOB04_000_JobEtl_Master.zip";
+                String fileLocation = "/Applications/Eclipse.app/Contents/MacOS/Job4.zip";
                 
                 ServerUtil.jobExport(fileLocation, project, master, version, nexusRepo);
               } catch (Exception e) {
