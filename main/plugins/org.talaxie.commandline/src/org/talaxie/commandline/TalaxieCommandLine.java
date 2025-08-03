@@ -14,9 +14,12 @@ package org.talaxie.commandline;
 
 import java.util.Map;
 
+import org.apache.log4j.Logger;
 import org.talend.repository.items.importexport.ui.wizard.server.ServerUtil;
 
 public class TalaxieCommandLine {
+
+    private static final Logger LOGGER = Logger.getLogger(TalaxieCommandLine.class);
 
     public static int launcher() {
 
@@ -29,21 +32,31 @@ public class TalaxieCommandLine {
         if ("import".equalsIgnoreCase(action)) {
             String jobname = args.get("jobname");
             if (jobname == null) {
-                System.err.println("jobname is mandatory -> eg: jobname=\"JOB04_000_JobEtl_Master\"");
+                
+                String message = "jobname is mandatory -> eg: jobname=\"JOB04_000_JobEtl_Master\"";
+                LOGGER.info(message);
+                System.err.println(message);
+                
                 return -1;
             }
 
             if (project == null) {
-                System.err.println("project is mandatory -> eg: project=\"DEMOETL\"");
+                
+                String message = "project is mandatory -> eg: project DEMOETL";
+                LOGGER.info(message);
+                System.err.println(message);
                 return -1;
             }
 
             System.out.println("IMPORT → project=" + project + ", jobname=" + jobname);
             if (ServerUtil.jobImport(project, jobname)) {
-                System.out.println("jobImport OK");
-                return 1;
+                String message = "jobImport OK";
+                LOGGER.info(message);
+                System.out.println(message);
             } else {
-                System.err.println("jobImport KO");
+                String message = "jobImport KO";
+                LOGGER.info(message);
+                System.err.println(message);
                 return -1;
             }
         }
@@ -54,20 +67,26 @@ public class TalaxieCommandLine {
             String jobname = args.get("jobname");
 
             if (jobname == null) {
-                System.err.println("jobname is mandatory -> eg: jobname=\"JOB04_000_JobEtl_Master\"");
+                String message = "jobname is mandatory -> eg: jobname=\"JOB04_000_JobEtl_Master\"";
+                LOGGER.info(message);
+                System.err.println(message);
                 return -1;
             }
 
             if (project == null) {
-                System.err.println("project is mandatory -> eg: project=\"DEMOETL\"");
+                String message = "project is mandatory -> eg: project=\"DEMOETL\"";
+                LOGGER.info(message);
+                System.err.println(message);
                 return -1;
             }
 
             String fileLocation = args.get("fileLocation");
 
             if (fileLocation == null) {
-                System.err.println(
-                        "fileLocation is mandatory -> eg: fileLocation=\"/Applications/Eclipse.app/Contents/MacOS/Job4.zip\"");
+                String message = "fileLocation is mandatory -> eg: fileLocation=\"/Applications/Eclipse.app/Contents/MacOS/Job4.zip\"";
+                LOGGER.info(message);
+                System.err.println(message);
+
                 return -1;
             }
 
@@ -75,10 +94,14 @@ public class TalaxieCommandLine {
             String version = "version";
             String nexusRepo = "nexusRepo";
             if (ServerUtil.jobExport(fileLocation, project, jobname, version, nexusRepo)) {
-                System.out.println("jobExport OK");
+                String message = "jobExport OK";
+                LOGGER.info(message);
+                System.out.println(message);
                 return 1;
             } else {
-                System.err.println("jobExport KO");
+                String message = "jobExport KO";
+                LOGGER.info(message);
+                System.err.println(message);
                 return -1;
             }
 
