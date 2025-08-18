@@ -15,7 +15,7 @@ package org.talaxie.commandline;
 import java.util.Map;
 
 import org.apache.log4j.Logger;
-import org.talend.repository.items.importexport.ui.wizard.server.ServerUtil;
+import org.talend.repository.ui.views.link.ServerUtil;
 // import org.talend.repository.ui.views.link.ServerUtil;
 
 public class TalaxieCommandLine {
@@ -96,11 +96,11 @@ public class TalaxieCommandLine {
             String nexusRepo = "nexusRepo";
 
             // ServerUtil.jobExport(fileLocation, project, jobname);
-            if (ServerUtil.jobExport(fileLocation, project, jobname, version, nexusRepo)) {
+            if (ServerUtil.jobExport(fileLocation, project, jobname)) {
                 String message = "jobExport OK";
                 LOGGER.info(message);
                 System.out.println(message);
-                return 0;
+                return 1;
             } else {
                 String message = "jobExport KO";
                 LOGGER.info(message);
