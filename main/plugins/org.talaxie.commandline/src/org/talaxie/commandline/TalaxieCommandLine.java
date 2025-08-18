@@ -97,7 +97,7 @@ public class TalaxieCommandLine {
                 String message = "jobExport OK";
                 LOGGER.info(message);
                 System.out.println(message);
-                return 1;
+                return 0;
             } else {
                 String message = "jobExport KO";
                 LOGGER.info(message);
