@@ -93,7 +93,7 @@ Feel free to share your Talend components on [Talend Exchange](http://www.talend
 
 ## Contributors
 
-See the [CONTRIBUTORS.md](./CONTRIBUTORS.md) file for details.
+See the [CONTRIBUTORS.md](https://talaxie.github.io/) file for details.
 
 ## License
 
