@@ -3424,7 +3424,8 @@ public class LocalRepositoryFactory extends AbstractEMFRepositoryFactory impleme
                 localProdVersion = "";
             }
             ProjectManager.getInstance().getProjectLabelWithOriginVersion().put(localProject.getLabel(), localProdVersion);
-            checkProjectVersion(localProject);
+            // DeiLink: disable project version check for Talaxie
+            // checkProjectVersion(localProject);
         }
         try {
             IStudioLiteP2Service p2Service = IStudioLiteP2Service.get();
