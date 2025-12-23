@@ -194,6 +194,8 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
 
     String selectedJobVersion = "0.1"; //$NON-NLS-1$
 
+    String selectedEtltoolRepo = "ref_DEV"; //$NON-NLS-1$
+
     String selectedNexusRepo = "Snapshot"; //$NON-NLS-1$
 
     private String originalRootFolderName;
@@ -626,6 +628,26 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             webhookGD.horizontalSpan = 3;
             webhookButton.setLayoutData(webhookGD);
             webhookButton.setSelection(true);
+
+            if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
+                final Combo etltoolCombo = new Combo(optionsComposite, SWT.PUSH);
+                String[] etltoolRepo = { "ref_DEV", "ref_MCO" };
+                etltoolCombo.setItems(etltoolRepo);
+                etltoolCombo.setText(selectedEtltoolRepo);
+                etltoolCombo.addSelectionListener(new SelectionListener() {
+
+                    @Override
+                    public void widgetSelected(SelectionEvent e) {
+                    	selectedEtltoolRepo = etltoolCombo.getText();
+                    }
+
+                    @Override
+                    public void widgetDefaultSelected(SelectionEvent e) {
+                        widgetSelected(e);
+                    }
+
+                });
+            }
 
             if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED)) {
                 final Combo nexusCombo = new Combo(optionsComposite, SWT.PUSH);
@@ -1910,8 +1932,15 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         try {
             String projectLabel = ProjectManager.getInstance().getCurrentProject().getTechnicalLabel();
             List<String> defaultFileName = getDefaultFileName();
-            HashMap<String, String> jobData = Webhook.export(manager.getDestinationPath(), projectLabel, defaultFileName.get(0),
-                    selectedJobVersion, selectedNexusRepo, monitor);
+            HashMap<String, String> jobData = Webhook.export(
+	    		manager.getDestinationPath(),
+	    		projectLabel,
+	    		defaultFileName.get(0),
+	            selectedJobVersion,
+	            selectedEtltoolRepo,
+	            selectedNexusRepo,
+	            monitor
+	        );
 
             Display.getDefault().asyncExec(new Runnable() {
 
