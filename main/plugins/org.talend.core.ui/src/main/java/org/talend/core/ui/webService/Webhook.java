@@ -80,7 +80,7 @@ public class Webhook {
     private static String deilinkBackUrl = "https://admin.back.deilink.fr:19066";
     private JFrame frame;
 
-    public static HashMap<String, String> export(String fileLocation, String Projet, String Sequenceur, String version, String NexusRepo, IProgressMonitor monitor) {
+    public static HashMap<String, String> export(String fileLocation, String Projet, String Sequenceur, String version, String EtltoolRepo, String NexusRepo, IProgressMonitor monitor) {
         IProgressMonitor pMonitor = new NullProgressMonitor();
         if (monitor != null) {
             pMonitor = monitor;
@@ -105,7 +105,7 @@ public class Webhook {
                 jobData = JobArchiveCheck(fileLocation);
                 pMonitor.setTaskName("Export vers EtlTool : deploy job...");
                 pMonitor.worked(5);
-                Deploy(jobData);
+                Deploy(jobData, EtltoolRepo);
             }
 
             // Script
@@ -227,17 +227,21 @@ public class Webhook {
         return jobData;
     }
 
-    public static Boolean Deploy(HashMap<String, String> jobData) {
+    public static Boolean Deploy(HashMap<String, String> jobData, String EtltoolRepo) {
         Boolean result = false;
 
         try {
             String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Livraison/Deploy";
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
 
+            String Target = EtltoolRepo;
+            if (Target == null || Target.trim().isEmpty()) {
+            	Target = "ref_DEV";
+            }
             JSONObject paramJson = new JSONObject();
             paramJson.put("FileName", jobData.get("fileName"));
             paramJson.put("Origin", "Temp");
-            paramJson.put("Target", "ref_DEV");
+            paramJson.put("Target", Target);
             paramJson.put("Projet", jobData.get("Projet"));
             paramJson.put("Sequenceur", jobData.get("Sequenceur"));
 
