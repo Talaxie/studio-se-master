@@ -182,7 +182,7 @@ public class ServerUtil {
 
 	public static Boolean jobExport(String fileLocation, String Projet, String Sequenceur, String version, String NexusRepo) {
 		try {
-			Webhook.export(fileLocation, Projet, Sequenceur, version, NexusRepo, null);
+			Webhook.export(fileLocation, Projet, Sequenceur, version, null, NexusRepo, null);
 		} catch (Exception e) {
 			e.printStackTrace();
 			if (LOGGER.isInfoEnabled()) {
