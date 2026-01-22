@@ -12,7 +12,7 @@
 // ============================================================================
 package org.talend.commons.ui.gmf.draw2d;
 
-import org.eclipse.gef.editparts.ZoomListener;
+import org.eclipse.draw2d.zoom.ZoomListener;
 
 
 /**

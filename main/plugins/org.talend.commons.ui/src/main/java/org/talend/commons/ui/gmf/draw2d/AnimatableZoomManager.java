@@ -12,6 +12,7 @@
 // ============================================================================
 package org.talend.commons.ui.gmf.draw2d;
 
+import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -21,7 +22,7 @@ import org.eclipse.draw2d.Viewport;
 import org.eclipse.draw2d.geometry.Dimension;
 import org.eclipse.draw2d.geometry.Point;
 import org.eclipse.draw2d.geometry.Rectangle;
-import org.eclipse.gef.editparts.ZoomListener;
+import org.eclipse.draw2d.zoom.ZoomListener;
 import org.eclipse.gef.editparts.ZoomManager;
 
 
@@ -34,7 +35,7 @@ public class AnimatableZoomManager
     extends ZoomManager {
 
     private int zoomAnimationStyle = ANIMATE_NEVER;
-    private List animationListeners = new ArrayList();
+    private List<AnimatedZoomListener> animationListeners = new ArrayList<>();
 
     public static double currentZoom = 1.0;
 
@@ -69,8 +70,8 @@ public class AnimatableZoomManager
      */
     public void addZoomListener(ZoomListener listener) {
         super.addZoomListener(listener);
-        if (listener instanceof AnimatedZoomListener) {
-            animationListeners.add(listener);
+        if (listener instanceof AnimatedZoomListener l) {
+            animationListeners.add(l);
         }
     }
 
@@ -78,18 +79,18 @@ public class AnimatableZoomManager
      * Notifies listeners that the animated zoom has started.
      */
     protected void fireAnimatedZoomStarted() {
-        Iterator iter = animationListeners.iterator();
+        Iterator<AnimatedZoomListener> iter = animationListeners.iterator();
         while (iter.hasNext())
-            ((AnimatedZoomListener)iter.next()).animatedZoomStarted();
+            iter.next().animatedZoomStarted();
     }
 
     /**
      * Notifies listeners that the animated zoom has ended.
      */
     protected void fireAnimatedZoomEnded() {
-        Iterator iter = animationListeners.iterator();
+        Iterator<AnimatedZoomListener> iter = animationListeners.iterator();
         while (iter.hasNext())
-            ((AnimatedZoomListener)iter.next()).animatedZoomEnded();
+            iter.next().animatedZoomEnded();
     }
 
     /**
