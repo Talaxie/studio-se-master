@@ -608,7 +608,7 @@ public class ProcessManager implements AutoCloseable {
                 if (name.startsWith("META-INF/services/org.apache.")) {
                     return emptyEnumeration();
                 }
-                if (name.startsWith("META-INF/services/javax.servlet.")) {
+                if (name.startsWith("META-INF/services/javax.servlet.") || name.startsWith("META-INF/services/jakarta.servlet.")) {
                     return emptyEnumeration();
                 }
                 if (name.equals("META-INF/log4j-provider.properties")) {

@@ -78,8 +78,9 @@ public class DisableParallelizationAction extends SelectionAction {
                 Node node = (Node) part.getModel();
                 getCommandStack().execute(new DisableParallelizationCommand(node));
             } else if (o instanceof SubjobContainerPart) {
-                boolean hasStartNode = false;
-                List<NodeContainerPart> childNodes = ((SubjobContainerPart) o).getChildren();
+				boolean hasStartNode = false;
+				List<NodeContainerPart> childNodes = ((SubjobContainerPart) o).getChildren().stream()
+						.filter(NodeContainerPart.class::isInstance).map(NodeContainerPart.class::cast).toList();
                 for (NodeContainerPart childNode : childNodes) {
                     NodeContainerPart part = (NodeContainerPart) childNode;
                     NodeContainer node = (NodeContainer) part.getModel();

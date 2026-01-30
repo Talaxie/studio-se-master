@@ -95,9 +95,9 @@ public class SetParallelizationAction extends SelectionAction {
                 getCommandStack().execute(new SetParallelizationCommand(node));
             } else if (o instanceof SubjobContainerPart) {
                 boolean hasStartNode = false;
-                List<NodeContainerPart> childNodes = ((SubjobContainerPart) o).getChildren();
-                for (NodeContainerPart childNode : childNodes) {
-                    NodeContainerPart part = (NodeContainerPart) childNode;
+				List<NodeContainerPart> childNodes = ((SubjobContainerPart) o).getChildren().stream()
+						.filter(NodeContainerPart.class::isInstance).map(NodeContainerPart.class::cast).toList();
+				for (NodeContainerPart part : childNodes) {
                     NodeContainer node = (NodeContainer) part.getModel();
                     if (node.getNode().isStart()) {
                         hasStartNode = true;
@@ -105,8 +105,7 @@ public class SetParallelizationAction extends SelectionAction {
                     }
                 }
                 if (!hasStartNode) {
-                    for (NodeContainerPart childNode : childNodes) {
-                        NodeContainerPart part = (NodeContainerPart) childNode;
+					for (NodeContainerPart part : childNodes) {
                         NodeContainer node = (NodeContainer) part.getModel();
                         if (node.getNode().isSubProcessStart()) {
                             getCommandStack().execute(new SetParallelizationCommand(node.getNode()));

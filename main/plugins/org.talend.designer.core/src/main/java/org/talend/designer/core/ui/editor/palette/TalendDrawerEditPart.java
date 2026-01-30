@@ -19,7 +19,6 @@ import org.eclipse.draw2d.FocusListener;
 import org.eclipse.draw2d.IFigure;
 import org.eclipse.gef.EditPart;
 import org.eclipse.gef.internal.InternalImages;
-import org.eclipse.gef.internal.ui.palette.PaletteColorUtil;
 import org.eclipse.gef.internal.ui.palette.editparts.DrawerEditPart;
 import org.eclipse.gef.palette.PaletteDrawer;
 import org.eclipse.gef.palette.PaletteTemplateEntry;
@@ -80,7 +79,7 @@ public class TalendDrawerEditPart extends DrawerEditPart {
         }
         getViewer().getControl().setData("ANIMATE", Boolean.FALSE); //$NON-NLS-1$
 
-        TalendDrawerFigure fig = new TalendDrawerFigure(getViewer().getControl(), childLevel, cssStyleSetting) {
+        TalendDrawerFigure fig = new TalendDrawerFigure(getViewer().getControl(), getColorProvider(), childLevel, cssStyleSetting) {
 
             @Override
             IFigure buildTooltip() {
@@ -88,8 +87,8 @@ public class TalendDrawerEditPart extends DrawerEditPart {
             }
         };
         getViewer().getControl().setData("ANIMATE", Boolean.TRUE); //$NON-NLS-1$
-        fig.setExpanded(getDrawer().isInitiallyOpen());
-        fig.setPinned(getDrawer().isInitiallyPinned());
+        fig.setExpanded(getModel().isInitiallyOpen());
+        fig.setPinned(getModel().isInitiallyPinned());
 
         fig.getCollapseToggle().addFocusListener(new FocusListener.Stub() {
 
@@ -108,12 +107,12 @@ public class TalendDrawerEditPart extends DrawerEditPart {
         super.propertyChange(evt);
         String property = evt.getPropertyName();
         if (property.equals(PaletteDrawer.PROPERTY_INITIAL_STATUS)) {
-            boolean isExpaned = getDrawerFigure().isExpanded();
-            if (isExpaned == getDrawer().isInitiallyOpen()) {
+			boolean isExpaned = getFigure().isExpanded();
+			if (isExpaned == getModel().isInitiallyOpen()) {
                 return;
             }
             try {
-                getDrawerFigure().setExpanded(getDrawer().isInitiallyOpen());
+				getFigure().setExpanded(getModel().isInitiallyOpen());
                 refreshVisuals();
             } catch (Exception e) {
                 // do nothing
@@ -124,25 +123,26 @@ public class TalendDrawerEditPart extends DrawerEditPart {
 
     @Override
     protected void refreshVisuals() {
-        getDrawerFigure().setToolTip(createToolTip());
+		getFigure().setToolTip(createToolTip());
 
         if (cssStyleSetting.isShowFolderImage()) {
-            ImageDescriptor img = getDrawer().getSmallIcon();
-            if (img == null && getDrawer().showDefaultIcon()) {
+			ImageDescriptor img = getModel().getSmallIcon();
+			if (img == null && getModel().showDefaultIcon()) {
                 img = InternalImages.DESC_FOLDER_OPEN;
             }
             setImageDescriptor(img);
         }
 
-        getDrawerFigure().setTitle(getPaletteEntry().getLabel());
-        getDrawerFigure().setLayoutMode(getLayoutSetting());
+		getFigure().setTitle(getPaletteEntry().getLabel());
+		getFigure().setLayoutMode(getLayoutSetting());
 
         boolean showPin = getPreferenceSource().getAutoCollapseSetting() == PaletteViewerPreferences.COLLAPSE_AS_NEEDED;
-        getDrawerFigure().showPin(showPin);
+		getFigure().showPin(showPin);
 
-        Color background = getDrawer().getDrawerType().equals(PaletteTemplateEntry.PALETTE_TYPE_TEMPLATE) ? PaletteColorUtil.WIDGET_LIST_BACKGROUND
+		Color background = getModel().getDrawerType().equals(PaletteTemplateEntry.PALETTE_TYPE_TEMPLATE)
+				? getViewer().getColorProvider().getListBackground()
                 : null;
-        getDrawerFigure().getScrollpane().setBackgroundColor(background);
+		getFigure().getScrollpane().setBackgroundColor(background);
     }
 
     @Override

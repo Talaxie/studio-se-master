@@ -461,9 +461,9 @@ public class TalendPaletteViewer extends PaletteViewer {
             if (!alreadyExist) {
                 TalendEditorPaletteFactory.addNewFavoriteIntoPreference(component.getLabel());
                 CombinedTemplateCreationEntry newFavorite = TalendEditorPaletteFactory.createEntryFrom(component);
-                newFavorite.setParent(favoritesEditPart.getDrawer());
+                newFavorite.setParent(favoritesEditPart.getModel());
                 EditPart child = favoritesEditPart.createChild(newFavorite);
-                PaletteDrawer paletteDrawer = favoritesEditPart.getDrawer();
+                PaletteDrawer paletteDrawer = favoritesEditPart.getModel();
                 if (paletteDrawer != null) {
                     paletteDrawer.add(insertIndex, newFavorite);
                 }
@@ -484,7 +484,7 @@ public class TalendPaletteViewer extends PaletteViewer {
                     TalendEntryEditPart entryEditPart = (TalendEntryEditPart) obj;
                     CombinedTemplateCreationEntry entryModule = (CombinedTemplateCreationEntry) entryEditPart.getModel();
                     if (entryModule.getLabel().equals(component.getLabel())) {
-                        PaletteDrawer paletteDrawer = favoritesEditPart.getDrawer();
+                        PaletteDrawer paletteDrawer = favoritesEditPart.getModel();
                         if (paletteDrawer != null) {
                             paletteDrawer.remove(entryModule);
                         }
@@ -537,9 +537,9 @@ public class TalendPaletteViewer extends PaletteViewer {
             // if (!alreadyExist) {
             TalendCombinedTemplateCreationEntry newRecently = TalendEditorPaletteFactory.createEntryFrom(component);
             newRecently.setTimestemp(new Date());
-            newRecently.setParent(recentlyUsedEditPart.getDrawer());
+            newRecently.setParent(recentlyUsedEditPart.getModel());
             EditPart child = recentlyUsedEditPart.createChild(newRecently);
-            PaletteDrawer paletteDrawer = recentlyUsedEditPart.getDrawer();
+            PaletteDrawer paletteDrawer = recentlyUsedEditPart.getModel();
             if (paletteDrawer != null) {
                 // paletteDrawer.add(insertIndex, newRecently);
                 paletteDrawer.add(0, newRecently);
@@ -608,7 +608,7 @@ public class TalendPaletteViewer extends PaletteViewer {
                         // entryLabel = ((TalendCombinedTemplateCreationEntry) component).getComponentName();
                     }
                     if (entryModule.getLabel().equals(entryLabel)) {
-                        PaletteDrawer paletteDrawer = recentlyUsedEditPart.getDrawer();
+                        PaletteDrawer paletteDrawer = recentlyUsedEditPart.getModel();
                         if (paletteDrawer != null) {
                             paletteDrawer.remove(entryModule);
                         }

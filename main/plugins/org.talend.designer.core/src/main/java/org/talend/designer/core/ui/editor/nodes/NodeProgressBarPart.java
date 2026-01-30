@@ -196,7 +196,7 @@ public class NodeProgressBarPart extends AbstractSwtGraphicalEditPart
     @SuppressWarnings("unchecked")//$NON-NLS-1$
     public void setSelected(final int value) {
         if (value != SELECTED_NONE) {
-            List<EditPart> listEditParts = this.getViewer().getSelectedEditParts();
+            List<? extends EditPart> listEditParts = this.getViewer().getSelectedEditParts();
             if (listEditParts.size() != 1) {
                 // getParent().removeEditPolicy(EditPolicy.LAYOUT_ROLE);
             } else {

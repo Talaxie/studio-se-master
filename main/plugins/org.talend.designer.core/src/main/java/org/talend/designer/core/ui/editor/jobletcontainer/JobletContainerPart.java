@@ -12,7 +12,6 @@ import org.eclipse.gef.EditPolicy;
 import org.eclipse.gef.GraphicalEditPart;
 import org.eclipse.gef.SnapToGrid;
 import org.eclipse.gef.SnapToHelper;
-import org.eclipse.gef.editparts.AbstractGraphicalEditPart;
 import org.eclipse.gef.rulers.RulerProvider;
 import org.talend.core.model.process.IElementParameter;
 import org.talend.core.model.process.IProcess2;
@@ -130,10 +129,7 @@ public class JobletContainerPart extends NodeContainerPart implements ICrossPlat
             // ((JobletContainerFigure) figure).setInfoHint(node.getShowHintText());
         } else if (JobletContainer.UPDATE_JOBLET_CONTENT.equals(prop)) {
             refresh();
-            List<AbstractGraphicalEditPart> childrens = getChildren();
-            for (AbstractGraphicalEditPart part : childrens) {
-                part.refresh();
-            }
+			getChildren().forEach(GraphicalEditPart::refresh);
             needUpdateSubjob = true;
         } else if (JobletContainer.UPDATE_JOBLET_CONNECTIONS.equals(prop)) {
             refreshSourceConnections();

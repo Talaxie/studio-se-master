@@ -38,6 +38,7 @@ import org.eclipse.gef.internal.ui.palette.editparts.ColumnsLayout;
 import org.eclipse.gef.internal.ui.palette.editparts.DrawerFigure;
 import org.eclipse.gef.internal.ui.palette.editparts.PaletteContainerFlowLayout;
 import org.eclipse.gef.internal.ui.palette.editparts.PinFigure;
+import org.eclipse.gef.ui.palette.PaletteColorProvider;
 import org.eclipse.gef.ui.palette.PaletteViewerPreferences;
 import org.eclipse.jface.resource.JFaceResources;
 import org.eclipse.swt.graphics.Color;
@@ -52,7 +53,6 @@ import org.talend.themes.core.elements.stylesettings.TalendPaletteCSSStyleSettin
  */
 public class TalendDrawerFigure extends DrawerFigure {
 
-    protected Control control;
 
     protected Toggle collapseToggle;
 
@@ -76,10 +76,9 @@ public class TalendDrawerFigure extends DrawerFigure {
 
     protected int talendLayoutMode = -1;
 
-    public TalendDrawerFigure(Control control, int childLevel, TalendPaletteCSSStyleSetting cssStyleSetting) {
-        super(null);// must be null
+    public TalendDrawerFigure(Control control, PaletteColorProvider colorProvider, int childLevel, TalendPaletteCSSStyleSetting cssStyleSetting) {
+        super(control, colorProvider);
 
-        this.control = control;
         this.childLevel = childLevel;
 
         this.cssStyleSetting = cssStyleSetting;
@@ -101,7 +100,7 @@ public class TalendDrawerFigure extends DrawerFigure {
 
             Field pinFigureField = DrawerFigure.class.getDeclaredField("pinFigure");
             pinFigureField.setAccessible(true);
-            talendPinFigure = new PinFigure();
+            talendPinFigure = new PinFigure(colorProvider);
             pinFigureField.set(this, talendPinFigure);
             Field drawerLabelField = DrawerFigure.class.getDeclaredField("drawerLabel");
             drawerLabelField.setAccessible(true);

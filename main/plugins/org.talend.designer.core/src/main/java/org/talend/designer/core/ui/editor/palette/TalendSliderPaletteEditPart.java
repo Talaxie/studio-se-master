@@ -64,7 +64,7 @@ public class TalendSliderPaletteEditPart extends SliderPaletteEditPart {
     protected void registerVisuals() {
         super.registerVisuals();
         controller = new PaletteAnimator(((PaletteViewer) getViewer()).getPaletteViewerPreferences());
-        getViewer().getEditPartRegistry().put(PaletteAnimator.class, controller);
+		getViewer().setPaletteAnimator(controller);
         ToolbarLayout layout = new PaletteToolbarLayout();
         getFigure().setLayoutManager(layout);
         getFigure().addLayoutListener(controller);

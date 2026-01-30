@@ -157,4 +157,9 @@ public class DirImportStructureProvider implements ILeveledImportStructureProvid
         return false;
     }
 
+	@Override
+	public void close() throws Exception {
+		closeArchive();
+	}
+
 }

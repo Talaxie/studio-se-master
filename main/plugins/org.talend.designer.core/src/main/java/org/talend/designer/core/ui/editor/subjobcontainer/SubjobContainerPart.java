@@ -35,7 +35,6 @@ import org.eclipse.gef.NodeEditPart;
 import org.eclipse.gef.Request;
 import org.eclipse.gef.SnapToGrid;
 import org.eclipse.gef.SnapToHelper;
-import org.eclipse.gef.editparts.AbstractGraphicalEditPart;
 import org.eclipse.gef.requests.SelectionRequest;
 import org.eclipse.gef.rulers.RulerProvider;
 import org.eclipse.ui.IViewPart;
@@ -181,8 +180,8 @@ public class SubjobContainerPart extends AbstractSwtGraphicalEditPart
         String prop = evt.getPropertyName();
         if (SubjobContainer.UPDATE_SUBJOB_CONTENT.equals(prop)) {
             refresh();
-            List<AbstractGraphicalEditPart> childrens = getChildren();
-            for (AbstractGraphicalEditPart part : childrens) {
+            List<? extends GraphicalEditPart> childrens = getChildren();
+            for (GraphicalEditPart part : childrens) {
                 part.refresh();
             }
         } else if (SubjobContainer.UPDATE_SUBJOB_CONNECTIONS.equals(prop)) {

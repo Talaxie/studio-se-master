@@ -14,7 +14,6 @@ package org.talend.designer.core.ui.editor.palette;
 
 import org.eclipse.draw2d.Figure;
 import org.eclipse.draw2d.IFigure;
-import org.eclipse.gef.internal.ui.palette.PaletteColorUtil;
 import org.eclipse.gef.internal.ui.palette.editparts.GroupEditPart;
 import org.eclipse.gef.palette.PaletteContainer;
 
@@ -36,8 +35,7 @@ public class TalendGroupEditPart extends GroupEditPart {
     public IFigure createFigure() {
         Figure figure = new Figure();
         figure.setOpaque(true);
-        // figure.setBackgroundColor(ColorConstants.blue);
-        figure.setBackgroundColor(PaletteColorUtil.WIDGET_LIST_BACKGROUND);
+		figure.setBackgroundColor(getViewer().getColorProvider().getListBackground());
         return figure;
     }
 

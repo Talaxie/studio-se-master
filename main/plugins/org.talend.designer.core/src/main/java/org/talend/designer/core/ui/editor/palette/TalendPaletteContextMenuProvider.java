@@ -215,10 +215,9 @@ public class TalendPaletteContextMenuProvider extends PaletteContextMenuProvider
             List list = paletteViewer.getSelectedEditParts();
             PaletteEntry element = (PaletteEntry) ((EditPart) list.get(0)).getModel();
             Project project = null;
-            if (element instanceof TalendPaletteDrawer) {
+            if (element instanceof TalendPaletteDrawer d) {
+            	List<TalendPaletteDrawer> eleList = d.getChildren().stream().filter(TalendPaletteDrawer.class::isInstance).map(TalendPaletteDrawer.class::cast).toList();
 
-                List<TalendPaletteDrawer> eleList = new ArrayList<TalendPaletteDrawer>(
-                        ((TalendPaletteDrawer) element).getChildren());
                 addListNotes(eleList, project, paletteViewer);
             } else if (element instanceof CombinedTemplateCreationEntry) {
                 addNotes((CombinedTemplateCreationEntry) element, project, paletteViewer);
@@ -254,10 +253,9 @@ public class TalendPaletteContextMenuProvider extends PaletteContextMenuProvider
             List list = paletteViewer.getSelectedEditParts();
             PaletteEntry element = (PaletteEntry) ((EditPart) list.get(0)).getModel();
             Project project = null;
-            if (element instanceof TalendPaletteDrawer) {
+            if (element instanceof TalendPaletteDrawer d) {
 
-                List<TalendPaletteDrawer> eleList = new ArrayList<TalendPaletteDrawer>(
-                        ((TalendPaletteDrawer) element).getChildren());
+                List<TalendPaletteDrawer> eleList = d.getChildren().stream().filter(TalendPaletteDrawer.class::isInstance).map(TalendPaletteDrawer.class::cast).toList();
                 removeListNotes(eleList, project, paletteViewer);
             } else if (element instanceof CombinedTemplateCreationEntry) {
                 removeNotes((CombinedTemplateCreationEntry) element, project, paletteViewer);
