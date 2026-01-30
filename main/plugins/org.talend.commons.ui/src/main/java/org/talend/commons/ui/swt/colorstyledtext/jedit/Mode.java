@@ -17,9 +17,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
-import org.apache.regexp.RE;
-import org.apache.regexp.RESyntaxException;
 import org.talend.commons.ui.runtime.exception.ExceptionHandler;
 import org.talend.commons.ui.runtime.i18n.Messages;
 
@@ -86,7 +86,7 @@ public class Mode {
 
     protected String[] contentTypes;
 
-    protected RE re;
+    protected Pattern re;
 
     protected Map delegates;
 
@@ -159,7 +159,7 @@ public class Mode {
         if (re == null) {
             createRE();
         }
-        return re.match(aFilename);
+        return re.matcher(aFilename).matches();
     }
 
     public Map getDelegates() {
@@ -169,10 +169,10 @@ public class Mode {
     private void createRE() {
         try {
             if (filenameGlob == null) {
-                re = new RE(filename);
+                re = Pattern.compile(filename);
             }
             if (filenameGlob == null) {
-                re = new RE(filename + "$"); //$NON-NLS-1$
+                re = Pattern.compile(filename + "$"); //$NON-NLS-1$
                 return;
             }
             StringBuffer buf = new StringBuffer();
@@ -213,8 +213,8 @@ public class Mode {
                 }
             }
             buf.append('$');
-            re = new RE(buf.toString());
-        } catch (RESyntaxException e) {
+            re = Pattern.compile(buf.toString());
+        } catch (PatternSyntaxException e) {
             // e.printStackTrace();
             ExceptionHandler.process(e);
         }

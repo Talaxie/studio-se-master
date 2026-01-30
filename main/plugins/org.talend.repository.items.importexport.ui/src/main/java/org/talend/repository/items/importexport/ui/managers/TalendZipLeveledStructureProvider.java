@@ -185,6 +185,11 @@ public class TalendZipLeveledStructureProvider implements ILeveledImportStructur
     public ZipFile getZipFile() {
         return zipFile;
     }
+    
+    @Override
+    public void close() throws Exception {
+    	closeArchive();
+    }
 
     @Override
     public boolean closeArchive() {

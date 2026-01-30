@@ -75,7 +75,7 @@ public class DesignerMavenPlugin implements BundleActivator {
             MavenPluginActivator m2eDefault = MavenPluginActivator.getDefault();
             BundleContext bundleContext = m2eDefault.getBundle().getBundleContext();
             ServiceRegistration<URLStreamHandlerService> registerService = bundleContext
-                    .registerService(URLStreamHandlerService.class, new MvnProtocolHandlerService(), properties);
+                    .registerService(URLStreamHandlerService.class, new MvnProtocolHandlerService(m2eDefault.getMaven(), bundleContext), properties);
             Field declaredField = m2eDefault.getClass().getDeclaredField("protocolHandlerService");
             declaredField.setAccessible(true);
             declaredField.set(m2eDefault, registerService);

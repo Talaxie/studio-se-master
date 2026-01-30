@@ -241,7 +241,7 @@ public class ComponentPaletteUtilities {
      */
     private static void recordEmptyDrawer(PaletteEntry entry) {
         if (entry instanceof PaletteRoot) {
-            List<PaletteEntry> entries = ((PaletteRoot) entry).getChildren();
+            List<? extends PaletteEntry> entries = ((PaletteRoot) entry).getChildren();
             for (PaletteEntry paletteEntry : entries) {
                 if (paletteEntry instanceof PaletteDrawer) {
                     recordEmptyDrawer(paletteEntry);
@@ -267,7 +267,7 @@ public class ComponentPaletteUtilities {
      */
     private static void markEmptyDrawer(PaletteEntry entry) {
         if (entry instanceof PaletteRoot) {
-            List<PaletteEntry> entries = ((PaletteRoot) entry).getChildren();
+            List<? extends PaletteEntry> entries = ((PaletteRoot) entry).getChildren();
             for (PaletteEntry paletteEntry : entries) {
                 if (paletteEntry instanceof PaletteDrawer) {
                     markEmptyDrawer(paletteEntry);

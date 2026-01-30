@@ -20,7 +20,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
-import org.apache.xerces.jaxp.SAXParserFactoryImpl;
 import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EFactory;
 import org.eclipse.emf.ecore.EObject;
@@ -77,7 +76,7 @@ public class TalendXMIResource extends XMIResourceImpl {
              */
             @Override
             protected SAXParser makeParser() throws ParserConfigurationException, SAXException {
-                final SAXParserFactory saxParserFactory = new SAXParserFactoryImpl();
+                final SAXParserFactory saxParserFactory = SAXParserFactory.newInstance();
                 // make sure the namespace for all elements when parse
                 saxParserFactory.setNamespaceAware(true);
                 saxParserFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
