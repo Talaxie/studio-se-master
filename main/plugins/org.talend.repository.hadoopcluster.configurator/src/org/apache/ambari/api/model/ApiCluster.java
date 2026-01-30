@@ -12,7 +12,7 @@
 // ============================================================================
 package org.apache.ambari.api.model;
 
-import javax.xml.bind.annotation.XmlElement;
+import jakarta.xml.bind.annotation.XmlElement;
 
 import com.google.common.base.MoreObjects;
 

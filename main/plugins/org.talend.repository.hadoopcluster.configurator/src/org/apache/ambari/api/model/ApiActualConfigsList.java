@@ -14,7 +14,7 @@ package org.apache.ambari.api.model;
 
 import java.util.List;
 
-import javax.xml.bind.annotation.XmlElement;
+import jakarta.xml.bind.annotation.XmlElement;
 
 /**
  * created by bchen on Jun 10, 2015 Detailled comment
