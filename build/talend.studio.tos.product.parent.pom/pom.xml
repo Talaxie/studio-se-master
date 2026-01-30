@@ -107,8 +107,20 @@
                             <goal>materialize-products</goal>
                         </goals>
                     </execution>
+					<execution>
+						<id>archive-products</id>
+						<phase>package</phase>
+						<goals>
+							<goal>archive-products</goal>
+						</goals>
+					</execution>
                 </executions>
                 <configuration>
+					<formats>
+						<macosx>tar.gz</macosx>
+						<linux>tar.gz</linux>
+						<win>zip</win>
+					</formats>
                     <products>
                         <product>
                             <!--We need to specify this product otherwise on Mac the build fails because of a .DS_Store found at the same level that the prodcut make the build fail.-->
@@ -131,22 +143,6 @@
                         </goals>
                         <configuration>
                             <artifactItems>
-                                <artifactItem>
-                                    <groupId>${project.groupId}</groupId>
-                                    <artifactId>eclipse-launcher-talaxie-binaries</artifactId>
-                                    <version>8.0.2</version>
-                                    <type>zip</type>
-                                    <overWrite>true</overWrite>
-                                    <outputDirectory>${studio.dir}</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>${project.groupId}</groupId>
-                                    <artifactId>eclipse-launcher-mac-talaxie-${launcher.prefix}</artifactId>
-                                    <version>8.0.2</version>
-                                    <type>zip</type>
-                                    <overWrite>true</overWrite>
-                                    <outputDirectory>${studio.dir}</outputDirectory>
-                                </artifactItem>
                                 <artifactItem>
                                     <groupId>${project.groupId}</groupId>
                                     <artifactId>tos-about-files</artifactId>
@@ -331,76 +327,76 @@
                             <goal>run</goal>
                         </goals>
                     </execution>
-                    <execution>
-                        <!-- Unzip launchers and prepare ini files from templates -->
-                        <id>copy-launchers</id>
-                        <phase>package</phase>
-                        <configuration>
-                            <target>
-                                <echo>version.full=${version.full}</echo>
-                                <taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="maven.plugin.classpath" />
-                                <move todir="${studio.dir}">
-                                    <fileset dir="${studio.dir}">
-                                        <include name="*" />
-                                    </fileset>
-                                    <dirset dir="${studio.dir}">
-                                        <include name="*" />
-                                    </dirset>
-                                    <mapper>
-                                        <mapper type="regexp" from="(.*)launcher(.*)" to="\1${launcher.prefix}\2" />
-                                    </mapper>
-                                </move>
-                                <ac:for xmlns:ac="antlib:net.sf.antcontrib" list="linux-gtk-x86_64,linux-gtk-aarch64,win-x86_64" param="platform">
-                                    <sequential>
-                                        <copy tofile="${studio.dir}/${launcher.prefix}-@{platform}.ini" file="${project.basedir}/launcher_64.ini" />
-                                    </sequential>
-                                </ac:for>
-                                <copy tofile="${studio.dir}/${launcher.prefix}-macosx-cocoa.ini" file="${project.basedir}/launcher_macosx.ini" />
-                                <property name="launcher.name" value="${product.name}" />
-                                <property name="launcher.info" value="${mac.launcher.info}" />
-                                <chmod dir="${studio.dir}" perm="755" includes="${launcher.prefix}*" verbose="true" />
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <!-- Generated file artifacts.xml is currently unused, delete manually -->
-                        <id>delete-p2-build-generated-files</id>
-                        <phase>package</phase>
-                        <configuration>
-                            <target>
-                                <delete>
-                                    <fileset dir="${studio.dir}">
-                                        <include name="artifacts.xml" />
-                                    </fileset>
-                                </delete>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <!-- Create final product ZIP -->
-                        <id>zip-product</id>
-                        <phase>package</phase>
-                        <configuration>
-                            <target>
-                                <echo>product.timestamp = ${product.timestamp}</echo>
-                                <move file="${studio.dir}" tofile="${studio.dir}/../${product.final.name}" />
-                                <zip destfile="${project.build.directory}/products/${product.final.name}.zip">
-                                    <zipfileset filemode="755" dir="${studio.dir}/..">
-                                        <include name="${product.final.name}/**/**" />
-                                    </zipfileset>
-                                </zip>
-                            </target>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
+<!--                    <execution>-->
+<!--                         Unzip launchers and prepare ini files from templates -->
+<!--                        <id>copy-launchers</id>-->
+<!--                        <phase>package</phase>-->
+<!--                        <configuration>-->
+<!--                            <target>-->
+<!--                                <echo>version.full=${version.full}</echo>-->
+<!--                                <taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="maven.plugin.classpath" />-->
+<!--                                <move todir="${studio.dir}">-->
+<!--                                    <fileset dir="${studio.dir}">-->
+<!--                                        <include name="*" />-->
+<!--                                    </fileset>-->
+<!--                                    <dirset dir="${studio.dir}">-->
+<!--                                        <include name="*" />-->
+<!--                                    </dirset>-->
+<!--                                    <mapper>-->
+<!--                                        <mapper type="regexp" from="(.*)launcher(.*)" to="\1${launcher.prefix}\2" />-->
+<!--                                    </mapper>-->
+<!--                                </move>-->
+<!--                                <ac:for xmlns:ac="antlib:net.sf.antcontrib" list="linux-gtk-x86_64,linux-gtk-aarch64,win-x86_64" param="platform">-->
+<!--                                    <sequential>-->
+<!--                                        <copy tofile="${studio.dir}/${launcher.prefix}-@{platform}.ini" file="${project.basedir}/launcher_64.ini" />-->
+<!--                                    </sequential>-->
+<!--                                </ac:for>-->
+<!--                                <copy tofile="${studio.dir}/${launcher.prefix}-macosx-cocoa.ini" file="${project.basedir}/launcher_macosx.ini" />-->
+<!--                                <property name="launcher.name" value="${product.name}" />-->
+<!--                                <property name="launcher.info" value="${mac.launcher.info}" />-->
+<!--                                <chmod dir="${studio.dir}" perm="755" includes="${launcher.prefix}*" verbose="true" />-->
+<!--                            </target>-->
+<!--                        </configuration>-->
+<!--                        <goals>-->
+<!--                            <goal>run</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                    <execution>-->
+<!--                         Generated file artifacts.xml is currently unused, delete manually -->
+<!--                        <id>delete-p2-build-generated-files</id>-->
+<!--                        <phase>package</phase>-->
+<!--                        <configuration>-->
+<!--                            <target>-->
+<!--                                <delete>-->
+<!--                                    <fileset dir="${studio.dir}">-->
+<!--                                        <include name="artifacts.xml" />-->
+<!--                                    </fileset>-->
+<!--                                </delete>-->
+<!--                            </target>-->
+<!--                        </configuration>-->
+<!--                        <goals>-->
+<!--                            <goal>run</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                    <execution>-->
+<!--                         Create final product ZIP -->
+<!--                        <id>zip-product</id>-->
+<!--                        <phase>package</phase>-->
+<!--                        <configuration>-->
+<!--                            <target>-->
+<!--                                <echo>product.timestamp = ${product.timestamp}</echo>-->
+<!--                                <move file="${studio.dir}" tofile="${studio.dir}/../${product.final.name}" />-->
+<!--                                <zip destfile="${project.build.directory}/products/${product.final.name}.zip">-->
+<!--                                    <zipfileset filemode="755" dir="${studio.dir}/..">-->
+<!--                                        <include name="${product.final.name}/**/**" />-->
+<!--                                    </zipfileset>-->
+<!--                                </zip>-->
+<!--                            </target>-->
+<!--                        </configuration>-->
+<!--                        <goals>-->
+<!--                            <goal>run</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
                 </executions>
                 <dependencies>
                     <dependency>
