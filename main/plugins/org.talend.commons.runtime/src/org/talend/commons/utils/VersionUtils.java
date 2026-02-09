@@ -82,7 +82,7 @@ public class VersionUtils {
 
     public static String getDisplayVersion() {
         String version = System.getProperty(STUDIO_VERSION_PROP);
-        if (version == null || "".equals(version.trim())) { //$NON-NLS-1$
+		if (StringUtils.isBlank(version)) { // $NON-NLS-1$
             version = getInternalVersion();
         }
         return version;
@@ -103,7 +103,7 @@ public class VersionUtils {
     }
 
     public static String getInternalVersion() {
-        if (Platform.inDevelopmentMode()) {
+		if (Platform.inDevelopmentMode() && !StringUtils.isBlank(System.getProperty(STUDIO_VERSION_PROP))) {
             String version = getDisplayVersion();
             updateTalendStudioVersionProp(version);
             return version;
