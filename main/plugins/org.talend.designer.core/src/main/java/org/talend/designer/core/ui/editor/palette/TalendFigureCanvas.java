@@ -16,6 +16,8 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.log4j.Logger;
 import org.eclipse.draw2d.FigureCanvas;
@@ -94,8 +96,7 @@ public class TalendFigureCanvas extends FigureCanvas {
     private void setupNewLayoutHook() {
         try {
             // reset the listener of the update manager using reflection
-            Object emptyArray = Array.newInstance(UpdateListener.class, 0);
-            listenersField.set(getLightweightSystem().getUpdateManager(), emptyArray);
+            ((List<?>) listenersField.get(getLightweightSystem().getUpdateManager())).clear();
             // setup our own layout
             getLightweightSystem().getUpdateManager().addUpdateListener(new UpdateListener() {
 

@@ -27,7 +27,6 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.PlatformUI;
 import org.osgi.framework.Bundle;
 import org.talend.commons.ui.runtime.CommonUIPlugin;
-import org.talend.commons.ui.swt.colorstyledtext.ColorManager;
 import org.talend.core.CorePlugin;
 import org.talend.core.PluginChecker;
 import org.talend.core.language.ECodeLanguage;
@@ -40,7 +39,6 @@ import org.talend.designer.core.DesignerPlugin;
 import org.talend.designer.core.model.components.EParameterName;
 import org.talend.designer.core.model.components.EmfComponent;
 import org.talend.designer.core.ui.editor.TalendEditorPaletteFactory;
-import org.talend.designer.core.utils.DesignerColorUtils;
 import org.talend.repository.ui.login.connections.network.NetworkConfiguration;
 
 /**
@@ -184,8 +182,12 @@ public class PreferenceInitializer extends AbstractPreferenceInitializer {
                     public void run() {
                         IPreferenceStore corePluginStore = CorePlugin.getDefault().getPreferenceStore();
                         Font font = new Font(null, "courier", 10, SWT.NONE); //$NON-NLS-1$
+						try {
                         PreferenceConverter.setDefault(corePluginStore, TalendDesignerPrefConstants.MEMO_TEXT_FONT, font.getFontData());
                         PreferenceConverter.setDefault(corePluginStore, TalendDesignerPrefConstants.CONSOLT_TEXT_FONT, font.getFontData());
+						} finally {
+							font.dispose();
+						}
                     }
                 });
             }
