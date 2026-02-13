@@ -474,7 +474,10 @@ public class TalendJetEmitter extends JETEmitter {
         //cmdList.add("-time"); //$NON-NLS-1$
         cmdList.add("-g"); //$NON-NLS-1$
         cmdList.add("-warn:none"); //$NON-NLS-1$
-        cmdList.add('-' + JavaCore.VERSION_1_6);
+		cmdList.add("--release"); //$NON-NLS-1$
+		var javaVersion = JavaUtils.getProjectJavaVersion();
+		var fixedVersion = javaVersion.startsWith("1.") ? javaVersion.substring(2) : javaVersion; //$NON-NLS-1$
+		cmdList.add(fixedVersion);
         cmdList.add("-d"); //$NON-NLS-1$
         cmdList.add(getClassOutputPath(project, javaFile));
 
