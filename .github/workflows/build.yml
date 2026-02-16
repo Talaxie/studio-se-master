@@ -1,0 +1,112 @@
+# .github/workflows/build.yml
+# Builds this repository and other related repositories.
+name: Build
+
+on:
+    push:
+        branches:
+            - eclipseIDE
+            - dev
+    workflow_dispatch:
+        inputs:
+            branch:
+                type: string
+                description: "Branch to build"
+                required: false
+            archiveProducts:
+                type: boolean
+                description: "Archive built product binaries"
+                required: false
+                default: false
+            builtProducts:
+                type: choice
+                description: "Choose product(s) to build"
+                options:
+                    - none
+                    - regular
+                    - all
+                    - tos.bd
+                    - tos.di
+                    - tos.dq
+                    - tos.esb
+                    - tos.all.p2
+                required: false
+                default: regular
+
+jobs:
+    build:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: 📥 Checkout master repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  path: studio-se-master
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 📥 Checkout tcommon-studio-se repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: Talaxie/tcommon-studio-se
+                  path: tcommon-studio-se
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 📥 Checkout tdi-studio-se repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: Talaxie/tdi-studio-se
+                  path: tdi-studio-se
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 📥 Checkout tbd-studio-se repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: Talaxie/tbd-studio-se
+                  path: tbd-studio-se
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 📥 Checkout tesb-studio-se repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: Talaxie/tesb-studio-se
+                  path: tesb-studio-se
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 📥 Checkout tdq-studio-se repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: Talaxie/tdq-studio-se
+                  path: tdq-studio-se
+                  ref: ${{ github.event.inputs.branch || github.ref }}
+
+            - name: 🏗️ Setup Java
+              uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.0.2
+              with:
+                  distribution: temurin
+                  java-version: 21
+                  cache: maven
+
+            - name: ⚙️ Build
+              env:
+                  PROFILE: ${{
+                      inputs.builtProducts == 'none' && 'no-tos-products' ||
+                      inputs.builtProducts == 'regular' && 'default' ||
+                      inputs.builtProducts == 'all' && 'all-tos-products' ||
+                      inputs.builtProducts == 'tos.bd' && 'tos.bd.product' ||
+                      inputs.builtProducts == 'tos.di' && 'tos.di.product' ||
+                      inputs.builtProducts == 'tos.dq' && 'tos.dq.product' ||
+                      inputs.builtProducts == 'tos.esb' && 'tos.esb.product' ||
+                      inputs.builtProducts == 'tos.all.p2' && 'all-tos-products' ||
+                      'default' }}
+              run: |
+                  cd studio-se-master
+                  mnv clean install -DskipTests -P${{ env.PROFILE }}
+
+            - name: 💾 Upload built product binaries
+              if: ${{ inputs.archiveProducts == 'true' && inputs.builtProducts != 'none' }}
+              uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+              with:
+                  name: built-products
+                  retention-days: 5
+                  path: |
+                    studio-se-master/build/*.product/target/products/*.gz
+                    studio-se-master/build/*.product/target/products/*.zip
