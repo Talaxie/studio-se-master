@@ -85,7 +85,7 @@ public class EsbSeBrandingService extends AbstractTalendBrandingService {
 
     @Override
     public String getProductName() {
-        return "Talend Open Studio";
+		return "Talaxie Open Studio";
     }
 
     @Override
