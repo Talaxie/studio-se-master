@@ -86,7 +86,7 @@ public class HortonBrandingService extends AbstractTalendBrandingService {
     }
 
     public String getProductName() {
-        return "Talend Open Studio";
+        return "Talaxie Open Studio";
     }
 
     public String getOptionName() {
