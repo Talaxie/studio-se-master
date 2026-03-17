@@ -116,7 +116,7 @@ public class TOPBrandingService extends AbstractCommonBrandingService {
 
     @Override
     public String getProductName() {
-        return "Talend Open Studio"; //$NON-NLS-1$
+        return "Talaxie Open Studio"; //$NON-NLS-1$
     }
 
     @Override
