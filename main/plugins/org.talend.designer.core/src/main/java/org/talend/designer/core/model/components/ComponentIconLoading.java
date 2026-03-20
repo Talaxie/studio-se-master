@@ -57,7 +57,10 @@ public class ComponentIconLoading {
     }
 
     public ImageDescriptor getImage32() {
-        ImageDescriptor image32 = getImage(ComponentFilesNaming.getInstance().getIcon32FileName(folder.getName()));
+        ImageDescriptor image32 = getImageSvg(ComponentFilesNaming.getInstance().getIcon32SvgFileName(folder.getName()));
+        if (image32 == null) {
+            image32 = getImage(ComponentFilesNaming.getInstance().getIcon32FileName(folder.getName()));
+        }
         registry.put(folder.getName() + "_32", image32);
         return image32;
     }
@@ -101,6 +104,20 @@ public class ComponentIconLoading {
         }
         registry.put(folder.getName() + "_16", image16);
         return image16;
+    }
+
+    private ImageDescriptor getImageSvg(String name) {
+        try {
+            File imageFile = new File(folder, name);
+            if (imageFile.exists()) {
+                return ImageDescriptor.createFromURL(imageFile.toURI().toURL());
+            } else {
+                return null;
+            }
+        } catch (MalformedURLException e) {
+            ExceptionHandler.process(new SystemException("Cannot load svg component icon " + name, e)); //$NON-NLS-1$
+            return null;
+        }
     }
 
     private ImageDescriptor getImage(String name) {

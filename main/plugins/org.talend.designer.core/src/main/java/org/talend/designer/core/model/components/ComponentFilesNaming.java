@@ -71,6 +71,10 @@ public final class ComponentFilesNaming implements IComponentFileNaming {
         return filePrefix + "_" + codePart + "." + languageSuffix + "jet"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
     }
 
+    public String getIcon32SvgFileName(String componentName) {
+        return componentName + "_icon32.svg"; //$NON-NLS-1$
+    }
+
     public String getIcon32FileName(String componentName) {
         return componentName + "_icon32.png"; //$NON-NLS-1$
     }
