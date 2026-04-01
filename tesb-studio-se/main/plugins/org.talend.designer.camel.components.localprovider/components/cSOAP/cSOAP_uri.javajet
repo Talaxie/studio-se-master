@@ -1,0 +1,105 @@
+<%@ jet 
+%>
+<%
+// included in header_route.javajet
+// available variables :
+// INode node;
+// String cid;
+// String componentName;
+// NodeParamsHelper helper;
+// return values:
+// String uri = ""; generate the endpoint uri.
+// String statements = null; generate the statements before wrapping endpoint uri.
+
+String url = ElementParameterParser.getValue(node, "__ADDRESS__").trim();
+
+String dataformat = ElementParameterParser.getValue(node, "__DATAFORMAT__");
+
+boolean useServiceRegistry = helper.getVisibleBoolParam("__ENABLE_REGISTRY__");
+if(!isStudioEEVersion || "RAW".equals(dataformat) || "CXF_MESSAGE".equals(dataformat)){
+	useServiceRegistry = false;
+}
+
+boolean useSecurity = helper.getVisibleBoolParam("__ENABLE_SECURITY__");
+if(useServiceRegistry || "RAW".equals(dataformat) || "CXF_MESSAGE".equals(dataformat)){
+	useSecurity = false;
+}
+
+List<? extends IConnection> conns = node.getIncomingConnections();
+if ("true".equals(ElementParameterParser.getValue(node, "__ENABLE_SL__")) 
+		&&  (!useServiceRegistry)) {
+	if (!conns.isEmpty()) {
+		// consumer role
+		url = "\"locator://locator/\"";
+	}
+}
+
+String serviceType = ElementParameterParser.getValue(node, "__SERVICE_TYPE__");
+
+StringBuilder sb = new StringBuilder();
+sb.append("\"cxf://\"+").append(url);
+sb.append("+\"?dataFormat=" + dataformat + "\"");
+if("PAYLOAD".equals(dataformat)){
+	sb.append("+\"&allowStreaming="+ElementParameterParser.getValue(node, "__ALLOW_STREAMING__")+"\"");
+}
+if ("true".equals(ElementParameterParser.getValue(node, "__LOG_MESSAGES__"))) {
+	sb.append("+\"&loggingFeatureEnabled=true\"");
+}
+
+if ("wsdlURL".equals(serviceType)) {
+	if(!useServiceRegistry){
+		sb.append("+\"&" + serviceType + "=\"");
+		//http://jira.talendforge.org/browse/TESB-6226
+        final String filePath;
+		if("file".equals(ElementParameterParser.getValue(node, "__WSDL_TYPE__"))){
+		    filePath =  ElementParameterParser.getValue(node, "__WSDL_FILE__");
+		}else{
+			filePath = "getClass().getResource(\"/"
+			    + org.talend.core.model.utils.JavaResourcesHelper.getResouceClasspath(
+			        ElementParameterParser.getValue(node, "__WSDL_FILE_REPO__"),
+			        ElementParameterParser.getValue(node, "__ROUTE_RESOURCE_TYPE_VERSION__"))
+			    + "\").toString()";
+		}
+		sb.append("+").append(filePath.replaceAll("\\\\","/"));
+	} else {
+		sb.append("+\"&wsdlURL=\"");
+	}
+} else {
+	sb.append("+\"&" + serviceType + "=\"");
+	sb.append("+" + ElementParameterParser.getValue(node, "__SERVICE_CLASS__"));
+}
+
+
+
+
+String serviceName = helper.getVisibleStringParam("__SERVICE_NAME__").trim();
+if(!serviceName.isEmpty() && !serviceName.equals("\"\"")) {
+	sb.append("+\"&serviceName=\"+").append(serviceName);
+}
+String portName = helper.getVisibleStringParam("__PORT_NAME__").trim();
+if(!portName.isEmpty() && !portName.equals("\"\"")) {
+	sb.append("+\"&endpointName=\"+").append(portName);
+}
+String operationName = helper.getVisibleStringParam("__OPERATION_NAME__").trim();
+if(!operationName.isEmpty() && !operationName.equals("") && !operationName.equals("\"\"") ) {
+	sb.append("+\"&defaultOperationNamespace=\"+javax.xml.namespace.QName.valueOf(").append(operationName).append(").getNamespaceURI()")
+	.append("+\"&defaultOperationName=\"+javax.xml.namespace.QName.valueOf(").append(operationName).append(").getLocalPart()");
+}
+
+List<Map<String, String>> tableValues = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__ADVARGUMENTS__");
+for (Map<String, String> map : tableValues) {
+	String argName = map.get("NAME").trim();
+	String argValue = map.get("VALUE").trim();
+	sb.append("+\"&\"+" + argName + "+\"=\"+" + argValue);
+}
+
+if(!conns.isEmpty()){
+	sb.append("+\"&headerFilterStrategy=#CXF_PAYLOAD_HEADER_FILTER\"");
+	sb.append("+\"&properties.id=\"+\"");
+	sb.append(node.getUniqueName());
+	sb.append("\"");
+}else if(useServiceRegistry || (useSecurity && "SAML".equals(ElementParameterParser.getValue(node, "__SECURITY_TYPE__")))) {
+	sb.append("+\"&cxfBinding=#DEFAULT_CXF_BINDING\"");
+}
+uri = sb.toString();
+%>

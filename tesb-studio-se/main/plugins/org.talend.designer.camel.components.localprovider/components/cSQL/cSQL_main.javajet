@@ -1,0 +1,65 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    org.talend.core.model.components.IComponent
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+  String cid = node.getUniqueName();
+	boolean asProductor = !node.getIncomingConnections().isEmpty();
+	String useSQLfromBody = ElementParameterParser.getValue(node, "__SQL_FROM_BODY__");
+	String dataSource = ElementParameterParser.getValue(node, "__CONNECTION_FACOTRY_CONFIGURATION__");
+
+	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+//  http://jira.talendforge.org/browse/TESB-5241
+	/*
+   	 * change to use label + unique to make it unique but readable
+   	 */
+//	IElementParameter param = node.getElementParameter("LABEL");
+//	if(param != null && !"__UNIQUE_NAME__".equals(param.getValue())){
+//		cid = (String)param.getValue()+"_"+cid;	
+//	}
+	builder.setComponent("sql");
+	builder.useDoubleSlash(false);
+	if ("true".equals(useSQLfromBody)) {
+		builder.addParam("useMessageBodyForSql", useSQLfromBody);
+		builder.setName("\"body_placeholder\"");
+	} else {
+		String query = ElementParameterParser.getValue(node, "__QUERY__");
+		query = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(query);
+		query = query.replace("\\n", "");
+		builder.setName(query);
+	}
+	builder.addParam("dataSource", "\"#" + dataSource + "\"");
+	
+	boolean hasOptions = false;
+	List<Map<String, String>> tableValues = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__URI_OPTIONS__");
+	for (Map<String, String> map : tableValues) {
+		String argName = map.get("NAME").trim();
+		String argValue = map.get("VALUE").trim();
+		if(argName.startsWith("\"") && argName.endsWith("\"") && argName.length() >= 2) {
+			argName = argName.substring(1, argName.length() - 1);
+		}
+		builder.addParam(argName, argValue);	
+	}
+	
+	String uri = builder.build();
+	if(asProductor) {
+%>
+			.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>

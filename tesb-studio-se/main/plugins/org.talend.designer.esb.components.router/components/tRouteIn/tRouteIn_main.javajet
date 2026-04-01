@@ -1,0 +1,122 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory    
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.ProcessUtils
+
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode) codeGenArgument.getArgument();
+	INode routeInputNode = node.getProcess().getNodesOfType("tRouteInput").get(0);
+	String cid = routeInputNode.getUniqueName();
+	cid = cid.replaceAll("_In", "");
+	
+String nodeLabel = node.getLabel();
+if(nodeLabel == null || nodeLabel.contains(cid)){
+	nodeLabel = cid;
+	
+}
+	
+List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        routeInputNode,
+        "__VALUES__"
+    );
+	
+	
+List< ? extends IConnection> conns = routeInputNode.getOutgoingSortedConnections();
+String firstConnName = "";	
+
+for(IConnection conn : conns) {
+    if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+ 		firstConnName = conn.getName();
+ 		break;
+    }
+}
+
+List<IMetadataTable> metadatas = routeInputNode.getMetadataList();
+IMetadataTable metadata = null;
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	metadata = metadatas.get(0);    
+}
+%>
+	
+	<%
+	for (IConnection conn : conns) {
+		if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {%>
+			<%="// NO DATA CONNECTION CATEGORY " + conn.getLineStyle().getName()%>
+			//<%="// " + firstConnName%>
+<%		}
+	}
+	%>
+
+    <%
+    for(IConnection conn : conns) {
+        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        	boolean hasJudgedHeaders = false;
+        	StringBuilder headersNotNullSb = new StringBuilder();
+        	StringBuilder headersIsNullSb = new StringBuilder();
+        	headersIsNullSb.append("if(routerExchange == null){");
+        	headersNotNullSb.append("}else{");
+			List<IMetadataColumn> columns = metadata.getListColumns();
+			if(columns!=null&&columns.size()>0){
+				for(Map<String, String> tableValue : tableValues) {
+				   	String label = tableValue.get("SCHEMA_COLUMN");
+		            String value = tableValue.get("VALUE");
+		            IMetadataColumn column = metadata.getColumn(label);
+		            String talendType = column.getTalendType();
+		            JavaType javaType = JavaTypesManager.getJavaTypeFromId(talendType);
+		            String typeToGenerate = JavaTypesManager.getTypeToGenerate(javaType, true);
+		            if(value == null || value.length() == 0){ //use the default value
+	            		String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+	            		%>        	            	
+		            		<%=conn.getName()%>.<%=label %> = <%=defaultValue %>;        	            	
+		            	<%
+		            }else {
+		            	if("id_Document".equals(talendType)){
+		            		headersNotNullSb.append(conn.getName());
+		            		headersNotNullSb.append(".");
+		            		headersNotNullSb.append(label);
+		            		headersNotNullSb.append(" = ParserUtils.parseTo_Document(org.apache.camel.builder.SimpleBuilder.simple(");
+		            		headersNotNullSb.append(value);
+		            		headersNotNullSb.append(").evaluate(routerExchange, String.class));\n");
+		            	}else{
+		            		headersNotNullSb.append(conn.getName());
+		            		headersNotNullSb.append(".");
+		            		headersNotNullSb.append(label);
+		            		headersNotNullSb.append(" = org.apache.camel.builder.SimpleBuilder.simple(");
+		            		headersNotNullSb.append(value);
+		            		headersNotNullSb.append(").evaluate(routerExchange, ");
+		            		headersNotNullSb.append(typeToGenerate);
+		            		headersNotNullSb.append(".class);\n");
+		            	}
+		            	headersIsNullSb.append("System.err.println(\"ERROR: No input for ");
+		            	headersIsNullSb.append(ProcessUtils.escapeJava(nodeLabel));
+		            	headersIsNullSb.append(", You may need to start it Via a Route instead of running it directly!\");");
+		            	headersIsNullSb.append(conn.getName());
+		            	headersIsNullSb.append(" = null");
+		            	//headersIsNullSb.append(".");
+		            	//headersIsNullSb.append(label);
+		            	//headersIsNullSb.append(JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault()));
+		            	headersIsNullSb.append(";\n");
+		            }
+	            }
+	            headersNotNullSb.append("}");
+%>
+        	<%=headersIsNullSb.toString()%><%=headersNotNullSb.toString()%>
+<%
+            }
+    }
+}
+%>

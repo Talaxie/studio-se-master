@@ -1,0 +1,498 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators.common"
+	imports="
+		java.util.Vector
+
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.ElementParameterParser
+	"
+	class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+if (!process.getNodesOfType("tESBProviderRequest").isEmpty()) { // if ESB provider job
+
+	// Web Service Provider
+	INode tESBProviderRequestNode = process.getNodesOfType("tESBProviderRequestLoop").get(0);
+	String cid = tESBProviderRequestNode.getUniqueName();
+	cid = cid.replaceAll("_Loop", "");
+
+	String projectName = codeGenArgument.getCurrentProjectName();
+	String processName = process.getName();
+
+	String endpointUrl = ElementParameterParser.getValue(tESBProviderRequestNode, "__ENDPOINT_URI__");
+
+	String wsdlLocation = ElementParameterParser.getValue(tESBProviderRequestNode, "__WSDL_LOCATION__");
+
+	String serviceNS = ElementParameterParser.getValue(tESBProviderRequestNode, "__SERVICE_NS__");
+	String serviceName = ElementParameterParser.getValue(tESBProviderRequestNode, "__SERVICE_NAME__");
+	if ("--DEFAULT--".equals(serviceName)) {
+		serviceName = projectName + "_" + processName;
+	}
+
+	String portNS = ElementParameterParser.getValue(tESBProviderRequestNode, "__PORT_NS__");
+	String portName = ElementParameterParser.getValue(tESBProviderRequestNode, "__PORT_NAME__");
+	if ("--DEFAULT--".equals(portName)) {
+		portName = serviceName + "_Port";
+	}
+
+	String operationName = ElementParameterParser.getValue(tESBProviderRequestNode, "__OPERATION_NAME__");
+	String operationNS = ElementParameterParser.getValue(tESBProviderRequestNode, "__OPERATION_NS__");
+	if (null == operationNS || operationNS.isEmpty()) {
+		operationNS = serviceNS;
+	}
+
+	String communicationStyle = ElementParameterParser.getValue(tESBProviderRequestNode, "__COMMUNICATION_STYLE__");
+	boolean isOneWay = false;
+	if (null != communicationStyle && !communicationStyle.isEmpty()) {
+		isOneWay = "one-way".equals(communicationStyle);
+	} else {
+		isOneWay = process.getNodesOfType("tESBProviderFault").isEmpty()
+			&& process.getNodesOfType("tESBProviderResponse").isEmpty();
+	}
+
+	Boolean logMessages = Boolean.valueOf(ElementParameterParser.getValue(tESBProviderRequestNode, "__LOG_MESSAGES__"));
+	String exchangeTimeout = ElementParameterParser.getValue(tESBProviderRequestNode, "__EXCHANGE_TIMEOUT__");
+    String maxParallelRequests = ElementParameterParser.getValue(tESBProviderRequestNode, "__MAX_PARALLEL_REQUESTS__");
+    String requestsProcessingTimeout = ElementParameterParser.getValue(tESBProviderRequestNode, "__REQUEST_PROCESSING_TIMEOUT__");
+%>
+	public ESBEndpointInfo getEndpoint() {
+		return new ESBEndpointInfo() {
+			@SuppressWarnings("serial")
+			private java.util.Map<String, Object> props = new java.util.HashMap<String, Object>() {{
+				// "request-response" or "one-way"
+				put("COMMUNICATION_STYLE", "<%=(isOneWay)?"one-way":"request-response"%>");
+				put("dataFormat", "PAYLOAD");
+				put("portName", "{<%=portNS%>}<%=portName%>");
+				put("serviceName", "{<%=serviceNS%>}<%=serviceName%>");
+				put("defaultOperationName", "<%=operationName%>");
+				put("defaultOperationNameSpace", "<%=operationNS%>");
+				put("publishedEndpointUrl", "<%=endpointUrl%>");
+			}};
+
+			public String getEndpointKey() {
+				return "cxf";
+			}
+
+			public String getEndpointUri() {
+				// projectName + "_" + processName
+				return "<%=projectName%>_<%=processName%>";
+			}
+
+			public java.util.Map<String, Object> getEndpointProperties() {
+				return props;
+			}
+		};
+	}
+
+
+
+
+/**
+ * queued message exchange
+ */
+public class QueuedExchangeContextImpl<IN, OUT> {
+
+	/**
+	 * Exchange timeout in seconds
+	 */
+	private static final long EXCHANGE_TIMEOUT = <%=exchangeTimeout%>;
+
+	private final java.util.concurrent.Exchanger<Exception> exceptionExchange =
+		new java.util.concurrent.Exchanger<Exception>();
+	private final java.util.concurrent.CountDownLatch latch =
+		new java.util.concurrent.CountDownLatch(1);
+
+	private final IN input;
+
+	private OUT output = null;
+	private Throwable fault = null;
+
+	public QueuedExchangeContextImpl(IN inMsg) {
+		this.input = inMsg;
+	}
+
+	/**
+	 * Don't forget to call this method when you are done
+	 * with processing of the {@link QueuedExchangeContext}
+	 */
+	public void release() throws Exception {
+		latch.countDown();
+		Exception exception = exceptionExchange.exchange(null, EXCHANGE_TIMEOUT,
+					java.util.concurrent.TimeUnit.SECONDS);
+		if (exception != null) {
+			throw exception;
+		}
+	}
+
+	/**
+	 * This operation have to be called on the Web Service
+	 * thread to send response if required
+	 *
+	 * @throws InterruptedException
+	 */
+	public void completeQueuedProcessing() throws InterruptedException {
+		exceptionExchange.exchange(null);
+	}
+
+	/**
+	 * @throws InterruptedException
+	 */
+	void waitForRelease(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
+		latch.await(timeout, unit);
+	}
+
+	public IN getInputMessage() {
+		return input;
+	}
+
+	public void serveOutputMessage(OUT response) {
+		output = response;
+	}
+
+	public void serveFault(Throwable fault) {
+		this.fault = fault;
+	}
+
+	public boolean isFault() {
+		return fault != null;
+	}
+
+	public OUT getResponse() {
+		return output;
+	}
+
+	public Throwable getFault() {
+		return fault;
+	}
+}
+
+/**
+ * message exchange controller
+ */
+public class QueuedMessageHandlerImpl<IN, OUT> implements ESBProviderCallback {
+	private final int MAX_QUEUE_SIZE = <%=maxParallelRequests%>;
+
+	private final int WAIT_TIMEOUT_SECONDS = <%=requestsProcessingTimeout%>;
+
+	private final java.util.concurrent.BlockingQueue<QueuedExchangeContextImpl<IN, OUT>> queue =
+		new java.util.concurrent.LinkedBlockingQueue<QueuedExchangeContextImpl<IN, OUT>>(MAX_QUEUE_SIZE);
+
+	/**
+	 * This method add a newly created
+	 * {@link QueuedExchangeContextImpl} into the internal
+	 * blocking queue where consumer thread is waiting for it.
+	 * Then it waits until the {@link QueuedExchangeContextImpl}
+	 * will be completed for request-response operations
+	 */
+	public QueuedExchangeContextImpl<IN, OUT> invoke(IN request, boolean wait) {
+		QueuedExchangeContextImpl<IN, OUT> context = new QueuedExchangeContextImpl<IN, OUT>(request);
+		boolean inserted = queue.offer(context);
+		if (!inserted) {
+			try {
+				context.release();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			// context.serveFault("job pool overflow exceed", null);
+			throw new RuntimeException(
+					"Can't queue request, queue size of " + MAX_QUEUE_SIZE + " is exceeded");
+		} else if (wait) {
+			try {
+				context.waitForRelease(WAIT_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+			} catch (InterruptedException ie) {
+				// context.serveFault("job execution timeout", ie);
+				throw new RuntimeException("job execution timeout: " + ie.getMessage());
+			}
+		}
+		return context;
+	}
+
+	QueuedExchangeContextImpl<IN, OUT> currentExchangeContext;
+
+	public IN getRequest() throws ESBJobInterruptedException {
+		currentExchangeContext = null;
+		try {
+			currentExchangeContext = queue.take();
+		} catch (InterruptedException e) {
+			throw new ESBJobInterruptedException("job interrupted", e);
+		}
+		return currentExchangeContext.getInputMessage();
+	}
+
+	public void sendResponse(Object output) {
+		if (null == currentExchangeContext) {
+			throw new RuntimeException("sendResponse() invoked before getRequest()");
+		}
+
+		if (output instanceof Throwable) {
+			// fault
+			currentExchangeContext.serveFault((Throwable) output);
+		} else {
+			// response
+			currentExchangeContext.serveOutputMessage((OUT) output);
+		}
+
+		try {
+			currentExchangeContext.release();
+		} catch (Exception e) {
+			// e.printStackTrace();
+			throw new RuntimeException(e);
+		}
+	}
+}
+
+/**
+ * web service provider implementation
+ */
+@javax.xml.ws.ServiceMode(value = javax.xml.ws.Service.Mode.PAYLOAD)
+@javax.xml.ws.WebServiceProvider()
+public class ESBProvider_<%=cid%> implements javax.xml.ws.Provider<javax.xml.transform.Source> {
+
+	@javax.annotation.Resource
+	private javax.xml.ws.WebServiceContext context;
+
+	private QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document> messageHandler;
+
+	public ESBProvider_<%=cid%>(QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document> messageHandler) {
+		this.messageHandler = messageHandler;
+	}
+
+<% if (isOneWay) { %>
+	@javax.jws.Oneway()
+<% } %>
+	public javax.xml.transform.Source invoke(javax.xml.transform.Source request) {
+
+		try {
+            java.util.Map<String, Object> esbRequest = new java.util.HashMap<String, Object>();
+            esbRequest.put(ESBProviderCallback.HEADERS_SOAP, context.getMessageContext().get(org.apache.cxf.headers.Header.HEADER_LIST));
+            esbRequest.put(ESBProviderCallback.HEADERS_HTTP, context.getMessageContext().get(javax.xml.ws.handler.MessageContext.HTTP_REQUEST_HEADERS));
+            org.dom4j.Document requestDoc = null;
+            if(request != null) {
+                java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+                org.apache.cxf.staxutils.StaxUtils.copy(request, os);
+                requestDoc = new org.dom4j.io.SAXReader().read(new java.io.ByteArrayInputStream(os.toByteArray()));
+            } else {
+                requestDoc = org.dom4j.DocumentHelper.createDocument();
+                requestDoc.addElement("root", "");
+            }
+            esbRequest.put(ESBProviderCallback.REQUEST, requestDoc);	    
+			QueuedExchangeContextImpl<java.util.Map, org.dom4j.Document> messageExchange = messageHandler.invoke(esbRequest, <%=!isOneWay%>);
+
+<% if (isOneWay) { %>
+			return null;
+<% } else { %>
+			try {
+				if (messageExchange.isFault()) {
+					throw messageExchange.getFault();
+				} else {
+					org.dom4j.Document responseDoc = messageExchange.getResponse();
+					if (null == responseDoc) {
+						throw new RuntimeException("no response provided by Talend job");
+					}
+					// System.out.println("response: " + responseDoc.asXML());
+
+					java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+					new org.dom4j.io.XMLWriter(baos).write(responseDoc);
+					return new javax.xml.transform.stream.StreamSource(
+							new java.io.ByteArrayInputStream(baos.toByteArray()));
+				}
+			} finally {
+				messageExchange.completeQueuedProcessing();
+			}
+<% } %>
+		} catch (RuntimeException ex) {
+			throw ex;
+		} catch (Throwable ex) {
+			ex.printStackTrace();
+			throw new RuntimeException(ex);
+		}
+	}
+}
+
+interface ESBProviderCallbackTalendJobInner extends ESBProviderCallback {
+	void setCustomProperties(java.util.Map<String, String> props);
+	void sendFault(Throwable e);
+	void sendFaultByDefault(Throwable e);
+	void sendBusinessFault(String faultString, org.dom4j.Document faultDetail);
+}
+
+public class ESBProviderCallbackTalendJobWrapper_<%=cid%> implements ESBProviderCallbackTalendJobInner {
+
+	private ESBProviderCallback esbProviderCallback;
+	private java.util.Map<String, String> customProperty;
+
+	public ESBProviderCallbackTalendJobWrapper_<%=cid%>(ESBProviderCallback callback) {
+		esbProviderCallback = callback;
+	}
+
+	public Object getRequest() throws ESBJobInterruptedException {
+		return esbProviderCallback.getRequest();
+	}
+
+	public void setCustomProperties(java.util.Map<String, String> props) {
+		customProperty = props;
+	}
+
+	private void doSendResponse(Object obj){
+		if ((Boolean) globalMap.get("wsRequestReceivedAndResponseSentBack")) {
+			throw new RuntimeException("Send Response failed! Response already sent with current request.");
+		} else {
+			globalMap.put("wsRequestReceivedAndResponseSentBack", true);
+			esbProviderCallback.sendResponse(obj);
+		}
+	}
+
+	public void sendResponse(Object response) {
+		doSendResponse(wrapOutput(response));
+	}
+	public void sendFault(Throwable error) {
+		RuntimeException talendJobError;
+		if (error instanceof RuntimeException) {
+			talendJobError = (RuntimeException) error;
+		} else {
+			String msg = "";
+			if (error != null && error.getMessage() != null) {
+				msg = error.getMessage();
+			}
+			talendJobError = new RuntimeException("Talend job execution error: " + msg, error);
+		}
+		doSendResponse(talendJobError);
+	}
+
+	public void sendFaultByDefault(Throwable error){
+		if (!(Boolean) globalMap.get("wsRequestReceivedAndResponseSentBack")) {
+			sendFault(error);
+		}
+	}
+
+	public void sendBusinessFault(String faultString, org.dom4j.Document faultDetail) {
+		try {
+			org.apache.cxf.interceptor.Fault soapFault = new org.apache.cxf.interceptor.Fault(faultString, (java.util.ResourceBundle) null);
+			soapFault.setFaultCode(new javax.xml.namespace.QName("<%=serviceNS%>", "businessFault"));
+
+			if (null != faultDetail) {
+				// wrap details
+				org.dom4j.Element rootElement = faultDetail.getRootElement();
+				org.dom4j.tree.DefaultElement newRootElement = new org.dom4j.tree.DefaultElement("details");
+				faultDetail.setRootElement(newRootElement);
+				newRootElement.add(rootElement);
+
+				org.w3c.dom.Document faultDetailDom = convertDocument(faultDetail);
+				soapFault.setDetail(faultDetailDom.getDocumentElement());
+			}
+			doSendResponse(wrapOutput(soapFault));
+		} catch (Exception e) {
+			this.sendFault(e);
+		}
+	}
+
+	private org.w3c.dom.Document convertDocument(org.dom4j.Document document) throws Exception{
+		// A special version of DOMWriter that does not write xmlns:foo attributes
+		org.dom4j.io.DOMWriter writer = new org.dom4j.io.DOMWriter() {
+			protected void writeNamespace(org.w3c.dom.Element domElement, org.dom4j.Namespace namespace) {
+				// Do nothing
+			}
+		};
+		return writer.write(document);
+	}
+
+	private Object wrapOutput(Object output) {
+		if (esbProviderCallback instanceof QueuedMessageHandlerImpl) {
+			return output;
+		}
+		return wrapPayload(output);
+	}
+}
+
+class HandlerThread_<%=cid%> extends Thread {
+
+	private org.apache.cxf.endpoint.Server server;
+	QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document> handler;
+
+	String endpointUrl = "<%=endpointUrl%>";
+
+	public HandlerThread_<%=cid%>(QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document> handler) {
+		this.handler = handler;
+	}
+
+	public void run() {
+
+		// test for busy
+		java.net.URI endpointURI = java.net.URI.create(endpointUrl);
+		String host = endpointURI.getHost();
+		try {
+			if (java.net.InetAddress.getByName(host).isLoopbackAddress()) {
+				int port = endpointURI.getPort();
+				if (-1 == port) {
+					port = 80;
+				}
+				java.net.ServerSocket ss = null;
+				try {
+					ss = new java.net.ServerSocket(port);
+				} catch (IOException e) {
+					// rethrow exception
+					throw new IllegalArgumentException(
+							"Cannot start provider with uri: " + endpointUrl + ". Port " + port + " already in use.");
+				} finally {
+					if (ss != null) {
+						try {
+							ss.close();
+						} catch (IOException e) {
+							// ignore
+						}
+					}
+				}
+				try {
+					// ok, let's doublecheck for silent listeners
+					java.net.Socket cs = new java.net.Socket(host, port);
+					// if succeed - somebody silently listening, fail!
+					cs.close();
+					// rethrow exception
+					throw new IllegalArgumentException(
+							"Cannot start provider with uri: " + endpointUrl + ". Port " + port + " already in use.");
+				} catch (IOException e) {
+					//ok, nobody listens, proceed
+				}
+			}
+		} catch (java.net.UnknownHostException e) {
+			// ignore
+		}
+
+		org.apache.cxf.jaxws.JaxWsServerFactoryBean serverFactory = new org.apache.cxf.jaxws.JaxWsServerFactoryBean();
+<% if (null != wsdlLocation && !wsdlLocation.trim().isEmpty()) { %>
+		serverFactory.setWsdlURL("<%=wsdlLocation%>");
+<% } %>
+		serverFactory.setServiceName(new javax.xml.namespace.QName("<%=serviceNS%>", "<%=serviceName%>"));
+		serverFactory.setEndpointName(new javax.xml.namespace.QName("<%=serviceNS%>", "<%=portName%>"));
+		// in case null - WSDL value used
+		serverFactory.setAddress(endpointUrl);
+
+		serverFactory.setServiceBean(new ESBProvider_<%=cid%>(handler));
+		if (<%=logMessages%>) {
+			org.apache.cxf.ext.logging.LoggingFeature loggingFeature = new  org.apache.cxf.ext.logging.LoggingFeature();
+			loggingFeature.addSensitiveProtocolHeaderNames(new java.util.HashSet<>(java.util.Arrays.asList(org.apache.cxf.helpers.HttpHeaderHelper.AUTHORIZATION)));
+			loggingFeature.addSensitiveElementNames(new java.util.HashSet<>(java.util.Arrays.asList("password")));
+			serverFactory.getFeatures().add(loggingFeature);
+		}
+		server = serverFactory.create();
+
+		System.out.println("web service [endpoint: " + endpointUrl + "] published");
+	}
+
+	public void stopEndpoint() {
+		if (null != server) {
+			server.stop();
+			server.destroy();
+			System.out.println("web service [endpoint: " + endpointUrl + "] unpublished");
+		}
+	}
+}
+
+<% } // end if ESB provider job %>

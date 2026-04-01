@@ -1,0 +1,68 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	
+	String resourceURI = ElementParameterParser.getValue(node, "__RESOURCE_URI__");
+	boolean isPollEnrich = "true".equals(ElementParameterParser.getValue(node, "__POLLENRICH__"));
+	boolean isEnrich = "true".equals(ElementParameterParser.getValue(node, "__ENRICH__"));
+	
+	boolean useAggregationStrategy = "true".equals(ElementParameterParser.getValue(node, "__USE_AGG_STRATEGY__"));
+	String aggregationStrategy = ElementParameterParser.getValue(node, "__AGGREGATION_STRATEGY__");
+	
+	boolean specifyTimeout = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_TIMEOUT__"));
+	boolean wait = "true".equals(ElementParameterParser.getValue(node, "__WAIT__"));
+	boolean immediate = "true".equals(ElementParameterParser.getValue(node, "__IMMEDIATE__"));
+	boolean trigger = "true".equals(ElementParameterParser.getValue(node, "__TRIGGER__"));
+	
+	int timeout = 0;
+	
+	if(wait)
+		timeout = -1;
+	else if(immediate)
+		timeout = 0;
+	else
+		timeout = Integer.parseInt(ElementParameterParser.getValue(node, "__TIMEOUT_TRIGGER__"));
+	
+	if(conns.size()>0) {
+		if(isPollEnrich) {
+%>
+			.pollEnrich(<%=resourceURI%>
+<%
+		} else {
+%>
+			.enrich(<%=resourceURI%>
+<%
+		}
+		
+		if(isPollEnrich) {
+			if(specifyTimeout) {
+%>
+				, <%=timeout%>
+<%
+			}
+		}
+		
+		if(useAggregationStrategy) {
+%>
+			, new <%=aggregationStrategy%>()
+<%
+		}
+		
+%>
+			)
+<%
+	}
+%>
+

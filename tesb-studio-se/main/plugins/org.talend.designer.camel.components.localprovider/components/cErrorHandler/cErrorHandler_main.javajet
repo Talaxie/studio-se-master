@@ -1,0 +1,100 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	
+	String errorHandler = ElementParameterParser.getValue(node, "__ERROR_HANDLER__");
+	String deadLetter = ElementParameterParser.getValue(node, "__DEAD_LETTER__");
+	String logHandler = ElementParameterParser.getValue(node, "__LOG_HANDLER__");
+	
+	StringBuilder sb = new StringBuilder();
+	sb.append("errorHandler(");
+	if("true".equals(errorHandler) || "true".equals(deadLetter)){
+		if("true".equals(errorHandler)){
+			sb.append("defaultErrorHandler()");
+		}else if("true".equals(deadLetter)){
+			String deadLetterUri = ElementParameterParser.getValue(node, "__DEAD_LETTER_URI__");
+			sb.append("deadLetterChannel(");
+			sb.append(deadLetterUri);
+			sb.append(")");
+		}
+		String useMaxRedeliveries = ElementParameterParser.getValue(node, "__USE_MAX_REDELIVERIES__");
+		if("true".equals(useMaxRedeliveries)){
+			String maxRedeliveries = ElementParameterParser.getValue(node, "__MAX_REDELIVERIES__");
+			sb.append(".maximumRedeliveries(");
+			sb.append(maxRedeliveries);
+			sb.append(")");
+		}
+		
+		String useRedeliveryDelay = ElementParameterParser.getValue(node, "__USE_REDELIVERY_DELAY__");
+		if("true".equals(useRedeliveryDelay)){
+			String redeliveryDelay = ElementParameterParser.getValue(node, "__REDELIVERY_DELAY__");
+			sb.append(".redeliveryDelay(");
+			sb.append(redeliveryDelay);
+			sb.append(")");
+		}
+		
+		String useRetryAttempLogLevel = ElementParameterParser.getValue(node, "__USE_RETRY_ATTEMP_LOG_LEVEL__");
+		if("true".equals(useRetryAttempLogLevel)){
+			String attempLogLevel = ElementParameterParser.getValue(node, "__RETRY_ATTEMP_LOG_LEVEL__");
+			sb.append(".retryAttemptedLogLevel(");
+			sb.append("org.apache.camel.LoggingLevel.");
+			sb.append(attempLogLevel);
+			sb.append(")");
+		}
+		
+		String asyncDelayedRedelivery = ElementParameterParser.getValue(node, "__ASYNC_DELAYED_REDELIVERY__");
+		if("true".equals(asyncDelayedRedelivery)){
+			sb.append(".asyncDelayedRedelivery()");
+		}
+		
+		String useOriginalMessage = ElementParameterParser.getValue(node, "__USE_ORIGINAL_MESSAGE__");
+		if("true".equals(useOriginalMessage) &&  "true".equals(deadLetter)){
+			sb.append(".useOriginalMessage()");
+		}
+		
+		String moreConfigurations = ElementParameterParser.getValue(node, "__MORE_CONFIGURATION__");
+		if("true".equals(moreConfigurations)){
+			String code = ElementParameterParser.getValue(node, "__CODE__");
+			sb.append(code);
+		}
+	}else if("true".equals(logHandler)){
+		sb.append("deadLetterChannel(\"log:\"");
+		String useLogName = ElementParameterParser.getValue(node, "__USE_LOG_NAME__");
+		if("true".equals(useLogName)){
+			String logName = ElementParameterParser.getValue(node, "__LOG_NAME__");
+			sb.append("+");
+			sb.append(logName);
+		}
+		String useLogLevel = ElementParameterParser.getValue(node, "__USE_LOG_LEVEL__");
+		if("true".equals(useLogLevel)){
+			String logLevel = ElementParameterParser.getValue(node, "__LOG_LEVEL__");
+			sb.append("+\"?level=");
+			sb.append(logLevel);
+		}else{
+			sb.append("+\"?level=ERROR");
+		}
+		sb.append("&showAll=true\")");
+	}
+	sb.append("\n)");
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+		.<%=sb.toString()%>
+<%
+	} else {
+%>
+		<%=sb.toString()%>
+<%
+	}
+%>

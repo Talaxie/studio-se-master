@@ -1,0 +1,137 @@
+<%@ jet skeleton="../common/cLanguage.skeleton"
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String language = ElementParameterParser.getValue(node, "__LANGUAGES__");
+	String expression = ElementParameterParser.getValue(node, "__EXPRESSION__");
+	String useNamespaces = ElementParameterParser.getValue(node, "__USE_NAMESPACES__");
+	
+	if("correlation".equals(language)){
+		language = "simple";
+		expression = "\"${in.header.CamelCxfMessage[CorrelationID]}\", String.class";
+	}
+	
+	boolean useAggregationStrategy = true;
+//	boolean useAggregationStrategy = "true".equals(ElementParameterParser.getValue(node, "__USE_AGGREGATION_STRATEGY__"));
+	String aggregationStrategy = ElementParameterParser.getValue(node, "__AGGREGATION_STRATEGY__");
+	
+	boolean useCompletionSize = "true".equals(ElementParameterParser.getValue(node, "__USE_COMPLETION_SIZE__"));
+	String size = ElementParameterParser.getValue(node, "__SIZE__");
+	
+	boolean useCompletionTimeout = "true".equals(ElementParameterParser.getValue(node, "__USE_COMPLETION_TIMEOUT__"));
+	String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+	
+	boolean useCompletionInterval = "true".equals(ElementParameterParser.getValue(node, "__USE_COMPLETION_INTERVAL__"));
+	String interval = ElementParameterParser.getValue(node, "__INTERVAL__");
+	
+	boolean useCompletionPredicate = "true".equals(ElementParameterParser.getValue(node, "__USE_COMPLETION_PREDICATE__"));
+	String predicate = ElementParameterParser.getValue(node, "__PREDICATE__");
+	
+	boolean useCompletionBatch = "true".equals(ElementParameterParser.getValue(node, "__USE_COMPLETION_BATCH__"));
+	
+	boolean eagerCheckCompletion = "true".equals(ElementParameterParser.getValue(node, "__EAGER_CHECK_COMPLETION__"));
+	boolean closeCorrelation = "true".equals(ElementParameterParser.getValue(node, "__CLOSE_CORRELATION__"));
+	String maxBound = ElementParameterParser.getValue(node, "__MAXIMUM_BOUND__");
+	boolean ignoreInvalidKey = "true".equals(ElementParameterParser.getValue(node, "__IGNORE_INVALID_KEY__"));
+	boolean groupExchange = "true".equals(ElementParameterParser.getValue(node, "__GROUP_EXCHANGES__"));
+	
+	if(groupExchange){
+		useAggregationStrategy = false;
+	}
+	
+	boolean usePersistence = "true".equals(ElementParameterParser.getValue(node, "__USE_PERSISTENCE__"));
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+		String exp = getExpression(language, expression, cid, useNamespaces, "");
+		if(!useAggregationStrategy) {			
+%>
+				.aggregate().<%=exp%>
+<%
+		} else {			
+%>
+			.aggregate(new <%=aggregationStrategy%>()).<%=exp%>
+<%
+		}
+		
+		if(usePersistence) {
+%>
+			.aggregationRepository(repo_<%=cid%>)
+<%
+		}
+		
+		if(useCompletionSize) {
+			if(!("".equals(size)) && size!=null) {
+%>
+				.completionSize(<%=size%>)
+<%
+			}
+		}
+		
+		if(useCompletionTimeout) {
+			if(!("".equals(timeout)) && timeout!=null) {
+%>
+				.completionTimeout(<%=timeout%>)
+<%
+			}
+		}
+		
+		if(useCompletionInterval) {
+			if(!("".equals(interval)) && interval!=null) {
+%>
+				.completionInterval(<%=interval%>)
+<%
+			}
+		}
+		
+		if(useCompletionPredicate) {
+			if(!("".equals(predicate)) && size!=predicate) {
+%>
+				.completionPredicate(<%=predicate%>)
+<%
+			}
+		}
+		
+		if(useCompletionBatch) {
+%>
+			.completionFromBatchConsumer()
+<%
+		}
+		
+		if(eagerCheckCompletion) {
+%>
+			.eagerCheckCompletion()
+<%
+		}
+		
+		if(closeCorrelation) {
+			if(!("".equals(maxBound)) && maxBound!=null) {
+%>
+				.closeCorrelationKeyOnCompletion(<%=maxBound%>)
+<%
+			}
+		}
+		
+		if(ignoreInvalidKey) {
+%>
+			.ignoreInvalidCorrelationKeys()
+<%
+		}
+		
+		if(groupExchange) {
+%>
+			.groupExchanges()
+<%
+		}
+	}
+%>

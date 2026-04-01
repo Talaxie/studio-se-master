@@ -1,0 +1,1757 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators.common"
+	imports="
+		java.util.ArrayList
+		java.util.Arrays
+		java.util.Collections
+		java.util.HashMap
+		java.util.HashSet
+		java.util.List
+		java.util.Map
+		java.util.Set
+		java.util.Vector
+
+		java.util.regex.Matcher
+		java.util.regex.Pattern
+
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.ElementParameterParser
+
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.utils.JavaResourcesHelper
+		org.talend.core.model.process.ProcessUtils
+		java.io.UnsupportedEncodingException
+		java.net.URLEncoder
+	"
+	class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+String jobFolderName = "";
+IProcess baseProcess = ProcessUtils.getTestContainerBaseProcess(process);
+if (baseProcess != null) {
+	jobFolderName = JavaResourcesHelper.getJobFolderName(baseProcess.getName(), baseProcess.getVersion()) + '/';
+}
+jobFolderName = jobFolderName + JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+String jobClassPackageFolder = codeGenArgument.getCurrentProjectName().toLowerCase() + '/' + jobFolderName;
+String packageName = codeGenArgument.getCurrentProjectName().toLowerCase() + '.' + jobFolderName;
+boolean isTestContainer=ProcessUtils.isTestContainer(process);
+String className = isTestContainer ? process.getName() + "Test" : process.getName();
+boolean exportTypeSpringBoot = org.talend.designer.runprocess.ProcessorUtilities.isExportJobAsMicroService();
+boolean logMarkerFeatureNeeded = false;
+boolean logFeatureNeeded = false;
+
+List<? extends INode> httpRequestComponentsList = process.getNodesOfType("tRESTRequest");
+if (!httpRequestComponentsList.isEmpty()) {
+
+	final class URITemplateUtils {
+
+		public static final String TEMPLATE_PARAMETERS = "jaxrs.template.parameters";
+		public static final String LIMITED_REGEX_SUFFIX = "(/.*)?";
+		public static final String FINAL_MATCH_GROUP = "FINAL_MATCH_GROUP";
+		private static final String DEFAULT_PATH_VARIABLE_REGEX = "([^/]+?)";
+		private static final String CHARACTERS_TO_ESCAPE = ".*+";
+
+		private final String template;
+		private final List<String> variables = new ArrayList<String>();
+		private final List<String> customVariables = new ArrayList<String>();
+		private final Pattern templateRegexPattern;
+		private final String literals;
+		private final List<UriChunk> uriChunks;
+
+		public URITemplateUtils(String theTemplate) {
+			template = theTemplate;
+			StringBuilder literalChars = new StringBuilder();
+			StringBuilder patternBuilder = new StringBuilder();
+			CurlyBraceTokenizer tok = new CurlyBraceTokenizer(template);
+			uriChunks = new ArrayList<UriChunk>();
+			while (tok.hasNext()) {
+				String templatePart = tok.next();
+				UriChunk chunk = createUriChunk(templatePart);
+				uriChunks.add(chunk);
+				if (chunk instanceof Literal) {
+					String encodedValue = encodePartiallyEncoded(chunk.getValue(), false);
+					String substr = escapeCharacters(encodedValue);
+					literalChars.append(substr);
+					patternBuilder.append(substr);
+				} else if (chunk instanceof Variable) {
+					Variable var = (Variable)chunk;
+					variables.add(var.getName());
+					if (var.getPattern() != null) {
+						customVariables.add(var.getName());
+						patternBuilder.append('(');
+						patternBuilder.append(var.getPattern());
+						patternBuilder.append(')');
+					} else {
+						patternBuilder.append(DEFAULT_PATH_VARIABLE_REGEX);
+					}
+				}
+			}
+			literals = literalChars.toString();
+
+			int endPos = patternBuilder.length() - 1;
+			boolean endsWithSlash = (endPos >= 0) ? patternBuilder.charAt(endPos) == '/' : false;
+			if (endsWithSlash) {
+				patternBuilder.deleteCharAt(endPos);
+			}
+			patternBuilder.append(LIMITED_REGEX_SUFFIX);
+
+			templateRegexPattern = Pattern.compile(patternBuilder.toString());
+		}
+
+
+
+		public String getLiteralChars() {
+			return literals;
+		}
+
+		public String getValue() {
+			return template;
+		}
+
+		/**
+		 * List of all variables in order of appearance in template.
+		 *
+		 * @return unmodifiable list of variable names w/o patterns,
+		 * e.g. for "/foo/{v1:\\d}/{v2}" returned list is ["v1","v2"].
+		 */
+		public List<String> getVariables() {
+			return Collections.unmodifiableList(variables);
+		}
+
+		/**
+		 * List of variables with patterns (regexps). List is subset of elements from {@link #getVariables()}.
+		 *
+		 * @return unmodifiable list of variables names w/o patterns.
+		 */
+		public List<String> getCustomVariables() {
+			return Collections.unmodifiableList(customVariables);
+		}
+
+		private String escapeCharacters(String expression) {
+
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < expression.length(); i++) {
+				char ch = expression.charAt(i);
+				sb.append(isReservedCharacter(ch) ? "\\" + ch : ch);
+			}
+			return sb.toString();
+		}
+
+		private boolean isReservedCharacter(char ch) {
+			return CHARACTERS_TO_ESCAPE.indexOf(ch) != -1;
+		}
+
+
+
+
+		/**
+		 * Creates object form string.
+		 *
+		 * @param uriChunk stringified uri chunk
+		 * @return If param has variable form then {@link Variable} instance is created,
+		 * otherwise chunk is treated as {@link Literal}.
+		 */
+		public UriChunk createUriChunk(String uriChunk) {
+			if (uriChunk == null || "".equals(uriChunk)) {
+				throw new IllegalArgumentException("uriChunk is empty");
+			}
+			UriChunk uriChunkRepresentation = new Variable().create(uriChunk);
+			if (uriChunkRepresentation == null) {
+				uriChunkRepresentation = new Literal().create(uriChunk);
+			}
+			return uriChunkRepresentation;
+		}
+
+		/**
+		 * Stringified part of URI. Chunk is not URI segment; chunk can span over multiple URI segments or one URI
+		 * segments can have multiple chunks. Chunk is used to decompose URI of {@link URITemplate} into literals
+		 * and variables. Example: "foo/bar/{baz}{blah}" is decomposed into chunks: "foo/bar", "{baz}" and
+		 * "{blah}".
+		 */
+		abstract class UriChunk {
+
+			public abstract String getValue();
+
+			@Override
+			public String toString() {
+				return getValue();
+			}
+		}
+
+		final class Literal extends UriChunk {
+			private String value;
+
+			private Literal() {
+				// empty constructor
+			}
+
+			public Literal create(String uriChunk) {
+				if (uriChunk == null || "".equals(uriChunk)) {
+					throw new IllegalArgumentException("uriChunk is empty");
+				}
+				Literal literal = new Literal();
+				literal.value = uriChunk;
+				return literal;
+			}
+
+			@Override
+			public String getValue() {
+				return value;
+			}
+
+		}
+
+		/**
+		 * Variable of URITemplate. Variable has either "{varname:pattern}" syntax or "{varname}".
+		 */
+		final class Variable extends UriChunk {
+			private final Pattern VARIABLE_PATTERN =
+					Pattern.compile("(\\w[-\\w\\.]*[ ]*)(\\:(.+))?");
+			private String name;
+			private Pattern pattern;
+
+			private Variable() {
+				// empty constructor
+			}
+
+			/**
+			 * Creates variable from stringified part of URI.
+			 *
+			 * @param uriChunk uriChunk chunk that depicts variable
+			 * @return Variable if variable was successfully created; null if uriChunk was not a variable
+			 */
+			public Variable create(String uriChunk) {
+				Variable newVariable = new Variable();
+				if (uriChunk == null || "".equals(uriChunk)) {
+					return null;
+				}
+				if (insideBraces(uriChunk)) {
+					uriChunk = stripBraces(uriChunk).trim();
+					Matcher matcher = VARIABLE_PATTERN.matcher(uriChunk);
+					if (matcher.matches()) {
+						newVariable.name = matcher.group(1).trim();
+						if (matcher.group(2) != null && matcher.group(3) != null) {
+							String patternExpression = matcher.group(3).trim();
+							newVariable.pattern = Pattern.compile(patternExpression);
+						}
+						return newVariable;
+					}
+				}
+				return null;
+			}
+
+			public String getName() {
+				return name;
+			}
+
+			public String getPattern() {
+				return pattern != null ? pattern.pattern() : null;
+			}
+
+			@Override
+			public String getValue() {
+				if (pattern != null) {
+					return "{" + name + ":" + pattern + "}";
+				} else {
+					return "{" + name + "}";
+				}
+			}
+		}
+
+		/**
+		 * Splits string into parts inside and outside curly braces. Nested curly braces are ignored and treated
+		 * as part inside top-level curly braces. Example: string "foo{bar{baz}}blah" is split into three tokens,
+		 * "foo","{bar{baz}}" and "blah". When closed bracket is missing, whole unclosed part is returned as one
+		 * token, e.g.: "foo{bar" is split into "foo" and "{bar". When opening bracket is missing, closing
+		 * bracket is ignored and taken as part of current token e.g.: "foo{bar}baz}blah" is split into "foo",
+		 * "{bar}" and "baz}blah".
+		 * <p>
+		 * This is helper class for {@link URITemplate} that enables recurring literals appearing next to regular
+		 * expressions e.g. "/foo/{zipcode:[0-9]{5}}/". Nested expressions with closed sections, like open-closed
+		 * brackets causes expression to be out of regular grammar (is context-free grammar) which are not
+		 * supported by Java regexp version.
+		 */
+		class CurlyBraceTokenizer {
+
+			private List<String> tokens = new ArrayList<String>();
+			private int tokenIdx;
+
+			public CurlyBraceTokenizer(String string) {
+				boolean outside = true;
+				int level = 0;
+				int lastIdx = 0;
+				int idx;
+				for (idx = 0; idx < string.length(); idx++) {
+					if (string.charAt(idx) == '{') {
+						if (outside) {
+							if (lastIdx < idx) {
+								tokens.add(string.substring(lastIdx, idx));
+							}
+							lastIdx = idx;
+							outside = false;
+						} else {
+							level++;
+						}
+					} else if (string.charAt(idx) == '}' && !outside) {
+						if (level > 0) {
+							level--;
+						} else {
+							if (lastIdx < idx) {
+								tokens.add(string.substring(lastIdx, idx + 1));
+							}
+							lastIdx = idx + 1;
+							outside = true;
+						}
+					}
+				}
+				if (lastIdx < idx) {
+					tokens.add(string.substring(lastIdx, idx));
+				}
+			}
+
+			public boolean hasNext() {
+				return tokens.size() > tokenIdx;
+			}
+
+			public String next() {
+				if (hasNext()) {
+					return tokens.get(tokenIdx++);
+				} else {
+					throw new IllegalStateException("no more elements");
+				}
+			}
+		}
+
+		/**
+		 * Token is enclosed by curly braces.
+		 *
+		 * @param token text to verify
+		 * @return true if enclosed, false otherwise.
+		 */
+		public boolean insideBraces(String token) {
+			return token.charAt(0) == '{' && token.charAt(token.length() - 1) == '}';
+		}
+
+		/**
+		 * Strips token from enclosed curly braces. If token is not enclosed method
+		 * has no side effect.
+		 *
+		 * @param token text to verify
+		 * @return text stripped from curly brace begin-end pair.
+		 */
+		public String stripBraces(String token) {
+			if (insideBraces(token)) {
+				return token.substring(1, token.length() - 1);
+			} else {
+				return token;
+			}
+		}
+
+
+
+
+		// HttpUtils()
+
+		private final Pattern ENCODE_PATTERN =
+				Pattern.compile("%[0-9a-fA-F][0-9a-fA-F]");
+
+		// there are more of such characters, ex, '*' but '*' is not affected by UrlEncode
+		private static final String PATH_RESERVED_CHARACTERS = "=@/:";
+		private static final String QUERY_RESERVED_CHARACTERS = "?/";
+
+		private String componentEncode(String reservedChars, String value) {
+
+			StringBuilder buffer = new StringBuilder();
+			StringBuilder bufferToEncode = new StringBuilder();
+
+			for (int i = 0; i < value.length(); i++) {
+				char currentChar = value.charAt(i);
+				if (reservedChars.indexOf(currentChar) != -1) {
+					if (bufferToEncode.length() > 0) {
+						buffer.append(urlEncode(bufferToEncode.toString()));
+						bufferToEncode.setLength(0);
+					}
+					buffer.append(currentChar);
+				} else {
+					bufferToEncode.append(currentChar);
+				}
+			}
+
+			if (bufferToEncode.length() > 0) {
+				buffer.append(urlEncode(bufferToEncode.toString()));
+			}
+
+			return buffer.toString();
+		}
+
+		public String queryEncode(String value) {
+
+			return componentEncode(QUERY_RESERVED_CHARACTERS, value);
+		}
+
+		public String urlEncode(String value) {
+
+			try {
+				value = java.net.URLEncoder.encode(value, "UTF-8");
+			} catch (java.io.UnsupportedEncodingException ex) {
+				// unlikely to happen
+			}
+
+			return value;
+		}
+
+		public String pathEncode(String value) {
+
+			String result = componentEncode(PATH_RESERVED_CHARACTERS, value);
+			// URLEncoder will encode '+' to %2B but will turn ' ' into '+'
+			// We need to retain '+' and encode ' ' as %20
+			if (result.indexOf('+') != -1) {
+				result = result.replace("+", "%20");
+			}
+			if (result.indexOf("%2B") != -1) {
+				result = result.replace("%2B", "+");
+			}
+
+			return result;
+		}
+
+		public boolean isPartiallyEncoded(String value) {
+			return ENCODE_PATTERN.matcher(value).find();
+		}
+
+		/**
+		 * Encodes partially encoded string. Encode all values but those matching pattern
+		 * "percent char followed by two hexadecimal digits".
+		 *
+		 * @param encoded fully or partially encoded string.
+		 * @return fully encoded string
+		 */
+		public String encodePartiallyEncoded(String encoded, boolean query) {
+			if (encoded.length() == 0) {
+				return encoded;
+			}
+			Matcher m = ENCODE_PATTERN.matcher(encoded);
+			StringBuilder sb = new StringBuilder();
+			int i = 0;
+			while (m.find()) {
+				String before = encoded.substring(i, m.start());
+				sb.append(query ? queryEncode(before) : pathEncode(before));
+				sb.append(m.group());
+				i = m.end();
+			}
+			String tail = encoded.substring(i, encoded.length());
+			sb.append(query ? queryEncode(tail) : pathEncode(tail));
+			return sb.toString();
+		}
+
+	}
+
+	INode node = httpRequestComponentsList.get(0);
+	String cid = node.getUniqueName();
+
+if (Boolean.valueOf(ElementParameterParser.getValue(node,"__NEED_AUTH__")) && "SAML".equals(ElementParameterParser.getValue(node,"__AUTH_TYPE__"))) {
+%>
+public void setBus( org.apache.cxf.Bus bus) {
+	org.apache.cxf.resource.ResourceManager resourceManager =
+			bus.getExtension(org.apache.cxf.resource.ResourceManager.class);
+	if (resourceManager != null) {
+		resourceManager.addResourceResolver(new org.apache.cxf.resource.ClasspathResolver() {
+				public java.io.InputStream getAsStream(String resourceName) {
+					java.io.InputStream is = super.getAsStream(resourceName);
+					if(is == null){
+						try {
+							java.net.URL url = new java.net.URL(resourceName);
+							is = url.openStream();
+						} catch (java.lang.Exception e) {
+							//e.printStackTrace();
+						}
+					}
+					return is;
+				}
+				public <T> T resolve(String resourceName, Class<T> resourceType) {
+					T resolve = super.resolve(resourceName, resourceType);
+					if (resolve == null) {
+						try {
+							java.net.URL url = new java.net.URL(resourceName);
+							if (resourceType.isInstance(url)) {
+								return resourceType.cast(url);
+							}
+						} catch (java.net.MalformedURLException e) {
+							// ignore
+						}
+					}
+					return null;
+				}
+			});
+	}
+}
+<% } %>
+
+private boolean runInTalendEsbRuntimeContainer = false;
+
+public void setRunInTalendEsbRuntimeContainer(boolean flag) {
+	runInTalendEsbRuntimeContainer = flag;
+}
+
+protected String restEndpoint;
+
+public void setRestEndpoint(String restEndpoint){
+	this.restEndpoint = restEndpoint;
+}
+
+public String getRestEndpoint() {
+	return <%=ElementParameterParser.getValue(node, "__REST_ENDPOINT__")%>;
+}
+
+private boolean runInDaemonMode = true;
+
+public void setRunInDaemonMode(boolean flag) {
+	runInDaemonMode = flag;
+}
+
+private boolean restTalendJobAlreadyStarted = false;
+
+/**
+ * REST provider implementation
+ */
+@javax.ws.rs.Path("/")
+
+public static class RestServiceProviderImpl4TalendJob {
+
+	@javax.ws.rs.core.Context
+	private org.apache.cxf.jaxrs.ext.MessageContext messageContext;
+	private final String setCookieHeader = "Set-Cookie";
+
+	private final <%=process.getName()%> job;
+
+	public RestServiceProviderImpl4TalendJob(<%=process.getName()%> job) {
+		this.job = job;
+	}
+
+	private void populateRequestWithJobContext(java.util.Map<String, Object> requestGlobalMap, <%=process.getName()%> job) {
+		// pass job DataSources
+		java.util.Map<String, routines.system.TalendDataSource> talendDataSources =
+			(java.util.Map<String, routines.system.TalendDataSource>) job.globalMap.get(KEY_DB_DATASOURCES);
+		if (null != talendDataSources) {
+			java.util.Map<String, routines.system.TalendDataSource> restDataSources = new java.util.HashMap<String, routines.system.TalendDataSource>();
+			for (java.util.Map.Entry<String, routines.system.TalendDataSource> talendDataSourceEntry : talendDataSources.entrySet()) {
+				restDataSources.put(talendDataSourceEntry.getKey(), new routines.system.TalendDataSource(talendDataSourceEntry.getValue().getRawDataSource()));
+			}
+			requestGlobalMap.put(KEY_DB_DATASOURCES, restDataSources);
+		}
+
+		if (null != job.globalMap.get(KEY_DB_DATASOURCES_RAW)) {
+			requestGlobalMap.put(KEY_DB_DATASOURCES_RAW, job.globalMap.get(KEY_DB_DATASOURCES_RAW));
+		}
+
+		// pass job shared connections
+		requestGlobalMap.putAll(job.getSharedConnections4REST());
+
+		// pass job concurrent map
+		requestGlobalMap.put("concurrentHashMap", job.globalMap.get("concurrentHashMap"));
+
+		requestGlobalMap.putAll(job.globalMap);
+	}
+
+	private void closePassedDataSourceConnections(java.util.Map<String, Object> requestGlobalMap) {
+		// close connections in passed job DataSources
+		try {
+			java.util.Map<String, routines.system.TalendDataSource> restDataSources =
+				(java.util.Map<String, routines.system.TalendDataSource>) requestGlobalMap.get(KEY_DB_DATASOURCES);
+			if (null != restDataSources) {
+				for (routines.system.TalendDataSource restDataSource : restDataSources.values()) {
+					restDataSource.close();
+				}
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.err);
+		}
+	}
+
+	private javax.ws.rs.core.Response processRequest(java.util.Map<String, Object> request) {
+		<%
+		if(codeGenArgument.getIsRunInMultiThread() || NodeUtil.containsMultiThreadComponent(process)){
+		%>
+		final java.util.Map<String, Object> globalMap = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Object>());
+		<%
+		} else {
+		%>
+		final java.util.Map<String, Object> globalMap = new java.util.HashMap<String, Object>();
+		<%
+		}
+		%>
+		try {
+			globalMap.put("restRequest", request);
+
+			populateRequestWithJobContext(globalMap, job);
+
+			job.<%=cid%>_LoopProcess(globalMap);
+
+			java.util.Map<String, Object> response = (java.util.Map<String, Object>) globalMap.get("restResponse");
+
+			Object responseBody = null;
+			Integer status = null;
+			java.util.Map<String, String> headers = null;
+			if (null != response) {
+				Object dropJsonRootProp = response.get("drop.json.root.element");
+				Boolean dropJsonRoot = (null == dropJsonRootProp) ? false : (Boolean) dropJsonRootProp;
+				messageContext.put("drop.json.root.element", dropJsonRoot.toString());
+
+				responseBody = response.get("BODY");
+				status = (Integer) response.get("STATUS");
+				headers = (java.util.Map<String, String>) response.get("HEADERS");
+			} else {
+                            responseBody = request.get("ERROR");
+                        }
+            
+			if (null == status) {
+				status = (request.containsKey("STATUS")) ? (Integer) request.get("STATUS") : 404;
+			}
+
+			javax.ws.rs.core.Response.ResponseBuilder responseBuilder = javax.ws.rs.core.Response.status(status).entity(responseBody);
+			if (headers != null) {
+				for (java.util.Map.Entry<String, String> header : headers.entrySet()) {
+					if (header.getKey().equalsIgnoreCase(setCookieHeader)) {
+						String cookies = header.getValue().trim();
+						String cookiesList[] = cookies.split(";");
+
+						for (String cookie : cookiesList) {
+							String cookieTokens[] = cookie.trim().split("=");
+
+							if (cookieTokens.length == 2) {
+
+								String cookieName = cookieTokens[0].trim();
+								String cookieValue = cookieTokens[1].trim();
+
+								if (cookieName.length() > 0 && cookieValue.length() > 0) {
+									javax.ws.rs.core.NewCookie newCookie = new javax.ws.rs.core.NewCookie(cookieName, cookieValue);
+									responseBuilder.cookie(newCookie);
+								}
+							}
+						}
+					} else {
+						responseBuilder.header(header.getKey(), header.getValue());
+					}
+				}
+			}
+
+			return responseBuilder.build();
+
+		} catch (Throwable ex) {
+			ex.printStackTrace();
+			throw new javax.ws.rs.WebApplicationException(ex, 500);
+		} finally {
+			// close DB connections
+			closePassedDataSourceConnections(globalMap);
+		}
+	}
+
+	private javax.ws.rs.core.Response processStreamingResponseRequest(final java.util.Map<String, Object> request) {
+
+		javax.ws.rs.core.StreamingOutput streamingOutput = new javax.ws.rs.core.StreamingOutput() {
+			public void write(java.io.OutputStream output) {
+
+				<%
+				if(codeGenArgument.getIsRunInMultiThread() || NodeUtil.containsMultiThreadComponent(process)){
+				%>
+				final java.util.Map<String, Object> globalMap = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Object>());
+				<%
+				} else {
+				%>
+				final java.util.Map<String, Object> globalMap = new java.util.HashMap<String, Object>();
+				<%
+				}
+				%>
+
+				try {
+					globalMap.put("restResponseStream", output);
+
+					globalMap.put("restRequest", request);
+
+					populateRequestWithJobContext(globalMap, job);
+
+					job.<%=cid%>_LoopProcess(globalMap);
+
+					if (globalMap.containsKey("restResponseWrappingClosure")) {
+						output.write(((String) globalMap.get("restResponseWrappingClosure")).getBytes());
+					}
+				} catch (Throwable ex) {
+					ex.printStackTrace();
+					throw new javax.ws.rs.WebApplicationException(ex, 500);
+				} finally {
+					// close DB connections
+					closePassedDataSourceConnections(globalMap);
+				}
+			}
+		};
+
+		return javax.ws.rs.core.Response.ok().entity(streamingOutput).build();
+	}
+
+<%
+	// TalendString helper
+	final class TalendString {
+		private final String name;
+
+		public TalendString(String name) {
+			this.name = name;
+		}
+
+		// copy-paste from routines.TalendString
+		public String getAsciiRandomString(int length) {
+			java.util.Random random = new java.util.Random();
+			int cnt = 0;
+			StringBuffer buffer = new StringBuffer();
+			char ch;
+			int end = 'z' + 1;
+			int start = ' ';
+			while (cnt < length) {
+				ch = (char) (random.nextInt(end - start) + start);
+				if (Character.isLetterOrDigit(ch)) {
+					buffer.append(ch);
+					cnt++;
+				}
+			}
+			return name + "_" + buffer.toString();
+		}
+	}
+
+	final class ArrayHelper {
+		public String codeGenArray(String[] array) {
+			String out = "";
+			if (null != array) {
+				for (String item : array) {
+					if (!out.isEmpty()) {
+						out += ", ";
+					}
+					out += "\"" + item + "\"";
+				}
+			}
+			return "{ " + out + " }";
+		}
+	}
+
+	/**
+	* JAXRS Parameter Representation
+	*/
+	final class Parameter {
+
+		public static final String JAVA_TYPE_DOCUMENT_ID = "id_Document";
+
+		private final String name;
+		private final String javaType;
+		private final String paramType;
+		private final String defaultValue;
+		private final String variableName;
+		private final String pattern;
+		private final boolean isNullable;
+
+		public Parameter(String paramType, IMetadataColumn column) {
+			this(paramType, column, false);
+		}
+
+		public Parameter(String paramType, IMetadataColumn column, boolean generateVariableName) {
+			// try to extract parameter name from comment field
+			String paramName = column.getLabel();
+			if (null != column.getComment()){
+			    java.util.regex.Matcher m = java.util.regex.Pattern.compile(".*\\((.*?)\\).*").matcher(column.getComment());
+			    if (m.find()) {
+			        paramName = m.group(1);
+			    }
+			}
+                        this.name = paramName;
+			
+			String fieldType = column.getTalendType();
+			this.javaType = (JAVA_TYPE_DOCUMENT_ID.equals(fieldType)) ? "org.dom4j.Document"
+							: JavaTypesManager.getTypeToGenerate(JavaTypesManager.getJavaTypeFromId(fieldType), true);
+
+
+			this.paramType = paramType;
+
+			if (JAVA_TYPE_DOCUMENT_ID.equals(fieldType)
+				|| JavaTypesManager.LIST.getId().equals(fieldType)
+				|| JavaTypesManager.BYTE_ARRAY.getId().equals(fieldType)) {
+				this.defaultValue = null;
+				this.pattern = "";
+			} else {
+				this.defaultValue = column.getDefault();
+				this.pattern = column.getPattern();
+			}
+
+			this.isNullable = column.isNullable();
+			this.variableName = (generateVariableName) ? new TalendString(column.getLabel()).getAsciiRandomString(5) : column.getLabel();
+		}
+
+		public Parameter(String name, String paramType, String javaType, boolean generateVariableName) {
+			this(name, paramType, javaType, null, "", false, generateVariableName);
+		}
+
+		public Parameter(String name, String paramType, String javaType, String defaultValue, String pattern, boolean isNullable, boolean generateVariableName) {
+			this.name = name;
+			this.javaType = javaType;
+			this.paramType = paramType;
+			this.defaultValue = defaultValue;
+			this.pattern = pattern;
+			this.isNullable = isNullable;
+			this.variableName = (generateVariableName) ? new TalendString(name).getAsciiRandomString(5) : name;
+		}
+
+		public String getName() {
+			return name;
+		}
+		public String getJavaType() {
+			return javaType;
+		}
+		public String getParamType() {
+			return paramType;
+		}
+		public String getDefaultValue() {
+			return defaultValue;
+		}
+		public String getVariableName() {
+			return variableName;
+		}
+		public String getPattern(){
+			return pattern;
+		}
+		public boolean isNullable(){
+			return isNullable;
+		}
+	}
+
+// "body" is reserved name for request body content parameter
+final String SCHEMA_FIELD_NAME_4_REQUEST_BODY = "body";
+
+final String javaType4UndeclaredParameter = JavaTypesManager.STRING.getId(); // == "id_String"
+final String javaTypeWhole4UndeclaredParameter = JavaTypesManager.getTypeToGenerate(JavaTypesManager.STRING, true);
+
+final Map<String, String[]> contentTypes = new HashMap<String, String[]>() {{
+		put("XML", new String[] { "application/xml", "text/xml" });
+		put("JSON", new String[] { "application/json" });
+		put("XML-JSON", new String[] { "application/xml", "text/xml", "application/json" });
+		put("FORM", new String[] { "application/x-www-form-urlencoded" });
+		put("MULTIPART", new String[] { "multipart/form-data", "multipart/mixed", "multipart/related" });
+		put("HTML", new String[] { "text/html" });
+		put("ANY", new String[] { "*/*" });
+	}};
+
+final Map<String, String> restParameterTypes = new HashMap<String, String>() {{
+		put("PATH", "javax.ws.rs.PathParam");
+		put("MATRIX", "javax.ws.rs.MatrixParam");
+		put("QUERY", "javax.ws.rs.QueryParam");
+		put("HEADER", "javax.ws.rs.HeaderParam");
+		put("FORM", "javax.ws.rs.FormParam");
+		put("MULTIPART", "org.apache.cxf.jaxrs.ext.multipart.Multipart");
+	}};
+
+final Set<String> supportedTypes4Params = new HashSet<String>(Arrays.asList(
+		// string
+		JavaTypesManager.STRING.getId(),
+
+		// boolean
+		JavaTypesManager.BOOLEAN.getId(),
+
+		// byte
+		JavaTypesManager.BYTE.getId(),
+
+		// number
+		JavaTypesManager.SHORT.getId(),
+		JavaTypesManager.INTEGER.getId(),
+		JavaTypesManager.LONG.getId(),
+		JavaTypesManager.FLOAT.getId(),
+		JavaTypesManager.DOUBLE.getId(),
+		JavaTypesManager.BIGDECIMAL.getId(),
+
+		// List
+		JavaTypesManager.LIST.getId(),
+
+		// date
+		JavaTypesManager.DATE.getId()
+	));
+
+final Set<String> supportedTypes4Body = new HashSet<String>(Arrays.asList(
+		// string
+		JavaTypesManager.STRING.getId(),
+
+		// byte array
+		JavaTypesManager.BYTE_ARRAY.getId(),
+
+		// xml document
+		Parameter.JAVA_TYPE_DOCUMENT_ID
+	));
+
+final Set<String> supportedTypes4Part = new HashSet<String>(Arrays.asList(
+		// string
+		JavaTypesManager.STRING.getId(),
+
+		// boolean
+		JavaTypesManager.BOOLEAN.getId(),
+
+		// number
+		JavaTypesManager.SHORT.getId(),
+		JavaTypesManager.INTEGER.getId(),
+		JavaTypesManager.LONG.getId(),
+		JavaTypesManager.FLOAT.getId(),
+		JavaTypesManager.DOUBLE.getId(),
+		JavaTypesManager.BIGDECIMAL.getId(),
+
+		// date
+		JavaTypesManager.DATE.getId(),
+
+		// byte
+		JavaTypesManager.BYTE.getId(),
+
+		// byte array
+		JavaTypesManager.BYTE_ARRAY.getId(),
+
+		// xml document
+		Parameter.JAVA_TYPE_DOCUMENT_ID
+	));
+
+List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+if (null != conns && !conns.isEmpty()) {
+	ArrayHelper arrayHelper = new ArrayHelper();
+	List<Map<String, String>> mappings = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__SCHEMAS__");
+	for (IConnection conn : conns) {
+		if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			continue;
+		}
+
+		String connName = conn.getName();
+		String httpVerb = null;
+		String uriPattern = null;
+		String consumes = null;
+		String produces = null;
+		boolean streaming = false;
+
+		boolean foundMapping = false;
+		for (Map<String, String> mapping : mappings) {
+			String outputConn = mapping.get("SCHEMA");
+			if (connName.equals(outputConn)) {
+				foundMapping = true;
+				httpVerb = mapping.get("HTTP_VERB");
+				uriPattern = mapping.get("URI_PATTERN");
+				consumes = mapping.get("CONSUMES");
+				produces = mapping.get("PRODUCES");
+				streaming = ("true").equals(mapping.get("STREAMING"));
+			}
+		}
+		if (!foundMapping) {
+			continue;
+		}
+
+		if (null == consumes) {
+			consumes = "";
+		}
+		if (null == produces) {
+			produces = "";
+		}
+
+
+		boolean formSupported = "FORM".equals(consumes);
+		boolean multipartSupported = "MULTIPART".equals(consumes);
+		boolean noBodyRequest = "GET".equals(httpVerb) || "DELETE".equals(httpVerb) || "HEAD".equals(httpVerb) || "OPTIONS".equals(httpVerb);
+
+		// All the parameters specified in the Schema Editor need to be handled.
+		Parameter bodyParameter = null;
+		Map<String, Parameter> parameters = new HashMap<String, Parameter>();
+		if (null != uriPattern) {
+			IMetadataTable connMetadata = conn.getMetadataTable();
+
+			// determine request body type
+			for (IMetadataColumn column : connMetadata.getListColumns()) {
+				if (SCHEMA_FIELD_NAME_4_REQUEST_BODY.equals(column.getLabel())) {
+					// rest parameter type
+					String restParameterType = (column.getComment() == null || column.getComment().indexOf("(") < 0)? column.getComment():column.getComment().substring(0, column.getComment().indexOf("("));
+					restParameterType = (null == restParameterType) ? "" : restParameterType.trim().toUpperCase();
+
+					// check that the field is not one of supported rest parameter type
+					if (!restParameterTypes.keySet().contains(restParameterType)) {
+						if (supportedTypes4Body.contains(column.getTalendType())) {
+							bodyParameter = new Parameter(null, column);
+						}
+					}
+					break;
+				}
+			}
+
+			URITemplateUtils uriTemplate = new URITemplateUtils(uriPattern);
+			List<String> uriVariables = uriTemplate.getVariables();
+			// we are going to declare all uri template variables ("Path" parameter type by REST)
+			for (String uriVariable : uriVariables) {
+				Parameter parameter = null;
+				String schemaFieldType = javaType4UndeclaredParameter;
+
+				for (IMetadataColumn column : connMetadata.getListColumns()) {
+					// schema parameter name
+					String schemaFieldName = column.getLabel();
+					if (uriVariable.equals(schemaFieldName)) {
+						String restParameterType = (column.getComment() == null || column.getComment().indexOf("(") < 0)? column.getComment():column.getComment().substring(0, column.getComment().indexOf("("));
+						schemaFieldType = column.getTalendType();
+
+						if (restParameterType == null || restParameterType.trim().length() == 0 || "PATH".equalsIgnoreCase(restParameterType.trim())) {
+							if (SCHEMA_FIELD_NAME_4_REQUEST_BODY.equals(schemaFieldName) && null != bodyParameter) {
+								// "body" field in schema really sute for request content (by rest type and field type)
+								// that mean uri parameter "body" is hidden by reserved request content field "body"
+								// -> will use generated variable name in rest service method with default String type
+								//    (and this uri parameter will not be set to flow field later)
+								schemaFieldType = javaType4UndeclaredParameter;
+								parameter = new Parameter(uriVariable, "PATH", javaTypeWhole4UndeclaredParameter, true);
+							} else if (supportedTypes4Params.contains(schemaFieldType)) {
+								parameter = new Parameter("PATH", column);
+							} else {
+								// defined java type is unsupported
+								// -> will define with default String type below
+								//    (and this parameter will not be set to flow field later)
+							}
+						} else {
+							// uri parameter hidden by parameter of another type in schema
+							// -> will use generated variable name in rest service method with default String type
+							//    (and this uri parameter will not be set to flow field later)
+							schemaFieldType = javaType4UndeclaredParameter;
+							parameter = new Parameter(uriVariable, "PATH", javaTypeWhole4UndeclaredParameter, true);
+						}
+						break;
+					}
+				}
+				if (null == parameter) {
+					// either no uri parameter definition in flow schema
+					// (both by uri variable name and schema parameter type = 'Path')
+					// or unsupported java type in schema parameter definition
+					// so we will declare default java type - String
+					// (and this uri parameter will not be set to flow field later)
+					schemaFieldType = javaType4UndeclaredParameter;
+					parameter = new Parameter(uriVariable, "PATH", javaTypeWhole4UndeclaredParameter, false);
+				}
+				parameters.put("PATH:" + uriVariable + ":" + schemaFieldType, parameter);
+			}
+
+			// now we are going to declare all other (non uri template) variables ("Query", "Form", "Header", "Matrix", "Multipart" parameter types by REST)
+			for (IMetadataColumn column : connMetadata.getListColumns()) {
+				// rest parameter type
+				String restParameterType = (column.getComment() == null || column.getComment().indexOf("(") < 0)? column.getComment():column.getComment().substring(0, column.getComment().indexOf("("));
+				// skip "Path" parameters as we already collect uri template parameters
+				if (restParameterType == null || restParameterType.trim().length() == 0 || "PATH".equalsIgnoreCase(restParameterType.trim())) {
+					continue;
+				}
+				restParameterType = restParameterType.trim().toUpperCase();
+				// must be a supported parameter type
+				if (!restParameterTypes.keySet().contains(restParameterType)) {
+					// skip unsupported (wrong) JAX-RS parameter type
+					continue;
+				}
+
+				Set<String> supportedTypes = supportedTypes4Params;
+				if ("FORM".equals(restParameterType)) {
+					if (multipartSupported) {
+						continue; // ignore this parameter (as current rest service method configured as form supported)
+					}
+				} else if ("MULTIPART".equals(restParameterType)) {
+					if (formSupported) {
+						continue; // ignore this parameter (as current rest service method configured as miltipart supported)
+					}
+					supportedTypes = supportedTypes4Part;
+				}
+
+				// schema parameter name
+				String schemaFieldName = column.getLabel();
+				// try to extract parameter name from comment field
+				if (null != column.getComment()){
+				    java.util.regex.Matcher m = java.util.regex.Pattern.compile(".*\\((.*?)\\).*").matcher(column.getComment());
+				    if (m.find()) {
+				        schemaFieldName = m.group(1);
+				    }
+				}
+				// schema parameter type
+				String schemaFieldType = column.getTalendType();
+				if (supportedTypes.contains(schemaFieldType)) {
+					Parameter parameter = new Parameter(restParameterType, column, SCHEMA_FIELD_NAME_4_REQUEST_BODY.equals(schemaFieldName));
+					parameters.put(restParameterType + ":" + schemaFieldName + ":" + schemaFieldType, parameter);
+				} else {
+					// the Java type is unsupported
+				}
+			}
+		}
+%>
+<% if ("PATCH".equals(httpVerb)) {%>
+	@org.apache.cxf.jaxrs.ext.<%=httpVerb%>()
+<%} else {%>
+	@javax.ws.rs.<%=httpVerb%>()
+<%}%>
+
+<% if (null != uriPattern) { %>
+	@javax.ws.rs.Path(<%=uriPattern%>)
+<% } %>
+<%
+String consumesContentTypes = null;
+if (!noBodyRequest) {
+	if (contentTypes.containsKey(consumes)) {
+		consumesContentTypes = arrayHelper.codeGenArray(contentTypes.get(consumes));
+	} else if (null != bodyParameter) {
+		if ("org.dom4j.Document".equals(bodyParameter.getJavaType())) {
+			consumesContentTypes = arrayHelper.codeGenArray(contentTypes.get("XML-JSON"));
+		} else if ("String".equals(bodyParameter.getJavaType())) {
+			consumesContentTypes = arrayHelper.codeGenArray(new String[] {"text/plain", "application/xml", "text/xml", "application/json"});
+		} else if ("byte[]".equals(bodyParameter.getJavaType())) {
+			consumesContentTypes = arrayHelper.codeGenArray(new String[] {"application/octet-stream"});
+		} else {
+			consumesContentTypes = arrayHelper.codeGenArray(contentTypes.get("ANY"));
+		}
+	}
+	if (null != consumesContentTypes) { %>	@javax.ws.rs.Consumes(<%=consumesContentTypes%>)
+<% }
+}
+String producesContentTypes = null;
+if (contentTypes.containsKey(produces)) {
+	producesContentTypes = arrayHelper.codeGenArray(contentTypes.get(produces));
+%>
+	@javax.ws.rs.Produces(<%=producesContentTypes%>)
+<% } else if ("ONEWAY".equals(produces)) {
+%>
+	@org.apache.cxf.jaxrs.ext.Oneway()
+<% } %>
+	public javax.ws.rs.core.Response <%=connName%>(
+		<%
+			boolean paramCommaWritten = false;
+			for (Parameter param : parameters.values()) {
+				if (!paramCommaWritten) {
+					paramCommaWritten = true;
+				} else {
+					%>, <%
+				}
+				String javaType = param.getJavaType();
+				if ("List".equals(javaType)) {
+					javaType = "List<String>";
+				}
+
+				String variableName = param.getVariableName();
+				if ("java.util.Date".equals(javaType)) {
+					javaType = "String";
+					variableName += "_" + cid;
+				}
+
+				if (param.getDefaultValue() != null && param.getDefaultValue().length() > 0) {
+					if ("String".equals(javaType)) { %>
+						@javax.ws.rs.DefaultValue(<%=param.getDefaultValue()%>) <%
+					} else { %>
+						@javax.ws.rs.DefaultValue("<%=param.getDefaultValue()%>") <%
+					}
+				}
+		%>
+				<% if (multipartSupported && "org.apache.cxf.jaxrs.ext.multipart.Multipart".equalsIgnoreCase(restParameterTypes.get(param.getParamType()))) {
+				%>@<%=restParameterTypes.get(param.getParamType())%>(value="<%=param.getName()%>", required=<%=!param.isNullable()%>) <%= javaType%> <%=variableName%><% 
+				} else { 
+				%>@<%=restParameterTypes.get(param.getParamType())%>("<%=param.getName()%>") <%= javaType%> <%=variableName%><%
+				} %>
+		<%	} // loop thru jax-rs parameters %>
+		<% if (!(noBodyRequest || formSupported || multipartSupported) && null != bodyParameter) {
+			if (paramCommaWritten) { %>, <% } %><%=bodyParameter.getJavaType()%> body
+		<% } %>
+			) {
+                List<String> requiredParameterWithNullValueList = new java.util.ArrayList<String>();
+<%
+
+for (Parameter param : parameters.values()) {
+        String variableName = param.getVariableName();
+        String javaType = param.getJavaType();
+        if ("java.util.Date".equals(javaType)) {
+            variableName += "_" + cid;
+        }
+        if (!param.isNullable() && null == param.getDefaultValue()){
+%>
+                    if(null == <%=variableName%>){
+                        requiredParameterWithNullValueList.add("<%=param.getName()%>");
+                    }
+<%
+        }
+    }
+%>  
+                if(requiredParameterWithNullValueList.size() > 0){
+                    return handleWrongRequest(messageContext, 400, "400 Bad Request \n" + requiredParameterWithNullValueList.toString() + " in <%=cid%>:<%=connName%> " + (requiredParameterWithNullValueList.size() == 1 ? "is required!" : "are required!"));         
+                }
+<%
+		for (Parameter param : parameters.values()) {
+			String variableName = param.getVariableName();
+
+			if ("java.util.Date".equals(param.getJavaType())) {
+%>
+				java.util.Date <%=variableName%> = null;
+				<% if (param.getPattern() != null && !"".equals(param.getPattern().trim())) { %>
+					if (null != <%=variableName%>_<%=cid%> && 0 != <%=variableName%>_<%=cid%>.trim().length()) {
+						try {
+							java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(<%=param.getPattern()%>);
+							sdf.setLenient(false);
+							<%=variableName%> = sdf.parse(<%=variableName%>_<%=cid%>);
+						} catch (Exception e) {
+							return handleWrongRequest(messageContext, 400, "[<%=variableName%>_<%=cid%>] Date parameter has invalid format!");
+						}
+					}
+				<% } %>
+				if (null == <%=variableName%> && null != <%=variableName%>_<%=cid%> && 0 != <%=variableName%>_<%=cid%>.trim().length()) {
+					try {
+						<%=variableName%> = new java.util.Date(<%=variableName%>_<%=cid%>);
+					} catch (Exception e) {
+						// wrong date parameter passed
+						return handleWrongRequest(messageContext, 400, "[<%=variableName%>_<%=cid%>] Date parameter is invalid!");
+					}
+				}
+				<% if (!param.isNullable()) { %>
+					if (null == <%=variableName%>) {
+						<%=variableName%> = new java.util.Date(); // dummy fake
+					}
+				<% } %>
+<%
+			}
+		} // loop thru jax-rs parameters (for Date params handling)
+%>
+		java.util.Map<String, Object> request_<%=cid%> = new java.util.HashMap<String, Object>();
+		request_<%=cid%>.put("VERB", "<%=httpVerb%>");
+		request_<%=cid%>.put("OPERATION", "<%=connName%>");
+		request_<%=cid%>.put("PATTERN", <%=uriPattern%>);
+	<% if (!(noBodyRequest || formSupported || multipartSupported) && null != bodyParameter) { %>
+		request_<%=cid%>.put("BODY", body);
+	<% } %>
+
+		populateRequestInfo(request_<%=cid%>, messageContext);
+
+		java.util.Map<String, Object> parameters_<%=cid%> = new java.util.HashMap<String, Object>();
+		<%	for (java.util.Map.Entry<String, Parameter> paramEntry : parameters.entrySet()) { %>
+			parameters_<%=cid%>.put("<%=paramEntry.getKey()%>", <%=paramEntry.getValue().getVariableName()%>);
+		<%	} %>
+		request_<%=cid%>.put("PARAMS", parameters_<%=cid%>);
+
+<% if (multipartSupported) { %>
+		java.util.Map<String, Boolean> partNames_<%=cid%> = new java.util.HashMap<String, Boolean>();
+<%		for (Parameter param : parameters.values()) {
+			if ("MULTIPART".equals(param.getParamType())) { %>
+				partNames_<%=cid%>.put("<%=param.getVariableName()%>", <%=param.isNullable()%>);
+<%			}
+		} %>
+		populateMultipartRequestInfo(request_<%=cid%>, messageContext, partNames_<%=cid%>);
+<% } %>
+
+		return process<%=((streaming) ? "StreamingResponse" : "")%>Request(request_<%=cid%>);
+	}
+<%
+	}
+}
+%>
+	public javax.ws.rs.core.Response handleWrongRequest(
+			org.apache.cxf.jaxrs.ext.MessageContext context, int status, String error) {
+
+		// System.out.println("wrong call [uri: " + context.getUriInfo().getPath() + " ; method: " + context.getRequest().getMethod() + " ; status: " + status + " ; error: " + error + "]");
+
+		java.util.Map<String, Object> wrongRequest = new java.util.HashMap<String, Object>();
+
+		wrongRequest.put("ERROR", error);
+		wrongRequest.put("STATUS", status);
+		wrongRequest.put("VERB", context.getRequest().getMethod());
+		wrongRequest.put("URI", context.getUriInfo().getPath());
+		wrongRequest.put("URI_BASE", context.getUriInfo().getBaseUri().toString());
+		wrongRequest.put("URI_ABSOLUTE", context.getUriInfo().getAbsolutePath().toString());
+		wrongRequest.put("URI_REQUEST", context.getUriInfo().getRequestUri().toString());
+
+		return processRequest(wrongRequest);
+	}
+
+	private void populateRequestInfo(java.util.Map<String, Object> request, org.apache.cxf.jaxrs.ext.MessageContext context) {
+		final javax.ws.rs.core.UriInfo ui = context.getUriInfo();
+
+		request.put("URI", ui.getPath());
+		request.put("URI_BASE", ui.getBaseUri().toString());
+		request.put("URI_ABSOLUTE", ui.getAbsolutePath().toString());
+		request.put("URI_REQUEST", ui.getRequestUri().toString());
+
+		request.put("ALL_HEADER_PARAMS", context.getHttpHeaders().getRequestHeaders());
+		request.put("ALL_QUERY_PARAMS", ui.getQueryParameters());
+
+		javax.ws.rs.core.SecurityContext securityContext = context.getSecurityContext();
+		if (null != securityContext && null != securityContext.getUserPrincipal()) {
+			request.put("PRINCIPAL_NAME", securityContext.getUserPrincipal().getName());
+		}
+
+		request.put("CorrelationID", context.get("CorrelationID"));
+
+		request.put("MESSAGE_CONTEXT", context);
+	}
+
+	private void populateMultipartRequestInfo(java.util.Map<String, Object> request, org.apache.cxf.jaxrs.ext.MessageContext context,
+			java.util.Map<String, Boolean> partNames) {
+		java.util.Map<String, String> attachmentFilenames = new java.util.HashMap<String, String>();
+
+		java.util.Map<String, java.util.Map<String, java.util.List<String>>> attachmentHeaders =
+			new java.util.HashMap<String, java.util.Map<String, java.util.List<String>>>();
+
+		for (java.util.Map.Entry<String,Boolean> p : partNames.entrySet()) {
+			String partName = p.getKey();
+			Boolean optional = p.getValue();
+			org.apache.cxf.jaxrs.ext.multipart.Attachment attachment = getFirstMatchingPart(context, partName, optional);
+			if (null != attachment) {
+				attachmentHeaders.put(partName, attachment.getHeaders());
+				if (null != attachment.getContentDisposition()) {
+					String filename = attachment.getContentDisposition().getParameter("filename");
+					if (null != filename) {
+						attachmentFilenames.put(partName, filename);
+					}
+				}
+			}
+		}
+
+		request.put("ATTACHMENT_HEADERS", attachmentHeaders);
+		request.put("ATTACHMENT_FILENAMES", attachmentFilenames);
+	}
+
+	private static org.apache.cxf.jaxrs.ext.multipart.Attachment getFirstMatchingPart(
+			org.apache.cxf.jaxrs.ext.MessageContext context, String partName, Boolean optional) {
+		List<org.apache.cxf.jaxrs.ext.multipart.Attachment> attachments =
+			org.apache.cxf.jaxrs.utils.multipart.AttachmentUtils.getAttachments(context);
+		for (org.apache.cxf.jaxrs.ext.multipart.Attachment attachment : attachments) {
+			if (partName.equals(attachment.getContentId())) {
+				return attachment;
+			}
+			org.apache.cxf.jaxrs.ext.multipart.ContentDisposition cd = attachment.getContentDisposition();
+			if (null != cd && partName.equals(cd.getParameter("name"))) {
+				return attachment;
+			}
+		}
+		if (optional) { 
+			return null;
+		}
+		// unexpected
+		throw new javax.ws.rs.InternalServerErrorException();
+	}
+}
+
+public static class ExceptionMapper4TalendJobRestService extends org.apache.cxf.jaxrs.impl.WebApplicationExceptionMapper {
+
+	@javax.ws.rs.core.Context private org.apache.cxf.jaxrs.ext.MessageContext messageContext;
+
+	private RestServiceProviderImpl4TalendJob provider;
+
+	public ExceptionMapper4TalendJobRestService(RestServiceProviderImpl4TalendJob provider) {
+		this.provider = provider;
+	}
+
+	public javax.ws.rs.core.Response toResponse(javax.ws.rs.WebApplicationException ex) {
+		String error = null;
+		javax.ws.rs.core.Response response = ex.getResponse();
+		if (null != response && null != response.getEntity()) {
+			error = response.getEntity().toString();
+		}
+		response = super.toResponse(ex);
+		if (null == error) {
+			if (null != response && null != response.getEntity()) {
+				error = response.getEntity().toString();
+			} else {
+				error = null == ex.getCause() ? ex.getMessage() : ex.getCause().getMessage();
+			}
+		}
+		response = provider.handleWrongRequest(messageContext, response.getStatus(), error);
+
+		java.util.List<javax.ws.rs.core.MediaType> accepts = messageContext.getHttpHeaders().getAcceptableMediaTypes();
+		javax.ws.rs.core.MediaType responseType = accepts.isEmpty() ? null : accepts.get(0);
+
+		if (responseType == null || !responseType.getSubtype().equals("xml") && !responseType.getSubtype().equals("json")) {
+			responseType = javax.ws.rs.core.MediaType.APPLICATION_XML_TYPE;
+		}
+
+		javax.ws.rs.core.Response r = javax.ws.rs.core.Response.status(response.getStatus()).entity(response.getEntity()).type(responseType).build();
+
+		if(response.getHeaders()!=null){
+			r.getHeaders().putAll(response.getHeaders());
+		}
+
+		return r;
+	}
+}
+
+protected String checkEndpointUrl(String url) {
+<%
+	String defaultUri = (String) System.getProperties().get("restServiceDefaultUri");
+	if (null == defaultUri || defaultUri.trim().isEmpty() || !defaultUri.contains("://")) {
+		defaultUri = "http://127.0.0.1:8090/";
+	} else if (!defaultUri.endsWith("/")) {
+		defaultUri = defaultUri + "/";
+	}
+%>
+	final String defaultEndpointUrl = "<%=defaultUri%>";
+
+	String endpointUrl = url;
+	if (null == endpointUrl || endpointUrl.trim().isEmpty()) {
+		endpointUrl = defaultEndpointUrl;
+	} else if (!endpointUrl.contains("://")) { // relative
+		if (endpointUrl.startsWith("/")) {
+			endpointUrl = endpointUrl.substring(1);
+		}
+		endpointUrl = defaultEndpointUrl + endpointUrl;
+	}
+
+	// test for busy
+	java.net.URI endpointURI = java.net.URI.create(endpointUrl);
+	String host = endpointURI.getHost();
+	try {
+		if (java.net.InetAddress.getByName(host).isLoopbackAddress()) {
+			int port = endpointURI.getPort();
+			java.net.ServerSocket ss = null;
+			try {
+				ss = new java.net.ServerSocket(port);
+			} catch (IOException e) {
+				// rethrow exception
+				throw new IllegalArgumentException("Cannot start provider with uri: " + endpointUrl + ". Port " + port + " already in use.");
+			} finally {
+				if (ss != null) {
+					try {
+						ss.close();
+					} catch (IOException e) {
+						// ignore
+					}
+				}
+			}
+			try {
+				// ok, let's doublecheck for silent listeners
+				java.net.Socket cs = new java.net.Socket(host, port);
+				// if succeed - somebody silently listening, fail!
+				cs.close();
+				// rethrow exception
+				throw new IllegalArgumentException("Cannot start provider with uri: " + endpointUrl + ". Port " + port + " already in use.");
+			} catch (IOException e) {
+				// ok, nobody listens, proceed
+			}
+		}
+	} catch (java.net.UnknownHostException e) {
+		// ignore
+	}
+
+	return endpointUrl;
+}
+
+
+public static class StreamingDOM4JProvider extends org.apache.cxf.jaxrs.provider.dom4j.DOM4JProvider {
+
+	public static final String SUPRESS_XML_DECLARATION = "supress.xml.declaration";
+
+	private java.util.Map<String, Object> globalMap = null;
+
+	public void setGlobalMap(java.util.Map<String, Object> globalMap) {
+		this.globalMap = globalMap;
+	}
+
+	public void writeTo(org.dom4j.Document doc, Class<?> cls, java.lang.reflect.Type type,
+			java.lang.annotation.Annotation[] anns, javax.ws.rs.core.MediaType mt,
+			javax.ws.rs.core.MultivaluedMap<String, Object> headers, java.io.OutputStream os)
+					throws java.io.IOException, javax.ws.rs.WebApplicationException {
+		if (mt.getSubtype().contains("xml")) {
+			org.dom4j.io.XMLWriter writer;
+			org.apache.cxf.message.Message currentMessage = null;
+			if (org.apache.cxf.jaxrs.utils.JAXRSUtils.getCurrentMessage() != null) {
+				currentMessage = org.apache.cxf.jaxrs.utils.JAXRSUtils.getCurrentMessage();
+			} else {
+				currentMessage = (org.apache.cxf.message.Message)((java.util.Map<String, Object>)globalMap.get("restRequest")).get("CURRENT_MESSAGE");
+			}
+
+			if (currentMessage != null && currentMessage.getExchange() != null && currentMessage.getExchange().containsKey(SUPRESS_XML_DECLARATION)) {
+				org.dom4j.io.OutputFormat format = new org.dom4j.io.OutputFormat();
+				format.setSuppressDeclaration(true);
+				writer = new org.dom4j.io.XMLWriter(os, format);
+			} else {
+				writer = new org.dom4j.io.XMLWriter(os);
+			}
+			writer.write(doc);
+			writer.flush();
+		} else {
+			super.writeTo(doc, cls, type, anns, mt, headers, os);
+		}
+	}
+}
+
+Thread4RestServiceProviderEndpoint thread4RestServiceProviderEndpoint = null;
+
+class Thread4RestServiceProviderEndpoint extends Thread {
+
+	private final String endpointUrl;
+
+	private final <%=process.getName()%> job;
+
+	private org.apache.cxf.endpoint.Server server;
+
+	private org.apache.cxf.jaxrs.JAXRSServerFactoryBean sf;
+
+	public Thread4RestServiceProviderEndpoint(<%=process.getName()%> job, String endpointUrl) {
+		this.job = job;
+		this.endpointUrl = endpointUrl;
+		this.sf = new org.apache.cxf.jaxrs.JAXRSServerFactoryBean();
+	}
+
+	boolean inOSGi = routines.system.BundleUtils.inOSGi();
+
+	public org.apache.cxf.endpoint.Server getServer(){
+		return server;
+	}
+
+	public org.apache.cxf.jaxrs.JAXRSServerFactoryBean getJAXRSServerFactoryBean(){
+		return sf;
+	}
+
+	public void run() {
+
+		try {
+			RestServiceProviderImpl4TalendJob provider = new RestServiceProviderImpl4TalendJob(job);
+
+			if(sf.getProperties() == null){
+				sf.setProperties(new java.util.HashMap<String, Object>());
+			}
+
+			java.util.List<Object> providers = (java.util.List<Object>)sf.getProviders();
+			providers.add(new ExceptionMapper4TalendJobRestService(provider));
+			providers.add(new StreamingDOM4JProvider());
+			<%if (Boolean.valueOf(ElementParameterParser.getValue(node,"__NEED_AUTH__")) && "OIDC_PASSWORD_GRANT".equals(ElementParameterParser.getValue(node,"__AUTH_TYPE__"))) {%>
+
+			if (!inOSGi) {
+				org.springframework.context.support.ClassPathXmlApplicationContext context_<%=cid%> =
+					new org.springframework.context.support.ClassPathXmlApplicationContext("META-INF/tesb/oidc-context.xml");
+				org.talend.esb.security.oidc.OidcConfiguration oidcConfiguration_<%=cid%> = context_<%=cid%>.getBean(org.talend.esb.security.oidc.OidcConfiguration.class);
+				providers.add(new org.talend.esb.security.oidc.OidcAccessTokenValidator(oidcConfiguration_<%=cid%>));
+			}else{
+				providers.add(new org.talend.esb.security.oidc.OidcAccessTokenValidator());
+			}
+			<%}%>
+			org.apache.cxf.jaxrs.provider.json.JSONProvider jsonProvider =
+					new org.apache.cxf.jaxrs.provider.json.JSONProvider();
+			jsonProvider.setIgnoreNamespaces(true);
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__ATTRIBUTES_TO_ELEMENTS__"))) { %>
+				jsonProvider.setAttributesToElements(true);
+			<% } else { %>
+				jsonProvider.setAttributesToElements(false);
+			<% } %>
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__WRAP_JSON_REQUEST__"))) { %>
+				jsonProvider.setSupportUnwrapped(true);
+				jsonProvider.setWrapperName("root");
+			<% } %>
+
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__CONVERT_JSON_VALUES_TO_STRING__"))) { %>
+				jsonProvider.setConvertTypesToStrings(true);
+			<% } else { %>
+				jsonProvider.setConvertTypesToStrings(false);
+			<% } %>
+			providers.add(jsonProvider);
+			sf.setProviders(providers);
+			sf.setTransportId("http://cxf.apache.org/transports/http");
+			sf.setResourceClasses(RestServiceProviderImpl4TalendJob.class);
+			sf.setResourceProvider(RestServiceProviderImpl4TalendJob.class,
+					new org.apache.cxf.jaxrs.lifecycle.SingletonResourceProvider(provider));
+			sf.setAddress(endpointUrl);
+
+			final java.util.List<org.apache.cxf.feature.Feature> features = sf.getFeatures() == null?
+					new java.util.ArrayList<org.apache.cxf.feature.Feature>() : sf.getFeatures();
+
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__SERVICE_LOCATOR__"))) { %>
+				<%
+				boolean ignoreSLStudio = !Boolean.valueOf(System.getProperty("ignoreSLStudio"));
+				if (ignoreSLStudio && !exportTypeSpringBoot) {
+				%>
+				if(inOSGi){
+				<% } %>
+				sf.setServiceName(new javax.xml.namespace.QName(
+						<%=ElementParameterParser.getValue(node,"__SERVICE_NAMESPACE__")%>,
+						<%=ElementParameterParser.getValue(node,"__SERVICE_NAME__")%>));
+
+				org.talend.esb.servicelocator.cxf.LocatorFeature slFeature = null;
+				<% if (ignoreSLStudio) { %>
+					<% if(exportTypeSpringBoot) { %>
+				    	org.springframework.context.support.ClassPathXmlApplicationContext context_ = new org.springframework.context.support.ClassPathXmlApplicationContext(new String[] { "META-INF/tesb/locator/beans.xml" });
+				    	slFeature = (org.talend.esb.servicelocator.cxf.LocatorFeature) context_.getBean(org.talend.esb.servicelocator.cxf.LocatorFeature.class);
+					<% } else { %>
+						slFeature = routines.system.BundleUtils.getService(org.talend.esb.servicelocator.cxf.LocatorFeature.class);
+					<% } %>
+				<% } else { %>
+				if(inOSGi){
+					slFeature = routines.system.BundleUtils.getService(org.talend.esb.servicelocator.cxf.LocatorFeature.class);
+				}else{
+					org.springframework.context.support.ClassPathXmlApplicationContext context_ = new org.springframework.context.support.ClassPathXmlApplicationContext(new String[] { "META-INF/tesb/locator/beans.xml" });
+					slFeature = (org.talend.esb.servicelocator.cxf.LocatorFeature) context_.getBean(org.talend.esb.servicelocator.cxf.LocatorFeature.class);
+
+				}
+				<% } %>
+
+				<% List<Map<String, String>> customProperties = (List<Map<String,String>>)
+						ElementParameterParser.getObjectValue(node, "__SERVICE_LOCATOR_CUSTOM_PROPERTIES__"); %>
+				<% if (!customProperties.isEmpty()) { %>
+					java.util.Map<String, String> slCustomProps_<%=cid%> = new java.util.HashMap<String, String>();
+					<% for (int k = 0; k < customProperties.size(); k++) { %>
+						slCustomProps_<%=cid%>.put(<%=customProperties.get(k).get("PROP_NAME")%>, <%=customProperties.get(k).get("PROP_VALUE")%>);
+					<% } %>
+
+					sf.getProperties().put(org.talend.esb.servicelocator.cxf.LocatorFeature.LOCATOR_PROPERTIES,slCustomProps_<%=cid%>);
+				<% } %>
+
+				features.add(slFeature);
+				<% if (ignoreSLStudio && !exportTypeSpringBoot ) { %>
+				}
+				<% } %>
+			<% } %>
+
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__SERVICE_ACTIVITY_MONITOR__"))) { %>
+				org.talend.esb.sam.agent.feature.EventFeature samEventFeature_<%=cid%> = null;
+
+				if(!inOSGi){
+					samEventFeature_<%=cid%> = (org.talend.esb.sam.agent.feature.EventFeature) new org.springframework.context.support.ClassPathXmlApplicationContext(new String[] { "META-INF/tesb/agent-context.xml" }).getBean(org.talend.esb.sam.agent.feature.EventFeature.class);
+				}else{
+					samEventFeature_<%=cid%> = routines.system.BundleUtils.getService(org.talend.esb.sam.agent.feature.EventFeature.class);
+				}
+
+				<% List<Map<String, String>> samCustomProperties = (List<Map<String,String>>)
+						ElementParameterParser.getObjectValue(node, "__SERVICE_ACTIVITY_MONITOR_CUSTOM_PROPERTIES__"); %>
+				<% if (!samCustomProperties.isEmpty()) { %>
+					java.util.Map<String, String> samCustomProps_<%=cid%> = new java.util.HashMap<String, String>();
+					<% for (int k = 0; k < samCustomProperties.size(); k++) { %>
+						samCustomProps_<%=cid%>.put(<%=samCustomProperties.get(k).get("PROP_NAME")%>, <%=samCustomProperties.get(k).get("PROP_VALUE")%>);
+					<% } %>
+
+					sf.getProperties().put(org.talend.esb.sam.agent.feature.EventFeature.SAM_PROPERTIES,samCustomProps_<%=cid%>);
+				<% } %>
+
+				features.add(samEventFeature_<%=cid%>);
+			<% } %>
+
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__USE_BUSINESS_CORRELATION__"))) { %>
+				features.add(new org.talend.esb.policy.correlation.feature.CorrelationIDFeature());
+			<% } %>
+
+			<% if (Boolean.valueOf(ElementParameterParser.getValue(node,"__LOG_MESSAGES__"))) { logMarkerFeatureNeeded = true; logFeatureNeeded= true; %>
+				features.add(new LogMarkerFeature());
+				features.add(new NoAuthInfoLoggingFeature());
+			<% } %>
+
+			sf.setFeatures(features);
+
+			server = sf.create();
+
+			// System.out.println("REST service [endpoint: " + endpointUrl + "] published");
+		} catch (Throwable e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void stopEndpoint() {
+		if (null != server) {
+			server.stop();
+			server.destroy();
+			// System.out.println("REST service [endpoint: " + endpointUrl + "] unpublished");
+		}
+	}
+}
+
+	public static class ContextBean {
+		static String evaluate(String context, String contextExpression, String jobName)
+				throws IOException, javax.script.ScriptException {
+			String currentContext = context;
+			String jobNameStripped = jobName.substring(jobName.lastIndexOf(".") + 1);
+
+			boolean inOSGi = routines.system.BundleUtils.inOSGi();
+			java.util.Dictionary<String, Object> jobProperties = null;
+			if (inOSGi) {
+				jobProperties = routines.system.BundleUtils.getJobProperties(jobNameStripped);
+
+				if (jobProperties != null && null != jobProperties.get("context")) {
+					currentContext = (String) jobProperties.get("context");
+				}
+			}
+						
+			boolean isExpression = contextExpression.contains("+") || contextExpression.contains("(");
+			final String prefix = isExpression ? "\"" : "";
+			java.util.Properties defaultProps = new java.util.Properties();
+			java.io.InputStream inContext = <%=className %>.class.getClassLoader()
+					.getResourceAsStream("<%=jobClassPackageFolder%>/contexts/" + currentContext  + ".properties");
+			if (inContext == null) {
+				inContext = <%=className %>.class.getClassLoader()
+						.getResourceAsStream("config/contexts/" + currentContext  + ".properties");
+			}
+			try {
+			    defaultProps.load(inContext);
+				if(jobProperties != null){
+					java.util.Enumeration<String> keys = jobProperties.keys();
+					while (keys.hasMoreElements()) {
+						String propKey = keys.nextElement();
+						if (defaultProps.containsKey(propKey)) {
+							defaultProps.put(propKey, (String) jobProperties.get(propKey));
+						}
+					}
+				}
+			} finally {
+			    inContext.close();
+			}
+			java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("context.([\\w]+)");
+			java.util.regex.Matcher matcher = pattern.matcher(contextExpression);
+
+			while (matcher.find()) {
+				contextExpression = contextExpression.replaceAll(matcher.group(0),
+						prefix + defaultProps.getProperty(matcher.group(1)) + prefix);
+			}
+			if (contextExpression.startsWith("/services")) {
+				contextExpression = contextExpression.replaceFirst("/services","");
+            }
+			return isExpression ? evaluateContextExpression(contextExpression) : contextExpression;
+		}
+
+		public static String evaluateContextExpression(String expression) throws RuntimeException {
+			delight.rhinosandox.RhinoSandbox sandbox = delight.rhinosandox.RhinoSandboxes.create();
+
+			// Add some import for Java
+			expression = expression.replaceAll("System.getProperty", "java.lang.System.getProperty");
+			return sandbox.eval(null, expression).toString();
+		}
+
+        public static String getContext(String context, String contextName, String jobName) throws Exception {
+			return contextName.contains("context.") ? evaluate(context, contextName, jobName) : contextName;
+        }
+    }
+<%
+}
+%>
+<% if (logMarkerFeatureNeeded) { %>
+    public static final class LogMarkerFeature extends org.apache.cxf.feature.AbstractFeature {
+        @Override
+        protected void initializeProvider(org.apache.cxf.interceptor.InterceptorProvider provider, org.apache.cxf.Bus bus) {
+            org.apache.cxf.interceptor.Interceptor<org.apache.cxf.message.Message> icIn =
+                    new org.apache.cxf.phase.AbstractPhaseInterceptor<org.apache.cxf.message.Message>(org.apache.cxf.phase.Phase.RECEIVE) {
+                @Override
+                public void handleMessage(org.apache.cxf.message.Message msg) {
+                    org.slf4j.MDC.put("org.talend.esb.jobclass.name", "<%=packageName%>.<%=className%>");
+                }
+            };
+            org.apache.cxf.interceptor.Interceptor<org.apache.cxf.message.Message> icOut =
+                    new org.apache.cxf.phase.AbstractPhaseInterceptor<org.apache.cxf.message.Message>(org.apache.cxf.phase.Phase.SETUP_ENDING) {
+                @Override
+                public void handleMessage(org.apache.cxf.message.Message msg) {
+                    org.slf4j.MDC.remove("org.talend.esb.jobname");
+                }
+            };
+            provider.getInInterceptors().add(icIn);
+            provider.getInFaultInterceptors().add(icIn);
+            provider.getOutInterceptors().add(icOut);
+            provider.getOutFaultInterceptors().add(icOut);
+        }
+    }
+<% } %>
+<% if (logFeatureNeeded) { %>
+    public static final class NoAuthInfoLoggingFeature extends org.apache.cxf.ext.logging.LoggingFeature {
+	    public NoAuthInfoLoggingFeature() {
+		super();
+		addSensitiveProtocolHeaderNames(new java.util.HashSet<>(java.util.Arrays.asList(org.apache.cxf.helpers.HttpHeaderHelper.AUTHORIZATION)));
+		addSensitiveElementNames(new java.util.HashSet<>(java.util.Arrays.asList("password")));
+	    }
+    }
+<% } %>

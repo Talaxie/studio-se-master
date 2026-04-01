@@ -1,0 +1,62 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    org.talend.core.model.components.IComponent
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+   	String cid = node.getUniqueName();
+   	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+	/*
+   	 * change to use label + unique to make it unique but readable
+   	 */
+//	IElementParameter param = node.getElementParameter("LABEL");
+//	if(param != null && !"__UNIQUE_NAME__".equals(param.getValue())){
+//		cid = (String)param.getValue() +"_"+ cid;	
+//	}
+	boolean inputName= ElementParameterParser.getBooleanValue(node, "____INPUT_ENDPOINT_NAME____");
+	boolean isProducer = !node.getIncomingConnections().isEmpty();
+	INode consumerNode = node;
+	if(isProducer && !inputName){
+		String desNodeName= (String)ElementParameterParser.getValue(node, "____EXIST_ENDPOINT____");
+		if(desNodeName!=null){
+			for(INode aNode : node.getProcess().getGraphicalNodes()){
+				if(aNode.getUniqueName().equals(desNodeName)){
+					consumerNode=aNode;
+					break;
+				}
+			}
+		}
+	}
+	builder.setComponent("direct-vm");
+	builder.useDoubleSlash(false);
+	builder.setName(ElementParameterParser.getValue(consumerNode, "__ENDPOINT_NAME__"));
+
+	if(isProducer){
+		boolean useBlock = ElementParameterParser.getBooleanValue(node, "____BLOCK____");
+		if(useBlock){
+			builder.addParam("block", "\"" + useBlock + "\"");
+			builder.addParam("timeout", ElementParameterParser.getValue(consumerNode, "__TIMEOUT__"));
+		}
+	}
+	String uri = builder.build();
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+			.to(<%=uri%>)
+<%
+	}else{
+%>
+			from(<%=uri%>)
+<%
+	}
+%>

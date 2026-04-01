@@ -1,0 +1,64 @@
+<%@ jet skeleton="../common/cLanguage.skeleton"
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	String expression = ElementParameterParser.getValue(node, "__EXPRESSION__");
+	String useLanguage = ElementParameterParser.getValue(node, "__USE_LANGUAGE__");
+	String language = ElementParameterParser.getValue(node, "__LANGUAGES__");
+	String predicate = ElementParameterParser.getValue(node, "__PREDICATE__");
+	String repository = ElementParameterParser.getValue(node, "__REPOSITORY_TYPE__");
+	String cacheSize = ElementParameterParser.getValue(node, "__CACHE_SIZE__");
+	String fileStore = ElementParameterParser.getValue(node, "__FILE_STORE__");
+	String eager = ElementParameterParser.getValue(node, "__EAGER__");
+	String skipDuplicate = ElementParameterParser.getValue(node, "__SKIP_DUPLICATE__");
+	String useNamespaces = ElementParameterParser.getValue(node, "__USE_NAMESPACES__");
+	
+	boolean isEager = false;
+	boolean isSkip = false;
+	
+	if("true".equals(eager)){
+		isEager = true;
+	}
+	
+	if("true".equals(skipDuplicate)){
+		isSkip = true;
+	}
+	
+	
+	if(conns.size()>0) { //BEGIN 1
+		if("false".equals(useLanguage)) { //BEGIN 2
+%>
+			.idempotentConsumer(<%=expression%>,
+<%
+		} else {
+			String exp = getExpressionDefinition(language, predicate, cid, useNamespaces, "");
+%>
+				.idempotentConsumer(<%=exp%>,
+<%
+		} //END 2
+		
+		if("MEMORY".equals(repository)) { //BEGIN 2
+%>
+			org.apache.camel.support.processor.idempotent.MemoryIdempotentRepository.memoryIdempotentRepository(<%=(cacheSize.length()>0 && !("".equals(cacheSize)))?Integer.parseInt(cacheSize):200%>)
+<%
+		} else if("FILE".equals(repository)) {
+%>
+			org.apache.camel.support.processor.idempotent.FileIdempotentRepository.fileIdempotentRepository(new java.io.File(<%=fileStore%>), <%=(cacheSize.length()>0 && !("".equals(cacheSize)))?Integer.parseInt(cacheSize):200%>)
+<%
+		} //END 2
+%>
+		).eager(<%=isEager%>).skipDuplicate(<%=isSkip%>)
+<%
+	} //END 1
+%>

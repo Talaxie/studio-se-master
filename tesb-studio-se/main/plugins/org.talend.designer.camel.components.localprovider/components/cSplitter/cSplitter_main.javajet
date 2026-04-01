@@ -1,0 +1,64 @@
+<%@ jet skeleton="../common/cLanguage.skeleton"
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String language = ElementParameterParser.getValue(node, "__LANGUAGES__");
+	String expression = ElementParameterParser.getValue(node, "__EXPRESSION__");
+	boolean useResultClassType ="true".equals(ElementParameterParser.getValue(node,"__USE_RESULT_CLASS_TYPE__"));
+	String resultClassType = ElementParameterParser.getValue(node,"__RESULT_CLASS_TYPE__");
+	String useNamespaces = ElementParameterParser.getValue(node, "__USE_NAMESPACES__");
+	
+	
+	boolean useStrategy = "true".equals(ElementParameterParser.getValue(node,"__USE_STRATEGY__"));
+	String aggregationStrategy = ElementParameterParser.getValue(node,"__AGGREGATION_STRATEGY__");
+	
+	boolean arallelProcessing="true".equals(ElementParameterParser.getValue(node, "__PARALLET_PROCESSING__"));
+	boolean stopOnException="true".equals(ElementParameterParser.getValue(node, "__STOP_ON_EXCEPTION__"));
+	boolean streaming="true".equals(ElementParameterParser.getValue(node, "__STREAMING__"));
+	boolean shareUnitOfWork="true".equals(ElementParameterParser.getValue(node, "__SHARE_UNIT_OF_WORK__"));
+	boolean returnString="true".equals(ElementParameterParser.getValue(node, "__RETURN_STRING__"));
+	
+	String timeout=ElementParameterParser.getValue(node, "__TIMEOUT__");
+	boolean hasTimeout=(timeout!=null&&timeout.matches("\\s*\\d+\\s*"));
+	boolean hasTimeoutFromContext=(timeout!=null&&timeout.startsWith("context."));
+	String exp = "";
+	if (useResultClassType) {
+		exp = getExpression(language, expression, cid, useNamespaces, resultClassType);
+	} else {
+		exp = getExpression(language, expression, cid, useNamespaces, "");
+	}
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+		.split(
+<%
+		if("none".equals(language)){
+			//inorder expression for former migrate
+			%><%=exp%>)<%
+		}else if ("xpath".equals(language)) {
+			%>xpathBuilder_<%=cid%>)<%
+		}else{
+			//fill postorder expression
+			%>).<%=exp%><%
+		}
+		if(useStrategy){			%>.aggregationStrategy(<%=aggregationStrategy%>)<%	}
+		if(arallelProcessing){		%>.parallelProcessing()<%								}
+		if(stopOnException){		%>.stopOnException()<%									}
+		if(streaming){				%>.streaming()<%										}
+		if(shareUnitOfWork){		%>.shareUnitOfWork()<%									}
+		if(hasTimeout){				%>.timeout(<%=timeout%>)<%								}
+			else if(hasTimeoutFromContext){%>.timeout(<%=ElementParameterParser.getValue(node, "__TIMEOUT__")%>)<%								}
+		if("jsonpath".equals(language) && returnString){ %>.marshal().json(org.apache.camel.model.dataformat.JsonLibrary.Jackson)<% }
+	}
+%>

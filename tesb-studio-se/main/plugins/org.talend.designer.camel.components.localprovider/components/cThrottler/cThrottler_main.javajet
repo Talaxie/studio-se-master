@@ -1,0 +1,44 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String messageCount = "10";
+	if(!("".equals(ElementParameterParser.getValue(node, "__MESSAGE_COUNT__"))))
+		 messageCount = ElementParameterParser.getValue(node, "__MESSAGE_COUNT__");
+		
+	String timePeriod = "1000";
+	if(!("".equals(ElementParameterParser.getValue(node, "__TIME_PERIOD__"))))
+		timePeriod = ElementParameterParser.getValue(node, "__TIME_PERIOD__");
+	
+	String setTimePeriod = ElementParameterParser.getValue(node, "__SET_TIME_PERIOD__");
+	String useAsyncDelaying = ElementParameterParser.getValue(node, "__USE_ASYNC_DELAYING__");
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+		if(messageCount!=null) {
+%>
+			.throttle(<%=messageCount%>)
+<%
+		}
+		if("true".equals(setTimePeriod)) {
+%>
+			.timePeriodMillis(<%=timePeriod%>)
+<%
+		}
+		if("true".equals(useAsyncDelaying)) {
+%>
+			.asyncDelayed()
+<%
+		}
+	}
+%>

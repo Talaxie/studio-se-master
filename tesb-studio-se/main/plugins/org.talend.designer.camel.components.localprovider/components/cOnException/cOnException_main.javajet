@@ -1,0 +1,78 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	List<Map<String, String>> exceptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__EXCEPTIONS__");
+
+	boolean nonBlockingRedelivery = "true".equals(ElementParameterParser.getValue(node, "__ASYNC_REDELIVERY__"));
+	
+	boolean setRedeliveringMax = "true".equals(ElementParameterParser.getValue(node, "__SET_MAX_REDELIVERY__"));
+	String maxRedelivering = ElementParameterParser.getValue(node, "__MAX_REDELIVERY__");	
+	
+	boolean handle = "true".equals(ElementParameterParser.getValue(node, "__HANDLE__"));
+	boolean continued = "true".equals(ElementParameterParser.getValue(node, "__CONTINUE__"));
+	boolean none = "true".equals(ElementParameterParser.getValue(node, "__NONE__"));
+	
+	boolean useOriginalBody = "true".equals(ElementParameterParser.getValue(node, "__USE_ORIGINAL_MESSAGE__"));
+	
+%>
+	onException(
+<%
+	boolean isFirstException = true;
+	if(exceptions.size()>0) {
+		for(Map<String, String> anException : exceptions) {
+			if(!isFirstException) {
+%>
+				,
+<%
+			}
+			isFirstException=false;
+%>
+			<%=anException.get("EXCEPTION")%>.class
+<%
+		}
+	}
+%>
+	)
+	
+<%
+	if(useOriginalBody) {
+%>
+		.useOriginalMessage()
+<%
+	}
+	if(handle) {
+%>
+		.handled(true)
+<%
+	}
+	if(continued) {
+%>
+		.continued(true)
+<%
+	}
+
+		if(setRedeliveringMax) {
+		if(null!=maxRedelivering && !("".equals(maxRedelivering)) && maxRedelivering.length()>0) {
+%>
+			.maximumRedeliveries(<%=maxRedelivering%>)
+<%
+		}
+	}
+	if(nonBlockingRedelivery) {
+%>
+		.asyncDelayedRedelivery()
+<%
+	}
+%>

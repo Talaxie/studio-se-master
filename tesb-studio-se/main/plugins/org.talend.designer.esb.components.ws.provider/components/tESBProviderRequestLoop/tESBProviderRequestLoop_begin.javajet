@@ -1,0 +1,86 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+cid = cid.replaceAll("_Loop", "");
+
+boolean isOneWay = (node.getProcess().getNodesOfType("tESBProviderFault").isEmpty()
+	&& node.getProcess().getNodesOfType("tESBProviderResponse").isEmpty());
+
+if (node.getProcess().getNodesOfType("tESBProviderRequestLoop").size() > 1) { %>
+	if (true) {
+		throw new RuntimeException("cannot instantiate Web Service: job contains more than one tESBProviderRequest component");
+	}
+<%
+}
+if (node.getProcess().getNodesOfType("tRESTRequestLoop").size() > 0) {
+%>
+	if (true) {
+		throw new RuntimeException("cannot instantiate service: job contains both tESBProviderRequest and tRESTRequest components");
+	}
+<%
+}
+%>
+
+//*** external processor(s) initialization
+	ESBProviderCallbackTalendJobInner providerCallback_<%=cid%>;
+	HandlerThread_<%=cid%> handlerThread_<%=cid%> = null;
+	if (null == this.callback) {
+		final QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document> handler_<%=cid%> =
+			new QueuedMessageHandlerImpl<java.util.Map, org.dom4j.Document>();
+		handlerThread_<%=cid%> =
+			new HandlerThread_<%=cid%>(handler_<%=cid%>); //
+		handlerThread_<%=cid%>.start();
+		providerCallback_<%=cid%> = new ESBProviderCallbackTalendJobWrapper_<%=cid%>(handler_<%=cid%>);
+	} else {
+		providerCallback_<%=cid%> = new ESBProviderCallbackTalendJobWrapper_<%=cid%>(this.callback);
+	}
+	globalMap.put("esbHandler", providerCallback_<%=cid%>);
+//*** external processor(s) initialization finish
+
+int nb_line_<%=cid%> = 0;
+
+try {
+	// This is a beginning of the ESB provider request component cycle
+	globalMap.put("wsRequestReceivedAndResponseSentBack", true);
+	while(true) {
+		try {
+			ESBProviderCallbackTalendJobInner esbHandler_<%=cid%> =
+				(ESBProviderCallbackTalendJobInner) globalMap.get("esbHandler");
+
+<% if (!isOneWay) { %>
+			if (!(Boolean) globalMap.get("wsRequestReceivedAndResponseSentBack")) {
+				// esbHandler_<%=cid%>.sendFault(new RuntimeException("response/fault is not provided by Talend job"));
+				esbHandler_<%=cid%>.sendResponse(org.dom4j.DocumentHelper.createDocument());
+			}
+<% } %>
+
+            java.util.Map<String, Object> request_<%=cid%> = (java.util.Map<String, Object>) esbHandler_<%=cid%>.getRequest();
+            globalMap.put("<%=cid%>_" + ESBProviderCallback.HEADERS_SOAP, request_<%=cid%>.get(ESBProviderCallback.HEADERS_SOAP));
+            globalMap.put("<%=cid%>_" + ESBProviderCallback.HEADERS_HTTP, request_<%=cid%>.get(ESBProviderCallback.HEADERS_HTTP));
+            java.util.Collection<org.apache.cxf.headers.Header> existingSoapHeaders_<%=cid%> = (java.util.Collection<org.apache.cxf.headers.Header>) request_<%=cid%>.get(ESBProviderCallback.HEADERS_SOAP);
+            if (null != existingSoapHeaders_<%=cid%>) {
+                for (org.apache.cxf.headers.Header existingHeader : existingSoapHeaders_<%=cid%>) {
+                    if (org.apache.wss4j.common.WSS4JConstants.WSSE_NS.equals(existingHeader.getName().getNamespaceURI())
+                            && org.apache.wss4j.common.WSS4JConstants.WSSE_LN.equals(existingHeader.getName().getLocalPart())) {
+                        org.w3c.dom.NodeList nl = ((org.w3c.dom.Element) existingHeader.getObject()).getElementsByTagNameNS(org.apache.wss4j.common.WSS4JConstants.SAML2_NS, org.apache.wss4j.common.WSS4JConstants.ASSERTION_LN);
+                        if (nl.getLength() > 0) {
+                            globalMap.put("<%=cid%>_SECURITY_TOKEN", nl.item(0));
+                            break;
+                        }
+                    }
+                }
+            }
+            globalMap.put("<%=cid%>_"+ "CORRELATION_ID", request_<%=cid%>.get("CorrelationID"));
+            org.dom4j.Document requestMessage_<%=cid%> = (org.dom4j.Document) request_<%=cid%>.get(ESBProviderCallback.REQUEST);
+
+<% if (!isOneWay) { %>
+			globalMap.put("wsRequestReceivedAndResponseSentBack", false);
+<% } %>

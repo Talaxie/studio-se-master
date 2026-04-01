@@ -1,0 +1,175 @@
+public class CLASS {
+
+    public static java.util.Collection<String> getRoutelets(final org.talend.core.model.process.IProcess process) {
+        java.util.Collection<String> routelets = new java.util.HashSet<String>();
+        addRoutelets(routelets, process);
+        return routelets;
+    }
+
+    private static void addRoutelets(final java.util.Collection<String> routelets, final org.talend.core.model.process.IProcess process) {
+        for (org.talend.core.model.process.INode node : process.getGeneratingNodes()) {
+            if ("Routelets".equals(node.getComponent().getOriginalFamilyName())) {
+                org.talend.core.model.process.IProcess2 routelet = (org.talend.core.model.process.IProcess2) node.getComponent().getProcess();
+                final String clazz = org.talend.core.model.utils.RouteUtil.resolveClassName(routelet);
+                if (routelets.add(clazz)) {
+                    addRoutelets(routelets, routelet);
+                }
+            }
+        }
+    }
+
+	static boolean routeContextCodeGenerated = false;
+	
+	public static boolean hasRouteletComponent(final org.talend.core.model.process.IProcess process){
+		for (org.talend.core.model.process.INode node : process.getGeneratingNodes()) {
+            if ("Routelets".equals(node.getComponent().getOriginalFamilyName())) {
+            	return true;
+            }
+        }
+		return false;
+	}
+
+	public static String generateAddRouteletMethod(final org.talend.core.model.process.IProcess process){
+		if(hasRouteletComponent(process)){
+			routeContextCodeGenerated = false;
+			StringBuilder code = new StringBuilder("private void addRoutelets() throws Exception{\n");
+			addRouteletsWithContext(process, code);
+			return code.append("}\n").toString();
+		}else{
+			return "";
+		}
+	}
+	
+	public static String generateAddRouteletMethodWithCamelContext(final org.talend.core.model.process.IProcess process){
+		if(hasRouteletComponent(process)){
+			routeContextCodeGenerated = false;
+			StringBuilder code = new StringBuilder("private void addRoutelets(org.apache.camel.CamelContext camelContext) throws Exception{\n");
+			addRouteletsWithCamelContext(process, code);
+			return code.append("}\n").toString();
+		}else{
+			return "";
+		}
+	}
+	
+	public static String generateAddRoutesMethod(final org.talend.core.model.process.IProcess process){
+		StringBuilder code = new StringBuilder();
+		boolean exportTypeSpringBoot = process.getClass().getName().endsWith("MicroServiceProcess");
+        for (org.talend.core.model.process.INode node : process.getGeneratingNodes()) {
+            if ("Routelets".equals(node.getComponent().getOriginalFamilyName())) {
+	            boolean useSelected = "true".equals(ElementParameterParser.getValue(node, "__SELECTED_CONTEXT__"));
+	            boolean useRoute    = "true".equals(ElementParameterParser.getValue(node, "__ROUTE_CONTEXT__"));
+	            boolean useRoutelet    = "true".equals(ElementParameterParser.getValue(node, "__ROUTELET_CONTEXT__"));
+	            List<Map<String,String>> userDefinedParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__CONTEXT_PARAM__");
+	            org.talend.core.model.process.IProcess2 routelet = (org.talend.core.model.process.IProcess2) node.getComponent().getProcess();
+	            final String routeletClass = org.talend.core.model.utils.RouteUtil.resolveClassName(routelet);
+	            final String instanceName = routeletClass.substring(routeletClass.lastIndexOf('.')+1);
+	            code.append(routeletClass +" "+ instanceName +"=new "+ routeletClass+ "();\n");
+		    	code.append("org.apache.camel.component.properties.PropertiesComponent "+ instanceName +"_props = new org.apache.camel.component.properties.PropertiesComponent();\n");
+	            if(useRoute){
+	            	if(!routeContextCodeGenerated && !exportTypeSpringBoot){
+	            		routeContextCodeGenerated=true;
+				        code.append("final Map<String, String> routeContext = new HashMap<String, String>();\n" + 
+			                "readContextValues(contextStr);\n" + 
+			                "for (java.util.Map.Entry<Object, Object> entry : context.entrySet()) {\n" + 
+			                "    routeContext.put((String) entry.getKey(), (String) entry.getValue());\n" + 
+			                "}\n");
+			        	code.append(instanceName +".setArguments(routeContext);\n");
+	            	}
+	            	code.append(instanceName+".setContextName(contextStr);\n");
+	            }else if(useSelected){
+	            	code.append(instanceName+".setContextName(\"" + ElementParameterParser.getValue(node, "__PROCESS_TYPE_CONTEXT__") + "\");\n");
+	            }else if(useRoutelet){
+	            	code.append(instanceName+".setContextName(\""+node.getComponent().getProcess().getContextManager().getDefaultContext().getName()+"\");\n");
+	            }	            
+	            if(userDefinedParams!=null && userDefinedParams.size()>0){
+	            	code.append("final Properties overwriteContext_"+instanceName+" = new Properties();\n");
+	            	if (!exportTypeSpringBoot) {
+	                    code.append("readContextValues(contextStr, camelContext);\n");
+	            	} 
+	            	for(Map<String,String> map :userDefinedParams){
+	            		code.append("overwriteContext_"+instanceName+".put(\""+map.get("Parameters")+"\", "+map.get("Values")+");\n"); 
+	            	}
+	            	code.append(instanceName +".setArguments(overwriteContext_"+instanceName+");\n");
+					code.append(instanceName +"_props.setOverrideProperties(overwriteContext_" + instanceName + ");\n");
+					code.append("camelContext.setPropertiesComponent(" + instanceName +"_props);\n\n");
+	            }
+
+	            if (exportTypeSpringBoot) code.append("camelContext.addRoutes("+instanceName+");");
+            }
+        }
+        
+        return code.toString();
+    }
+    
+    private static void addRouteletsWithCamelContext(final org.talend.core.model.process.IProcess process, StringBuilder code){
+		boolean exportTypeSpringBoot = process.getClass().getName().endsWith("MicroServiceProcess");
+        for (org.talend.core.model.process.INode node : process.getGeneratingNodes()) {
+            if ("Routelets".equals(node.getComponent().getOriginalFamilyName())) {
+	            boolean useSelected = "true".equals(ElementParameterParser.getValue(node, "__SELECTED_CONTEXT__"));
+	            boolean useRoute    = "true".equals(ElementParameterParser.getValue(node, "__ROUTE_CONTEXT__"));
+	            boolean useRoutelet = "true".equals(ElementParameterParser.getValue(node, "__ROUTELET_CONTEXT__"));
+	            List<Map<String,String>> userDefinedParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__CONTEXT_PARAM__");
+	            org.talend.core.model.process.IProcess2 routelet = (org.talend.core.model.process.IProcess2) node.getComponent().getProcess();
+	            final String routeletClass = org.talend.core.model.utils.RouteUtil.resolveClassName(routelet);
+	            final String instanceName = routeletClass.substring(routeletClass.lastIndexOf('.')+1);
+	            code.append(routeletClass +" "+ instanceName +"=new "+ routeletClass+ "();\n");
+	            code.append("camelContext.getRegistry().bind(\"" + instanceName +"\", new "+ routeletClass+ "());\n");
+	            
+	            if(useRoute){
+	            	code.append(instanceName+".setContextName(contextStr);\n");	            	
+	            }else if(useSelected){
+	            	code.append(instanceName+".setContextName(\"" + ElementParameterParser.getValue(node, "__PROCESS_TYPE_CONTEXT__") + "\");\n");
+	            }else if(useRoutelet) {
+	            	code.append(instanceName+".setContextName(\""+node.getComponent().getProcess().getContextManager().getDefaultContext().getName()+"\");\n");
+	            }
+	            if(userDefinedParams!=null && userDefinedParams.size()>0){
+	                if (!exportTypeSpringBoot) {
+	                    code.append("readContextValues(contextStr, camelContext);\n");
+	                }
+	            	code.append("final Map<String, String> overwriteContext_"+instanceName+" = new HashMap<String, String>();\n"); 
+	            	for(Map<String,String> map :userDefinedParams){
+	            		code.append("overwriteContext_"+instanceName+".put(\""+map.get("Parameters")+"\", "+map.get("Values")+");\n"); 
+	            	}
+	            	code.append(instanceName +".setArguments(overwriteContext_"+instanceName+");\n");
+	            }
+            }
+        }
+    }
+
+    private static void addRouteletsWithContext(final org.talend.core.model.process.IProcess process, StringBuilder code){
+		boolean exportTypeSpringBoot = process.getClass().getName().endsWith("MicroServiceProcess");
+        for (org.talend.core.model.process.INode node : process.getGeneratingNodes()) {
+            if ("Routelets".equals(node.getComponent().getOriginalFamilyName())) {
+	            boolean useSelected = "true".equals(ElementParameterParser.getValue(node, "__SELECTED_CONTEXT__"));
+	            boolean useRoute    = "true".equals(ElementParameterParser.getValue(node, "__ROUTE_CONTEXT__"));
+	            boolean useRoutelet = "true".equals(ElementParameterParser.getValue(node, "__ROUTELET_CONTEXT__"));
+	            List<Map<String,String>> userDefinedParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__CONTEXT_PARAM__");
+	            org.talend.core.model.process.IProcess2 routelet = (org.talend.core.model.process.IProcess2) node.getComponent().getProcess();
+	            final String routeletClass = org.talend.core.model.utils.RouteUtil.resolveClassName(routelet);
+	            final String instanceName = routeletClass.substring(routeletClass.lastIndexOf('.')+1);
+	            code.append(routeletClass +" "+ instanceName +"=new "+ routeletClass+ "(){@Override\n public void configure() throws java.lang.Exception {this.doConfig();}};\n");
+	            if(useRoute){
+	            	code.append(instanceName+".setContextName(contextStr);\n");	            	
+	            }else if(useSelected){
+	            	//do nothing
+	            }else if(useRoutelet) {
+	            	code.append(instanceName+".setContextName(\""+node.getComponent().getProcess().getContextManager().getDefaultContext().getName()+"\");\n");
+	            }
+	            if(userDefinedParams!=null && userDefinedParams.size()>0){
+	                if (!exportTypeSpringBoot) {
+	                    code.append("readContextValues(contextStr, camelContext);\n");
+	                }
+	            	code.append("final Map<String, String> overwriteContext_"+instanceName+" = new HashMap<String, String>();\n"); 
+	            	for(Map<String,String> map :userDefinedParams){
+	            		code.append("overwriteContext_"+instanceName+".put(\""+map.get("Parameters")+"\", "+map.get("Values")+");\n"); 
+	            	}
+	            	code.append(instanceName +".setArguments(overwriteContext_"+instanceName+");\n");
+	            }
+            }
+        }
+    }
+
+    public String generate(CodeGeneratorArgument argument){
+        return "";
+    }
+}

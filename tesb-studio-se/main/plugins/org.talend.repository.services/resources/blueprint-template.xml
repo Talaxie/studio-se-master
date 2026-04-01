@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0">
+
+#if ($useSAM)
+    <reference id="eventFeature" interface="org.talend.esb.sam.agent.feature.EventFeature" />
+#end ## ($useSAM)
+
+#if ($useSL)
+	<reference interface="org.talend.esb.servicelocator.cxf.LocatorFeature" id="locatorFeature" />
+#end ## ($useSL)
+
+#if ($useEncryption || $useServiceRegistry)
+    <reference id="xkmsCryptoProviderFactory" interface="org.apache.cxf.xkms.crypto.CryptoProviderFactory" />
+    <bean id="cryptoProvider" factory-ref="xkmsCryptoProviderFactory" factory-method="create" />
+#end ## ($useEncryption || $useServiceRegistry)
+
+#if ($useSecuritySAML || $useServiceRegistry)
+#[[
+    <property-placeholder persistent-id="org.talend.esb.job.service" placeholder-prefix="$default{"
+        xmlns="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.3.0" id="tesbJobServiceDefaults"/>
+    <property-placeholder ]]#persistent-id="org.talend.esb.job.service.${samlConfig}"#[[ placeholder-prefix="$service{"
+        xmlns="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.3.0" depends-on="tesbJobServiceDefaults">
+        <default-properties>
+            <property name="security.signature.username" value="$default{security.signature.username}" />
+            <property name="security.signature.password" value="$default{security.signature.password}" />
+            <property name="security.signature.properties" value="$default{security.signature.properties}" />
+            <property name="security.encryption.username" value="$default{security.encryption.username}" />
+        </default-properties>
+    </property-placeholder>
+]]#
+#end ## ($useSecuritySAML || $useServiceRegistry)
+
+    <jaxws:endpoint xmlns:jaxws="http://cxf.apache.org/blueprint/jaxws"
+            id="${service}"
+            implementor="#genericServiceProvider"
+            xmlns:tns="${namespace}"
+            serviceName="tns:${service}"
+            endpointName="tns:${port}"
+            address="${address}"
+            wsdlLocation="classpath:/${wsdlLocation}">
+        <jaxws:properties>
+#if ($useWsdlSchemaValidation && !$useServiceRegistry)
+            <entry key="schema-validation-enabled" value="true" />
+#end ## ($useWsdlSchemaValidation && !$useServiceRegistry)
+#if ($useSecurityToken || $useServiceRegistry)
+            <entry key="ws-security.ut.validator">
+                <bean class="org.apache.wss4j.dom.validate.JAASUsernameTokenValidator">
+                    <property name="contextName" value="karaf" />
+                </bean>
+            </entry>
+#end ## ($useSecurityToken || $useServiceRegistry)
+#if ($useSecuritySAML || $useServiceRegistry)
+#[[
+            <entry key="security.signature.username" value="$service{security.signature.username}" />
+            <entry key="ws-security.callback-handler">
+                <bean class="org.talend.esb.security.saml.WSPasswordCallbackHandler">
+                    <argument type="java.lang.String" value="$service{security.signature.username}" />
+                    <argument type="java.lang.String" value="$service{security.signature.password}" />
+                </bean>
+            </entry>
+            <entry key="security.signature.properties" value="$service{security.signature.properties}" />
+]]#
+#if ($useEncryption || $useServiceRegistry)
+            <entry key="security.encryption.crypto" value-ref="cryptoProvider" />
+            <entry key="security.encryption.username" value="$service{security.encryption.username}"/>
+#end ## ($useEncryption || $useServiceRegistry)
+#end ## ($useSecuritySAML || $useServiceRegistry)
+
+            <entry key="use.service.registry" value="${useServiceRegistry}" />
+#if ($useSL)
+	#if (!$slCustomProps.isEmpty())
+		    <entry key="esb.locator.properties">
+		        <map>
+		        	#foreach ($entry in $slCustomProps.entrySet())
+		            <entry key="${entry.key}" value="${entry.value}" />
+		            #end ## ($entry in $slCustomProps.entrySet())
+		        </map>
+		    </entry>
+	#end ## (!$slCustomProps.isEmpty())
+#end ## ($useSL)
+        </jaxws:properties>
+
+        <jaxws:features>
+#if ($useSL)
+	<ref component-id="locatorFeature" />
+#end ## ($useSL)
+#if ($useSAM)
+            <ref component-id="eventFeature" />
+#end ## ($useSAM)
+#if ($logMessages)
+            <bean class="org.talend.esb.security.logging.NoAuthInfoLoggingFeature" />
+#end ## ($logMessages)
+#if ($useSecurityToken || $useSecuritySAML)
+            <p:policies xmlns:p="http://cxf.apache.org/policy">
+                <wsp:Policy xmlns:wsp="http://www.w3.org/ns/ws-policy">
+#if ($useSecurityToken && $useSecuritySAML)
+                    <wsp:ExactlyOne>
+                        <wsp:All>
+                            <wsp:PolicyReference URI="org.talend.esb.job.token.policy" />
+                        </wsp:All>
+                        <wsp:All>
+#if ($useAuthorization)
+#if ($useEncryption)
+                            <wsp:PolicyReference URI="org.talend.esb.job.saml.authz.crypto.policy" />
+#else ## !($useEncryption)
+                            <wsp:PolicyReference URI="org.talend.esb.job.saml.authz.policy" />
+#end ## ($useEncryption)
+#else ## !($useAuthorization)
+#if ($useEncryption)
+                            <wsp:PolicyReference URI="org.talend.esb.job.saml.crypto.policy" />
+#else ## !($useEncryption)
+                            <wsp:PolicyReference URI="org.talend.esb.job.saml.policy" />
+#end ## ($useEncryption)
+#end ## ($useAuthorization)
+                        </wsp:All>
+                    </wsp:ExactlyOne>
+#elseif ($useSecurityToken) ## ($useSecurityToken && $useSecuritySAML)
+                    <wsp:PolicyReference URI="org.talend.esb.job.token.policy" />
+#elseif ($useSecuritySAML) ## ($useSecurityToken)
+#if ($useAuthorization)
+#if ($useEncryption)
+                    <wsp:PolicyReference URI="org.talend.esb.job.saml.authz.crypto.policy" />
+#else ## !($useEncryption)
+                    <wsp:PolicyReference URI="org.talend.esb.job.saml.authz.policy" />
+#end ## ($useEncryption)
+#else ## !($useAuthorization)
+#if ($useEncryption)
+                    <wsp:PolicyReference URI="org.talend.esb.job.saml.crypto.policy" />
+#else ## !($useEncryption)
+                    <wsp:PolicyReference URI="org.talend.esb.job.saml.policy" />
+#end ## ($useEncryption)
+#end ## ($useAuthorization)
+#end ## ($useSecuritySAML)
+                </wsp:Policy>
+            </p:policies>
+#end ## ($useSecurityToken || $useSecuritySAML)
+#if ($useBusinessCorrelation)
+            <bean class="org.talend.esb.policy.correlation.feature.CorrelationIDFeature" />
+#end ## ($useBusinessCorrelation)
+            <bean class="org.apache.cxf.metrics.MetricsFeature" />
+        </jaxws:features>
+    </jaxws:endpoint>
+
+
+
+    <reference interface="org.talend.esb.job.controller.ProviderFactory" id="providerFactory" />
+    <bean id="genericServiceProvider" factory-ref="providerFactory" factory-method="create">
+        <argument>
+            <map>
+#foreach ($entry in $operation2job.entrySet())
+                <entry key="${entry.key}" value="${entry.value}" />
+#end ## ($entry in $operation2job.entrySet())
+            </map>
+        </argument>
+#if ($useSecurityToken || $useSecuritySAML)
+        <argument type="org.apache.cxf.Bus" ref="cxf" />
+#end ## ($useSecurityToken || $useSecuritySAML)
+        <property name="extractHeaders" value="true" />
+    </bean>
+    <service ref="genericServiceProvider" interface="org.osgi.service.cm.ManagedService">
+        <service-properties>
+            <entry key="service.pid" value="${studioName}" />
+        </service-properties>
+    </service>
+
+</blueprint>

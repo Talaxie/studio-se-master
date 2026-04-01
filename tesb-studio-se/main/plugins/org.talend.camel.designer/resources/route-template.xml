@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:camel="http://camel.apache.org/schema/spring"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:osgi="http://www.springframework.org/schema/osgi"
+       xmlns:osgix="http://www.springframework.org/schema/osgi-compendium"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+           http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd
+           http://www.springframework.org/schema/osgi http://www.springframework.org/schema/osgi/spring-osgi.xsd
+           http://www.springframework.org/schema/osgi-compendium http://www.springframework.org/schema/osgi-compendium/spring-osgi-compendium.xsd">
+
+    <osgix:cm-properties id="${name}.properties" persistent-id="${name}" />
+
+#if ($hasCXFRSSamlProviderAuthz)
+#[[
+    <osgix:cm-properties id="org.talend.esb.authorization.pep" persistent-id="org.talend.esb.authorization.pep" />
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="properties" ref="org.talend.esb.authorization.pep" />
+        <property name="placeholderPrefix" value="$pep{" />
+    </bean>
+]]#
+#end
+
+	<bean id="route" class="${className}">
+        <!--osgix:managed-properties persistent-id="${name}" update-strategy="bean-managed" update-method="setArguments" /-->
+		<property name="arguments" ref="${name}.properties" />
+		
+#if ($hasCXFComponent && ($hasCXFUsernameToken || $hasCXFSamlConsumer || $hasCXFSamlProvider))
+#[[
+        <property name="policyProvider">
+            <osgi:reference interface="org.talend.esb.security.policy.PolicyProvider" />
+        </property>
+]]#
+#end
+#if ($hasCXFSamlProvider)
+#[[
+        <property name="securityProps" >
+            <osgix:cm-properties id="org.talend.esb.job.service" persistent-id="org.talend.esb.job.service" />
+        </property>
+]]#
+#end
+#if ($hasCXFSamlConsumer)
+#[[
+        <property name="clientProperties">
+            <osgix:cm-properties id="org.talend.esb.job.client" persistent-id="org.talend.esb.job.client" />
+        </property>
+]]#
+#end
+#if ($hasCXFRSSamlProviderAuthz)
+#[[
+		<property name="authorizationInterceptor">
+			<bean class="org.talend.esb.authorization.xacml.rt.pep.CXFXACMLAuthorizingInterceptor">
+				<property name="pdpAddress" value="$pep{tesb.pdp.address}"/>
+			</bean>
+		</property>
+]]#
+#end
+
+#if (!$dataSources.isEmpty())
+		<property name="dataSourceReferences">
+		    <ref component-id="dataSourceReferenceList" /> 
+		</property>
+#end
+	</bean>
+
+#if ($routelets)
+#foreach ($routelet in $routelets)
+    <osgi:reference id="${routelet}" interface="org.apache.camel.RoutesBuilder" filter="(id=${routelet})" />
+#end
+    <camel:camelContext id="${idName}">
+        <camel:routeBuilder ref="route" />
+#foreach ($routelet in $routelets)
+        <camel:routeBuilder ref="${routelet}" />
+#end
+    </camel:camelContext>
+#else
+    <osgi:service interface="org.apache.camel.RoutesBuilder" ref="route" >
+        <service-properties>
+            <entry key="id" value="${idName}"/>
+        </service-properties>
+    </osgi:service>
+#end
+
+#if (!$dataSources.isEmpty())
+	<reference-list id="dataSourceReferenceList" member-type="service-reference" interface="javax.sql.DataSource" />
+#end
+
+</beans>

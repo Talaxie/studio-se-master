@@ -1,0 +1,69 @@
+<%@ jet
+	imports="
+	    java.util.List
+
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.process.IConnection
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode) codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	cid = cid.replaceAll("_Loop", "");
+
+	Boolean keepListening = Boolean.valueOf(ElementParameterParser.getValue(node, "__KEEPLISTENING__"));
+%>
+		} catch (ESBJobInterruptedException e_<%=cid%>) {
+			// job interrupted from outside
+            ((java.util.Map) threadLocal.get()).put("JobInterrupted", "true");
+			break;
+		} catch (Throwable e_<%=cid%>) {
+			// handle exception by 'On Component Error' trigger or/and tLogCatcher		
+			if (e_<%=cid%> instanceof Exception) {
+				new TalendException((Exception) e_<%=cid%>, currentComponent, globalMap).printStackTrace();
+			} else {
+				new TalendException(new RuntimeException (e_<%=cid%>), currentComponent, globalMap).printStackTrace();
+			}
+			((ESBProviderCallbackTalendJobInner) globalMap.get("esbHandler")).sendFaultByDefault(e_<%=cid%>);
+		} finally {
+			// close DB connections
+			try {
+				java.util.Map<String, routines.system.TalendDataSource> talendDataSources = 
+					(java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+				if (null != talendDataSources) {
+					for (routines.system.TalendDataSource talendDataSource : talendDataSources.values()) {
+						talendDataSource.close();
+					}
+				}
+			} catch (Throwable e_<%=cid%>) {
+			    e_<%=cid%>.printStackTrace(System.err);
+			}
+
+			// Exit from this loop is made by the configuring "Keep listening"
+			// parameter to false. Then we will have a break before.
+			if ("false".equals("<%=keepListening%>")) {
+				break;
+			}
+		}
+		nb_line_<%=cid%>++;
+		globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid%>);
+	} // This is the end of the ESB Service Provider loop
+} finally {
+<% if (!keepListening) { %>
+	// for "keep listening" == false web service need a time to serve response
+	if (null == this.callback) {
+		// only for execution in Studio
+		Thread.currentThread();
+		Thread.sleep(500);
+	}
+<% } %>
+	// unsubscribe
+	if (null != handlerThread_<%=cid%>) {
+		// stop endpoint in case it was opened by job
+		handlerThread_<%=cid%>.stopEndpoint();
+	}
+}

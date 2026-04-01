@@ -1,0 +1,157 @@
+<%@ jet skeleton="@{org.talend.designer.camel.components.localprovider}/components/common/cLanguage.skeleton"
+	imports="
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.IElement
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection 
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.designer.runprocess.CodeGeneratorRoutine
+		org.talend.designer.codegen.i18n.Messages
+		org.talend.core.ui.branding.IBrandingService
+		org.talend.core.ui.branding.AbstractBrandingService
+		org.talend.core.GlobalServiceRegister
+		org.talend.designer.codegen.ITalendSynchronizer
+		java.util.List
+		java.util.ArrayList
+		java.util.Vector
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.core.model.process.IContextParameter
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.utils.JavaResourcesHelper
+	"
+%>
+
+<%
+
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+
+INode node = (INode) codeGenArgument.getArgument();
+
+List< ? extends IConnection> connsIf = node.getIncomingConnections();
+if(connsIf.size()>0) {
+	if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_WHEN) {
+		IConnection currentConnection = connsIf.get(0);
+		INode sourceNode = currentConnection.getSource();
+		String languageType = currentConnection.getRouteConnectionType();
+		String condition = currentConnection.getCondition();
+		String expression = "none".equals(languageType)?condition:languageType+"("+condition+")";
+		if("cIntercept".equals(sourceNode.getComponent().getName())){
+%>
+		.when(<%=expression%>)
+<%		
+		}else if("cMessageRouter".equals(sourceNode.getComponent().getName())){
+			/*
+			* if is cMessageRouter, we have to know the endChoice() is necessary or not
+			* according to the setting of very previous when connection setting
+			*/
+			int currentOrder = currentConnection.getOutputId();
+			int previousOrder = -1;
+			IConnection previousCon = null;
+			List<? extends IConnection> allWhenConnections = sourceNode.getOutgoingConnections(EConnectionType.ROUTE_WHEN);
+			for(IConnection c:allWhenConnections){
+				int tmp = c.getOutputId();
+				if(tmp < currentOrder && tmp >previousOrder){
+					previousCon = c;
+					previousOrder = tmp;
+				}
+			}
+			String cid = currentConnection.getUniqueName();
+			String type = currentConnection.getRouteConnectionType();
+			String exp;
+			if ("xpath".equals(type)) {
+				IElement element = (IElement) currentConnection;
+				String useNamespaces = ElementParameterParser.getValue(element, "__USE_NAMESPACES__");
+            	exp = getExpression(languageType, condition, cid, useNamespaces, "");
+			} else {
+				exp = getExpression(languageType, condition, cid, "false", "");
+			}
+            
+			if(previousCon != null && "true".equals(previousCon.getEndChoice())){
+%>
+				.endChoice()
+<%
+			}
+%>
+			.when().<%=exp%>
+<%
+		}
+	} else if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_OTHER) {
+			IConnection currentConnection = connsIf.get(0);
+			INode sourceNode = currentConnection.getSource();
+			if("cMessageRouter".equals(sourceNode.getComponent().getName())){
+				/*
+				* if is cMessageRouter, we have to know the endChoice() is necessary or not
+				* according to the setting of latest when connection setting
+				*/
+				int previousOrder = -1;
+				IConnection previousCon = null;
+				List<? extends IConnection> allWhenConnections = sourceNode.getOutgoingConnections(EConnectionType.ROUTE_WHEN);
+				int whenConnectionsSize = allWhenConnections.size();
+				if(whenConnectionsSize == 1){
+					previousCon = allWhenConnections.get(0);
+				}else if(whenConnectionsSize >1){
+					for(IConnection c:allWhenConnections){
+						int tmp = c.getOutputId();
+						if(tmp >previousOrder){
+							previousCon = c;
+							previousOrder = tmp;
+						}
+					} 
+				}
+				if(previousCon != null && "true".equals(previousCon.getEndChoice())){
+%>
+				.endChoice()
+<%
+				}
+			}
+%>
+		.otherwise()
+<%
+	} else if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_TRY) {
+%>
+		.doTry()
+<%
+	} else if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_CATCH) {
+%>
+		.doCatch(<%=connsIf.get(0).getExceptionList()%>)
+<%
+	} else if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_FINALLY) {
+%>
+		.doFinally()
+<%
+	} else if(connsIf.get(0).getLineStyle()==EConnectionType.ROUTE_ENDBLOCK) {
+		IConnection currentConnection = connsIf.get(0);
+		INode sourceNode = currentConnection.getSource();
+		if("cMessageRouter".equals(sourceNode.getComponent().getName())){
+			/*
+			* if is cMessageRouter, we have to know the endChoice() is necessary or not
+			* according to the setting of latest when connection setting (if no otherwise)
+			*/
+			List<? extends IConnection> allOtherCons = sourceNode.getOutgoingConnections(EConnectionType.ROUTE_OTHER);
+			if(allOtherCons == null || allOtherCons.size() == 0){
+				int previousOrder = -1;
+				IConnection previousCon = null;
+				List<? extends IConnection> allWhenConnections = sourceNode.getOutgoingConnections(EConnectionType.ROUTE_WHEN);
+				for(IConnection c:allWhenConnections){
+					int tmp = c.getOutputId();
+					if(tmp >previousOrder){
+						previousCon = c;
+						previousOrder = tmp;
+					}
+				} 
+				if(previousCon != null && "true".equals(previousCon.getEndChoice())){
+%>
+				.endChoice()
+<%
+				}
+			}	
+		}
+%>
+		.end()
+<%
+	}
+}	
+%>

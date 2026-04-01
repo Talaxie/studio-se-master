@@ -1,0 +1,67 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    org.talend.core.model.components.IComponent
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+   	String cid = node.getUniqueName();
+   	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+//  http://jira.talendforge.org/browse/TESB-5241
+	/*
+   	 * change to use label + unique to make it unique but readable
+   	 */
+//	IElementParameter param = node.getElementParameter("LABEL");
+//	if(param != null && !"__UNIQUE_NAME__".equals(param.getValue())){
+//		cid = (String)param.getValue()+"_"+cid;	
+//	}
+	builder.setComponent("timer");
+	builder.useDoubleSlash(false);
+	builder.setName("\"" + node.getUniqueName() + "\"");
+	
+	String period = ElementParameterParser.getValue(node, "__PERIOD__");
+	builder.addParamIfNotDefault("period", period, "1000");
+	
+	String repeat = ElementParameterParser.getValue(node, "__REPEATCOUNT__");
+	builder.addParamIfNotDefault("repeatCount", repeat, "0");
+	
+	String delay = ElementParameterParser.getValue(node, "__DELAY__");
+	builder.addParam("delay", delay);
+	
+	String fixedRate = ElementParameterParser.getValue(node, "__FIXEDRATE__");
+	if("true".equals(fixedRate)){
+		builder.addParam("fixedRate", "\"" + fixedRate + "\"");
+	}
+	
+	String daemon = ElementParameterParser.getValue(node, "__DAEMON__");
+	if("false".equals(daemon)){
+		builder.addParam("daemon", "\"" + daemon + "\"");
+	}
+	
+	String setTime = ElementParameterParser.getValue(node, "__SET_TIME__");
+	if("true".equals(setTime)){
+		String time = ElementParameterParser.getValue(node, "__TIME__");
+		builder.addParam("time", time);
+	}
+	
+	String uri = builder.build();
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+			.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>

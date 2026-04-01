@@ -1,0 +1,55 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	INode consumerNode = node;
+	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+
+	boolean asProductor = !node.getIncomingConnections().isEmpty();
+	if(asProductor){
+	
+		Object inputEndpointName = ElementParameterParser.getValue(node, "__INPUT_ENDPOINT_NAME___");
+
+		if(!"true".equals(inputEndpointName)){
+			Object desNode= ElementParameterParser.getValue(node, "____EXIST_ENDPOINT____");
+			if(desNode!=null){
+				String desNodeName = desNode.toString();	
+				for(INode aNode : node.getProcess().getGraphicalNodes()) {
+					if(aNode.getUniqueName().equals(desNodeName)){
+						consumerNode=aNode;
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	String directName = ElementParameterParser.getValue(consumerNode, "__NAME__");
+
+	builder.setComponent("direct");
+	builder.setName(directName);
+	builder.useDoubleSlash(false);
+	
+	List<Map<String, String>> tableValues = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__ADVARGUMENTS__");
+	builder.addParams(tableValues);
+
+	String uri = builder.build();
+	if(asProductor) {
+%>
+			.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>

@@ -1,0 +1,217 @@
+<%@ jet%>
+<%
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    boolean hasCredentials = false;
+    boolean hasClientConfiguration = false;
+
+    Map<String, String> awsTypeMap = new java.util.HashMap<String, String>() {
+        {
+            put("cAWSS3",  "software.amazon.awssdk.services.s3.S3Client");
+            put("cAWSSES", "software.amazon.awssdk.services.ses.SesClient");
+            put("cAWSSQS", "software.amazon.awssdk.services.sqs.SqsClient");
+            put("cAWSSNS", "software.amazon.awssdk.services.sns.SnsClient");
+            put("cAWSMQBroker", "software.amazon.awssdk.services.mq.MQClient");
+        }
+    };
+
+    boolean configClient = "true".equals(ElementParameterParser.getValue(node, "__CONFIG_CLIENT__"));
+
+    List<Map<String,String>> clientConfiguration = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__CLIENT_CONFIGURATION__");
+    String region = ElementParameterParser.getValue(node,"__REGION__");
+    if (region !=null) region = region.toUpperCase().replaceAll("\"","").replaceAll("-","_").replaceAll(" ","");
+
+    if (isLog4jEnabled) {
+    %>
+        log.info("<%=cid%> - Creating new connection.");
+    <%
+    }
+
+    boolean inheritCredentials = "true".equals(ElementParameterParser.getValue(node, "__INHERIT_CREDENTIALS__"));
+    if (inheritCredentials) {
+        %>
+        software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider credentials_<%=cid%> = software.amazon.awssdk.auth.credentials.InstanceProfileCredentialsProvider.create();
+        <%
+    } else {
+        String accessKey = ElementParameterParser.getValue(node, "__ACCESS_KEY__");
+        String passwordFieldName = "__SECRET_KEY__";
+        %>
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+        software.amazon.awssdk.auth.credentials.AwsBasicCredentials credentials_<%=cid%> = software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create(<%=accessKey%>,decryptedPassword_<%=cid%>);
+        <%
+    }
+
+        org.talend.designer.codegen.config.AWSClientConfiguration clientConfig = new org.talend.designer.codegen.config.AWSClientConfiguration();
+
+        boolean setBuffer = false;
+        boolean useProxy = false;
+        
+        boolean useConnectionTimeout=false;
+        boolean useMaxConnections=false;
+        boolean useMaxErrorRetry=false;
+
+        boolean useProtocol=false;
+        
+        boolean useProxyDomain=false;
+        boolean useProxyHost=false;
+        boolean useProxyPort=false;
+        boolean useProxyUsername=false;
+        boolean useProxyPassword=false;
+        
+        boolean useSocketTimeout=false;
+        boolean useUserAgent=false;
+        
+        boolean useSocketReceiveBufferSizeHints = false;
+        boolean useSocketSendBufferSizeHints = false;
+
+    if (configClient && clientConfiguration.size()>0) {
+
+        for (Map<String,String> map :clientConfiguration) {
+            String client_parameter = map.get("CLIENT_PARAMETER");
+            String value = map.get("VALUE");
+            if (!setBuffer && ("SocketSendBufferSizeHints".equals(client_parameter) || "SocketReceiveBufferSizeHints".equals(client_parameter))) {
+                setBuffer=true;
+                %>
+                int socketSendBufferSizeHints_<%=cid%> = 0;
+                int socketReceiveBufferSizeHints_<%=cid%> = 0;
+            <%
+            }
+            if ("ProxyDomain".equals(client_parameter) 
+                    || "ProxyHost".equals(client_parameter) 
+                    || "ProxyPort".equals(client_parameter)
+                    || "ProxyUsername".equals(client_parameter)
+                    || "ProxyPassword".equals(client_parameter)) {
+                useProxy=true;
+            }
+            if("SocketSendBufferSizeHints".equals(client_parameter)){
+                useSocketReceiveBufferSizeHints=true;
+            %>
+                socketSendBufferSizeHints_<%=cid%> = <%=value%>;
+            <%
+            }else if("SocketReceiveBufferSizeHints".equals(client_parameter)){
+                useSocketReceiveBufferSizeHints=true;
+            %>
+                socketReceiveBufferSizeHints_<%=cid%> = <%=value%>;
+            <%
+            }else if("Protocol".equals(client_parameter)){
+               useProtocol=true;
+               clientConfig.setProtocol(value.replaceAll("\"",""));
+            }else if("ProxyDomain".equals(client_parameter)){
+               useProxyDomain=true;
+               clientConfig.setProxyDomain(value.replaceAll("\"",""));
+            }else if("ProxyHost".equals(client_parameter)){
+               useProxyHost=true;
+               clientConfig.setProxyHost(value.replaceAll("\"",""));
+            }else if("ProxyPort".equals(client_parameter)){
+               useProxyPort=true;
+               clientConfig.setProxyPort(value);
+            }else if("ProxyUsername".equals(client_parameter)){
+               useProxyUsername=true;
+               clientConfig.setProxyUsername(value.replaceAll("\"",""));
+            }else if("ProxyPassword".equals(client_parameter)){
+               useProxyPassword=true;
+               clientConfig.setProxyPassword(value.replaceAll("\"",""));
+            }else if("SocketTimeout".equals(client_parameter)){
+               useSocketTimeout=true;
+               clientConfig.setSocketTimeout(value);
+            }else if("UserAgent".equals(client_parameter)){
+               useUserAgent=true;
+               clientConfig.setUserAgent(value.replaceAll("\"",""));
+            }else if("ConnectionTimeout".equals(client_parameter)){
+               useConnectionTimeout=true;
+               clientConfig.setConnectionTimeout(value);
+            }else if("MaxConnections".equals(client_parameter)){
+               useMaxConnections=true;
+               clientConfig.setMaxConnections(value);
+            }else if("MaxErrorRetry".equals(client_parameter)){
+               useMaxErrorRetry=true;
+               clientConfig.setMaxErrorRetry(value);
+            }else if("SocketReceiveBufferSizeHints".equals(client_parameter)){
+               useSocketReceiveBufferSizeHints=true;
+               clientConfig.setSocketReceiveBufferSizeHints(value);
+            }else if("SocketSendBufferSizeHints".equals(client_parameter)){
+               useSocketSendBufferSizeHints=true;
+               clientConfig.setSocketSendBufferSizeHints(value);
+            }
+        }
+        hasClientConfiguration = true;
+    }
+
+    //generate different aws client for different aws components
+    for (INode processNode : process.getGeneratingNodes()) {
+        if (processNode.isActivate() && awsTypeMap.containsKey(processNode.getComponent().getName())) {
+            String client = ElementParameterParser.getValue(processNode, "__AWS_CONNECTION_CLIENT__");
+            if (cid.equals(client)) {
+                String clientClass = awsTypeMap.get(processNode.getComponent().getName());
+                String clientName = processNode.getComponent().getName() + "_" + cid;
+                boolean isAWSMQBroker = processNode.getComponent().getName().equalsIgnoreCase("cAWSMQBroker");
+                if(hasClientConfiguration && !isAWSMQBroker){
+                %>
+                    software.amazon.awssdk.http.SdkHttpClient  httpClient_<%=cid%> = software.amazon.awssdk.http.apache.ApacheHttpClient.builder()
+                    <% if(useSocketTimeout) { %>
+                    .socketTimeout(java.time.Duration.ofMillis(<%=clientConfig.getSocketTimeout()%>))
+                    <% } %>
+                    <% if(useConnectionTimeout) { %>
+                    .connectionTimeout(java.time.Duration.ofMillis(<%=clientConfig.getConnectionTimeout()%>))
+                    <% } %>
+                    <% if(useProxy) { %>
+                    .proxyConfiguration(software.amazon.awssdk.http.apache.ProxyConfiguration.builder()
+			        .useSystemPropertyValues(false)
+			        .endpoint(java.net.URI.create("<%=clientConfig.getProxyProtocol()%>://<%=clientConfig.getProxyHost()%>:<%=clientConfig.getProxyPort()%>"))
+			        .username("<%=clientConfig.getProxyUsername()%>")
+			        .password("<%=clientConfig.getProxyPassword()%>")
+			        .build())
+                    <% } %>
+                    .build();
+                    <%=clientClass%> <%=clientName%> = <%=clientClass%>.builder().credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(credentials_<%=cid%>))
+                    .httpClient(httpClient_<%=cid%>)
+                <%
+                }else if(!isAWSMQBroker){
+                %>
+                    <%=clientClass%> <%=clientName%> = <%=clientClass%>.builder().credentialsProvider(
+                    <% if(inheritCredentials) { %>
+                     credentials_<%=cid%>)
+                    <% } else { %> 
+                    software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(credentials_<%=cid%>))
+                    <% } %>
+                    .httpClient(software.amazon.awssdk.http.apache.ApacheHttpClient.builder().build())
+                <%                      
+                }
+                if(region!=null && !region.isEmpty() && !"DEFAULT".equalsIgnoreCase(region) && !isAWSMQBroker){
+                %>
+                    .region(software.amazon.awssdk.regions.Region.<%=region%>)
+                <%
+                }
+                %>
+				.build();
+				<%
+                if (isAWSMQBroker){
+                %>
+                    <%=clientClass%> <%=clientName%> = com.amazonaws.services.mq.AmazonMQClientBuilder.standard()
+                        .withCredentials(new software.amazon.awssdk.auth.credentials.AWSCredentialsProvider() {
+							@Override
+							public AwsCredentials resolveCredentials() {
+								return credentials_<%=cid%>;
+							}
+                        })
+                    <% if(region!=null && !region.isEmpty() && !"DEFAULT".equalsIgnoreCase(region)){ %>
+                        .withRegion(<%=region%>)
+                    <% } %>
+                    <% if(hasClientConfiguration){ %>
+                        .withClientConfiguration(clientConfig_<%=cid%>)   
+                    <% } %>	
+                        .build();
+                    <%}
+                %>
+                    registry.put("<%=clientName%>", <%=clientName%>);
+                <%       
+                if(isLog4jEnabled){
+                %>	
+                    log.info("<%=clientName%> - Creating new connection successfully.");
+                <%
+                }          
+                awsTypeMap.remove(processNode.getComponent().getName());//generate once
+            }
+        }
+    }
+
+%>

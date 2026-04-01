@@ -1,0 +1,61 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory    
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode) codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	cid = cid.replaceAll("_Loop", "");
+	
+String nodeLabel = node.getLabel();
+if(nodeLabel == null){
+	nodeLabel = cid;
+	
+}
+	
+INode routeInputNode = node.getProcess().getNodesOfType("tRouteIn").get(0);
+	
+List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        routeInputNode,
+        "__VALUES__"
+    );
+	
+	
+List< ? extends IConnection> conns = routeInputNode.getOutgoingSortedConnections();
+String firstConnName = "";	
+
+for(IConnection conn : conns) {
+    if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+ 		firstConnName = conn.getName();
+ 		break;
+    }
+}
+
+List<IMetadataTable> metadatas = routeInputNode.getMetadataList();
+IMetadataTable metadata = null;
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	metadata = metadatas.get(0);    
+}
+System.setProperty("org.talend.studio.route.job.inloop", "true");
+%>
+
+	if ( initialize ) { // To divert the initializer thread
+		holdReadyState();
+		return;
+	}
+	
+	org.apache.camel.Exchange routerExchange = null != singleUseRouterExchange ? singleUseRouterExchange : (org.apache.camel.Exchange) globalMap.get(ROUTER_EXCHANGE);

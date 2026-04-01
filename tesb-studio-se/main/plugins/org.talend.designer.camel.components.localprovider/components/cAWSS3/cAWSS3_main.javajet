@@ -1,0 +1,181 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    java.util.List
+    java.util.Map
+    java.io.UnsupportedEncodingException
+    java.net.URLEncoder
+" 
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode) codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+
+    CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+
+    String bucketName = ElementParameterParser.getValue(node, "__BUCKET_NAME__");
+
+    builder.setComponent("aws2-s3");
+    builder.useDoubleSlash(false);
+    builder.setName(bucketName);
+
+    //String accessKey = ElementParameterParser.getValue(node, "__ACCESS_KEY__");
+    //builder.addParam("accessKey", accessKey);
+
+    //String secretKey = ElementParameterParser.getValue(node, "__SECRET_KEY__");
+
+    //builder.addParam("secretKey", "\"RAW("+org.talend.core.utils.TalendQuoteUtils.removeQuotesIfExist(secretKey)+")\"");
+
+    String amazonS3Client = ElementParameterParser.getValue(node, "__AWS_CONNECTION_CLIENT__");
+
+    builder.addParam("amazonS3Client", "\"#cAWSS3_" + amazonS3Client + "\"");
+
+    String prefix = ElementParameterParser.getValue(node, "__PREFIX__");
+    builder.addParam("prefix", prefix);
+
+    String fileName = ElementParameterParser.getValue(node, "__FILE_NAME__");
+    builder.addParam("fileName", fileName);
+
+    String region = ElementParameterParser.getValue(node,"__REGION__");
+
+    boolean set_region = (region!=null && !region.isEmpty() && !"DEFAULT".equalsIgnoreCase(region));
+
+    if (set_region) {
+        builder.addParam("region", region);
+    }
+
+    String includeBody = ElementParameterParser.getValue(node, "__INCLUDE_BODY__");
+    if ("false".equals(includeBody)) {
+        builder.addParam("includeBody", "\"" + includeBody + "\"");
+    }
+
+    String multiPartUpload = ElementParameterParser.getValue(node, "__MULTI_PART_UPLOAD__");
+    if ("true".equals(multiPartUpload)) {
+        builder.addParam("multiPartUpload", "\"" + multiPartUpload + "\"");
+        String partSize = ElementParameterParser.getValue(node, "__PART_SIZE__");
+
+        builder.addParam("partSize", partSize);
+    }
+
+    if ("true".equals(multiPartUpload)) {
+        builder.addParam("multiPartUpload", "\"" + multiPartUpload + "\"");
+    }
+
+    String deleteAfterRead = ElementParameterParser.getValue(node, "__DELETE_AFTER_READ__");
+    if ("false".equals(deleteAfterRead)) {
+        builder.addParam("deleteAfterRead", "\"" + deleteAfterRead + "\"");
+    }
+
+    String deleteAfterWrite = ElementParameterParser.getValue(node, "__DELETE_AFTER_WRITE__");
+    if ("true".equals(deleteAfterWrite)) {
+        builder.addParam("deleteAfterWrite", "\"" + deleteAfterWrite + "\"");
+    }
+
+    String serverSideEncryption = ElementParameterParser.getValue(node, "__SERVER_SIDE_ENCRYPTION__");
+    if ("true".equals(serverSideEncryption)) {
+        //builder.addParam("serverSideEncryption", "\"AES256\"");
+    }
+
+    String storageClass = ElementParameterParser.getValue(node,"__STORAGE_CLASS__");
+
+    boolean set_storageClass = (storageClass!=null && !storageClass.isEmpty() && !"Standard".equalsIgnoreCase(storageClass));
+
+    if (set_storageClass) {
+        builder.addParam("storageClass", "\"" + storageClass + "\"");
+    }
+
+    List<Map<String, String>> tableValues = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__URI_OPTIONS__");
+    for (Map<String, String> map : tableValues) {
+        String argName = map.get("NAME").trim();
+        String argValue = map.get("VALUE").trim();
+        if(argName.startsWith("\"") && argName.endsWith("\"") && argName.length() >= 2) {
+            argName = argName.substring(1, argName.length() - 1);
+        }
+        builder.addParam(argName, argValue);
+    }
+
+    String useMessageHeadersUserDefined = ElementParameterParser.getValue(node, "__USE_MESSAGE_HEADERS_USER_DEFINED__");
+
+    List<Map<String, String>> userDefinedHeaders = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__MESSAGE_HEADERS_USER_DEFINED__");
+
+    List<Map<String, String>> messageHeaders = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__MESSAGE_HEADERS__");
+
+    String uri = builder.build();
+   
+    List< ? extends IConnection> conns = node.getIncomingConnections();
+
+    if (conns.size() > 0 && messageHeaders.size() > 0) {
+        StringBuilder sb1 = new StringBuilder();
+        for (Map<String, String> map : messageHeaders) {
+            String header = map.get("MESSAGE_HEADER");
+            String value = map.get("MESSAGE_HEADER_VALUE");
+            String valueTrim = value.trim();
+			int valueLen = valueTrim.length();
+			final int CAMEL_EXPRESSION_MIN_LENGTH = 5;
+			final int CAMEL_EXPRESSION_OPENING_LENGTH = 3;
+			final int CAMEL_EXPRESSION_CLOSING_LENGTH = 2;
+
+            if (valueLen >= CAMEL_EXPRESSION_MIN_LENGTH
+				&& "CamelAwsS3Key".equals(header)
+				&& valueTrim.substring(0, CAMEL_EXPRESSION_OPENING_LENGTH).equals("\"${")
+				&& valueTrim.substring(valueLen - CAMEL_EXPRESSION_CLOSING_LENGTH, valueLen).equals("}\"")) {
+                String valueStripped = valueTrim.substring(1, valueTrim.length() - 1);
+
+                sb1.append(".choice()");
+                sb1.append(".when().simple(\"");
+                sb1.append(valueStripped);
+                sb1.append(" != null\")");
+                sb1.append(".setHeader(\"");
+                sb1.append(header);
+                sb1.append("\",");
+                sb1.append("simple(");
+                sb1.append(value);
+                sb1.append("))");
+
+                sb1.append(".otherwise()");
+                sb1.append(".setHeader(\"");
+                sb1.append(header);
+                sb1.append("\",");
+                sb1.append("constant(");
+                sb1.append(value);
+                sb1.append(")).end()");
+            } else {
+                sb1.append(".setHeader(\"");
+                sb1.append(header);
+                sb1.append("\",");
+                sb1.append("constant(");
+                sb1.append(value);
+                sb1.append("))");
+            }
+        }
+
+        if (("true".equals(useMessageHeadersUserDefined)) && (userDefinedHeaders.size()>0)) {
+            sb1.append(".setHeader(\"");
+            sb1.append("CamelAwsS3Headers");
+            sb1.append("\",");
+            sb1.append("constant(");
+            sb1.append(cid+"userDefinedHeaders");
+            sb1.append("))");
+        }
+%>
+    <%=sb1.toString()%>.to(<%=uri%>)
+
+<% } else { %>
+    <%
+        if(conns.size()>0) {
+    %>
+            .to(<%=uri%>)
+    <%
+        } else {
+    %>
+            from(<%=uri%>)
+    <%
+        }
+    %>
+<%}%>

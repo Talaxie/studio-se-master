@@ -1,0 +1,78 @@
+<%@ jet skeleton="../common/cLanguage.skeleton"
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.designer.codegen.config.NodeParamsHelper
+" 
+%>
+
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	NodeParamsHelper paramsHelper = new NodeParamsHelper(node);
+
+	String cid = node.getUniqueName();
+	
+	String language = paramsHelper.getVisibleStringParam("__LANGUAGES__");
+	String expression = paramsHelper.getVisibleStringParam("__EXPRESSION__");
+	boolean useResultClassType = paramsHelper.getBoolParam("__USE_RESULT_CLASS_TYPE__");
+	String resultClassType = paramsHelper.getVisibleStringParam("__RESULT_CLASS_TYPE__");
+	boolean useNamespaces = paramsHelper.getBoolParam( "__USE_NAMESPACES__");
+
+	boolean useSpecifyDelimiter = paramsHelper.getBoolParam( "__USE_DELIMITER__");
+	String delimiter = paramsHelper.getVisibleStringParam( "__DELIMITER__");
+	
+	boolean useStrategy = paramsHelper.getBoolParam( "__USE_STRATEGY__");
+	String strategyRef = paramsHelper.getVisibleStringParam( "__STRATEGY_REF__");
+	
+	
+	boolean parallelProcessing = paramsHelper.getBoolParam( "__PARELLEL_PROCESS__");
+	boolean useExecutorService = parallelProcessing && paramsHelper.getBoolParam( "__USE_EXECUTOR_SERVICE__");
+	String executorService = paramsHelper.getVisibleStringParam( "__EXECUTOR_SERVICE__");
+	
+	
+	boolean stopOnException = paramsHelper.getBoolParam( "__STOP_ON_EXCEPTION__");
+	boolean  ignoreInvalid = paramsHelper.getBoolParam( "__IGNORE_INVALID__");
+	boolean streaming = paramsHelper.getBoolParam( "__STREAMING__");
+	String timeout = paramsHelper.getVisibleStringParam( "__TIMEOUT__");
+	boolean useTimeout = ((timeout!=null)&&(timeout.matches("\\s*\\d+\\s*")));
+	boolean hasTimeoutFromContext=(timeout!=null&&timeout.startsWith("context."));
+	
+	boolean useOnPrepareProcessor = paramsHelper.getBoolParam("__USE_ON_PREPARE_PROCESSOR__");
+	String onPrepareProcessor = paramsHelper.getVisibleStringParam("__ON_PREPARE_PROCESSOR__");
+	
+	boolean shareUnitOfWork = paramsHelper.getBoolParam( "__SHARE_UNIT_OF_WORK__");
+	
+	
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+		String exp = getExpression(language, expression, cid, new Boolean(useNamespaces).toString(), resultClassType);
+%>
+			.recipientList(
+<%			if(useSpecifyDelimiter) {
+%>
+			<%=delimiter%>
+<%			}
+%>
+			).<%=exp%>
+<%	
+			//then append suffix settings.
+			if(useStrategy){%>.aggregationStrategy(<%=strategyRef%>)				<%}
+			if(parallelProcessing){%>.parallelProcessing()							<%}
+			if(useExecutorService){%>.executorService(<%=executorService%>)			<%}
+			if(stopOnException){%>.stopOnException()								<%}
+			if(ignoreInvalid){%>.ignoreInvalidEndpoints()							<%}
+			if(streaming){%>.streaming()											<%}
+			if(useTimeout){%>.timeout( <%=timeout%> )								<%}
+				else if(hasTimeoutFromContext){%>.timeout(<%=ElementParameterParser.getValue(node, "__TIMEOUT__")%>)<%}
+			if(useOnPrepareProcessor){%>.onPrepareRef(<%=onPrepareProcessor%>)		<%}
+			if(shareUnitOfWork){%>.shareUnitOfWork()								<%}
+			
+		
+	}//finish all suffix settings.
+%>

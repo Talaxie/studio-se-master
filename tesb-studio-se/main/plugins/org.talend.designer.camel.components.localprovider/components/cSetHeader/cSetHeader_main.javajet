@@ -1,0 +1,57 @@
+<%@ jet skeleton="../common/cLanguage.skeleton"
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__VALUES__"
+    );
+    List<Map<String, String>> tableCleanValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__CLEAN_VALUES__"
+    );
+    
+	String useNamespaces = ElementParameterParser.getValue(node, "__USE_NAMESPACES__");
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+	
+		 	if (tableCleanValues !=null && !tableCleanValues.isEmpty()) {
+%>
+		 		.process(new org.apache.camel.Processor() {
+		 		    public void process(org.apache.camel.Exchange exchange) throws Exception {
+<%
+		 		        for(Map<String, String> headersMap: tableCleanValues){
+		 		            String name = headersMap.get("NAME");
+%>
+		 		            exchange.getIn().removeHeaders(<%=name%>);
+<%
+                                        }
+%>
+                                    }   
+                               })
+<% 
+  			}
+		 	for(Map<String, String> headersMap: tableValues){
+		 			String headerName = headersMap.get("NAME");
+		 			String headerLanguage = headersMap.get("LANGUAGE");
+		 			String headerExpression = headersMap.get("EXPRESSION");
+		 			String exp = getExpression(headerLanguage, headerExpression, cid, useNamespaces, ""); 
+		 			%>
+		 			.setHeader(<%=headerName%>).<%=exp%>
+<%
+		 	}
+	}
+%>

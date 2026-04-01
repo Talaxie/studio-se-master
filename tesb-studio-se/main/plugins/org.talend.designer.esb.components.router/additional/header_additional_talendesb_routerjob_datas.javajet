@@ -1,0 +1,232 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators.common"
+	imports="
+		java.util.Vector
+
+		java.util.Map
+		java.util.List
+		java.util.Collection
+		
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.ElementParameterParser
+	"
+	class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+boolean jobHasRouteInputComponent = !process.getNodesOfType("tRouteInput").isEmpty();
+boolean jobHasRouteOutputComponent = !process.getNodesOfType("tRouteOutput").isEmpty();
+boolean jobHasRouteFaultComponent = !process.getNodesOfType("tRouteFault").isEmpty();
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));//log4j enable
+
+if (jobHasRouteInputComponent || jobHasRouteOutputComponent || jobHasRouteFaultComponent) {
+
+List<? extends INode> routeInputComponentsList = process.getNodesOfType("tRouteInput");
+INode node = routeInputComponentsList.get(0);
+String cid = node.getUniqueName();
+%>
+
+	/**
+	 * Access bean implemented as inner class in order to avoid incompatible
+	 * changes of existing interfaces and central code generation modules.
+	 */
+	public final TalendESBJobBean esbJobBean = new TalendESBJobBean() {
+
+		/**
+		 * Initialize a job for multiple exchange processing
+		 * in a route.
+		 *
+		 * @param exchange the route message exchange
+		 */
+		public void prepareJob(String[] contextArgs) {
+			initializeJobForRoute(contextArgs);
+		}
+
+		/**
+		 * Cleanup of resources from a job for multiple
+		 * message exchange processing.
+		 */
+		public void discardJob() {
+			destroyJobForRoute();
+		}
+
+		/**
+		 * Run as a single-use job
+		 *
+		 * @param exchangeData the data map containing the route message exchange
+		 * @param contextArgs arguments passed in the context
+		 */
+		public void runSingleUseJob(java.util.Map<String, Object> exchangeData, String[] contextArgs) {
+			singleUseRouterExchange = (org.apache.camel.Exchange) exchangeData.get("exchange");
+			int success = runJobInTOS(contextArgs);
+			if (success != 0) {
+				throw new RuntimeException("Job execution failure - details see stderr. ");
+			}
+		}
+
+		/**
+		 * Run as prepared multi-use job
+		 *
+		 * @param exchangeData the data map containing the route message exchange
+		 * @param contextArgs arguments passed in the context
+		 */
+		public void runPreparedJob(java.util.Map<String, Object> exchangeData, String[] contextArgs) {
+			evaluateContextArgs(contextArgs);
+			org.apache.camel.Exchange exchange = (org.apache.camel.Exchange) exchangeData.get("exchange");
+			process(exchange);
+		}
+
+		/**
+		 * Get the class of the underlying job
+		 *
+		 * @return the job class
+		 */
+		public Class<?> getJobClass() {
+			return jobClass();
+		}
+
+		private void evaluateContextArgs(String[] contextArgs) {
+			if (contextArgs == null) {
+				return;
+			}
+			String lastStr = "";
+			for (String arg : contextArgs) {
+				if (arg.equalsIgnoreCase("--context_param")) {
+					lastStr = arg;
+				} else if (lastStr.equals("")) {
+					evalParam(arg);
+				} else {
+					evalParam(lastStr + " " + arg);
+					lastStr = "";
+				}
+			}
+		}
+	};
+
+	private final JobLifecycleSemaphore lifeCycleMonitor = new JobLifecycleSemaphore();
+	private org.apache.camel.Exchange singleUseRouterExchange = null;
+	private boolean initialize = false;
+	private static final String ROUTER_EXCHANGE = "ROUTER_EXCHANGE";
+
+	public void process(org.apache.camel.Exchange routerExchange) {
+		final java.util.Map<String, Object> globalMap = new java.util.HashMap<String, Object>(this.globalMap);
+
+		try {
+			globalMap.put(ROUTER_EXCHANGE, routerExchange);
+
+			// pass DataSource
+			java.util.Map<String, routines.system.TalendDataSource> talendDataSources =
+				(java.util.Map<String, routines.system.TalendDataSource>) this.globalMap.get(KEY_DB_DATASOURCES);
+			if (null != talendDataSources) {
+				java.util.Map<String, routines.system.TalendDataSource> restDataSources = new java.util.HashMap<String, routines.system.TalendDataSource>();
+				for (java.util.Map.Entry<String, routines.system.TalendDataSource> talendDataSourceEntry : talendDataSources.entrySet()) {
+					restDataSources.put(talendDataSourceEntry.getKey(), new routines.system.TalendDataSource(talendDataSourceEntry.getValue().getRawDataSource()));
+				}
+				globalMap.put(KEY_DB_DATASOURCES, restDataSources);
+			}
+
+			this.<%=cid%>_LoopProcess(globalMap);
+
+		} catch (TalendException e) {
+			Exception ex = e;
+			while ( ex instanceof TalendException ) {
+				ex = ((TalendException) ex).getException();
+				ex.printStackTrace(System.out);
+				<%if(isLog4jEnabled){%>
+					log.error(ex);	
+				<%}%>
+			}
+			throw new RuntimeException(ex);
+			
+		} finally {
+			// close DB connections
+			try {
+				java.util.Map<String, routines.system.TalendDataSource> routeDataSources =
+					(java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+				if (null != routeDataSources) {
+					for (routines.system.TalendDataSource routeDataSource : routeDataSources.values()) {
+						routeDataSource.close();
+					}
+				}
+			} catch (Throwable e) {
+				e.printStackTrace(System.err);
+			}
+		}
+
+	}
+
+	/**
+	 * Initialize the job and wait for execution
+	 * 
+	 * @param contextArgs
+	 */
+	public void initializeJobForRoute(final String[] contextArgs) {
+		this.execStat = false;
+		this.initialize = true;
+
+		synchronized (lifeCycleMonitor) {
+			new Thread(
+				new Runnable() {
+					public void run() {
+						runJobInTOS(contextArgs);
+					}
+				}
+			).start();
+
+			try {
+				lifeCycleMonitor.waitForUpState();
+			} catch (InterruptedException e) {
+				<%if(isLog4jEnabled){%>
+					log.error("Lifecycle Monitor Exception", e);	
+				<%}%>
+				throw new RuntimeException(e);
+			}
+		} // end synchronized
+	}
+
+	/**
+	 * Wait for bean shutdown to resume and 
+	 * execute the shutdown portion of runJobInTOS()
+	 */
+	private void holdReadyState() {
+		
+		initialize = false;
+		
+		synchronized (lifeCycleMonitor) {
+			lifeCycleMonitor.signalUpState();
+			try {
+				lifeCycleMonitor.waitForDownState();
+			} catch (InterruptedException e) {
+				<%if(isLog4jEnabled){%>
+					log.error("Lifecycle Monitor Exception", e);	
+				<%}%>
+				throw new RuntimeException(e);
+			}
+		} // end synchronized
+	}
+
+	/**
+	 * Bean Destructor
+	 * 
+	 * Notifies the waiting thread to wrap up the job
+	 */
+	public void destroyJobForRoute() {
+		synchronized (lifeCycleMonitor) {
+			lifeCycleMonitor.signalDownState();
+		} // end synchronized
+	}
+
+	private Class<?> jobClass() {
+		return getClass();
+	}
+
+<%
+}
+%>

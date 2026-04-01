@@ -1,0 +1,53 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String type = ElementParameterParser.getValue(node, "__LOOP_TYPE__");
+	String value = ElementParameterParser.getValue(node, "__VALUE__");
+	String header = ElementParameterParser.getValue(node, "__HEADER__");
+	String exp = ElementParameterParser.getValue(node, "__EXPRESSION__");
+	String language = ElementParameterParser.getValue(node, "__LANGUAGES__");
+	String useNamespaces = ElementParameterParser.getValue(node, "__USE_NAMESPACES__");
+	String copy = ElementParameterParser.getValue(node, "__COPY__");
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+		if("VALUE_TYPE".equals(type)) {
+%>
+			.loop(<%=value%>)
+<%
+		} else if("HEADER_TYPE".equals(type)) {
+%>
+			.loop().header(<%=header%>)
+<%	
+		} else if("EXPRESSION_TYPE".equals(type)) {
+			if("xpath".equals(language) && "true".equals(useNamespaces)){
+%>
+				.loop().<%=language%>(<%=exp%>, <%=cid%>NSMap)
+<%
+			}else if(!("none".equals(language))) {
+%>
+				.loop().<%=language%>(<%=exp%>)
+<%
+			} else {
+%>
+				.loop().<%=exp%>
+<%
+			}
+		}
+		if ("true".equals(copy)) {
+%>
+			.copy()
+<%
+		}
+	}
+%>

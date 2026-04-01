@@ -1,0 +1,80 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	INode consumerNode = node;
+	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+
+	boolean asProductor = !node.getIncomingConnections().isEmpty();
+	if(asProductor){
+		Object desNode= ElementParameterParser.getValue(node, "____EXIST_ENDPOINT____");
+		if(desNode!=null){
+			String desNodeName = desNode.toString();	
+			for(INode aNode : node.getProcess().getGraphicalNodes()){
+				if(aNode.getUniqueName().equals(desNodeName)){
+					consumerNode=aNode;
+					break;
+				}
+			}
+		}
+	}
+	
+	String componentName = node.getComponent().getName();
+
+	builder.setComponent("seda");
+	builder.useDoubleSlash(false);
+	builder.setName(ElementParameterParser.getValue(consumerNode, "__NAME__"));
+	if(!asProductor){
+		//consumer
+		boolean  specifySize = ElementParameterParser.getBooleanValue(node, "__SPECIFY_SIZE__");
+		if(specifySize){
+			String size = ElementParameterParser.getValue(node, "__SIZE__");
+			builder.addParamIfNotDefault("size", size, "0");
+		}
+		
+		String concurCnsmrs = ElementParameterParser.getValue(node, "__CONCURRENT_CONSUMERS__");
+		builder.addParamIfNotDefault("concurrentConsumers", concurCnsmrs, "1");
+
+		String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+		builder.addParamIfNotDefault("timeout", timeout, "30000");
+
+		String multipleConsumers = ElementParameterParser.getValue(node, "__MULTIPLE_CONSUMERS__");
+		builder.addParamIfNotDefault("multipleConsumers", multipleConsumers, "false"); 
+
+		String limitConcurrentConsumers = ElementParameterParser.getValue(node, "__LIMIT_CONCURRENT_CONSUMERS__");
+		builder.addParamIfNotDefault("limitConcurrentConsumers", limitConcurrentConsumers, "true");
+
+		String blockWhenFull = ElementParameterParser.getValue(node, "__BLOCK_WHEN_FULL__");
+		builder.addParamIfNotDefault("blockWhenFull", blockWhenFull, "false");
+
+		String pollTimeout = ElementParameterParser.getValue(node, "__POLLTIMEOUT__");
+		builder.addParamIfNotDefault("pollTimeout", pollTimeout, "1000");
+
+		List<Map<String, String>> tableValues = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__ADVARGUMENTS__");
+		builder.addParams(tableValues);
+	}else{
+		String waitForTaskToComplete = ElementParameterParser.getValue(consumerNode, "__WAIT_FOR_TASK_TO_COMPLETE__");
+		builder.addParamIfNotDefault("waitForTaskToComplete", waitForTaskToComplete, "\"IfReplyExpected\"");
+	}
+
+	String uri = builder.build();
+
+	if(asProductor) {
+%>
+		.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>

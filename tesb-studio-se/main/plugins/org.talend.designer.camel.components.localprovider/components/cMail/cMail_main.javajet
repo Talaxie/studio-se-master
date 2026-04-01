@@ -1,0 +1,85 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    java.util.List
+    java.util.Map
+    java.io.UnsupportedEncodingException
+    java.net.URLEncoder
+" 
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode) codeGenArgument.getArgument();
+   	String cid = node.getUniqueName();
+//    http://jira.talendforge.org/browse/TESB-5241
+	/*
+   	 * change to use label + unique to make it unique but readable
+   	 */
+//  	IElementParameter param = node.getElementParameter("LABEL");
+//  	if(param != null && !"__UNIQUE_NAME__".equals(param.getValue())){
+//  		cid = (String)param.getValue()+"_"+cid;	
+//  	}
+
+	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+	String protocols = ElementParameterParser.getValue(node, "__PROTOCOLS__");
+	builder.setComponent(protocols);
+
+	String host = ElementParameterParser.getValue(node, "__HOST__");
+	builder.setName(host);
+
+	String port = ElementParameterParser.getValue(node, "__PORT__");
+	if (!"\"\"".equals(port)) {
+		builder.setName(host + "+\":\"+" + port);
+	}
+
+	String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+	builder.addParam("username", userName);
+	
+	String password = ElementParameterParser.getValue(node, "__PASSWORD__");
+	builder.addParam("password", "decryptedPassword_" + cid);
+
+	String subject = ElementParameterParser.getValue(node, "__SUBJECT__");
+	builder.addParam("subject", subject);
+
+	String from = ElementParameterParser.getValue(node, "__FROM__");
+	builder.addParam("from", from);
+
+	String to = ElementParameterParser.getValue(node, "__TO__");
+	builder.addParam("to", to);
+
+	String contentType = ElementParameterParser.getValue(node, "__CONTENTTYPE__");
+	builder.addParam("contentType", contentType);
+
+	String cc = ElementParameterParser.getValue(node, "__CC__");
+	builder.addParam("cc", cc);
+
+	String bcc = ElementParameterParser.getValue(node, "__BCC__");
+	builder.addParam("bcc", bcc);
+
+	List<Map<String, String>> formatValues = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__ARGUMENTS__");
+	for (Map<String, String> map : formatValues) {
+		String argName = map.get("NAME").trim();
+		String argValue = map.get("VALUE").trim();
+		builder.addParam("\" + " + argName + "\"+", argValue);
+	}
+
+    String uri = builder.build();
+	String endpointVar = "mail_" + node.getUniqueName();
+    
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+			.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>
+

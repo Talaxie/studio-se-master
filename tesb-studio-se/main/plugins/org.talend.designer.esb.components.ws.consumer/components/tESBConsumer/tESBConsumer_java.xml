@@ -1,0 +1,396 @@
+<COMPONENT>
+	<HEADER PLATEFORM="ALL"
+			SERIAL=""
+			VERSION="0.102"
+			STATUS="ALPHA"
+			COMPATIBILITY="ALL"
+			AUTHOR="Talend"
+			RELEASE_DATE="20050320A"
+			SCHEMA_AUTO_PROPAGATE="true"
+			STARTABLE="true"
+			DATA_AUTO_PROPAGATE="false"
+			HAS_CONDITIONAL_OUTPUTS="true"
+			EXTENSION="org.talend.designer.esb.components.ws.consumer" >
+		<SIGNATURE />
+	</HEADER>
+
+	<FAMILIES>
+		<FAMILY>ESB/Web Services</FAMILY>
+	</FAMILIES>
+
+	<DOCUMENTATION>
+		<URL />
+	</DOCUMENTATION>
+
+	<CONNECTORS>
+		<CONNECTOR CTYPE="FLOW" MIN_INPUT="1" MAX_INPUT="1" MAX_OUTPUT="0" />
+		<CONNECTOR NAME="RESPONSE" CTYPE="FLOW" COLOR="009900" MAX_OUTPUT="1" />
+		<CONNECTOR NAME="FAULT" CTYPE="FLOW" LINE_STYLE="2" COLOR="cc0000" MAX_OUTPUT="1" />
+		<CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0" />
+		<CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="0" />
+		<CONNECTOR CTYPE="COMPONENT_OK" />
+		<CONNECTOR CTYPE="COMPONENT_ERROR" />
+		<CONNECTOR CTYPE="RUN_IF" />
+	</CONNECTORS>
+
+	<PARAMETERS>
+		<PARAMETER NAME="SERVICE_CONFIGURATION" FIELD="EXTERNAL" NUM_ROW="10" />
+
+		<PARAMETER NAME="INPUT_SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="28">
+			<TABLE READONLY="true">
+				<COLUMN NAME="payload" TYPE="id_Document" READONLY="true" />
+				<!--COLUMN NAME="headers" TYPE="id_Document" READONLY="true" /-->
+			</TABLE>
+		</PARAMETER>
+		<PARAMETER NAME="SCHEMA_RESPONSE" FIELD="SCHEMA_TYPE" NUM_ROW="29" CONTEXT="RESPONSE">
+			<TABLE READONLY="true">
+				<COLUMN NAME="payload" TYPE="id_Document" READONLY="true" />
+			</TABLE>
+		</PARAMETER>
+		<PARAMETER NAME="SCHEMA_FAULT" FIELD="SCHEMA_TYPE" NUM_ROW="30" CONTEXT="FAULT">
+			<TABLE READONLY="true">
+				<COLUMN NAME="faultCode" TYPE="id_String" LENGTH="1024" READONLY="true" />
+				<COLUMN NAME="faultString" TYPE="id_String" LENGTH="1024" READONLY="true" />
+				<COLUMN NAME="faultActor" TYPE="id_String" LENGTH="1024" READONLY="true" />
+				<COLUMN NAME="faultNode" TYPE="id_String" LENGTH="1024" READONLY="true" />
+				<COLUMN NAME="faultRole" TYPE="id_String" LENGTH="1024" READONLY="true" />
+				<COLUMN NAME="faultDetail" TYPE="id_Document" READONLY="true" />
+			</TABLE>
+		</PARAMETER>
+
+		<PARAMETER NAME="SERVICE_LOCATOR" FIELD="CHECK" NUM_ROW="40"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SERVICE_LOCATOR_STRATEGY" FIELD="CLOSED_LIST" NUM_ROW="40"
+				SHOW="false">
+			<ITEMS DEFAULT="SERVICE_LOCATOR_STRATEGY_DEFAULT">
+				<ITEM NAME="SERVICE_LOCATOR_STRATEGY_DEFAULT" VALUE="Default" />
+				<ITEM NAME="SERVICE_LOCATOR_STRATEGY_EVEN_DISTRIBUTION" VALUE="EvenDistribution" />
+				<ITEM NAME="SERVICE_LOCATOR_STRATEGY_RANDOM" VALUE="Random" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="SERVICE_ACTIVITY_MONITOR" FIELD="CHECK" NUM_ROW="41"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="USE_SR" FIELD="CHECK" REQUIRED="true" NUM_ROW="9"
+				SHOW_IF="IS_STUDIO_EE_VERSION == 'true'">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="AUTHENTICATION_LABEL" FIELD="LABEL" NUM_ROW="44"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true')" />
+		<PARAMETER NAME="AUTH_PROPAGATE" FIELD="CHECK" REQUIRED="true" NUM_ROW="46"
+				REPOSITORY_VALUE="AUTH_PROPAGATE"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="NEED_AUTH" FIELD="CHECK" REQUIRED="true" NUM_ROW="44" DYNAMIC_SETTINGS="true"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="AUTH_TYPE" FIELD="CLOSED_LIST" NUM_ROW="44"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false'))
+						AND ((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))">
+			<ITEMS DEFAULT="SECURITY_SAML">
+				<ITEM NAME="SECURITY_BASIC" VALUE="BASIC" />
+				<ITEM NAME="SECURITY_DIGEST" VALUE="DIGEST" />
+				<ITEM NAME="SECURITY_TOKEN" VALUE="TOKEN" />
+				<ITEM NAME="SECURITY_SAML" VALUE="SAML" />
+			</ITEMS>
+		</PARAMETER>
+		<PARAMETER NAME="PROPAGATE_TYPE" FIELD="CLOSED_LIST" NUM_ROW="44"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false'))
+						AND (
+							((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+							AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+						)">
+			<ITEMS DEFAULT="PROPAGATE_NONE">
+				<ITEM NAME="PROPAGATE_NONE" VALUE="NONE"/>
+				<ITEM NAME="PROPAGATE_U_P" VALUE="U_P" />
+				<ITEM NAME="PROPAGATE_CERT" VALUE="CERT" />
+			</ITEMS>
+		</PARAMETER>
+		<PARAMETER NAME="PROPAGATE_U_P_LABEL" FIELD="LABEL" NUM_ROW="45"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false'))
+						AND (
+							((NEED_AUTH == 'true') AND ((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')))
+							AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+							AND (PROPAGATE_TYPE == 'U_P')
+						)">
+		</PARAMETER>
+		<PARAMETER NAME="PROPAGATE_CERT_LABEL" FIELD="LABEL" NUM_ROW="45"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false'))
+						AND (
+							((NEED_AUTH == 'true') AND ((IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')))
+							AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+							AND (PROPAGATE_TYPE == 'CERT')
+						)">
+		</PARAMETER>
+		<PARAMETER NAME="AUTH_ALIAS" FIELD="TEXT" REQUIRED="true" NUM_ROW="46"
+				REPOSITORY_VALUE="AUTH_ALIAS"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true') AND (AUTH_PROPAGATE == 'true'))
+						OR (
+							((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+							AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+							AND (PROPAGATE_TYPE == 'CERT')
+						)">
+			<DEFAULT>"alias"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="AUTH_USERNAME" FIELD="TEXT" REQUIRED="true" NUM_ROW="46"
+				REPOSITORY_VALUE="AUTH_USERNAME"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true'))
+						OR (
+							((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+							AND (
+								((AUTH_TYPE == 'BASIC') OR (AUTH_TYPE == 'DIGEST') OR (AUTH_TYPE == 'TOKEN'))
+								OR (
+									(AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+									AND (PROPAGATE_TYPE != 'CERT')
+								)
+							)
+						)">
+			<DEFAULT>"username"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="AUTH_PASSWORD" FIELD="PASSWORD" REQUIRED="true" NUM_ROW="46"
+				REPOSITORY_VALUE="AUTH_PASSWORD"
+				SHOW_IF="((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true'))
+						OR ((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))">
+			<DEFAULT>"password"</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="NEED_AUTHORIZATION" FIELD="CHECK" NUM_ROW="47"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'false')
+						AND ((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+						AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="AUTHORIZATION_LABEL" FIELD="LABEL" NUM_ROW="47"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true')" />
+		<PARAMETER NAME="ROLE" FIELD="TEXT" NUM_ROW="48"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (
+							(USE_SR == 'true') OR (
+								((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+								AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')
+								AND (NEED_AUTHORIZATION == 'true')
+							)
+						)">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="NEED_ENCRYPTION" FIELD="CHECK" NUM_ROW="49"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'false')
+						AND ((NEED_AUTH == 'true') OR ((NEED_AUTH != 'true') AND (NEED_AUTH != 'false')))
+						AND (AUTH_TYPE != 'BASIC') AND (AUTH_TYPE != 'DIGEST') AND (AUTH_TYPE != 'TOKEN')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="USE_BUSINESS_CORRELATION" FIELD="CHECK" NUM_ROW="52"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="CORRELATION_VALUE" FIELD="TEXT" NUM_ROW="53"
+				SHOW_IF="(USE_BUSINESS_CORRELATION == 'true')
+						 OR ((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true'))">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="ENABLE_CXF_MESSAGE_GZIP" FIELD="CHECK" NUM_ROW="54">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>		
+
+		<PARAMETER NAME="DIE_ON_ERROR" FIELD="CHECK" NUM_ROW="100">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ESB_ENDPOINT" FIELD="TEXT" REQUIRED="true" NUM_ROW="12"
+				SHOW_IF="(IS_STUDIO_EE_VERSION == 'false') OR (USE_SR == 'false')">
+			<DEFAULT>"http://www.webservicex.net/globalweather.asmx"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="ENDPOINT" FIELD="TEXT" REQUIRED="true" NUM_ROW="62"
+				SHOW="false" REPOSITORY_VALUE="ENDPOINT">
+			<DEFAULT>"http://www.webservicex.net/globalweather.asmx?WSDL"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SERVICE_NS" FIELD="TEXT" REQUIRED="true" NUM_ROW="63"
+				SHOW="false" REPOSITORY_VALUE="SERVICE_NS">
+			<DEFAULT>http://www.webserviceX.NET</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SERVICE_NAME" FIELD="TEXT" REQUIRED="true" NUM_ROW="63"
+				SHOW="false" REPOSITORY_VALUE="SERVICE_NAME">
+			<DEFAULT>GlobalWeather</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PORT_NS" FIELD="TEXT" REQUIRED="true" NUM_ROW="64"
+				SHOW="false" REPOSITORY_VALUE="PORT_NS">
+			<DEFAULT>http://www.webserviceX.NET</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PORT_NAME" FIELD="TEXT" REQUIRED="true" NUM_ROW="64"
+				SHOW="false" REPOSITORY_VALUE="PORT_NAME">
+			<DEFAULT>GlobalWeatherSoap</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="METHOD_NS" FIELD="TEXT" REQUIRED="true" NUM_ROW="65"
+				SHOW="false" REPOSITORY_VALUE="METHOD_NS">
+			<DEFAULT></DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="METHOD" FIELD="TEXT" REQUIRED="true" NUM_ROW="65"
+				SHOW="false" REPOSITORY_VALUE="METHOD">
+			<DEFAULT>GetWeather(GetWeather):GetWeatherResponse</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SOAP_ACTION" FIELD="TEXT" REQUIRED="true" NUM_ROW="66"
+				SHOW="false" REPOSITORY_VALUE="SOAP_ACTION">
+			<DEFAULT>http://www.webserviceX.NET/GetWeather</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="COMMUNICATION_STYLE" FIELD="TEXT" REQUIRED="true" NUM_ROW="67"
+				SHOW="false" REPOSITORY_VALUE="COMMUNICATION_STYLE">
+			<DEFAULT>request-response</DEFAULT>
+		</PARAMETER>
+	</PARAMETERS>
+
+	<ADVANCED_PARAMETERS>
+		<PARAMETER NAME="LOG_MESSAGES" FIELD="CHECK" REQUIRED="true" NUM_ROW="10">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="FOLLOW_REDIRECTS" FIELD="CHECK" REQUIRED="true" NUM_ROW="15">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="REDIRECT_NON_SAME_HOST" FIELD="CHECK" REQUIRED="true" NUM_ROW="15"
+				SHOW_IF="FOLLOW_REDIRECTS == 'true'">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="SERVICE_LOCATOR_CUSTOM_PROPERTIES" FIELD="TABLE" NUM_ROW="20"
+				REQUIRED="false" NB_LINES="5"
+				SHOW_IF="((SERVICE_LOCATOR == 'true') OR ((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true')) )">
+			<ITEMS>
+				<ITEM NAME="PROP_NAME" FIELD="TEXT" VALUE='"new custom property name"'/>
+				<ITEM NAME="PROP_VALUE" FIELD="TEXT" VALUE='"new custom property value"'/>
+			</ITEMS>
+		</PARAMETER>
+		<PARAMETER NAME="SERVICE_ACTIVITY_CUSTOM_PROPERTIES" FIELD="TABLE" NUM_ROW="30"
+				REQUIRED="false" NB_LINES="5"
+				SHOW_IF="((SERVICE_ACTIVITY_MONITOR == 'true') OR (USE_SR == 'true') )">
+			<ITEMS>
+				<ITEM NAME="PROP_NAME" FIELD="TEXT" VALUE='"new custom property name"'/>
+				<ITEM NAME="PROP_VALUE" FIELD="TEXT" VALUE='"new custom property value"'/>
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="CONNECTION_TIMEOUT" FIELD="TEXT" REQUIRED="true" NUM_ROW="40">
+			<DEFAULT>30</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="CONNECTION_TIMEOUT_DESC" FIELD="LABEL" REQUIRED="true" NUM_ROW="40">
+			<DEFAULT>(Studio Only, See Doc for Runtime)</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="RECEIVE_TIMEOUT" FIELD="TEXT" REQUIRED="true" NUM_ROW="40">
+			<DEFAULT>60</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="RECEIVE_TIMEOUT_DESC" FIELD="LABEL" REQUIRED="true" NUM_ROW="40">
+			<DEFAULT>(Studio Only, See Doc for Runtime)</DEFAULT>
+		</PARAMETER>
+
+	   <PARAMETER NAME="DISABLE_CHUNKING" FIELD="CHECK" REQUIRED="true" NUM_ROW="45" SHOW_IF="FOLLOW_REDIRECTS == 'false'">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="NEED_SSL_TO_TRUSTSERVER" FIELD="CHECK" REQUIRED="true" NUM_ROW="50">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SSL_TRUSTSERVER_TRUSTSTORE" FIELD="TEXT" NUM_ROW="50"
+				SHOW_IF="NEED_SSL_TO_TRUSTSERVER == 'true'">
+			<DEFAULT>"C:/clientTrustStore.trustStore"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="SSL_TRUSTSERVER_PASSWORD" FIELD="PASSWORD" NUM_ROW="50"
+				SHOW_IF="NEED_SSL_TO_TRUSTSERVER == 'true'">
+			<DEFAULT>"password"</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="USE_PROXY" FIELD="CHECK" REQUIRED="true" NUM_ROW="60"
+				REPOSITORY_VALUE="USE_PROXY" DYNAMIC_SETTINGS="true" >
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PROXY_HOST" FIELD="TEXT" NUM_ROW="60"
+				REPOSITORY_VALUE="PROXY_HOST" NOT_SHOW_IF="USE_PROXY == 'false'">
+			<DEFAULT>"127.0.0.1"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PROXY_PORT" FIELD="TEXT" NUM_ROW="60"
+				REPOSITORY_VALUE="PROXY_PORT" NOT_SHOW_IF="USE_PROXY == 'false'">
+			<DEFAULT>8080</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PROXY_USERNAME" FIELD="TEXT" NUM_ROW="60"
+				REPOSITORY_VALUE="PROXY_USERNAME" NOT_SHOW_IF="USE_PROXY == 'false'">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="PROXY_PASSWORD" FIELD="PASSWORD" NUM_ROW="60"
+				REPOSITORY_VALUE="PROXY_PASSWORD" NOT_SHOW_IF="USE_PROXY == 'false'">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="WSDL_CONTENT" FIELD="TEXT" REQUIRED="false" NUM_ROW="80" SHOW="false">
+		</PARAMETER>
+		
+		<PARAMETER NAME="HEADERS" FIELD="TABLE" NB_LINES="4" NUM_ROW="100">
+			<ITEMS>
+				<ITEM NAME="NAME" VALUE='""'/>
+				<ITEM NAME="VALUE" VALUE='""'/>
+				<ITEM NAME="PROPAGATE" FIELD="CHECK" VALUE='false'/>
+			</ITEMS>
+		</PARAMETER>
+		
+	</ADVANCED_PARAMETERS>
+
+
+	<CODEGENERATION>
+		<IMPORTS>
+			<IMPORT MODULE="dom4j-${dom4j.version}.jar" MVN="mvn:org.dom4j/dom4j/${dom4j.version}" REQUIRED="true" />
+
+			<IMPORT MODULE_GROUP="cxf-core" REQUIRED="true" />
+			<IMPORT MODULE_GROUP="cxf-rt-frontend-jaxws" REQUIRED="true" />
+
+			<IMPORT MODULE_GROUP="spring-context"
+					REQUIRED_IF="(SERVICE_LOCATOR == 'true') OR (SERVICE_ACTIVITY_MONITOR == 'true')" />
+
+			<IMPORT MODULE_GROUP="locator"
+					REQUIRED_IF="SERVICE_LOCATOR == 'true'" />
+
+			<IMPORT MODULE_GROUP="sam-agent"
+					REQUIRED_IF="SERVICE_ACTIVITY_MONITOR == 'true'" />
+
+			<IMPORT MODULE_GROUP="correlationid-policy"
+					REQUIRED_IF="(USE_BUSINESS_CORRELATION == 'true') OR ((IS_STUDIO_EE_VERSION == 'true') AND (USE_SR == 'true'))" />
+
+			<IMPORT MODULE_GROUP="cxf-rt-ws-security" REQUIRED="true" />
+					<!--REQUIRED_IF="(NEED_AUTH == 'true') AND (AUTH_TYPE == 'TOKEN')" /-->
+
+            <IMPORT MODULE_GROUP="esb-java-11-group" REQUIRED="true" />
+            
+            <IMPORT MODULE="jakarta.xml.ws-api-2.3.3.jar" MVN="mvn:jakarta.xml.ws/jakarta.xml.ws-api/2.3.3" NAME="jakarta.xml.ws-api-2.3.3"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/jakarta.xml.ws-api-2.3.3.jar"
+                REQUIRED="true"/>
+
+            <IMPORT MODULE="jakarta.annotation-api-1.3.5.jar" MVN="mvn:jakarta.annotation/jakarta.annotation-api/1.3.5" NAME="jakarta.annotation-api-1.3.5"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/jakarta.annotation-api-1.3.5.jar"
+                REQUIRED="true"/>
+
+            <IMPORT MODULE="jakarta.activation-api-1.2.2.jar" MVN="mvn:jakarta.activation/jakarta.activation-api/1.2.2" NAME="jakarta.activation-api-1.2.2"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/jakarta.activation-api-1.2.2.jar"
+                REQUIRED="true"/>
+
+            <IMPORT MODULE="jakarta.activation-1.2.2.jar" MVN="mvn:com.sun.activation/jakarta.activation/1.2.2" NAME="jakarta.activation-1.2.2"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/jakarta.activation-1.2.2.jar"
+                REQUIRED="true"/>
+
+            <IMPORT MODULE="org.apache.servicemix.bundles.saaj-impl-1.5.1_1.jar" MVN="mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.saaj-impl/1.5.1_1" NAME="org.apache.servicemix.bundles.saaj-impl-1.5.1_1"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/org.apache.servicemix.bundles.saaj-impl-1.5.1_1.jar"
+                REQUIRED="true"/>
+		</IMPORTS>
+	</CODEGENERATION>
+
+	<RETURNS>
+		<RETURN NAME="NB_LINE" TYPE="id_Integer" AVAILABILITY="AFTER" />
+		<RETURN NAME="HEADERS" TYPE="java.util.Map&lt;String,java.util.List&lt;String&gt;&gt;" AVAILABILITY="FLOW" />
+		<RETURN NAME="CORRELATION_ID" TYPE="id_String" AVAILABILITY="FLOW" />
+	</RETURNS>
+</COMPONENT>

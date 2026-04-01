@@ -1,0 +1,599 @@
+<%@ jet
+    package="org.talend.designer.codegen.translators.common"
+    imports="
+        java.util.Vector
+
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.IProcess
+    "
+    class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+boolean actAsProvider = !process.getNodesOfType("tESBProviderRequest").isEmpty();
+boolean actAsConsumer = !process.getNodesOfType("tESBConsumer").isEmpty();
+if (actAsConsumer) {
+%>
+    @SuppressWarnings("serial")
+    public static class GenericFaultInfoException extends org.apache.cxf.frontend.FaultInfoException {
+
+        private org.dom4j.Document faultInfo;
+
+        public GenericFaultInfoException(String arg0, javax.xml.transform.Source source) {
+            super(arg0);
+            try {
+                faultInfo = GenericConsumer.sourceToDocument(source);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        public org.dom4j.Document getFaultInfo() {
+            return faultInfo;
+        }
+    }
+
+    static interface GenericServiceClass {
+        Object invoke(Object param) throws GenericFaultInfoException;
+    }
+
+    static class GenericConsumer {
+
+        private static final javax.xml.transform.TransformerFactory FACTORY = javax.xml.transform.TransformerFactory.newInstance();
+
+        private javax.xml.namespace.QName serviceQName;
+        private javax.xml.namespace.QName portQName;
+        private javax.xml.namespace.QName operationQName;
+        private boolean isRequestResponse;
+        private String soapAction;
+        private String address;
+        private String wsdlURL;
+
+        private java.util.Collection<org.apache.cxf.feature.Feature> esbFeatures;
+        private org.apache.cxf.Bus bus;
+
+        private String authType;
+        private String username;
+        private String password;
+
+        private String proxyServer;
+        private int proxyPort;
+        private String proxyUsername;
+        private String proxyPassword;
+
+        private long connectionTimeout;
+        private long receiveTimeout;
+        
+        private boolean autoRedirect;
+        private boolean disableChunking;
+        private boolean redirectSameHostOnly;
+
+        private boolean logMessages;
+
+        private java.util.Collection<org.apache.cxf.headers.Header> soapHeaders;
+
+        private Object correlationIDCallbackHandler;
+        
+        private java.util.Map<String, String> samCustomProperties;
+
+        private String correlationID;
+        
+        private java.util.Map<String, List<?>> httpResponseHeaders;
+        private java.lang.Integer httpResponseCode;
+
+        public void setServiceQName(javax.xml.namespace.QName serviceQName) {
+            this.serviceQName = serviceQName;
+        }
+
+        public void setPortQName(javax.xml.namespace.QName portQName) {
+            this.portQName = portQName;
+        }
+
+        public void setOperationQName(javax.xml.namespace.QName operationQName) {
+            this.operationQName = operationQName;
+        }
+
+        public void setIsRequestResponse(boolean isRequestResponse) {
+            this.isRequestResponse = isRequestResponse;
+        }
+
+        public void setSoapAction(String soapAction) {
+            this.soapAction = soapAction;
+        }
+
+        public void setAddress(String address) {
+            this.address = address;
+        }
+
+        public void setWsdlURL(String wsdlURL) {
+            this.wsdlURL = wsdlURL;
+        }
+
+        public void setEsbFeatures(
+                java.util.Collection<org.apache.cxf.feature.Feature> esbFeatures) {
+            this.esbFeatures = esbFeatures;
+        }
+
+        public void setBus(org.apache.cxf.Bus bus) {
+            this.bus = bus;
+        }
+
+        public void setAuthType(String authType) {
+            this.authType = authType;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public void setProxyServer(String proxyServer) {
+            this.proxyServer = proxyServer;
+        }
+
+        public void setProxyPort(int proxyPort) {
+            this.proxyPort = proxyPort;
+        }
+
+        public void setProxyUsername(String proxyUsername) {
+            this.proxyUsername = proxyUsername;
+        }
+
+        public void setProxyPassword(String proxyPassword) {
+            this.proxyPassword = proxyPassword;
+        }
+
+        public void setConnectionTimeout(long connectionTimeout) {
+            this.connectionTimeout = connectionTimeout;
+        }
+
+        public void setReceiveTimeout(long receiveTimeout) {
+            this.receiveTimeout = receiveTimeout;
+        }
+
+        public void setAutoRedirect(boolean autoRedirect) {
+            this.autoRedirect = autoRedirect;
+        }
+
+        public void setDisableChunking(boolean disableChunking) {
+            this.disableChunking = disableChunking;
+        }
+        
+        public void setRedirectSameHostOnly(boolean redirectSameHostOnly) {
+            this.redirectSameHostOnly = redirectSameHostOnly;
+        }
+
+        public void setLogMessages(boolean logMessages) {
+            this.logMessages = logMessages;
+        }
+
+        public void setSoapHeaders(java.util.Collection<org.apache.cxf.headers.Header> soapHeaders) {
+            this.soapHeaders = soapHeaders;
+        }
+        
+        public java.util.Map<String, List<?>> getHttpResponseHeaders(){
+        	return this.httpResponseHeaders;
+        }
+        
+        public java.lang.Integer getHttpResponseCode(){
+        	return this.httpResponseCode;
+        }
+        
+        public void setCorrelationIDCallbackHandler(Object correlationIDCallbackHandler) {
+            this.correlationIDCallbackHandler = correlationIDCallbackHandler;
+        }
+        
+        public void setSamCustomProperties(java.util.Map<String, String> samCustomProperties){
+        	this.samCustomProperties = samCustomProperties;
+        }
+
+        public String getCorrelationID() {
+            return correlationID;
+        }
+
+        public org.dom4j.Document invoke(org.dom4j.Document doc) throws GenericFaultInfoException, org.apache.cxf.interceptor.Fault {
+            org.apache.cxf.frontend.ClientFactoryBean clientFactory = new org.apache.cxf.frontend.ClientFactoryBean();
+            clientFactory.setDataBinding(new org.apache.cxf.databinding.source.SourceDataBinding());
+            clientFactory.getServiceFactory().getServiceConfigurations().add(0, new org.apache.cxf.wsdl.service.factory.AbstractServiceConfiguration() {
+                @Override
+                public Boolean isOperation(java.lang.reflect.Method method) {
+                    return "invoke".equals(method.getName());
+                }
+                @Override
+                public javax.xml.namespace.QName getOperationName(org.apache.cxf.service.model.InterfaceInfo service, java.lang.reflect.Method method) {
+                    return operationQName;
+                }
+                @Override
+                public Boolean hasOutMessage(java.lang.reflect.Method m) {
+                    return isRequestResponse;
+                }
+                @Override
+                public String getAction(org.apache.cxf.service.model.OperationInfo op, java.lang.reflect.Method method) {
+                    return soapAction;
+                }
+                @Override
+                public Boolean isWrapped() {
+                    return Boolean.FALSE;
+                }
+                @Override
+                public javax.xml.namespace.QName getFaultName(org.apache.cxf.service.model.InterfaceInfo service, org.apache.cxf.service.model.OperationInfo o,
+                        Class<?> exClass, Class<?> beanClass) {
+                    for (org.apache.cxf.service.model.FaultInfo fi : o.getFaults()) {
+                        for (org.apache.cxf.service.model.MessagePartInfo mpi : fi.getMessageParts()) {
+                            return mpi.getConcreteName();
+                        }
+                    }
+                    return null;
+                }
+            });
+            if (null != wsdlURL) {
+                clientFactory.setWsdlURL(wsdlURL);
+            }
+            clientFactory.setServiceClass(GenericServiceClass.class);
+
+            clientFactory.setServiceName(serviceQName);
+            clientFactory.setEndpointName(portQName);
+
+            clientFactory.setAddress(address);
+            clientFactory.getProperties(true).put("soap.no.validate.parts", Boolean.TRUE);
+
+            if (null != bus) {
+                clientFactory.setBus(bus);
+            }
+            if (null != esbFeatures) {
+                clientFactory.getFeatures().addAll(esbFeatures);
+            }
+            if (logMessages) {
+                org.apache.cxf.ext.logging.LoggingFeature loggingFeature = new  org.apache.cxf.ext.logging.LoggingFeature();
+                loggingFeature.addSensitiveProtocolHeaderNames(new java.util.HashSet<>(java.util.Arrays.asList(org.apache.cxf.helpers.HttpHeaderHelper.AUTHORIZATION)));
+                loggingFeature.addSensitiveElementNames(new java.util.HashSet<>(java.util.Arrays.asList("password")));
+                clientFactory.getFeatures().add(loggingFeature);
+            }
+            if (null != correlationIDCallbackHandler) {
+                clientFactory.getProperties(true).put("correlation-id.callback-handler", correlationIDCallbackHandler);
+            }
+           	if(null != samCustomProperties){
+           		clientFactory.getProperties(true).put("SAM-PROPS", samCustomProperties);
+           		clientFactory.getProperties(true).put("esb.sam.properties", samCustomProperties);
+           	}
+
+            org.apache.cxf.endpoint.Client client = clientFactory.create();
+
+            org.apache.cxf.transport.http.HTTPConduit conduit = (org.apache.cxf.transport.http.HTTPConduit) client.getConduit();
+            if ("BASIC".equals(authType)) {
+                org.apache.cxf.configuration.security.AuthorizationPolicy authorizationPolicy = new org.apache.cxf.configuration.security.AuthorizationPolicy();
+                authorizationPolicy.setUserName(username);
+                authorizationPolicy.setPassword(password);
+                authorizationPolicy.setAuthorizationType("Basic");
+                conduit.setAuthorization(authorizationPolicy);
+            } else if ("DIGEST".equals(authType)) {
+                org.apache.cxf.configuration.security.AuthorizationPolicy authorizationPolicy = new org.apache.cxf.configuration.security.AuthorizationPolicy();
+                authorizationPolicy.setUserName(username);
+                authorizationPolicy.setPassword(password);
+                authorizationPolicy.setAuthorizationType("Digest");
+                conduit.setAuthorization(authorizationPolicy);
+            } else if ("TOKEN".equals(authType)) {
+                java.util.Map<String, Object> wssProps = new java.util.HashMap<String, Object>();
+                wssProps.put(org.apache.wss4j.common.ConfigurationConstants.ACTION, org.apache.wss4j.common.ConfigurationConstants.USERNAME_TOKEN);
+                wssProps.put(org.apache.wss4j.common.ConfigurationConstants.USER, username);
+                wssProps.put(org.apache.wss4j.common.ConfigurationConstants.PASSWORD_TYPE, org.apache.wss4j.common.WSS4JConstants.PW_TEXT);
+                wssProps.put(org.apache.wss4j.common.ConfigurationConstants.PW_CALLBACK_REF,
+                        new javax.security.auth.callback.CallbackHandler() {
+                            public void handle(javax.security.auth.callback.Callback[] callbacks)
+                                    throws java.io.IOException, javax.security.auth.callback.UnsupportedCallbackException {
+                                ((org.apache.wss4j.common.ext.WSPasswordCallback) callbacks[0]).setPassword(password);
+                            }
+                        });
+                client.getEndpoint()
+                        .getOutInterceptors().add(new org.apache.cxf.ws.security.wss4j.WSS4JOutInterceptor(wssProps));
+                client.getRequestContext().put("ws-security.username", username);
+                client.getRequestContext().put("ws-security.password", password);
+            }
+<%
+    /*tSetKeystore-TESB-22406*/
+    if (!process.getNodesOfType("tSetKeystore").isEmpty()) {
+        INode keystoreNode = process.getNodesOfType("tSetKeystore").get(0);
+        if(("false").equals(ElementParameterParser.getValue(keystoreNode, "__VERIFY_NAME__"))){
+%>
+            org.apache.cxf.configuration.jsse.TLSClientParameters clientParameters = new org.apache.cxf.configuration.jsse.TLSClientParameters();
+            clientParameters.setUseHttpsURLConnectionDefaultHostnameVerifier(true);
+            conduit.setTlsClientParameters(clientParameters);
+<%
+        }
+    }
+%>
+            org.apache.cxf.transports.http.configuration.HTTPClientPolicy httpClientPolicy = conduit.getClient();
+            if (null != proxyServer) {
+                httpClientPolicy.setProxyServerType(org.apache.cxf.transports.http.configuration.ProxyServerType.HTTP);
+                httpClientPolicy.setProxyServer(proxyServer);
+                httpClientPolicy.setProxyServerPort(proxyPort);
+            }
+            if (null != proxyUsername && !"".equals(proxyUsername)) {
+                org.apache.cxf.configuration.security.ProxyAuthorizationPolicy proxyAuthorization = new org.apache.cxf.configuration.security.ProxyAuthorizationPolicy();
+                proxyAuthorization.setUserName(proxyUsername);
+                proxyAuthorization.setPassword(proxyPassword);
+                conduit.setProxyAuthorization(proxyAuthorization);
+            }
+            httpClientPolicy.setConnectionTimeout(connectionTimeout);
+            httpClientPolicy.setReceiveTimeout(receiveTimeout);
+            if (autoRedirect) {
+                httpClientPolicy.setAutoRedirect(autoRedirect);
+                client.getRequestContext().put("http.redirect.relative.uri", true);
+                client.getRequestContext().put("http.redirect.same.host.only", redirectSameHostOnly);
+            }
+            if (disableChunking) {
+                httpClientPolicy.setAllowChunking(false);
+            }
+            if (null != soapHeaders) {
+                client.getRequestContext().put(org.apache.cxf.headers.Header.HEADER_LIST, soapHeaders);
+            }
+
+            try {
+                javax.xml.parsers.DocumentBuilderFactory factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(true);
+
+                Object[] results = client.invoke(operationQName,
+                        factory.newDocumentBuilder().parse(new org.xml.sax.InputSource(new java.io.StringReader(doc.asXML()))));
+                correlationID = (String) client.getResponseContext().get("CorrelationID");
+				httpResponseHeaders = (java.util.Map<String, java.util.List<?>>) client
+						.getResponseContext().get(org.apache.cxf.message.Message.PROTOCOL_HEADERS);
+				httpResponseCode = (Integer) client.getResponseContext().get(org.apache.cxf.message.Message.RESPONSE_CODE);
+                if (results != null && results.length > 0) {
+                    return sourceToDocument((javax.xml.transform.Source) results[0]);
+                }
+            } catch (GenericFaultInfoException e) {
+                throw e;
+            } catch (org.apache.cxf.interceptor.Fault e) {
+                throw e;
+            } catch (Exception e) {
+                throw new org.apache.cxf.interceptor.Fault(e);
+            }
+            return null;
+        }
+
+        public static org.dom4j.Document sourceToDocument(javax.xml.transform.Source source) throws Exception{
+            java.io.ByteArrayOutputStream os = new java.io.ByteArrayOutputStream();
+            FACTORY.newTransformer().transform(source, new javax.xml.transform.stream.StreamResult(os));
+            return new org.dom4j.io.SAXReader().read(new java.io.ByteArrayInputStream(os.toByteArray()));
+        }
+
+    }
+	
+	public class HttpHeadersFeature extends
+			org.apache.cxf.feature.AbstractFeature {
+
+		public final static String HTTP_HEADERS = "http_headers";
+		public final static String HTTP_RESPONSE_CODE = "http_response_code";
+
+		private HttpHeadersOutInterceptor out = new HttpHeadersOutInterceptor();
+		private HttpHeadersInInterceptor in = new HttpHeadersInInterceptor();
+
+		public HttpHeadersFeature(List<java.util.Map<String, String>> headers) {
+			out.setHeaders(headers);
+		}
+
+		public HttpHeadersOutInterceptor getOutInterceptor() {
+			return out;
+		}
+
+		public HttpHeadersInInterceptor getInInterceptor() {
+			return in;
+		}
+
+		public java.util.Map<String, List<?>> getResponseHeaders() {
+			return getInInterceptor().getHeaders();
+		}
+
+		public java.lang.Integer getResponseCode() {
+			return getInInterceptor().getResponseCode();
+		}
+
+		@Override
+		protected void initializeProvider(
+				org.apache.cxf.interceptor.InterceptorProvider provider,
+				org.apache.cxf.Bus bus) {
+			provider.getOutInterceptors().add(out);
+			provider.getInInterceptors().add(in);
+		}
+
+		public class HttpHeadersOutInterceptor
+				extends
+				org.apache.cxf.phase.AbstractPhaseInterceptor<org.apache.cxf.message.Message> {
+
+			private List<java.util.Map<String, String>> headers = null;
+
+			public HttpHeadersOutInterceptor() {
+                            super(org.apache.cxf.phase.Phase.MARSHAL);
+                            super.addBefore(org.apache.cxf.wsdl.interceptors.BareOutInterceptor.class.getName());
+			}
+
+			public void setHeaders(List<java.util.Map<String, String>> headers) {
+				this.headers =  headers;
+			}
+
+			@Override
+			public void handleMessage(org.apache.cxf.message.Message message)
+					throws org.apache.cxf.interceptor.Fault {
+				java.util.Map<String, List> httpHeaders = (java.util.Map<String, List>) message
+						.get(org.apache.cxf.message.Message.PROTOCOL_HEADERS);
+				
+				message.put(org.apache.cxf.transport.http.Headers.ADD_HEADERS_PROPERTY,	true);
+				try {
+					for (java.util.Map<String, String> header : headers) {
+						for (java.util.Map.Entry<String, String> h : header
+								.entrySet()) {
+							String k = h.getKey();
+							if (k == null || k == "")
+								continue;
+							List<String> v = httpHeaders.get(k);
+							if (v == null) {
+								v = new java.util.ArrayList<String>();
+								httpHeaders.put(k, v);
+							}
+							v.add(h.getValue());
+						}
+					}
+				} catch (Exception ce) {
+					throw new org.apache.cxf.interceptor.Fault(ce);
+				}
+			}
+		}
+
+		public class HttpHeadersInInterceptor
+				extends
+				org.apache.cxf.phase.AbstractPhaseInterceptor<org.apache.cxf.message.Message> {
+
+			private java.util.Map<String, List<?>> httpHeaders = new java.util.TreeMap<String, List<?>>(
+					String.CASE_INSENSITIVE_ORDER);
+			private java.lang.Integer responseCode = new java.lang.Integer(0);
+
+			public HttpHeadersInInterceptor() {
+				super(org.apache.cxf.phase.Phase.POST_PROTOCOL);
+			}
+
+			@SuppressWarnings("unchecked")
+			@Override
+			public void handleMessage(org.apache.cxf.message.Message message)
+					throws org.apache.cxf.interceptor.Fault {
+
+				try {
+					this.httpHeaders = ((java.util.Map<String, List<?>>) message
+							.get(org.apache.cxf.message.Message.PROTOCOL_HEADERS));
+					this.responseCode = (java.lang.Integer) message
+							.get(org.apache.cxf.message.Message.RESPONSE_CODE);
+				} catch (Exception ce) {
+					throw new org.apache.cxf.interceptor.Fault(ce);
+				}
+			}
+			
+			@SuppressWarnings("unchecked")
+			@Override
+			public void handleFault(org.apache.cxf.message.Message message)
+					throws org.apache.cxf.interceptor.Fault {
+
+				try {
+					this.httpHeaders = ((java.util.Map<String, List<?>>) message
+							.get(org.apache.cxf.message.Message.PROTOCOL_HEADERS));
+					this.responseCode = (java.lang.Integer) message
+							.get(org.apache.cxf.message.Message.RESPONSE_CODE);
+				} catch (Exception ce) {
+					throw new org.apache.cxf.interceptor.Fault(ce);
+				}
+			}
+
+			public java.util.Map<String, List<?>> getHeaders() {
+				return httpHeaders;
+			}
+
+			public java.lang.Integer getResponseCode() {
+				return responseCode;
+			}
+		}
+	}
+
+    private static java.util.Map<String, Object> collectFaultInfo(Exception error) {
+        String faultString = null;
+        String faultActor = null;
+        String faultCode = null;
+        String faultRole = null;
+        String faultNode = null;
+        org.dom4j.Document faultDetail = null;
+        org.w3c.dom.Element faultDomDetail = null;
+
+        if (error instanceof org.apache.cxf.binding.soap.SoapFault) {
+            org.apache.cxf.binding.soap.SoapFault cxfSoapFault = (org.apache.cxf.binding.soap.SoapFault) error;
+
+            faultString = cxfSoapFault.getReason();
+            faultCode = cxfSoapFault.getFaultCode().toString();
+            faultRole = cxfSoapFault.getRole();
+            faultNode = cxfSoapFault.getNode();
+            faultDomDetail = cxfSoapFault.getDetail();
+        } else if (error instanceof GenericFaultInfoException) {
+            GenericFaultInfoException genericFault = (GenericFaultInfoException) error;
+
+            faultString = genericFault.getMessage();
+            faultDetail = genericFault.getFaultInfo();
+        } else if (error instanceof javax.xml.ws.soap.SOAPFaultException) {
+            javax.xml.soap.SOAPFault wsSoapFault = ((javax.xml.ws.soap.SOAPFaultException) error).getFault();
+
+            faultString = wsSoapFault.getFaultString();
+            faultActor = wsSoapFault.getFaultActor();
+            faultCode = wsSoapFault.getFaultCodeAsQName().toString();
+
+            if (javax.xml.soap.SOAPConstants.URI_NS_SOAP_1_2_ENVELOPE.equals(wsSoapFault.getNamespaceURI())) {
+                // SOAP 1.2
+                try {
+                    faultRole = wsSoapFault.getFaultRole();
+                    faultNode = wsSoapFault.getFaultNode();
+                } catch (java.lang.UnsupportedOperationException uoe) { }
+            }
+
+            faultDomDetail = wsSoapFault.getDetail();
+        } else {
+            return null;
+        }
+
+        java.util.Map<String, Object> faultInfo = new java.util.HashMap<String, Object>();
+        faultInfo.put("faultString", faultString);
+        faultInfo.put("faultActor", faultActor);
+        faultInfo.put("faultCode", faultCode);
+        faultInfo.put("faultRole", faultRole);
+        faultInfo.put("faultNode", faultNode);
+        if (null != faultDomDetail) {
+            org.w3c.dom.NodeList nl = faultDomDetail.getElementsByTagName("*");
+            if (nl.getLength() > 0) {
+                try {
+                    javax.xml.transform.Source faultSource = new javax.xml.transform.dom.DOMSource(
+                            nl.item(0));
+                    faultDetail = GenericConsumer.sourceToDocument(faultSource);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        faultInfo.put("faultDetail", faultDetail);
+        return faultInfo;
+    }
+
+    private void printFaultInfo(java.util.Map<String, Object> faultInfo) {
+        java.lang.StringBuffer sb = new java.lang.StringBuffer("Fault {");
+        sb.append("string: ").append(faultInfo.get("faultString"));
+        if (null != faultInfo.get("faultCode")) {
+            sb.append("; code:").append(faultInfo.get("faultCode"));
+        }
+        if (null != faultInfo.get("faultActor")) {
+            sb.append("; actor:").append(faultInfo.get("faultActor"));
+        }
+        if (null != faultInfo.get("faultRole")) {
+            sb.append("; role:").append(faultInfo.get("faultRole"));
+        }
+        if (null != faultInfo.get("faultNode")) {
+            sb.append("; node:").append(faultInfo.get("faultNode"));
+        }
+        if (null != faultInfo.get("faultDetail")) {
+            sb.append("; detail:").append(((org.dom4j.Document) faultInfo.get("faultDetail")).asXML());
+        }
+        sb.append("}");
+        System.out.println(sb.toString());
+    }
+
+<% } // end if (actAsConsumer) %>
+
+<% if (actAsProvider || actAsConsumer) {%>
+    private Object wrapPayload(Object payload) {
+        java.util.Map<String, Object> outputWrapped = new java.util.HashMap<String, Object>();
+        outputWrapped.put("PAYLOAD", payload);
+        return outputWrapped;
+    }
+<% } %>
+
+
+

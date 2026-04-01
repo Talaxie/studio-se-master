@@ -1,0 +1,142 @@
+<COMPONENT>
+
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+    
+    COMPATIBILITY="ALL"
+    AUTHOR="Talend"
+    RELEASE_DATE="20100401A"
+    STARTABLE="false"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Routing</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR NAME="LOADBALANCE" CTYPE="ROUTE" MIN_INPUT="0" MAX_INPUT="1" MIN_OUTPUT="0" COLOR="7171FF"/>
+    <CONNECTOR CTYPE="ROUTE_ENDBLOCK" MIN_INPUT="0" MAX_INPUT="1" MAX_OUTPUT="1" MIN_OUTPUT="0"/>
+    	<CONNECTOR CTYPE="ROUTE_WHEN" MAX_INPUT="1" MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ROUTE_OTHER" MAX_INPUT="1" MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ROUTE_TRY" MAX_INPUT="1" MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ROUTE_CATCH" MAX_INPUT="1" MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ROUTE_FINALLY" MAX_INPUT="1" MAX_OUTPUT="0" />
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+	<PARAMETER NAME="STRATEGY" FIELD="CLOSED_LIST" NUM_ROW="5">
+      <ITEMS DEFAULT="ROUND_ROBIN">
+        <ITEM NAME="RANDOM" VALUE="random"/>
+        <ITEM NAME="ROUND_ROBIN" VALUE="roundRobin"/>
+		<ITEM NAME="STICKY" VALUE="sticky"/>
+        <ITEM NAME="TOPIC" VALUE="topic"/>
+		<ITEM NAME="FAILOVER" VALUE="failover"/>
+        <ITEM NAME="CUSTOM" VALUE="custom"/>
+      </ITEMS>
+    </PARAMETER>
+	
+	<PARAMETER NAME="LANGUAGES" FIELD="LANGUAGE_CLOSED_LIST" REQUIRED="false" NUM_ROW="10" SHOW_IF="STRATEGY == 'STICKY'">
+        <ITEMS DEFAULT="CONSTANT" />
+	</PARAMETER>
+	<PARAMETER NAME="EXPRESSION" FIELD="TEXT"  NUM_ROW="10" REQUIRED="true" SHOW_IF="(STRATEGY == 'STICKY') AND (LANGUAGES != 'CORRELATION')" >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="USE_NAMESPACES" FIELD="CHECK" SHOW_IF="(LANGUAGES == 'xpath')"
+        REQUIRED="true" NUM_ROW="17">
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="NAMESPACES" FIELD="TABLE" NUM_ROW="18" NB_LINES="5"
+        REQUIRED="true" SHOW_IF="(LANGUAGES == 'xpath') AND (USE_NAMESPACES == 'true')" >
+        <ITEMS>
+            <ITEM NAME="PREFIX" VALUE="" />
+            <ITEM NAME="URI" VALUE="" />
+        </ITEMS>
+    </PARAMETER>
+    <PARAMETER NAME="WARNING" FIELD="LABEL" NUM_ROW="19" SHOW_IF="(LANGUAGES == 'xpath') AND (USE_NAMESPACES == 'true')">
+        <DEFAULT>*Note: For Bean Language, the Expression should be a qualified class name without quotes.
+                 *Note: For None Language, the Value should be a full expression, instead of a plain text.
+                 *Note: For XPath Language, the Namespaces will be used automatically if it's checked.</DEFAULT>
+    </PARAMETER>
+	<PARAMETER NAME="BASIC_MODE" FIELD="RADIO" NUM_ROW="20"  GROUP="MODE" SHOW_IF="STRATEGY == 'FAILOVER'">
+		<DEFAULT>true</DEFAULT>
+	</PARAMETER>
+
+	<PARAMETER NAME="EXCEPTION_MODE" FIELD="RADIO" NUM_ROW="25"  GROUP="MODE" SHOW_IF="STRATEGY == 'FAILOVER'">
+		<DEFAULT>false</DEFAULT>
+	</PARAMETER>		
+
+	<PARAMETER NAME="ROUND_ROBIN_MODE" FIELD="RADIO" NUM_ROW="30"  GROUP="MODE" SHOW_IF="STRATEGY == 'FAILOVER'">
+		<DEFAULT>false</DEFAULT>
+	</PARAMETER>
+
+	<PARAMETER
+      NAME="EXCEPTIONS"
+      FIELD="TABLE"
+      NUM_ROW="26"
+      NB_LINES="5"
+	  GROUP="MODE"
+	  SHOW_IF="((STRATEGY == 'FAILOVER') AND (EXCEPTION_MODE == 'true'))"
+    >
+      <ITEMS>
+        <ITEM NAME="EXCEPTION" VALUE="java.lang.Exception" FIELD="TEXT" />
+	  </ITEMS>
+	</PARAMETER>
+	<PARAMETER NAME="MAXFAILATTEMPT" FIELD="CLOSED_LIST" NUM_ROW="31" GROUP="MODE" SHOW_IF="((STRATEGY == 'FAILOVER') AND (ROUND_ROBIN_MODE == 'true'))">
+      <ITEMS DEFAULT="ALWAYS">
+        <ITEM NAME="ALWAYS" VALUE="ALWAYS"/>
+        <ITEM NAME="NEVER" VALUE="NEVER"/>
+		<ITEM NAME="SOMETIMES" VALUE="SOMETIMES"/>
+      </ITEMS>
+    </PARAMETER>
+	<PARAMETER NAME="ATTEMPT_NUMBER" FIELD="TEXT"  NUM_ROW="31" REQUIRED="true" GROUP="MODE" 
+		SHOW_IF="((STRATEGY == 'FAILOVER') AND (ROUND_ROBIN_MODE == 'true') AND (MAXFAILATTEMPT == 'SOMETIMES'))">
+        <DEFAULT>3</DEFAULT>
+    </PARAMETER>
+	<PARAMETER NAME="INHERIT_ERROR_HANDLER" FIELD="CLOSED_LIST" NUM_ROW="32" GROUP="MODE" SHOW_IF="((STRATEGY == 'FAILOVER') AND (ROUND_ROBIN_MODE == 'true'))">
+      <ITEMS DEFAULT="TRUE">
+        <ITEM NAME="TRUE" VALUE="true"/>
+        <ITEM NAME="FALSE" VALUE="false"/>
+      </ITEMS>
+    </PARAMETER>
+	<PARAMETER NAME="USE_ROUND_ROBIN" FIELD="CLOSED_LIST" NUM_ROW="33" GROUP="MODE" SHOW_IF="((STRATEGY == 'FAILOVER') AND (ROUND_ROBIN_MODE == 'true'))">
+      <ITEMS DEFAULT="FALSE">
+        <ITEM NAME="TRUE" VALUE="true"/>
+        <ITEM NAME="FALSE" VALUE="false"/>
+      </ITEMS>
+    </PARAMETER>
+	
+	
+	<PARAMETER NAME="CUSTOM_LOAD_BALANCER" FIELD="TEXT"  NUM_ROW="50" REQUIRED="true" 
+		SHOW_IF="STRATEGY == 'CUSTOM'">
+        <DEFAULT>MyCustomLoadBalancer</DEFAULT>
+    </PARAMETER>
+	
+	
+   </PARAMETERS>
+   
+   <ADVANCED_PARAMETERS>
+   </ADVANCED_PARAMETERS>
+
+	<CODEGENERATION>
+        <IMPORTS>
+            <IMPORT MODULE_GROUP="camel-groovy" REQUIRED_IF="(STRATEGY == 'STICKY') AND (LANGUAGES == 'groovy')" />
+            <IMPORT MODULE_GROUP="camel-jsonpath-alldep" REQUIRED_IF="(STRATEGY == 'STICKY') AND (LANGUAGES == 'jsonpath')" />
+            <IMPORT MODULE_GROUP="camel-saxon-alldep" REQUIRED_IF="(STRATEGY == 'STICKY') AND (LANGUAGES == 'xquery')" />
+            <IMPORT MODULE="jakarta.xml.soap-api-1.4.1.jar" MVN="mvn:jakarta.xml.soap/jakarta.xml.soap-api/1.4.1" NAME="jakarta.xml.soap-api-1.4.1"
+                UrlPath="platform:/plugin/org.talend.libraries.esb/lib/jakarta.xml.soap-api-1.4.1.jar"
+                REQUIRED="true"/>
+        </IMPORTS>
+	</CODEGENERATION>
+
+   <RETURNS />
+</COMPONENT>

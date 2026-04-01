@@ -1,0 +1,58 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IElementParameter
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.codegen.config.CamelEndpointBuilder
+    org.talend.core.model.components.IComponent
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+   	String cid = node.getUniqueName();
+   	CamelEndpointBuilder builder = CamelEndpointBuilder.getBuilder();
+   	
+   	builder.setComponent("dataset");
+   	builder.useDoubleSlash(false);
+   	builder.setName(ElementParameterParser.getValue(node, "__DATASET_NAME__"));
+
+	String produceDelay = ElementParameterParser.getValue(node, "__PRODUCE_DELAY__");
+	builder.addParamIfNotDefault("produceDelay", produceDelay, "3");
+	
+	String consumeDelay = ElementParameterParser.getValue(node, "__CONSUME_DELAY__");
+	builder.addParamIfNotDefault("consumeDelay", consumeDelay, "0");
+	
+	String preloadSize = ElementParameterParser.getValue(node, "__PRELOAD_SIZE__");
+	builder.addParamIfNotDefault("preloadSize", preloadSize, "0");
+	
+	String initialDelay = ElementParameterParser.getValue(node, "__INITIAL_DELAY__");
+	builder.addParamIfNotDefault("initialDelay", initialDelay, "1000");
+	
+	String minRate = ElementParameterParser.getValue(node, "__MIN_RATE__");
+	builder.addParamIfNotDefault("minRate", minRate, "0");
+//  http://jira.talendforge.org/browse/TESB-5241
+	/*
+   	 * change to use label + unique to make it unique but readable
+   	 */
+//	IElementParameter param = node.getElementParameter("LABEL");
+//	if(param != null && !"__UNIQUE_NAME__".equals(param.getValue())){
+//		cid = (String)param.getValue()+"_"+cid;	
+//	}
+	
+	String uri = builder.build();
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+			.to(<%=uri%>)
+<%
+	} else {
+%>
+		from(<%=uri%>)
+<%
+	}
+%>

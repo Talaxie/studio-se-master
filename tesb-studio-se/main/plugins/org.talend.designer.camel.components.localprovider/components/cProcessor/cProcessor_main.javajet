@@ -1,0 +1,40 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String rawCode = ElementParameterParser.getValue(node, "__CODE__");
+	
+	String code = null;
+	String[] splitted = rawCode.trim().split("\n");
+	String lastLine = splitted[splitted.length - 1];
+	
+	if ( lastLine.endsWith(";") ||     // Maybe there is a semicolon already 
+	     lastLine.contains("//") ||    // If last line is comment -- then it's OK, we don't need
+	     lastLine.endsWith("*/") ) {   // to search for semicolon.
+		code = rawCode;
+	} else  {
+		code = rawCode + ";";
+	}
+		
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns.size()>0) {
+%>
+	.process(new org.apache.camel.Processor(){
+		public void process(org.apache.camel.Exchange exchange) throws Exception{
+			<%=code%>
+		}
+		
+	})
+	
+<%}%>

@@ -1,0 +1,804 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.IProcess2
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Vector
+		java.util.List
+		java.util.ArrayList
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IContextParameter
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.utils.JavaResourcesHelper
+		java.util.Map
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.process.ProcessUtils
+
+	"
+	class="Footer" 
+	skeleton="routelet.skeleton"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    Vector v = (Vector) codeGenArgument.getArgument();
+    IProcess process = (IProcess) v.get(0);
+    Boolean hasSpring = (Boolean) v.get(1);
+
+	List<? extends INode> processNodes = (List<? extends INode>) process.getGeneratingNodes();
+	List<IContextParameter> params = process.getContextManager().getDefaultContext().getContextParameterList();
+
+	final boolean stats = codeGenArgument.isStatistics();
+	
+    boolean isTestContainer=ProcessUtils.isTestContainer(process);
+	String className = isTestContainer ? process.getName() + "Test" : process.getName();
+	
+    boolean exportTypeSpringBoot = false;
+    boolean isHttpBasic=false;
+    if(process.getClass().getName().endsWith("MicroServiceProcess")){
+        exportTypeSpringBoot = true;
+    }
+
+%>
+	}
+<%
+	if(isTestContainer){
+%>
+		};
+	}
+<%
+	}//end if(isTestContainer)
+%>
+	private org.apache.camel.main.Main main;
+
+    private void run() throws java.lang.Exception {
+        main = new org.apache.camel.main.Main() {
+
+            protected CamelContext createCamelContext() {
+                final org.apache.camel.impl.DefaultCamelContext camelContext =
+<%
+                if (hasSpring) {
+%>
+                    new org.apache.camel.spring.SpringCamelContext(
+                        new org.springframework.context.support.ClassPathXmlApplicationContext("META-INF/spring/<%=className.toLowerCase()%>.xml"));
+                        camelContext.setName("<%=className %>");
+                        camelContext.getRegistry().bind("<%=className %>", registry.lookupByName("<%=className %>"));
+
+						<%
+								if(hasRouteletComponent(process)){
+						%>
+									
+									try {
+										addRoutelets(camelContext);
+									} catch (Exception ee) {
+										ee.printStackTrace();
+									}
+						<%
+								}
+						%>
+<%
+                } else { // Routelet
+%>
+                    new org.apache.camel.impl.DefaultCamelContext();
+                    camelContext.getRegistry().bind("<%=className %>", registry.lookupByName("<%=className %>"));
+<%
+                }
+    if (stats) {
+%>
+                // add statistics which shows on the connection
+                final routines.system.RunStat runStat = new routines.system.RunStat();
+                runStat.openSocket(true);
+                runStat.setAllPID(pid, pid, pid, "<%=codeGenArgument.getJobName() %>");
+                try {
+                    runStat.startThreadStat(clientHost, portStats);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                runStat.updateStatOnJob(routines.system.RunStat.JOBSTART, null);
+
+                final Map<String, String> targetNodeToConnectionMap = new HashMap<String, String>();
+<%
+                for (INode node : processNodes) {
+                    if (node.isActivate()) {
+                        for (org.talend.core.model.process.IConnection conn : node.getIncomingConnections()) {
+                            String label = "";
+                            String labelValue = String.valueOf(node.getElementParameter("LABEL").getValue());
+                            String labelValueEscaped = ProcessUtils.escapeJava(labelValue);
+                            if (!"__UNIQUE_NAME__".equals(labelValueEscaped)) {
+                                label = '_' + labelValueEscaped;
+                            }
+%>
+                targetNodeToConnectionMap.put("<%=className %>_<%=node.getUniqueName()%><%=label%>", "<%=conn.getUniqueName()%>");
+<%
+                        }
+                    }
+                }
+%>
+                for (String connection : targetNodeToConnectionMap.values()) {
+                    runStat.updateStatOnConnection(connection, routines.system.RunStat.BEGIN, 0);
+                }
+                
+				camelContext.addInterceptStrategy(new org.apache.camel.spi.InterceptStrategy() {
+					@Override
+					public org.apache.camel.Processor wrapProcessorInInterceptors(CamelContext context, org.apache.camel.NamedNode definition, org.apache.camel.Processor target, org.apache.camel.Processor nextTarget) throws Exception {
+						return new org.apache.camel.support.processor.DelegateAsyncProcessor(target) {
+							public boolean process(org.apache.camel.Exchange exchange, org.apache.camel.AsyncCallback callback) {
+								final String connection = targetNodeToConnectionMap.get(definition.getId());
+								if (null != connection) {
+									runStat.updateStatOnConnection(targetNodeToConnectionMap.get(definition.getId()),routines.system.RunStat.RUNNING, 1);
+								}
+								return super.process(exchange, callback);
+							}
+						};
+					}
+				});
+                
+<%
+} //if stats
+%>
+                return camelContext;
+            }
+        };
+
+        //add route
+        
+		main.bind("<%=className %>", this);
+		
+        main.run();
+    }
+
+	public void stop() throws java.lang.Exception {
+		if(main != null) {
+			main.stop();
+		}
+	}
+
+	public void shutdown() throws java.lang.Exception {
+		if(main != null) {
+			main.shutdown();
+		}
+	}
+
+	<%= generateAddRouteletMethodWithCamelContext(process)%>
+
+    <%
+        if(exportTypeSpringBoot){
+    %>
+    
+        private java.util.Dictionary<String, String> loadHttpConduitProperties(String configName) {
+            Properties properties = new Properties();
+            try (java.io.InputStream is = getConfigLocation(configName)) {
+                properties.load(is);
+            } catch (Exception e) {
+                throw new RuntimeException("Cannot load the properties", e);
+            }
+            java.util.Dictionary<String, String> dic = new java.util.Hashtable<String, String>();
+            for (Object key : properties.keySet()) {
+                dic.put((String) key, properties.getProperty((String) key));
+            }
+            return dic;
+        }
+        
+        public java.io.InputStream getConfigLocation(String fileName){
+        
+            java.io.InputStream stream = null;
+            
+            String configFile = "config/" + fileName;
+            
+            String configPath = env.getProperty("spring.config.additional-location");
+            
+            String file = "";
+            if (configPath != null) {
+                // get spring.config.additional-location from env
+                file = configPath +java.io.File.separator+ fileName;
+            } else {
+                // by default from current "config" directory
+                file = System.getProperty("user.dir") + java.io.File.separator + configFile;
+            }
+
+            java.io.File usersfile = new java.io.File(file);
+            
+            if (usersfile.exists()) {
+                try{
+                    stream = new java.io.FileInputStream(file);
+                }catch(Exception e){
+                    stream = this.getClass().getClassLoader().getResourceAsStream(configFile);
+                }
+            } else {
+                stream = this.getClass().getClassLoader().getResourceAsStream(configFile);
+            }
+            
+            return stream;
+        }
+
+        private static void loadConfig(Map<String,String> argsMap,String configName,String configValue){
+            String configFileValue = "classpath:config/" + configValue;
+
+            if (argsMap.get(configName) == null) {
+                if (argsMap.get("--spring.config.additional-location") == null) {
+                    argsMap.put(configName, configFileValue);
+                } else {
+                    String value = argsMap.get("--spring.config.additional-location") + java.io.File.separator + configValue;
+    
+                    if(new java.io.File(value).exists()){
+                        argsMap.put(configName, "file:" + value);
+                    }else{
+                        if (argsMap.get("--spring.config.additional-location").contains(":")) {
+                            try {
+                                if (new java.io.File(new java.net.URI(value)).exists()) {
+                                    argsMap.put(configName, value);
+                                } else {
+                                    argsMap.put(configName, configFileValue);
+                                }
+                            } catch (Exception e) {
+                                argsMap.put(configName, configFileValue);
+                            }
+                        } else {
+                            argsMap.put(configName, configFileValue);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static String[] resetArgs(String... args){
+            Map<String,String> argsMap = new HashMap<String,String>();
+
+            for(int i=0;i<args.length;i++){
+                String[] kv = args[i].split("=");
+                if(kv.length > 1) {
+                	argsMap.put(kv[0], kv[1]);
+                }
+            }
+
+            if (argsMap.get("--spring.config.additional-location") != null) {
+                System.setProperty("spring.config.additional-location",argsMap.get("--spring.config.additional-location"));
+            }            
+            loadConfig(argsMap,"--spring.banner.location","banner.txt");
+            
+            if (argsMap.get("--camel.springboot.typeConversion") == null) {
+                argsMap.put("--camel.springboot.typeConversion", "false");
+            }
+
+            String[] resetArgs = new String[argsMap.size()];
+            
+            java.util.Set<String> keySet = argsMap.keySet();
+
+            int idx = 0;
+            
+            for(String key:keySet){
+                resetArgs[idx] =  key+"="+argsMap.get(key);
+                idx++;
+            }
+
+            return resetArgs;
+        }
+
+
+        @org.springframework.beans.factory.annotation.Autowired
+        private ContextProperties context;
+
+        @org.springframework.boot.context.properties.ConfigurationProperties
+        public static class ContextProperties {
+
+    <%} else { %>
+        private final ContextProperties context = new ContextProperties();
+
+        public static class ContextProperties extends Properties {
+        
+		public String getProperty(String key) {
+
+			String rs = null;
+
+			if (arguments != null) {
+				try {
+				
+					if(arguments instanceof java.util.HashMap) {
+						rs = (String)((java.util.HashMap)arguments).get(key);
+					}else {
+					
+						java.lang.reflect.Method getProperty = arguments.getClass()
+								.getDeclaredMethod("getProperty",
+										new Class[] { String.class });
+						getProperty.setAccessible(true);
+						
+						rs = (String) getProperty.invoke(arguments, key);
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+
+			if (rs == null) {
+				rs = super.getProperty(key);
+			}
+
+			return rs;
+		}
+        
+            public void synchronizeContext() {
+                <% for (IContextParameter ctxParam : params){
+                    String cParaName = ctxParam.getName(); %>
+                    if(<%=cParaName %> != null){
+                    <% if(ctxParam.getType().equals("id_Date")){ %>
+                        String pattern_<%=cParaName %> = "yyyy-MM-dd HH:mm:ss";
+                        String value_<%=cParaName %> = "<%=ctxParam.getValue() %>";
+                        String[] parts_<%=cParaName %> = value_<%=cParaName %>.split(";");
+                        if (parts_<%=cParaName %>.length > 1) {
+                            pattern_<%=cParaName %> = parts_<%=cParaName %>[0];
+                            this.setProperty("<%=cParaName %>", pattern_<%=cParaName %> + ";" + FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+                        } else {
+                            this.setProperty("<%=cParaName %>", FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+                        }
+                    <% } else { %>
+                        this.setProperty("<%=cParaName %>", <%=cParaName %>.toString());
+                    <% } %>
+                    }
+                <% } %>
+            }
+        
+    <% } %>
+
+<%
+for (IContextParameter ctxParam : params) {
+	if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory")) { %>
+		public String <%=ctxParam.getName()%>;
+		public String get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>() {
+			return this.<%=ctxParam.getName()%>;
+		}
+<%	} else { %>
+		public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> <%=ctxParam.getName()%>;
+		public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>() {
+			return this.<%=ctxParam.getName()%>;
+		}
+
+		<% if(exportTypeSpringBoot){%>
+		    public void set<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>(<%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> <%=ctxParam.getName()%>) {
+                this.<%=ctxParam.getName()%> = <%=ctxParam.getName()%>;
+            }
+		<%
+		  }
+		%>
+<%	}
+}
+%>
+<%
+	if(exportTypeSpringBoot){
+%>
+                public String getProperty(String key) {
+                    return getProperty(key, null);
+                }
+		
+                public String getProperty(String key, String defaultValue) {
+                    if (key != null && !key.isEmpty()) {
+                        try {
+                            java.lang.reflect.Method m = this.getClass()
+                                .getDeclaredMethod("get" + Character.toUpperCase(key.charAt(0)) + key.substring(1));
+                            Object o = m.invoke(this);
+                            if(o != null){
+                                return String.valueOf(o);
+                            }else {
+                                return defaultValue;
+                            }
+                        } catch (Exception e) {
+                            return defaultValue;
+                        }
+                    }
+                    return null;
+                }
+<%	
+}
+%>
+	}
+
+	private static String contextStr = "<%=codeGenArgument.getContextName() %>";
+
+	
+	public void setContextName(String contextName){
+		contextStr = contextName;
+	}
+
+<%
+    if(stats) {
+%>
+	private int portStats = -1;
+	private String clientHost = "localhost";
+	private String pid;
+<%
+    }
+%>
+
+	private final Properties context_param = new Properties();
+
+    <% 
+        if(exportTypeSpringBoot){
+    %>
+    
+        public static void main(String... args){
+            String[] resetArgs = resetArgs(args);
+            org.springframework.context.ApplicationContext applicationContext = new org.springframework.boot.SpringApplication(<%=className%>.class).run(resetArgs);
+            org.apache.camel.spring.boot.CamelSpringBootApplicationController applicationController = applicationContext.getBean(org.apache.camel.spring.boot.CamelSpringBootApplicationController.class);
+            applicationController.blockMainThread();
+        }
+    
+    <% } else { %>
+
+        public static void main(String[] args){
+            int exitCode = new <%=className %>().runJobInTOS(args);
+            if(exitCode != 0) {
+                System.exit(exitCode);
+            }
+        }
+
+    <% }
+ 
+if (isTestContainer) {
+
+	List<String> instanceList =  ProcessUtils.getTestInstances(process);
+	for(String instance : instanceList)
+	{
+%>
+	@org.junit.Test
+	public void test<%=instance%>() throws java.lang.Exception {
+	setUp();
+<%
+	String assertPart = "";
+
+	for (INode node: process.getNodesOfType("cMock")) {
+		String cid = node.getUniqueName();
+		boolean needCreatePart = false;
+%>
+		// get the mock endpoint
+		MockEndpoint mock_<%=cid%> = getMockEndpoint("mock:<%=cid%>");
+<%
+		String testMsgCount = ElementParameterParser.getValue(node, "__TEST_COUNT__");
+		String testHeader = ElementParameterParser.getValue(node, "__TEST_HEADER__");
+		String testHeaderWithContext = ElementParameterParser.getValue(node, "__TEST_HEADER_CONTEXT__");
+		String testHeaderWithTable = ElementParameterParser.getValue(node, "__TEST_HEADER_TABLE__");
+		String testBody = ElementParameterParser.getValue(node, "__TEST_BODY__");
+		String testBodyWithContext = ElementParameterParser.getValue(node, "__TEST_BODY_CONTEXT__");
+		String testBodyWithTable = ElementParameterParser.getValue(node, "__TEST_BODY_TABLE__");
+		String testSimulate = ElementParameterParser.getValue(node, "__TEST_SIMULATE__");
+		String testWaitTime = ElementParameterParser.getValue(node, "__TEST_WAIT_TIME__");
+		if("true".equals(testHeader)){
+			needCreatePart = true;
+			if("true".equals(testHeaderWithContext)){
+				String headerContext = ElementParameterParser.getValue(node, "__TEST_HEADER_USE_CONTEXT__");
+%>
+				java.util.List headers = new org.apache.camel.component.dataset.FileDataSet(<%=headerContext%>).getDefaultBodies();
+				for (Object header : headers) {
+					mock_<%=cid%>.expectedHeaderValuesReceivedInAnyOrder(
+					header.toString().split(";")[0],
+					header.toString().split(";")[1]);
+				}
+<%
+			}else if("true".equals(testHeaderWithTable)){
+				String headerContext = ElementParameterParser.getValue(node, "__TEST_HEADER_USE_TABLE__");
+				//mCode += headerContext;
+				List<Map<String, String>> tableValues = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__TEST_HEADER_USE_TABLE__");
+				for(Map<String, String> headersMap: tableValues){
+		 			String headerName = headersMap.get("HEADER_NAMES");
+		 			String headerValue = headersMap.get("HEADER_VALUES");
+%>
+					mock_<%=cid%>.expectedHeaderValuesReceivedInAnyOrder(<%=headerName%>, <%=headerValue%>);
+<%
+				}
+			}
+		}
+		if("true".equals(testBody)){
+			needCreatePart = true;
+			if("true".equals(testBodyWithContext)){
+				String bodyContext = ElementParameterParser.getValue(node, "__TEST_BODY_USE_CONTEXT__");
+%>
+				org.apache.camel.component.dataset.FileDataSet fileDataSet_<%=cid%> = new org.apache.camel.component.dataset.FileDataSet(<%=bodyContext%>);
+				mock_<%=cid%>.expectedBodiesReceived(fileDataSet_<%=cid%>.getDefaultBodies());
+<%				
+			}else if("true".equals(testBodyWithTable)){
+				String bodyContext = ElementParameterParser.getValue(node, "__TEST_BODY_USE_TABLE__");
+				List<Map<String, String>> bodyValues = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__TEST_BODY_USE_TABLE__");
+				String list = "";				
+				for(Map<String, String> valuesMap: bodyValues){
+		 			String bodyValue = valuesMap.get("BODY_VALUES");
+		 			list += bodyValue + ",";
+		 		}
+		        if(list.length() > 1 &&  list.endsWith(",")){
+		           list = list.substring(0, list.length() - 1);
+%>
+					mock_<%=cid%>.expectedBodiesReceived(<%=list%>);
+<%
+		        }
+			}
+		}
+		if("true".equals(testMsgCount)){
+			needCreatePart = true;
+			String msgCount = ElementParameterParser.getValue(node, "__MESSAGE_COUNT__");
+%>
+			mock_<%=cid%>.expectedMessageCount(<%=msgCount%>);
+<%
+		}
+		if("true".equals(testSimulate)){
+			String processorName = ElementParameterParser.getValue(node, "__PROCESSOR_ENDPOINT__");
+			if(!"".equals(processorName)){
+		    List<? extends INode> cProcessorNodes = process.getNodesOfType("cProcessor");
+				for(INode n: cProcessorNodes){
+					if(n.getUniqueName().equals(processorName)){
+						String code = ElementParameterParser.getValue(n, "__CODE__");
+%>
+						mock_<%=cid%>.whenAnyExchangeReceived(new org.apache.camel.Processor(){
+							public void process(org.apache.camel.Exchange exchange) throws Exception{
+								<%=code%>
+							}
+						});
+<%
+						break;
+					}
+				}
+			}
+		}
+		if(needCreatePart){
+			assertPart += "\nmock_" + cid + ".setResultWaitTime(" + testWaitTime + "L);";
+			assertPart += "\nmock_"+cid+".assertIsSatisfied();";
+		}
+	}
+
+	for (INode node: process.getNodesOfType("OUTPUT")) {
+		String tCode = ElementParameterParser.getValue(node, "__INFORMATION__");
+		if(!"".equals(tCode)){
+%>
+			// send to endpoint
+			<%=tCode%>
+<%		
+	        break;
+		}
+    }// end of for INPUT
+%>
+		<%=assertPart%>
+
+    }// end of test<%=instance%>
+<%
+	}// end pf for
+}// end of if
+%>
+
+    @Override
+    public String[][] runJob(String[] args) {
+		int exitCode = runJobInTOS(args);
+		return new String[][] { { Integer.toString(exitCode) } };
+    }
+
+    @Override
+    public int runJobInTOS(String[] args) {
+		String lastStr = "";
+        for (String arg : args) {
+        	if (arg.equalsIgnoreCase("--context_param")) {
+                lastStr = arg;
+            } else if (lastStr.equals("")) {
+                evalParam(arg);
+            } else {
+                evalParam(lastStr + " " + arg);
+                lastStr = "";
+            }
+        }
+
+<%
+    if (stats) {
+%>
+    	if(pid == null) {
+	    	pid = TalendString.getAsciiRandomString(6);
+	    }
+<%
+    }
+%>
+		try {
+			run();
+		} catch (java.lang.Exception e) {
+			System.err.println(e.getMessage());
+			e.printStackTrace();
+			return 1;
+		}
+		return 0;
+	}
+
+    <%if(exportTypeSpringBoot){%>
+    	//for the issue APPINT-34429
+		/**
+		 * read context values from specified context
+		 * @parameter contextName : the name of context while will be used
+		 */
+		private void readContextValues(String contextName){
+			<%
+			for (IContextParameter ctxParam :params){ //start for
+				if (ctxParam.getType().equals("id_Password")) {
+			%>
+					String pwd_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+					if(pwd_<%=ctxParam.getName()%>_value!=null) {
+						if(context_param.containsKey("<%=ctxParam.getName()%>")) {//no need to decrypt if it come from program argument or parent job runtime
+							context.set<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>(pwd_<%=ctxParam.getName()%>_value);
+						} else if (!pwd_<%=ctxParam.getName()%>_value.isEmpty()) {
+							try {
+								context.set<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>(routines.system.PasswordEncryptUtil.decryptPassword(pwd_<%=ctxParam.getName()%>_value));
+							} catch (java.lang.RuntimeException e) {
+								//do nothing
+							}
+						}
+					}
+			<%
+					continue;
+				}
+			}%>
+		}
+    <% }else{ %>
+            private boolean contextValuesRead = false;
+
+            /**
+             * read context values from specified context
+             * @parameter contextName : the name of context while will be used
+             */
+            private void readContextValues(String contextName, org.apache.camel.CamelContext camelContext){
+                if (contextValuesRead) {
+                    return;
+                }
+                contextValuesRead = true;
+                try {
+                    java.io.InputStream inContext = <%=className %>.class.getClassLoader().getResourceAsStream("<%=JavaResourcesHelper.getJobClassPackageFolder(process) %>/contexts/"+contextName+".properties");
+
+                    if (inContext!=null) {
+                        try {
+                            context.load(inContext);
+				if (null != <% if(isTestContainer){ %>
+								context()
+							<% } else {%>
+								camelContext
+							<% } %>
+				.getPropertiesComponent()) {
+				
+					<% if(isTestContainer){ %>
+						org.apache.camel.component.properties.PropertiesComponent props = (org.apache.camel.component.properties.PropertiesComponent) context().getComponent("TestR_properties");
+					<% } else {%>
+						org.apache.camel.component.properties.PropertiesComponent props = (org.apache.camel.component.properties.PropertiesComponent) camelContext.getPropertiesComponent();
+					<% } %>
+	                
+	                	context.putAll(props.getOverrideProperties());
+				}
+                        } finally {
+                            inContext.close();
+                        }
+                    }else{
+                        //print info and job continue to run, for case: context_param is not empty.
+                        System.err.println("Could not find the context " + contextName);
+                    }
+
+                    if(!context_param.isEmpty()) {
+                        context.putAll(context_param);
+                    }
+        <% 
+                    //for bug TDI-22398
+                    for (IContextParameter ctxParam :params){ //start for
+
+                        if (ctxParam.getType().equals("id_Password")) {
+                    %>
+                            String pwd_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                            context.<%=ctxParam.getName()%> = null;
+                            if(pwd_<%=ctxParam.getName()%>_value!=null) {
+                                if(context_param.containsKey("<%=ctxParam.getName()%>")) {//no need to decrypt if it come from program argument or parent job runtime
+                                    context.<%=ctxParam.getName()%> = pwd_<%=ctxParam.getName()%>_value;
+                                } else if (!pwd_<%=ctxParam.getName()%>_value.isEmpty()) {
+                                    try {
+                                        context.<%=ctxParam.getName()%> = routines.system.PasswordEncryptUtil.decryptPassword(pwd_<%=ctxParam.getName()%>_value);
+                                        context.put("<%=ctxParam.getName()%>",context.<%=ctxParam.getName()%>);
+                                    } catch (java.lang.RuntimeException e) {
+                                        //do nothing
+                                    }
+                                } else {
+                                    context.<%=ctxParam.getName()%> = pwd_<%=ctxParam.getName()%>_value;
+                                    context.put("<%=ctxParam.getName()%>",context.<%=ctxParam.getName()%>);
+                                }
+                            }
+                    <%
+                            continue;
+                        }
+
+                        String typeToGenerate ="String";
+                        if( !(ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory") ||ctxParam.getType().equals("id_List Of Value")))
+                        {
+                           typeToGenerate=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+                        }
+                        if(typeToGenerate.equals("java.util.Date")){ // start if
+
+        %>
+                        String context_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                        if (context_<%=ctxParam.getName()%>_value == null){
+                            context_<%=ctxParam.getName()%>_value = "";
+                        }
+                        int context_<%=ctxParam.getName()%>_pos = context_<%=ctxParam.getName()%>_value.indexOf(";");
+                        String context_<%=ctxParam.getName()%>_pattern =  "yyyy-MM-dd HH:mm:ss";
+                        if(context_<%=ctxParam.getName()%>_pos > -1){
+                            context_<%=ctxParam.getName()%>_pattern = context_<%=ctxParam.getName()%>_value.substring(0, context_<%=ctxParam.getName()%>_pos);
+                            context_<%=ctxParam.getName()%>_value = context_<%=ctxParam.getName()%>_value.substring(context_<%=ctxParam.getName()%>_pos + 1);
+                        }
+                        
+                        context.<%=ctxParam.getName()%> = RuntimeUtils.getDate(context_<%=ctxParam.getName()%>_pattern, context_<%=ctxParam.getName()%>_value);
+        <%
+                        }else if(typeToGenerate.equals("Object")||typeToGenerate.equals("String")||typeToGenerate.equals("java.lang.String") ){
+        %>
+                            context.<%=ctxParam.getName()%>=(<%=typeToGenerate%>) context.getProperty("<%=ctxParam.getName()%>");
+        <%
+                        }else if(typeToGenerate.equals("Character")&&ctxParam.getName()!=null){
+        %>
+                        context.<%=ctxParam.getName()%>= new java.text.StringCharacterIterator(context.getProperty("<%=ctxParam.getName()%>")).first();
+        <%
+                        }else{
+        %> 
+                            try{
+                                context.<%=ctxParam.getName()%>=routines.system.ParserUtils.parseTo_<%=typeToGenerate%> (context.getProperty("<%=ctxParam.getName()%>"));
+                            }catch(NumberFormatException e){
+                                context.<%=ctxParam.getName()%>=null;
+                            }
+        <%
+                        } //end if
+                    } //end for
+					
+					//reload contexts for each test case instances
+					if (isTestContainer) {
+						List<String> instanceList =  ProcessUtils.getTestInstances(process);
+						String encoding = System.getProperty("file.encoding");
+						for(String instance : instanceList)
+						{
+		%>
+							if ("test<%=instance%>".equals(getTestMethodName())) {
+		<%
+								//for test container
+								for(String testData : ProcessUtils.getTestData(process,instance)){
+									if(null!=process.getContextManager().getDefaultContext().getContextParameter(testData)){
+										String testDataPath =  ProcessUtils.getTestDataValue(process, instance, testData);
+										if(testDataPath != null && testDataPath.length() > 0){
+		%>
+											java.net.URL url_<%=testData%> = getClass().getResource("<%=testDataPath%>");
+											context.<%=testData%>=java.net.URLDecoder.decode(url_<%=testData%>.getPath(), "<%=encoding%>");
+		<%
+										}//end if
+									}//end if
+								}//for testData end
+		%>
+							}
+		<%
+						}
+					} //end if
+        %>
+                } catch (java.io.IOException ie) {
+                    System.err.println("Could not load context "+contextName);
+                    ie.printStackTrace();
+                }
+            }
+    <%}%>
+    
+
+	private void evalParam(String arg) {
+        if (arg.startsWith("--context=")) {
+            contextStr = arg.substring(10);
+        }else if (arg.startsWith("--context_param")) {
+            String keyValue = arg.substring(16);
+            int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                context_param.put(keyValue.substring(0, index), keyValue.substring(index + 1));
+            }
+        }
+<%
+    if (stats) {
+%>
+        else if (arg.startsWith("--stat_port=")) {
+			String portStatsStr = arg.substring(12);
+			if (portStatsStr != null && !portStatsStr.equals("null")) {
+				portStats = Integer.parseInt(portStatsStr);
+			}
+    	} else if (arg.startsWith("--client_host=")) {
+    		clientHost = arg.substring(14);
+    	} else if (arg.startsWith("--pid=")) {
+    		pid = arg.substring(6);
+    	}
+<%
+    }
+%>
+	}
+}
+

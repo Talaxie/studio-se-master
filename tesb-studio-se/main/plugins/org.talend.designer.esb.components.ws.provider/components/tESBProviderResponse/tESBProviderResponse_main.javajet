@@ -1,0 +1,60 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+if (node.getProcess().getNodesOfType("tESBProviderRequestLoop").isEmpty()) { %>
+	System.out.println("[WARN] nonsense: tESBProviderResponse component used without tESBProviderRequest component on the job");
+<% } else {
+	String cid = node.getUniqueName();
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if (null != metadatas && 0 < metadatas.size()) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (null != metadata) {
+			List<? extends IConnection> conns = node.getIncomingConnections();
+			if (null != conns && 0 < conns.size()) {
+				IConnection conn = conns.get(0);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					IMetadataColumn column = conn.getMetadataTable().getColumn("payload");
+					if (null != column && "id_Document".equals(column.getTalendType())) {
+%>
+	routines.system.Document esbProviderResponseDoc_<%=cid%> = <%=conn.getName()%>.payload;
+
+	ESBProviderCallbackTalendJobInner esbProviderCallback_<%=cid%> = (ESBProviderCallbackTalendJobInner) globalMap.get("esbHandler");
+	if (null != esbProviderCallback_<%=cid%>) {
+		java.util.Map<String, String> customProps_<%=cid%> = null;
+<%
+		// set SAM custom properties
+		List<Map<String, String>> customProperties = (List<Map<String,String>>)
+				ElementParameterParser.getObjectValue(node, "__SERVICE_ACTIVITY_CUSTOM_PROPERTIES__");
+		if (!customProperties.isEmpty()) { %>
+			customProps_<%=cid%> = new java.util.HashMap<String, String>();
+			<% for (int k = 0; k < customProperties.size(); k++) { %>
+			customProps_<%=cid%>.put(<%=customProperties.get(k).get("PROP_NAME")%>, <%=customProperties.get(k).get("PROP_VALUE")%>);
+			<% } %>
+		<% } %>
+
+		esbProviderCallback_<%=cid%>.setCustomProperties(customProps_<%=cid%>);
+		esbProviderCallback_<%=cid%>.sendResponse(esbProviderResponseDoc_<%=cid%>.getDocument());
+	}
+<%
+					} // end if (null != column && "id_Document".equals(column.getTalendType()))
+				} // end if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			} // end if (null != conns && 0 < conns.size())
+		} // end if (null != metadata)
+	} // end if (null != metadatas && 0 < metadatas.size())
+}
+%>

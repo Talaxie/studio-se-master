@@ -1,0 +1,119 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory    
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+
+		java.util.List
+		java.util.Map
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode) codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__VALUES__"
+    );
+
+List< ? extends IConnection> conns = node.getIncomingConnections();
+String firstConnName = "";
+
+for(IConnection conn : conns) {
+    if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+ 		firstConnName = conn.getName();
+ 		break;
+    }
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+IMetadataTable metadata = null;
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	metadata = metadatas.get(0);    
+}
+%>
+
+
+// tRouterFault code
+
+<%
+if ( "true".equals(System.getProperty("org.talend.studio.route.job.inloop")) ) {
+%>
+		org.apache.camel.Exchange routerExchange_<%=cid%> = routerExchange;
+<%
+} else {
+%>
+		org.apache.camel.Exchange routerExchange_<%=cid%> = singleUseRouterExchange != null
+			? singleUseRouterExchange : (org.apache.camel.Exchange) globalMap.get(ROUTER_EXCHANGE);
+<%
+}
+%>
+
+    <%
+    for(IConnection conn : conns) { // 1
+        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {  // 2
+        	boolean hasJudgedHeaders = false;
+        	StringBuilder bodySb = new StringBuilder();
+%>        	
+	        // copy Body from IN to OUT to propagate them
+   			routerExchange_<%=cid%>.getOut().setBody(routerExchange_<%=cid%>.getIn().getBody());
+	        // copy headers from IN to OUT to propagate them
+			routerExchange_<%=cid%>.getOut().setHeaders(routerExchange_<%=cid%>.getIn().getHeaders());
+			// copy attachements from IN to OUT to propagate them
+			//routerExchange_<%=cid%>.getOut().setAttachments(routerExchange_<%=cid%>.getIn().getAttachments());
+	        
+
+<%                   	
+            for(Map<String, String> tableValue : tableValues) { // 3
+            	String label = tableValue.get("SCHEMA_COLUMN");
+	            String value = tableValue.get("VALUE");
+	            String type = tableValue.get("TYPE");
+
+	            IMetadataColumn column = metadata.getColumn(label);
+	            String talendType = column.getTalendType();
+	            JavaType javaType = JavaTypesManager.getJavaTypeFromId(talendType);
+	            String typeToGenerate = JavaTypesManager.getTypeToGenerate(javaType, true);%>
+	            
+	            <%if("Body".equals(type)){ 
+                    // http://camel.apache.org/using-getin-or-getout-methods-on-exchange.html
+	            	if("id_Document".equals(talendType)){
+	            		%>
+		                routerExchange_<%=cid%>.getOut().setBody(<%=conn.getName()%>.<%=label%>.getDocument().asXML(), org.w3c.dom.Document.class);
+		            	<%
+	            	}else{
+	            		%>
+		                routerExchange_<%=cid%>.getOut().setBody(<%=conn.getName()%>.<%=label%>, <%=typeToGenerate%>.class);
+		            	<%
+	            	}
+	            }else if("Header".equals(type)){
+	            	%>
+	            	routerExchange_<%=cid%>.getOut().setHeader(<%=value%>, <%=conn.getName()%>.<%=label%>);
+	            	<%
+	            }else if("Property".equals(type)){
+	            	%>
+	            	routerExchange_<%=cid%>.setProperty(<%=value%>, <%=conn.getName()%>.<%=label%>);
+	            	<%
+	            }else if("System".equals(type)){
+	            	%>
+	            	System.setProperty(<%=value%>, <%=conn.getName()%>.<%=label%> == null? null:<%=conn.getName()%>.<%=label%>.toString());
+	            	<%
+	            }
+        } // 3
+%>
+			//set output as fault    
+	            	String data = routerExchange_<%=cid%>.getContext().getTypeConverter().convertTo(String.class, routerExchange_<%=cid%>, routerExchange_<%=cid%>.getIn().getBody());
+	            	routerExchange_<%=cid%>.setException(new org.apache.camel.CamelException(data));
+<%
+    } // 2
+} // 1
+
+%>

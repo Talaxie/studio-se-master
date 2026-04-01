@@ -1,0 +1,94 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		java.util.List
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode) codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	cid = cid.replaceAll("_Loop", "");
+%>
+
+<% if (node.getProcess().getNodesOfType("tRESTRequestLoop").size() > 1) { %>
+	if (true) {
+		throw new RuntimeException("cannot instantiate REST service: job contains more than one tRESTRequest component");
+	}
+<% } %>
+<% if (node.getProcess().getNodesOfType("tESBProviderRequestLoop").size() > 0) { %>
+	if (true) {
+		throw new RuntimeException("cannot instantiate service: job contains both tESBProviderRequest and tRESTRequest components");
+	}
+<% } %>
+
+<%
+	List<? extends IConnection> conns = node.getProcess().getNodesOfType("tRESTRequestIn").get(0).getOutgoingSortedConnections();
+	boolean hasOutputConnection = false;
+	if (null != conns && !conns.isEmpty()) {
+		for (int i = 0; i < conns.size(); i++) {
+			IConnection connTemp = conns.get(i);
+			if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				hasOutputConnection = true; %>
+					<%=connTemp.getName() %> = null;
+			<%
+			}
+		}
+	}
+%>
+<% if (!hasOutputConnection) { %>
+	if (true) {
+		throw new RuntimeException("cannot instantiate REST service: tRESTRequest component has no any output connections");
+	}
+<% } %>
+
+	int nb_line_<%=cid%> = 0;
+
+	try {
+
+		java.util.Map<String, Object> requestMessage_<%=cid%> =
+				(java.util.Map<String, Object>) globalMap.get("restRequest");
+
+		restEndpoint = getRestEndpoint();
+
+		if (null == requestMessage_<%=cid%>) {
+
+			if (restTalendJobAlreadyStarted) {
+				throw new RuntimeException("request is not provided");
+			} else {
+				if (!runInTalendEsbRuntimeContainer && null == thread4RestServiceProviderEndpoint) {
+					String endpointUrl_<%=cid%> = checkEndpointUrl(restEndpoint);
+					// *** external thread for endpoint initialization
+					thread4RestServiceProviderEndpoint = new Thread4RestServiceProviderEndpoint(this, endpointUrl_<%=cid%>);
+					thread4RestServiceProviderEndpoint.start();
+					// *** external thread for endpoint initialization
+				}
+
+				restTalendJobAlreadyStarted = true;
+
+				if(runInDaemonMode){
+					Thread.currentThread();
+					try {
+						while(true) {
+							Thread.sleep(60000);
+						}
+					} catch (InterruptedException e_<%=cid%>) {
+						// e_<%=cid%>.printStackTrace();
+						// throw new TalendException(e_<%=cid%>, "wholeJob", globalMap);
+					}
+				}
+			}
+			return;
+		}
+
+        requestMessage_<%=cid%>.put("CURRENT_MESSAGE", org.apache.cxf.jaxrs.utils.JAXRSUtils.getCurrentMessage());
+
+        Object ctx_<%=cid%> = requestMessage_<%=cid%>.get("MESSAGE_CONTEXT");
+        if (ctx_<%=cid%> != null && ctx_<%=cid%> instanceof org.apache.cxf.jaxrs.impl.tl.ThreadLocalMessageContext) {
+            requestMessage_<%=cid%>.put("MESSAGE_CONTEXT", ((org.apache.cxf.jaxrs.impl.tl.ThreadLocalMessageContext)ctx_<%=cid%>).get());
+        }

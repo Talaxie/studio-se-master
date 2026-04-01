@@ -1,0 +1,154 @@
+<%@ jet
+	imports="
+		java.util.List
+
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.types.JavaTypesManager
+
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+cid = cid.replaceAll("_In", "");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if (null != metadatas && 0 < metadatas.size()) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (null != metadata) { %>
+
+		if (requestMessage_<%=cid%>.containsKey("ERROR")) { // wrong request received
+<%
+			List<? extends IConnection> connsAll = node.getOutgoingSortedConnections();
+			if (null != connsAll && !connsAll.isEmpty()) {
+				for (IConnection conn : connsAll) {
+					if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+						continue;
+					}
+					String connectionName = conn.getName();
+					if ("WRONG_CALLS".equals(conn.getConnectorName())) { // "WRONG_CALL" flow
+%>
+						String wrongCallUri_<%=cid%> = (String) requestMessage_<%=cid%>.get("URI");
+						String wrongCallMethod_<%=cid%> = (String) requestMessage_<%=cid%>.get("VERB");
+						String wrongCallError_<%=cid%> = (String) requestMessage_<%=cid%>.get("ERROR");
+						int wrongCallStatus_<%=cid%> = (Integer) requestMessage_<%=cid%>.get("STATUS");
+
+						<%=connectionName%> = new <%=connectionName%>Struct();
+						<%=connectionName%>.uri = wrongCallUri_<%=cid%>;
+						<%=connectionName%>.method = wrongCallMethod_<%=cid%>;
+						<%=connectionName%>.error = wrongCallError_<%=cid%>;
+						<%=connectionName%>.status = wrongCallStatus_<%=cid%>;
+<%
+					} else { // not "WRONG_CALL" flow
+%>
+						<%=connectionName%> = null;
+<%
+					} // "WRONG_CALLS".equals(conn.getConnectorName()
+				} // for (IConnection conn : connsAll)
+			} // if (null != connsAll && !connsAll.isEmpty())
+%>
+		} else { // non-error (not wrong request)
+
+			String matchedUriPattern_<%=cid%> = (String) requestMessage_<%=cid%>.get("PATTERN");
+			String matchedFlow_<%=cid%> = (String) requestMessage_<%=cid%>.get("OPERATION");
+
+			java.util.Map<String, Object> params_<%=cid%> =
+				(java.util.Map<String, Object>) requestMessage_<%=cid%>.get("PARAMS");
+<%
+			List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+			if (null != conns && !conns.isEmpty()) {
+				for (IConnection conn : conns) {
+					if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+						continue;
+					}
+
+					String connectionName = conn.getName();
+
+					if ("WRONG_CALLS".equals(conn.getConnectorName())) { %>
+						<%=connectionName%> = null;
+<%
+						continue;
+					}
+%>
+					if (matchedFlow_<%=cid%>.equals("<%=connectionName%>")) {
+						<%=connectionName%> = new <%=connectionName%>Struct();
+<%
+						for (IMetadataColumn connColumn : conn.getMetadataTable().getListColumns()) {
+							String columnName = connColumn.getLabel();
+							String parameterName = columnName;
+							// try to extract parameter name from comment field
+							if (null != connColumn.getComment()){
+							    java.util.regex.Matcher m = java.util.regex.Pattern.compile(".*\\((.*?)\\).*").matcher(connColumn.getComment());
+							    if (m.find()) {
+							        parameterName = m.group(1);
+							    } 
+							}
+							String schemaFieldType = connColumn.getTalendType();
+							String restParameterType = (connColumn.getComment() == null || connColumn.getComment().indexOf("(") < 0)? connColumn.getComment():connColumn.getComment().substring(0, connColumn.getComment().indexOf("("));
+							if (restParameterType == null || restParameterType.trim().length() == 0) {
+								restParameterType = "";
+							}
+
+							if ("body".equals(columnName) && "".equals(restParameterType)) {
+%>
+								Object bodyObject_<%=cid%> = requestMessage_<%=cid%>.get("BODY");
+								if (null != bodyObject_<%=cid%>) {
+									<% if ("id_Document".equals(schemaFieldType)) { %>
+										routines.system.Document body_<%=cid%> = new routines.system.Document();
+										body_<%=cid%>.setDocument((org.dom4j.Document) bodyObject_<%=cid%>);
+										<%=connectionName%>.body = body_<%=cid%>;
+									<% } else { %>
+										<% String javaTypeFull = JavaTypesManager.getTypeToGenerate(schemaFieldType, true); %>
+										<%=connectionName%>.body = (<%= javaTypeFull%>) bodyObject_<%=cid%>;
+									<% } %>
+								}
+<%
+							} else {
+								restParameterType = ("".equals(restParameterType)) ? "PATH" : restParameterType.trim().toUpperCase();
+								String parameterKey = restParameterType + ":" + parameterName + ":" + schemaFieldType;
+%>
+								if (params_<%=cid%>.containsKey("<%=parameterKey%>")) {
+									<% if ("id_Document".equals(schemaFieldType)) { %>
+										routines.system.Document <%=columnName%>_<%=cid%> = new routines.system.Document();
+										<%=columnName%>_<%=cid%>.setDocument((org.dom4j.Document) params_<%=cid%>.get("<%=parameterKey%>"));
+										<%=connectionName%>.<%=columnName%> = <%=columnName%>_<%=cid%>;
+									<% } else { %>
+										<% String javaTypeFull = JavaTypesManager.getTypeToGenerate(schemaFieldType, true); %>
+										<%=connectionName%>.<%=columnName%> = (<%= javaTypeFull%>) params_<%=cid%>.get("<%=parameterKey%>");
+									<% } %>
+								}
+<%
+							} // if ("body".equals(columnName) && "".equals(restParameterType))
+						} // for (IMetadataColumn connColumn : conn.getMetadataTable().getListColumns())
+%>
+					} else { // non matched flow
+						<%=connectionName%> = null;
+					}
+				<%
+				} // for (IConnection conn : conns)
+			} // if (null != conns && !conns.isEmpty())
+%>
+		}
+<%
+	} // end of if (null != metadata)
+} // end of if (null != metadatas && 0 < metadatas.size())
+%>
+
+		globalMap.put("<%=cid%>_URI", (String) requestMessage_<%=cid%>.get("URI"));
+		globalMap.put("<%=cid%>_URI_BASE", (String) requestMessage_<%=cid%>.get("URI_BASE"));
+		globalMap.put("<%=cid%>_URI_ABSOLUTE", (String) requestMessage_<%=cid%>.get("URI_ABSOLUTE"));
+		globalMap.put("<%=cid%>_URI_REQUEST", (String) requestMessage_<%=cid%>.get("URI_REQUEST"));
+		globalMap.put("<%=cid%>_HTTP_METHOD", (String) requestMessage_<%=cid%>.get("VERB"));
+
+		globalMap.put("<%=cid%>_ATTACHMENT_HEADERS", requestMessage_<%=cid%>.get("ATTACHMENT_HEADERS"));
+		globalMap.put("<%=cid%>_ATTACHMENT_FILENAMES", requestMessage_<%=cid%>.get("ATTACHMENT_FILENAMES"));
+
+		globalMap.put("<%=cid%>_PRINCIPAL_NAME", (String) requestMessage_<%=cid%>.get("PRINCIPAL_NAME"));
+		globalMap.put("<%=cid%>_CORRELATION_ID", (String) requestMessage_<%=cid%>.get("CorrelationID"));
