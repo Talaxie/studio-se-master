@@ -1,0 +1,2731 @@
+
+(object Petal
+    version    	43
+    _written   	"Rose 6.5.9232.10"
+    charSet    	0)
+
+(object Class_Category "DMSII"
+    is_unit    	TRUE
+    is_loaded  	TRUE
+    attributes 	(list Attribute_Set
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"xmi.namespace"
+	    value      	"CWMXDMSII")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"mof.idl_prefix"
+	    value      	"org.omg.cwmx.resource")
+	(object Attribute
+	    tool       	"JCR"
+	    name       	"java_prefix"
+	    value      	"org.omg.java.cwmx.resource")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.hasImplicitReferences"
+	    value      	"false")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.clusteredImport"
+	    value      	(value Text 
+|Core,
+|BusinessInformation,
+|Expressions,
+|KeysIndexes,
+|Record
+	    )))
+    quid       	"37E67F0803D8"
+    documentation 	
+|The CWM DMSII extension package contains classes supporting the description of DMS II database schemata and their deployment. DMS II is a database system available on Unisys ClearPath NX servers. DMS II is a non-CODASYL, network model database management system. The DMS II extension package is provided as example demonstrating appropriate usage of CWM classes in modeling this and similar DBMS environments.
+|
+|Because DMSII database schemas are normally stored in record-based source files written in a data definition language called DASDL, the CWM DMSII extension package contains constructs allowing the declaration-order sequence of the DASDL source file to be preserved in the model. The goal of this is to allow a DASDL source to be stored into the DMSII model and subsequently regenerated from the model by a
+|suitably designed utility program. To achieve this ordering, the DMSII model represents ownership using the CWM ClassifierFeature association which is ordered, rather than the alternate technique using the ElementOwnership association which is unordered. A side-effect of this choice is that any DMSII class that can be ordered must be subclass of the CWM ObjectModel’s Feature class; this is the reason for the
+|multiple inheritance required to define the SetStructure, DataSet, Database and Remap classes.
+|
+|For convenience, utilities may chose to store the text of the DASDL file from which the database was created in a CWM Description instance attached to particular instances of DMSII model classes. The names of DMSII model elements are stored in the name attribute that every DMSII instance inherits from CWM’s ModelElement class.
+|
+|The DMS II package depends on the following packages:
+|
+|    org.omg::CWM::ObjectModel::Core
+|    org.omg::CWM::Foundation::BusinessInformation
+|    org.omg::CWM::Foundation::Expressions
+|    org.omg::CWM::Foundation::KeyIndexes
+|    org.omg::CWM::Foundation::Record
+|
+|OCL Representation of DMSII Constraints
+|
+|[C-1] An Access must span a DataSet.
+|context Access inv:
+|self.spannedClass->size = 1 and self.spannedClass.oclIsKindOf(DataSet)
+|
+|[C-2] The types of ModelElements that may own DASDLProperties is limited by the
+|following OCL.
+|context DASDLProperty inv:
+|self.owner.oclIsKindOf(DataSet) or self.owner.oclIsKindOf(SetStructure) or
+|self.owner.oclIsKindOf(Database) or self.owner.oclIsKindOf(PhysicalDatabase) or
+|self.owner.oclIsKindOf(PhysicalDataset) or self.owner.oclIsKindOf(PhysicalSet) or
+|self.owner.oclIsKindOf(PhysicalDatasetOverride) or
+|self.owner.oclIsKindOf(PhysicalSetOverride) or
+|self.owner.oclIsKindOf(PhysicalAccessOverride)
+|
+|[C-3] An independent database may not be owned.
+|context Database inv:
+|not self.isLogical implies self.classifier->isEmpty
+|
+|[C-4] A logical database must be owned by an independent database.
+|context Database inv:
+|self.isLogical implies (self.classifier->size = 1 and
+|self.classifier.oclIsTypeOf(Database) and not self.classifier.isLogical)
+|
+|[C-5] A database can own SetStructure, DataSet, Remark, and Database, Remap,
+|PhysicalDataSetOverride, PhysicalSetOverride, and PhysicalAccessOverride
+|instances.
+|context Database inv:
+|self.feature->forAll(x | x.oclIsTypeOf(SetStructure) or x.oclIsTypeOf(DataSet) or
+|x.oclIsTypeOf(Remark) or x.oclIsTypeOf(Database) or
+|x.oclIsTypeOf(PhysicalDataSetOverride) or x.oclIsTypeOf(Remap) or
+|x.oclIsTypeOf(PhysicalSetOverride) or x.oclIsTypeOf(PhysicalAccessOverride))
+|
+|[C-6] A DataItem that owns FieldBit instances must have a data type of FIELD.
+|context DataItem inv:
+|self.fieldBit.notEmpty implies self.type.name = "FIELD"
+|
+|[C-7] A reference to a StructuralFeature must refer to a DataSet or a SetStructure
+|instance.
+|context DataItem inv:
+|self.structure.notEmpty implies self.structure.type.oclIsKindOf(DataSet) or
+|self.structure.type.oclIsKindOf(SetStructure)
+|
+|[C-8] A DataItem may not be its own occursDataItem.
+|context DataItem inv:
+|self.occursDataItem <> self
+|
+|[C-9]A DataItem may not be its own occuringDataItem.
+|context DataItem inv:
+|self.occuringDataItem <> self
+|
+|[C-10] A DataSet may have one of the following organizations.
+|context DataItem inv:
+|self.organization = "COMPACT" or self.organization = "DIRECT" or
+|self.organization = "ORDERED" or self.organization = "RANDOM" or
+|self.organization = "RESTART" or self.organization = "STANDARD" or
+|self.organization = "UNORDERED"
+|
+|[C-11] The reorganize attribute, if present, must be one of the allowed values from
+|the DASDL manual.
+|context DataSet inv:
+|self.reorganize <> "" implies self.reorganize = "ITEMS SAME" or self.reorganize =
+|"ITEMS CHANGED"
+|
+|[C-12] The partitioningSet, if present, must span the DataSet.
+|context DataSet inv:
+|self.partitioningSet->size = 1 implies self.partitioningSet.namespace = self
+|
+|[C-13] If the DataSet has VariableFormatParts, it must also have an attribute of the
+|type "RECORD TYPE".
+|context DataSet inv:
+|self.ownedElement->exists(oclIsKindOf(VariableFormatPart)) implies
+|self.feature.oclAsType(StructuralFeature)->exists(type.name = "RECORD TYPE")
+|
+|[C-14] The collation clause, if present, must be one of the allowed values from the
+|DASDL manual.
+|context KeyItem inv:
+|self.collation = "BINARY" or self.collation = "EQUIVALENT" or self.collation = "LOGICAL"
+|
+|[C-15] PhysicalAccessOverride instances must be owned by an Access instance.
+|context PhysicalAccessOverride inv:
+|self.namespace.oclIsKindOf(Access)
+|
+|[C-16] A PhysicalDatabase instance must be owned by a Database instance.
+|context PhysicalDatabase inv:
+|self.namespace->size = 1 and self.namespace.oclIsKindOf(Database)
+|
+|[C-17] A PhysicalDataSet instance must be owned by a DataSet instance.
+|context PhysicalDataSet inv:
+|self.namespace->size = 1 and self.namespace.oclIsKindOf(DataSet)
+|
+|[C-18] A PhysicalDataSetOverride instance must be owned by a DataSet instance.
+|context PhysicalDataSetOverride inv:
+|self.namespace.oclIsKindOf(DataSet)
+|
+|[C-19] A PhysicalSet instance must be owned by a Set instance.
+|context PhysicalSet inv:
+|self.namespace->size = 1 and self.namespace.oclIsKindOf(Set)
+|
+|[C-20] PhysicalSetOverride instances must be owned by a Set instance.
+|context PhysicalSetOverride inv:
+|self.namespace.oclIsKindOf(Set)
+|
+|[C-21] The features of a Remap must be RemapItem instances.
+|context Remap inv:
+|self.feature.oclIsKindOf(RemapItem)
+|
+|[C-22] Remap instances may remap only DataSet and Set instances.
+|context Remap inv:
+|self.structure.oclIsKindOf(DataSet) or self.structure.oclIsKindOf(Set)
+|
+|[C-23] The GIVING EXCEPTION clause is valid only if READONLY ALL was
+|specified.
+|context Remap inv:
+|self.isGivingException->notEmpty implies self.isReadOnlyAll
+|
+|[C-24] The GIVING EXCEPTION clause is valid only if READONLY was
+|specified.
+|context RemapItem inv:
+|self.isGivingException->notEmpty implies self.isReadOnly
+|
+|[C-25] The setType attribute must contain one of the allowed values for set
+|organization from DASDL.
+|context Set inv:
+|self.setType = "BITVECTOR" or self.setType = "UNORDERED LIST" or
+|self.setType = "INDEX RANDOM" or self.setType = "INDEX SEQUENTIAL" or
+|self.setType = "ORDERED LIST"
+|
+|[C-26] The reorganize clause, if present, must be one of the allowed values from the
+|DASDL manual.
+|context Set inv:
+|self.reorganize <> "" implies self.reorganize = "KEY CHANGED" or
+|self.reorganize = "KEY SAME"
+|
+|[C-27] The items in the Set’s key data must be owned by the DataSet that the Set
+|spans.
+|context Set inv:
+|self.keyDataItem->forAll(self.keyDataItem.namespace = self.spannedClass)
+|
+|[C-28] A Set may not partition itself.
+|context Set inv:
+|self.partitionedSet <> self
+|
+|[C-29] A Set may not be partitioned by itself.
+|context Set inv:
+|self.partitioningSet <> self
+|
+|[C-30] A SetStructure must span one and only one DataSet instance.
+|context SetStructure inv:
+|self.spannedClass->size = 1 and self.spannedClass.oclIsKindOf(DataSet)
+|
+|[C-31] Value of the duplicates attribute must be one of the allowed values from the
+|DASDL manual.
+|context SetStructure inv:
+|self.duplicates = "DUPLICATES" or self.duplicates = "DUPLICATES FIRST" or
+|self.duplicates = "DUPLICATES LAST" or self.duplicates = "NO DUPLICATES"
+|or self.duplicates = "NO DUPLICATES KEY CHANGE OK"
+    
+    stereotype 	"metamodel"
+    visible_categories 	(list visibility_relationship_list
+	(object Visibility_Relationship
+	    quid       	"382734C1005F"
+	    supplier   	"Logical View::org.omg::CWM::Resource::Record"
+	    quidu      	"35F6F41A0299")
+	(object Visibility_Relationship
+	    quid       	"3A81A774027C"
+	    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core"
+	    quidu      	"3A6600C5031F")
+	(object Visibility_Relationship
+	    quid       	"3A81A7780328"
+	    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions"
+	    quidu      	"38207A600078")
+	(object Visibility_Relationship
+	    quid       	"3A81A7820347"
+	    supplier   	"Logical View::org.omg::CWM::Foundation::KeysIndexes"
+	    quidu      	"38207A680191")
+	(object Visibility_Relationship
+	    quid       	"3A81A7910114"
+	    supplier   	"Logical View::org.omg::CWM::Foundation::BusinessInformation"
+	    quidu      	"38207A770114"))
+    exportControl 	"Public"
+    logical_models 	(list unit_reference_list
+	(object Class "Database"
+	    quid       	"37E80749001F"
+	    documentation 	"For a given DASDL source, there can be at most one Database instance with isLogical = False (representing an independent, free standing database) and zero or more with isLogical = True (each representing a Logical Database declared within the physical database). A logical database can be owned by at most one database."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"38713C9900B6"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF")
+		(object Inheritance_Relationship
+		    quid       	"3883FD1403BA"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Package"
+		    quidu      	"327A5D19033E"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isLogical"
+		    quid       	"37E81522005D"
+		    documentation 	
+|If True, this Database instance is a logical database.
+|
+|
+		    
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "guardFile"
+		    quid       	"37F13E1E00DA"
+		    documentation 	"Contains the name of the database guard file that contains access control information for the database."
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "source"
+		    quid       	"38178B0D01E1"
+		    documentation 	"Contains the text of the DASDL source from which the database was created."
+		    type       	"String"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "Remap"
+	    quid       	"37E8091501F4"
+	    documentation 	"Contains information identifying a Remap of a DMSII DataSet or Set. The features of a Remap instance must be RemapItem instances."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3883F75F0250"
+		    supplier   	"Logical View::org.omg::CWM::Resource::Record::RecordDef"
+		    quidu      	"3731BA330352")
+		(object Inheritance_Relationship
+		    quid       	"3883FADB02E9"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isRequiredAll"
+		    quid       	"37EBB463033C"
+		    documentation 	"If True, all items in the remap are required to be non-null."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isReadOnlyAll"
+		    quid       	"37EBB198033C"
+		    documentation 	"If True, the READONLY ALL clause was specified."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGivingException"
+		    quid       	"37EBB90C0261"
+		    documentation 	"The isGivingException boolean is meaningful only if isReadOnlyAll = True. If the isGivingException boolean is absent, no exception clause was specified. If it is present, False indicates that the NO EXCEPTION clause was specified whereas True indicates the GIVING EXCEPTION clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "selectCondition"
+		    quid       	"37EBB165008C"
+		    documentation 	"Contains the expression specified in a remap's SELECT clause."
+		    type       	"Expression"
+		    exportControl 	"Public")
+		(object ClassAttribute "structure"
+		    quid       	"388AA833011F"
+		    documentation 	"Identifies the StructuralFeature instance that represents the remapped structure."
+		    stereotype 	"reference"
+		    type       	"StructuralFeature"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "DataSet"
+	    quid       	"37E809320148"
+	    documentation 	
+|A DataSet is the primary container of data records in a DMS II database. A DataSet instance that is owned by another DataSet instance is embedded in its owner.
+|
+|If the isGlobal attribute is True, the DataSet instance is the global data set -- a special data set with a single instance that contains database global data items.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EFA5E402BF"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF")
+		(object Inheritance_Relationship
+		    quid       	"37EFE06702CE"
+		    supplier   	"Logical View::org.omg::CWM::Resource::Record::RecordDef"
+		    quidu      	"3731BA330352"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isGlobal"
+		    quid       	"37E81855035B"
+		    documentation 	
+|If isGlobal = True, the DataSet instance represents the database’s global data record. There can be at most one DataSet instance with isGlobal = True for a given database, but multiple with isGlobal = False.
+|
+		    
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "organization"
+		    quid       	"37E910FE009C"
+		    documentation 	
+|Identifies the structural organization of the DataSet.
+|
+|
+		    
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "reorganize"
+		    quid       	"37E918EE0280"
+		    documentation 	
+|Contains the reorganization clause attached the DataSet instance.
+|
+|
+		    
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "isRequiredAll"
+		    quid       	"37E91B06033C"
+		    documentation 	"If True, the REQUIRED ALL clause was specified in the DASDL for this DataSet instance."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "partitioningSet"
+		    quid       	"3872396E0068"
+		    documentation 	
+|Identifies the Set instance that serves as the partitioning set for this DataSet
+|instance.
+		    
+		    stereotype 	"reference"
+		    type       	"Set"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "DataItem"
+	    quid       	"37E811AD0271"
+	    documentation 	
+|Instances of DataItem represent the individual data fields within a DataSet. The Group class in the CWM Foundation’s DataTypes package is also available for constructing collections of fields in a DataSet.
+|
+|The interpretation of the contents of some attributes of a DataItem instance are dependent upon the DataItem’s type. For example, the size attribute represents the maximum number of characters in ALPHA and KANJI items, the number of digits of
+|precision in a NUMERIC or REAL items, and the number of bits in a FIELD item. Refer to the definition of individual attributes for specifics.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EA5DBE029F"
+		    supplier   	"Logical View::org.omg::CWM::Resource::Record::Field"
+		    quidu      	"3730B40B002A"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "nullValue"
+		    quid       	"37E94CC501C5"
+		    documentation 	"Identifies a value of a data item that is treated as representing a null value."
+		    type       	"ExpressionNode"
+		    exportControl 	"Public")
+		(object ClassAttribute "isRequired"
+		    quid       	"37E94F1300AB"
+		    documentation 	"If True, the data item must have a value when the corresponding Dataset record is stored."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "size"
+		    quid       	"37EA58FD0119"
+		    documentation 	"Contains the declared size of a data type. The precise meaning of the attribute depends on the type of the DMS II data type being declared."
+		    type       	"Integer"
+		    exportControl 	"Public")
+		(object ClassAttribute "scaleFactor"
+		    quid       	"37EA5B650271"
+		    documentation 	"Contains the <scale factor> value for DMS II data types."
+		    type       	"Integer"
+		    exportControl 	"Public")
+		(object ClassAttribute "isSigned"
+		    quid       	"37EA5BCB031C"
+		    documentation 	
+|Contains the state of the signed indication ("S") for REAL and NUMERIC data types. Not relevant for other data types.
+		    
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "occurs"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"0..1"))
+		    quid       	"37E94DFB03C8"
+		    documentation 	"Indicates the number of times the data item occurs in the DataSet record. The occurs attribute is optional, existing only for data items that have an OCCURS clause in their definition."
+		    type       	"Integer"
+		    exportControl 	"Public")
+		(object ClassAttribute "isVirtual"
+		    quid       	"37EBEFDB0222"
+		    documentation 	"If True, the DataItem instance is calculated when accessed using the expression stored in the virtualExpression attribute."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "virtualExpression"
+		    quid       	"37EBEFEA0222"
+		    documentation 	"The expression used to calculate the value of a virtual DataItem."
+		    type       	"ExpressionNode"
+		    exportControl 	"Public")
+		(object ClassAttribute "isKanji"
+		    quid       	"380C96AC0027"
+		    documentation 	"True if the USAGE=KANJI clause was used. Otherwise USAGE=EBCDIC is assumed. Relevant only for ALPHA data items."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "ccsVersion"
+		    quid       	"37EA77AE0242"
+		    documentation 	"Identifies the CCSVersion specification of a data item."
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGemcosLiteral"
+		    quid       	"37E95F870109"
+		    documentation 	"If True, the DataItem instance was defined with the GEMCOS LITERAL clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGemcosData"
+		    quid       	"37E95FD9035B"
+		    documentation 	"If True, the DataItem instance was defined with the GEMCOS DATA clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGemcosSSN"
+		    quid       	"37E95FCC037A"
+		    documentation 	"If True, the DataItem instance was defined with the GEMCOS SSN clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGemcosDBSN"
+		    quid       	"37E95FC1035B"
+		    documentation 	"If True, the DataItem instance was defined with the GEMCOS DBSN clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isComsProgram"
+		    quid       	"37E95FFA02AF"
+		    documentation 	"If True, the DataItem instance was defined with the COMS PROGRAM clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isComsID"
+		    quid       	"37E95FE803C8"
+		    documentation 	"If True, the DataItem instance was defined with the COMS ID clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isComsLocator"
+		    quid       	"37E960060177"
+		    documentation 	"If True, the DataItem instance was defined with the COMS LOCATOR clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isComsOutpQ"
+		    quid       	"37E9601302BF"
+		    documentation 	"If True, the DataItem instance was defined with the COMS OUTPQ clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "fieldBit"
+		    quid       	"38723C950191"
+		    documentation 	"Identifies the FieldBit instance owned by the DataItem instance."
+		    stereotype 	"reference"
+		    type       	"FieldBit"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "occursDataItem"
+		    quid       	"38723CAB0039"
+		    documentation 	"Identifies the DataItem instance that contains the number of occurrences for this occurring DataItem instance."
+		    stereotype 	"reference"
+		    type       	"DataItem"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "occuringDataItem"
+		    quid       	"38723FBC01CF"
+		    documentation 	"Identifies the DataItem instances whose number of occurrences is defined by the value of this DataItem instance."
+		    stereotype 	"reference"
+		    type       	"DataItem"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "keyDataSet"
+		    quid       	"38723FCB0327"
+		    documentation 	"Identifies the Set instances in whose key data parts this DataItem instance participates."
+		    stereotype 	"reference"
+		    type       	"Set"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "structure"
+		    quid       	"387240340097"
+		    documentation 	"Identifies the DataSet or SetStructure instance to which this DataItem instance refers."
+		    stereotype 	"reference"
+		    type       	"StructuralFeature"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "remapItem"
+		    quid       	"3883F9730273"
+		    documentation 	"Identifies the RemapItem instances that remap this DataItem instance."
+		    stereotype 	"reference"
+		    type       	"RemapItem"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "VariableFormatPart"
+	    quid       	"37E921EA031C"
+	    documentation 	"Represents the VariableFormatParts that can be associated with a DataSet."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"388A2090008A"
+		    supplier   	"Logical View::org.omg::CWM::Resource::Record::RecordDef"
+		    quidu      	"3731BA330352")
+		(object Inheritance_Relationship
+		    quid       	"37EFA5E900FA"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "vfLabel"
+		    quid       	"37E9255103A9"
+		    documentation 	"Contains the value of <integer label> identifying this variable format part. <integer label>s are the values of the DMS II data item in the fixed part of the owning DataSet instance with the type RECORD TYPE."
+		    type       	"Integer"
+		    exportControl 	"Public")
+		(object ClassAttribute "selectCondition"
+		    quid       	"37E9272D036B"
+		    documentation 	"A boolean expression determining which records appear in the Remap."
+		    type       	"BooleanExpression"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "SetStructure"
+	    quid       	"37EA9CD60399"
+	    documentation 	
+|SetStructure instances represent access paths in DMS II. SetStructures are connected to the DataSet instances that they span via the ElementOwnership association inherited from the Index class in the CWM Foundation’s KeysIndexes package.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EFDBC0007D"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF")
+		(object Inheritance_Relationship
+		    quid       	"37EAA61D0167"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::KeysIndexes::Index"
+		    quidu      	"376A89040331"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "duplicates"
+		    quid       	"37EAA1230203"
+		    documentation 	
+|Indicates the duplicates clause associated with the SetStructure instance.
+|
+		    
+		    type       	"String"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "Set"
+	    quid       	"37EA9D4C003E"
+	    documentation 	"Represents a DMS II Set that spans some DataSet. Sets are represented by a physical file in a deployed DMSII database."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EA9D600109"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::SetStructure"
+		    quidu      	"37EA9CD60399"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "setType"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"mof.idl_substitute_name"
+			    value      	"dmsiiSetType")
+			(object Attribute
+			    tool       	"JCR"
+			    name       	"java_substitute_name"
+			    value      	"dmsiiSetType"))
+		    quid       	"37EAA3AD0000"
+		    documentation 	"Contains the set organization for this Set instance."
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "reorganize"
+		    quid       	"37EAAE600177"
+		    documentation 	"Contains the content of the reorganization clause, if any, that was specified for the Set instance."
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "partitioningSet"
+		    quid       	"38723A68020E"
+		    documentation 	"Identifies the Set instance that act as a partitioning set for this Set instance."
+		    stereotype 	"reference"
+		    type       	"Set"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "partitionedSet"
+		    quid       	"38723A780385"
+		    documentation 	"Identifies the Set instances partitioned by this Set instance."
+		    stereotype 	"reference"
+		    type       	"Set"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "keyDataItem"
+		    quid       	"38723A9603B4"
+		    documentation 	"Identifies the DataItem instances that participate in the Set instance’s key data."
+		    stereotype 	"reference"
+		    type       	"DataItem"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "partitionedDataSet"
+		    quid       	"3872438C0152"
+		    documentation 	"Identifies the DataItem instances that make up this Set instance’s key data."
+		    stereotype 	"reference"
+		    type       	"DataSet"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "Access"
+	    quid       	"37EA9D590119"
+	    documentation 	"Represents a DMSII Access which is used to specify the physical ordering of records in the DataSet that the Access spans. Unlike a Set instance, there is no separate physical file associated with an Access in a deployed database."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EA9D6202AF"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::SetStructure"
+		    quidu      	"37EA9CD60399"))
+	    language   	"Visu")
+	(object Class "Subset"
+	    quid       	"37EA9D770399"
+	    documentation 	
+|Represents a subset of a DataSet instance. Because Subset instances have no membership expression, they are equivalent to DMS II's notion of a "manual" subset.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EAB5DC01E4"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Set"
+		    quidu      	"37EA9D4C003E"))
+	    language   	"Visu")
+	(object Class "AutomaticSubset"
+	    quid       	"37EA9D870203"
+	    documentation 	"A Subset that has a membership expression. Records in the spanned DataSet instance are part of the AutomaticSubset instance if the expression in the condition attribute evaluates to True."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EA9D96030D"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Subset"
+		    quidu      	"37EA9D770399"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "condition"
+		    quid       	"37EAA419009C"
+		    documentation 	"Contains the text of an expression that determines membership of the spanned DataSet's records in this AutomaticSubset instance."
+		    type       	"BooleanExpression"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "KeyItem"
+	    quid       	"37EA9E1F0167"
+	    documentation 	"KeyItem instances correspond to DASDL's <key item> construct. Every Key instance has the inherited attribute isSorted = True and the inherited isAscending attribute set as indicated in the DASDL <key item>. By default, isAscending = True."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37EAA60C034B"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::KeysIndexes::IndexedFeature"
+		    quidu      	"377BD3F9017F"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "collation"
+		    quid       	"37EAA0330109"
+		    documentation 	"Identifies the value of the collation clause specified for a KeyItem instance."
+		    type       	"String"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "RemapItem"
+	    quid       	"37EBC2EF02AF"
+	    documentation 	
+|Maps a Remap instance’s field to its source, which may be some DataItem or an expression.
+|
+|The name attribute of a RemapItem instance defaults to the name attribute of the associated DataItem instance. If changed in the Remap definition by a "<identifier> =" clause, the name attribute of the Remap instance is simply set to <identifier>.
+|
+|The RemapItem instance’s initial value is stored in the initialValue attribute inherited from the CWM ObjectModel’s Attribute class.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3883F71C03C6"
+		    supplier   	"Logical View::org.omg::CWM::Resource::Record::Field"
+		    quidu      	"3730B40B002A"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "occurs"
+		    quid       	"37EBEB920232"
+		    documentation 	"If specified, overrides the occurs attribute of the associated DataItem instance."
+		    type       	"Integer"
+		    exportControl 	"Public")
+		(object ClassAttribute "isRequired"
+		    quid       	"37EBEC5B00FA"
+		    documentation 	"If True, overrides the isRequired attribute of the associated DataItem instance."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isHidden"
+		    quid       	"37EBEC84030D"
+		    documentation 	"If True, the corresponding DataItem is not visible to the user of the Remap."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isReadOnly"
+		    quid       	"37EBED00004E"
+		    documentation 	"If True, the RemapItem is readonly."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isGivingException"
+		    quid       	"37EBED6D02BF"
+		    documentation 	"The isGivingException boolean is meaningful only if isReadOnly = True. If the isGivingException boolean is absent, no exception clause was specified. If it is present, False indicates that the NO EXCEPTION clause was specified whereas True indicates the GIVING EXCEPTION clause."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isVirtual"
+		    quid       	"388AB59B03D7"
+		    documentation 	"If True, the RemapItem instance is calculated when accessed using the expression stored in the virtualExpression attribute."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "virtualExpression"
+		    quid       	"388AB5A700E5"
+		    documentation 	"The expression used to calculate the value of a virtual RemapItem."
+		    type       	"ExpressionNode"
+		    exportControl 	"Public")
+		(object ClassAttribute "dataItem"
+		    quid       	"38723C01021D"
+		    documentation 	"Identifies the DataItem instance that this RemapItem instance remaps."
+		    stereotype 	"reference"
+		    type       	"DataItem"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "FieldBit"
+	    quid       	"37F1231302AF"
+	    documentation 	"FieldBit instances name the individual bits in a DMS II field data item."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37F123590261"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dataItem"
+		    quid       	"3872446C03A4"
+		    documentation 	"Identifies the DataItem instance that owns this FieldBit instance."
+		    stereotype 	"reference"
+		    type       	"DataItem"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "Remark"
+	    quid       	"3821D587021E"
+	    documentation 	"Contains the text of a % comment embedded anywhere within a DASDL source (except at places where the Comment class should be used). Making Remarks a subtype of StructuralFeature allows their location and order within a DASDL source to be preserved."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3821D5B20328"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "text"
+		    quid       	"3821D5D10308"
+		    documentation 	"Contains the text of the Remark."
+		    type       	"String"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "PhysicalDatabase"
+	    quid       	"37F129E7009C"
+	    documentation 	
+|Instances represent deployed physical DMS II databases.
+|
+|The INITIALIZE and MODEL statements are directives to the DASDL compiler and do not need to be modeled here. Rather, they cause specific actions to happen within a CWM repository. INITIALIZE causes the creation of the first PhysicalDatabase instance; MODEL causes the creation of additional PhysicalDatabase instances after the first.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A5CDAC50383"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Package"
+		    quidu      	"327A5D19033E"))
+	    language   	"Visu")
+	(object Class "PhysicalDataSet"
+	    quid       	"37F14CC20138"
+	    documentation 	"Identifies a physical deployment of a DMS II DataSet."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"38220CFD0357"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"))
+	    language   	"Visu")
+	(object Class "DASDLComment"
+	    quid       	"3821D736025D"
+	    documentation 	
+|Contains the text of the single DASDL <comment> that nearly every object in a DASDL source may have. These comments differ from Remarks in that there is only one instance per DASDL object, their position in the source is constrained, and they
+|are stored in the database description files. Remarks are not tied to particular database objects, can occur anywhere in a DASDL source, and exist only in the DASDL source itself. 
+|
+|For all DASDLComments, the language attribute contains the string "DASDL".
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3821D74C0357"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::BusinessInformation::Description"
+		    quidu      	"375FF5A2008E"))
+	    language   	"Visu")
+	(object Class "PhysicalSet"
+	    quid       	"37F14CCB038A"
+	    documentation 	"Identifies a physical deployment of a DMS II Set."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"38220CD701FF"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"))
+	    language   	"Visu")
+	(object Class "PhysicalDataSetOverride"
+	    quid       	"37F25159001F"
+	    documentation 	"Collects together DASDLProperty instances associate with a physical data set specification in the DASDL source."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37F256E2029F"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Feature"
+		    quidu      	"32989F9700FE"))
+	    language   	"Visu")
+	(object Class "PhysicalSetOverride"
+	    quid       	"37F25195037A"
+	    documentation 	"Collects together DASDLProperty instances associate with a physical set specification in the DASDL source."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37F256E700EA"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Feature"
+		    quidu      	"32989F9700FE"))
+	    language   	"Visu")
+	(object Class "PhysicalAccessOverride"
+	    quid       	"37F251B301D4"
+	    documentation 	"Collects together DASDLProperty instances associate with a physical access specification in the DASDL source."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37F25E01036B"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Feature"
+		    quidu      	"32989F9700FE"))
+	    language   	"Visu")
+	(object Class "DASDLProperty"
+	    quid       	"382207A001E0"
+	    documentation 	
+|The DASDL language source file from which DMS II databases are built contains a large number (>100) of options related primarily to the physical characteristics or deployment of DMS II databases and the data and set structures they contain.
+|Generally, these “DASDL properties” are of the form <name> = <string>, where the meaning of the contents of <string> is specific to the property that is being described (i.e., knowing the content of <name>). Also, new DASDL properties are added from time to time. Capturing these DASDL properties as <name>/<string> pairs has several important side-effects, including 
+|
+|    a much simplified DMS II model overall,
+|    addition of new properties without having to change the model, and
+|    maintenance of the order (because of the ordered nature of the association to 
+|        ModelElement) in which the property values were supplied in the DASDL source.
+|
+|Note that allowing a DASDL remark (i.e., a %-comment) to be a DASDL property in this case allows preservation of the order remarks with respect to other DASDL properties.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"382207EA0069"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "text"
+		    quid       	"382207B4000B"
+		    documentation 	"Contains the text of the DASDL property. The precise content of the string is dependent upon the name of the DASDL property defined in the name attribute inherited from ModelElement."
+		    type       	"String"
+		    exportControl 	"Public")
+		(object ClassAttribute "owner"
+		    quid       	"38723B630114"
+		    documentation 	"Identifies the ModelElement for which this DASDLProperty instance is relevant."
+		    stereotype 	"reference"
+		    type       	"ModelElement"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Association "OccursDepending"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"37EA76A9005D"
+	    documentation 	
+|Identifies the data item that another data item depends upon for its number of occurrences. The occuringDataItem end specifies the DataItem that occurs (i.e., the "array" itself) whereas the occursDataItem end specifies the DataItem whose value is the number of occurrences (i.e., number of elements in the "array"). Observe that this works for BOTH scalar data items and group data items!
+	    
+	    roles      	(list role_list
+		(object Role "occuringDataItem"
+		    quid       	"37EA76AC03C8"
+		    documentation 	"Identifies the occurring DataItem (i.e., the array)."
+		    label      	"occuringDataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "occursDataItem"
+		    quid       	"37EA76AD0000"
+		    documentation 	"Identifies the DataItem that contains the number of elements in the array."
+		    label      	"occursDataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "KeyDataItem"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"37EA9FE100EA"
+	    documentation 	"Indicates the DataItem instances that participate in this set’s <key data> clause. Note that the referenced DataItem instances must be owned by the DataSet instance that the Set spans."
+	    roles      	(list role_list
+		(object Role "keyDataItem"
+		    quid       	"37EA9FE20196"
+		    documentation 	"Identifies the DataItem instances that participate in the Set instance’s key data."
+		    label      	"keyDataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "*")
+		    Constraints 	"ordered"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "keyDataSet"
+		    quid       	"37EA9FE201A5"
+		    documentation 	"Identifies the Set instances in which this DataItem instance participates in the Set's key data."
+		    label      	"keyDataSet"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Set"
+		    quidu      	"37EA9D4C003E"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "SetPartitionSet"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"37F2A053029F"
+	    documentation 	"Associates a partitioned Set with its partitioning Set."
+	    roles      	(list role_list
+		(object Role "partitionedSet"
+		    quid       	"37F2A05A01C5"
+		    documentation 	"Identifies the partitioned set."
+		    label      	"partitionedSet"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Set"
+		    quidu      	"37EA9D4C003E"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "partitioningSet"
+		    quid       	"37F2A05A01D4"
+		    documentation 	"Identifies the partitioning set."
+		    label      	"partitioningSet"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Set"
+		    quidu      	"37EA9D4C003E"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DataSetPartitionSet"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"37F289EE03D8"
+	    documentation 	"In DASDL, the partitioning set is specified as a physical data set option. However, it is more correctly modeled as a relationship between a DataSet instance and a Set instance."
+	    roles      	(list role_list
+		(object Role "partitioningSet"
+		    quid       	"37F289EF02FD"
+		    documentation 	"Identifies the partitioning set for this DataItem instance."
+		    label      	"partitioningSet"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Set"
+		    quidu      	"37EA9D4C003E"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "partitionedDataSet"
+		    quid       	"37F289EF030D"
+		    documentation 	"Identifies the DataSet instances which the Set instance partitions."
+		    label      	"partitionedDataSet"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataSet"
+		    quidu      	"37E809320148"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "FieldBits"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"3821FE2602AB"
+	    documentation 	"Associates a BIT data item with the labels for it individual bits."
+	    roles      	(list role_list
+		(object Role "dataItem"
+		    quid       	"3821FE280134"
+		    documentation 	"Identifies the FIELD data item for which a FieldBit is relevant."
+		    label      	"dataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "fieldBit"
+		    quid       	"3821FE280153"
+		    documentation 	"Identifies the FieldBits for a dataItem whose type is BIT."
+		    label      	"fieldBit"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::FieldBit"
+		    quidu      	"37F1231302AF"
+		    client_cardinality 	(value cardinality "0..48")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "RemapItems"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"3883F7A401FF"
+	    documentation 	"Identifies the dataItem that a remapItem remaps."
+	    roles      	(list role_list
+		(object Role "remapItem"
+		    quid       	"3883F7A501BB"
+		    documentation 	"Identifies the RemapItem instances that remap this data item."
+		    label      	"remapItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::RemapItem"
+		    quidu      	"37EBC2EF02AF"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dataItem"
+		    quid       	"3883F7A501E3"
+		    documentation 	"Identifies the dataItem that is remapped."
+		    label      	"dataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DASDLPropertyOwner"
+	    quid       	"382207EF00A7"
+	    documentation 	"Associates DASDLProperties with the model elements that own them. The ordered attribute preserves the order in which individual DASDLProperty instances were found in the DASDL source file."
+	    roles      	(list role_list
+		(object Role "owner"
+		    quid       	"382207F2000B"
+		    documentation 	"Identifies the owning ModelElement."
+		    label      	"owner"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dasdlProperty"
+		    quid       	"382207F20134"
+		    documentation 	"Identifies the DASDLProperties that apply to a ModelElement."
+		    label      	"dasdlProperty"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DASDLProperty"
+		    quidu      	"382207A001E0"
+		    client_cardinality 	(value cardinality "*")
+		    Constraints 	"ordered"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DataItemStructure"
+	    quid       	"3821FEE001EF"
+	    documentation 	"Links DataItems to StructuralFeatures they may reference. Used to represent the Set or DataSet referenced by various link-type dataItems and to identify the Set or DataSet to which POPULATION dataItems apply."
+	    roles      	(list role_list
+		(object Role "structure"
+		    quid       	"3821FEE2003A"
+		    documentation 	"Identifies the feature referenced by the data item."
+		    label      	"structure"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dataItem"
+		    quid       	"3821FEE20097"
+		    documentation 	"Identifies the dataItems which a Set or DataSet instance references."
+		    label      	"dataItem"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::DataItem"
+		    quidu      	"37E811AD0271"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "RemappedStructure"
+	    quid       	"3883FB4403DA"
+	    documentation 	"Identifies the structure which a Remap instance remaps."
+	    roles      	(list role_list
+		(object Role "structure"
+		    quid       	"3883FB4A014E"
+		    documentation 	"Identifies the structure that is remapped by the Remap instance."
+		    label      	"structure"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "remap"
+		    quid       	"3883FB4A0234"
+		    documentation 	"Identifies the Remap instances that remap this structure."
+		    label      	"remap"
+		    supplier   	"Logical View::org.omg::CWMX::Resource::DMSII::Remap"
+		    quidu      	"37E8091501F4"
+		    client_cardinality 	(value cardinality "*")
+		    is_navigable 	TRUE))))
+    logical_presentations 	(list unit_reference_list
+	(object ClassDiagram "Figure 4-1 DMSII Package"
+	    quid       	"3814E0E00017"
+	    title      	"Figure 4-1 DMSII Package"
+	    documentation 	"Figure 4-1 DMSII Package"
+	    zoom       	100
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::VariableFormatPart" @1
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1792, 2698)
+		    label      	(object ItemLabel
+			Parent_View 	@1
+			location   	(1462, 2592)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	660
+			justify    	0
+			label      	"VariableFormatPart")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37E921EA031C"
+		    compartment 	(object Compartment
+			Parent_View 	@1
+			location   	(1462, 2650)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	675)
+		    width      	678
+		    height     	236)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::SetStructure" @2
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(919, 2631)
+		    label      	(object ItemLabel
+			Parent_View 	@2
+			location   	(758, 2550)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	322
+			justify    	0
+			label      	"SetStructure")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9CD60399"
+		    compartment 	(object Compartment
+			Parent_View 	@2
+			location   	(758, 2608)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	337)
+		    width      	340
+		    height     	186)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Subset" @3
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(566, 3525)
+		    label      	(object ItemLabel
+			Parent_View 	@3
+			location   	(485, 3474)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	162
+			justify    	0
+			label      	"Subset")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9D770399"
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::AutomaticSubset" @4
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(560, 3849)
+		    label      	(object ItemLabel
+			Parent_View 	@4
+			location   	(288, 3768)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	544
+			justify    	0
+			label      	"AutomaticSubset")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9D870203"
+		    compartment 	(object Compartment
+			Parent_View 	@4
+			location   	(288, 3826)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	559)
+		    width      	562
+		    height     	186)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::KeyItem" @5
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1350, 3857)
+		    label      	(object ItemLabel
+			Parent_View 	@5
+			location   	(1206, 3776)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	288
+			justify    	0
+			label      	"KeyItem")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9E1F0167"
+		    compartment 	(object Compartment
+			Parent_View 	@5
+			location   	(1206, 3834)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	303)
+		    width      	306
+		    height     	186)
+		(object InheritTreeView "" @6
+		    location   	(919, 2814)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@2
+		    vertices   	(list Points
+			(919, 2814)
+			(919, 2724)))
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalAccessOverride" @7
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(3424, 1193)
+		    label      	(object ItemLabel
+			Parent_View 	@7
+			location   	(3189, 1142)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	470
+			justify    	0
+			label      	"PhysicalAccessOverride")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F251B301D4"
+		    width      	488
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Access" @8
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1238, 2982)
+		    label      	(object ItemLabel
+			Parent_View 	@8
+			location   	(1153, 2931)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	170
+			justify    	0
+			label      	"Access")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9D590119"
+		    width      	188
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalSetOverride" @9
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(3111, 1410)
+		    label      	(object ItemLabel
+			Parent_View 	@9
+			location   	(2907, 1359)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	408
+			justify    	0
+			label      	"PhysicalSetOverride")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F25195037A"
+		    width      	426
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalSet" @10
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(820, 635)
+		    label      	(object ItemLabel
+			Parent_View 	@10
+			location   	(692, 584)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	256
+			justify    	0
+			label      	"PhysicalSet")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F14CCB038A"
+		    width      	274
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalDataSetOverride" @11
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2822, 1197)
+		    label      	(object ItemLabel
+			Parent_View 	@11
+			location   	(2583, 1146)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	478
+			justify    	0
+			label      	"PhysicalDataSetOverride")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F25159001F"
+		    width      	496
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Remark" @12
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1287, 2673)
+		    label      	(object ItemLabel
+			Parent_View 	@12
+			location   	(1184, 2592)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	207
+			justify    	0
+			label      	"Remark")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3821D587021E"
+		    compartment 	(object Compartment
+			Parent_View 	@12
+			location   	(1184, 2650)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	221)
+		    width      	225
+		    height     	186)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalDataSet" @13
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(467, 631)
+		    label      	(object ItemLabel
+			Parent_View 	@13
+			location   	(296, 580)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	342
+			justify    	0
+			label      	"PhysicalDataSet")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F14CC20138"
+		    width      	360
+		    height     	126
+		    annotation 	8)
+		(object InheritView "" @14
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EA9D96030D"
+		    client     	@4
+		    supplier   	@3
+		    line_style 	3
+		    origin_attachment 	(580, 3755)
+		    terminal_attachment 	(580, 3588))
+		(object InheritView "" @15
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EA9D6202AF"
+		    client     	@8
+		    supplier   	@2
+		    line_style 	3
+		    origin_attachment 	(1232, 2919)
+		    terminal_attachment 	(1232, 2814)
+		    drawSupplier 	@6)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::PhysicalDatabase" @16
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(3800, 2671)
+		    label      	(object ItemLabel
+			Parent_View 	@16
+			location   	(3615, 2620)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	370
+			justify    	0
+			label      	"PhysicalDatabase")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F129E7009C"
+		    width      	388
+		    height     	126)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Database" @17
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(3408, 2753)
+		    label      	(object ItemLabel
+			Parent_View 	@17
+			location   	(3239, 2622)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	338
+			justify    	0
+			label      	"Database")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37E80749001F"
+		    compartment 	(object Compartment
+			Parent_View 	@17
+			location   	(3239, 2680)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	353)
+		    width      	356
+		    height     	286)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Resource::Record::RecordDef" @18
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2215, 2380)
+		    label      	(object ItemLabel
+			Parent_View 	@18
+			location   	(2103, 2331)
+			nlines     	1
+			max_width  	224
+			justify    	0
+			label      	"RecordDef")
+		    icon_style 	"Icon"
+		    quidu      	"3731BA330352"
+		    width      	242
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Resource::Record::Field" @19
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1755, 619)
+		    label      	(object ItemLabel
+			Parent_View 	@19
+			location   	(1655, 570)
+			nlines     	1
+			max_width  	200
+			justify    	0
+			label      	"Field")
+		    icon_style 	"Icon"
+		    quidu      	"3730B40B002A"
+		    width      	218
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::KeysIndexes::IndexedFeature" @20
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1347, 3458)
+		    label      	(object ItemLabel
+			Parent_View 	@20
+			location   	(1194, 3409)
+			nlines     	1
+			max_width  	306
+			justify    	0
+			label      	"IndexedFeature")
+		    icon_style 	"Icon"
+		    quidu      	"377BD3F9017F"
+		    width      	324
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::KeysIndexes::Index" @21
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(749, 2341)
+		    label      	(object ItemLabel
+			Parent_View 	@21
+			location   	(610, 2292)
+			nlines     	1
+			max_width  	278
+			justify    	0
+			label      	"Index")
+		    icon_style 	"Icon"
+		    quidu      	"376A89040331"
+		    width      	296
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Feature" @22
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2978, 835)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@22
+			location   	(2890, 786)
+			nlines     	1
+			max_width  	176
+			justify    	0
+			label      	"Feature")
+		    icon_style 	"Icon"
+		    quidu      	"32989F9700FE"
+		    width      	194
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Package" @23
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(3611, 2329)
+		    label      	(object ItemLabel
+			Parent_View 	@23
+			location   	(3517, 2280)
+			nlines     	1
+			max_width  	188
+			justify    	0
+			label      	"Package")
+		    icon_style 	"Icon"
+		    quidu      	"327A5D19033E"
+		    width      	206
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::ModelElement" @24
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(826, 232)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@24
+			location   	(682, 183)
+			nlines     	1
+			max_width  	288
+			justify    	0
+			label      	"ModelElement")
+		    icon_style 	"Icon"
+		    quidu      	"327A5C7301CC"
+		    width      	306
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::DASDLProperty" @25
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1203, 691)
+		    label      	(object ItemLabel
+			Parent_View 	@25
+			location   	(988, 585)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	430
+			justify    	0
+			label      	"DASDLProperty")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"382207A001E0"
+		    compartment 	(object Compartment
+			Parent_View 	@25
+			location   	(988, 646)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	437)
+		    width      	448
+		    height     	236)
+		(object AssociationViewNew "DASDLPropertyOwner" @26
+		    location   	(1273, 288)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"382207EF00A7"
+		    roleview_list 	(list RoleViews
+			(object RoleView "owner" @27
+			    Parent_View 	@26
+			    location   	(-2466, -2446)
+			    label      	(object SegLabel @28
+				Parent_View 	@27
+				location   	(1091, 189)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	132
+				justify    	0
+				label      	"owner"
+				pctDist    	0.684659
+				height     	40
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"382207F2000B"
+			    client     	@26
+			    supplier   	@24
+			    vertices   	(list Points
+				(1273, 288)
+				(1273, 228)
+				(979, 228))
+			    line_style 	3
+			    origin_attachment 	(1273, 288)
+			    terminal_attachment 	(979, 228)
+			    label      	(object SegLabel @29
+				Parent_View 	@27
+				location   	(1002, 189)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.937500
+				height     	40
+				orientation 	1))
+			(object RoleView "dasdlProperty" @30
+			    Parent_View 	@26
+			    location   	(-2466, -2446)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"382207F20134"
+			    client     	@26
+			    supplier   	@25
+			    line_style 	3
+			    origin_attachment 	(1273, 288)
+			    terminal_attachment 	(1273, 573)
+			    label      	(object SegLabel @31
+				Parent_View 	@30
+				location   	(1315, 542)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.890855
+				height     	42
+				orientation 	0)
+			    label      	(object SegLabel @32
+				Parent_View 	@30
+				location   	(1364, 497)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	163
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.737463
+				height     	91
+				orientation 	0))))
+		(object InheritTreeView "" @33
+		    location   	(826, 383)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@24
+		    vertices   	(list Points
+			(826, 383)
+			(826, 293)))
+		(object InheritView "" @34
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"382207EA0069"
+		    client     	@25
+		    supplier   	@24
+		    line_style 	3
+		    origin_attachment 	(1162, 573)
+		    terminal_attachment 	(1162, 383)
+		    drawSupplier 	@33)
+		(object InheritView "" @35
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"38220CD701FF"
+		    client     	@10
+		    supplier   	@24
+		    line_style 	3
+		    origin_attachment 	(822, 572)
+		    terminal_attachment 	(822, 383)
+		    drawSupplier 	@33)
+		(object InheritView "" @36
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"38220CFD0357"
+		    client     	@13
+		    supplier   	@24
+		    line_style 	3
+		    origin_attachment 	(441, 567)
+		    terminal_attachment 	(441, 383)
+		    drawSupplier 	@33)
+		(object InheritTreeView "" @37
+		    location   	(3611, 2483)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@23
+		    vertices   	(list Points
+			(3611, 2483)
+			(3611, 2390)))
+		(object InheritView "" @38
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A5CDAC50383"
+		    client     	@16
+		    supplier   	@23
+		    line_style 	3
+		    origin_attachment 	(3798, 2608)
+		    terminal_attachment 	(3798, 2483)
+		    drawSupplier 	@37)
+		(object InheritView "" @39
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883FD1403BA"
+		    client     	@17
+		    supplier   	@23
+		    line_style 	3
+		    origin_attachment 	(3461, 2610)
+		    terminal_attachment 	(3461, 2483)
+		    drawSupplier 	@37)
+		(object InheritTreeView "" @40
+		    location   	(2978, 986)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@22
+		    vertices   	(list Points
+			(2978, 986)
+			(2978, 896)))
+		(object InheritView "" @41
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37F25E01036B"
+		    client     	@7
+		    supplier   	@22
+		    line_style 	3
+		    origin_attachment 	(3424, 1130)
+		    terminal_attachment 	(3424, 986)
+		    drawSupplier 	@40)
+		(object InheritView "" @42
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37F256E700EA"
+		    client     	@9
+		    supplier   	@22
+		    line_style 	3
+		    origin_attachment 	(3111, 1347)
+		    terminal_attachment 	(3111, 986)
+		    drawSupplier 	@40)
+		(object InheritView "" @43
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37F256E2029F"
+		    client     	@11
+		    supplier   	@22
+		    line_style 	3
+		    origin_attachment 	(2807, 1134)
+		    terminal_attachment 	(2807, 986)
+		    drawSupplier 	@40)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::DataSet" @44
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2390, 2769)
+		    label      	(object ItemLabel
+			Parent_View 	@44
+			location   	(2182, 2588)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	416
+			justify    	0
+			label      	"DataSet")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37E809320148"
+		    compartment 	(object Compartment
+			Parent_View 	@44
+			location   	(2182, 2646)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	6
+			max_width  	431)
+		    width      	434
+		    height     	386)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Remap" @45
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2912, 2775)
+		    label      	(object ItemLabel
+			Parent_View 	@45
+			location   	(2648, 2594)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	528
+			justify    	0
+			label      	"Remap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37E8091501F4"
+		    compartment 	(object Compartment
+			Parent_View 	@45
+			location   	(2648, 2652)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	6
+			max_width  	543)
+		    width      	546
+		    height     	386)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::Set" @46
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(638, 3109)
+		    label      	(object ItemLabel
+			Parent_View 	@46
+			location   	(369, 2903)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	538
+			justify    	0
+			label      	"Set")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EA9D4C003E"
+		    compartment 	(object Compartment
+			Parent_View 	@46
+			location   	(369, 2961)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	7
+			max_width  	553)
+		    width      	556
+		    height     	436)
+		(object AssociationViewNew "SetPartitionSet" @47
+		    location   	(106, 3103)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37F2A053029F"
+		    roleview_list 	(list RoleViews
+			(object RoleView "partitionedSet" @48
+			    Parent_View 	@47
+			    location   	(-305, 41)
+			    label      	(object SegLabel @49
+				Parent_View 	@48
+				location   	(227, 3198)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	252
+				justify    	0
+				label      	"partitionedSet"
+				pctDist    	0.579618
+				height     	32
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37F2A05A01C5"
+			    client     	@47
+			    supplier   	@46
+			    vertices   	(list Points
+				(106, 3103)
+				(106, 3166)
+				(360, 3166))
+			    line_style 	3
+			    origin_attachment 	(106, 3103)
+			    terminal_attachment 	(360, 3166)
+			    label      	(object SegLabel @50
+				Parent_View 	@48
+				location   	(341, 3136)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.944196
+				height     	31
+				orientation 	0))
+			(object RoleView "partitioningSet" @51
+			    Parent_View 	@47
+			    location   	(-305, 41)
+			    label      	(object SegLabel @52
+				Parent_View 	@51
+				location   	(222, 3015)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	264
+				justify    	0
+				label      	"partitioningSet"
+				pctDist    	0.570064
+				height     	25
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37F2A05A01D4"
+			    client     	@47
+			    supplier   	@46
+			    vertices   	(list Points
+				(106, 3103)
+				(106, 3039)
+				(360, 3039))
+			    line_style 	3
+			    origin_attachment 	(106, 3103)
+			    terminal_attachment 	(360, 3039)
+			    label      	(object SegLabel @53
+				Parent_View 	@51
+				location   	(328, 3072)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.904018
+				height     	33
+				orientation 	1))))
+		(object InheritView "" @54
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EA9D600109"
+		    client     	@46
+		    supplier   	@2
+		    line_style 	3
+		    origin_attachment 	(611, 2891)
+		    terminal_attachment 	(611, 2814)
+		    drawSupplier 	@6)
+		(object AssociationViewNew "DataSetPartitionSet" @55
+		    location   	(1680, 3111)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37F289EE03D8"
+		    roleview_list 	(list RoleViews
+			(object RoleView "partitionedDataSet" @56
+			    Parent_View 	@55
+			    location   	(1269, 49)
+			    label      	(object SegLabel @57
+				Parent_View 	@56
+				location   	(2103, 2982)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	336
+				justify    	0
+				label      	"partitionedDataSet"
+				pctDist    	0.555990
+				height     	130
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37F289EF030D"
+			    client     	@55
+			    supplier   	@44
+			    vertices   	(list Points
+				(1680, 3111)
+				(2294, 3111)
+				(2294, 2962))
+			    line_style 	3
+			    origin_attachment 	(1680, 3111)
+			    terminal_attachment 	(2294, 2962)
+			    label      	(object SegLabel @58
+				Parent_View 	@56
+				location   	(2349, 2994)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.958442
+				height     	55
+				orientation 	1))
+			(object RoleView "partitioningSet" @59
+			    Parent_View 	@55
+			    location   	(1269, 49)
+			    label      	(object SegLabel @60
+				Parent_View 	@59
+				location   	(1130, 3149)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	264
+				justify    	0
+				label      	"partitioningSet"
+				pctDist    	0.720154
+				height     	38
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37F289EF02FD"
+			    client     	@55
+			    supplier   	@46
+			    line_style 	3
+			    origin_attachment 	(1680, 3111)
+			    terminal_attachment 	(916, 3111)
+			    label      	(object SegLabel @61
+				Parent_View 	@59
+				location   	(960, 3152)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.942495
+				height     	41
+				orientation 	0))))
+		(object InheritView "" @62
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EAB5DC01E4"
+		    client     	@3
+		    supplier   	@46
+		    line_style 	3
+		    origin_attachment 	(572, 3462)
+		    terminal_attachment 	(572, 3326))
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::FieldBit" @63
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(276, 1109)
+		    label      	(object ItemLabel
+			Parent_View 	@63
+			location   	(84, 1028)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	384
+			justify    	0
+			label      	"FieldBit")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37F1231302AF"
+		    compartment 	(object Compartment
+			Parent_View 	@63
+			location   	(84, 1089)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	390)
+		    width      	402
+		    height     	186)
+		(object InheritView "" @64
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37F123590261"
+		    client     	@63
+		    supplier   	@24
+		    line_style 	3
+		    origin_attachment 	(242, 1016)
+		    terminal_attachment 	(242, 383)
+		    drawSupplier 	@33)
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::RemapItem" @65
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2072, 1242)
+		    label      	(object ItemLabel
+			Parent_View 	@65
+			location   	(1750, 986)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	644
+			justify    	0
+			label      	"RemapItem")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37EBC2EF02AF"
+		    compartment 	(object Compartment
+			Parent_View 	@65
+			location   	(1750, 1047)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	9
+			max_width  	650)
+		    width      	662
+		    height     	536)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature" @66
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2348, 1881)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@66
+			location   	(2170, 1832)
+			nlines     	1
+			max_width  	356
+			justify    	0
+			label      	"StructuralFeature")
+		    icon_style 	"Icon"
+		    quidu      	"3298F1A403BF"
+		    width      	374
+		    height     	122
+		    annotation 	8)
+		(object AssociationViewNew "RemappedStructure" @67
+		    location   	(2999, 2000)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883FB4403DA"
+		    roleview_list 	(list RoleViews
+			(object RoleView "structure" @68
+			    Parent_View 	@67
+			    location   	(0, -943)
+			    label      	(object SegLabel @69
+				Parent_View 	@68
+				location   	(2648, 1911)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	192
+				justify    	0
+				label      	"structure"
+				pctDist    	0.807194
+				height     	30
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3883FB4A014E"
+			    client     	@67
+			    supplier   	@66
+			    vertices   	(list Points
+				(2999, 2000)
+				(2999, 1881)
+				(2535, 1881))
+			    line_style 	3
+			    origin_attachment 	(2999, 2000)
+			    terminal_attachment 	(2535, 1881)
+			    label      	(object SegLabel @70
+				Parent_View 	@68
+				location   	(2558, 1914)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.961151
+				height     	33
+				orientation 	0))
+			(object RoleView "remap" @71
+			    Parent_View 	@67
+			    location   	(0, -943)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3883FB4A0234"
+			    client     	@67
+			    supplier   	@45
+			    line_style 	3
+			    origin_attachment 	(2999, 2000)
+			    terminal_attachment 	(2999, 2582)
+			    label      	(object SegLabel @72
+				Parent_View 	@71
+				location   	(3028, 2555)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.953957
+				height     	29
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWMX::Resource::DMSII::DataItem" @73
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1179, 1584)
+		    label      	(object ItemLabel
+			Parent_View 	@73
+			location   	(857, 928)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	644
+			justify    	0
+			label      	"DataItem")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37E811AD0271"
+		    compartment 	(object Compartment
+			Parent_View 	@73
+			location   	(857, 989)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	25
+			max_width  	650)
+		    width      	662
+		    height     	1336)
+		(object AssociationViewNew "OccursDepending" @74
+		    location   	(466, 1560)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37EA76A9005D"
+		    roleview_list 	(list RoleViews
+			(object RoleView "occuringDataItem" @75
+			    Parent_View 	@74
+			    location   	(-1738, -2752)
+			    label      	(object SegLabel @76
+				Parent_View 	@75
+				location   	(643, 1649)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	348
+				justify    	0
+				label      	"occuringDataItem"
+				pctDist    	0.596457
+				height     	35
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37EA76AC03C8"
+			    client     	@74
+			    supplier   	@73
+			    vertices   	(list Points
+				(466, 1560)
+				(466, 1683)
+				(848, 1683))
+			    line_style 	3
+			    origin_attachment 	(466, 1560)
+			    terminal_attachment 	(848, 1683)
+			    label      	(object SegLabel @77
+				Parent_View 	@75
+				location   	(833, 1654)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.970472
+				height     	30
+				orientation 	0))
+			(object RoleView "occursDataItem" @78
+			    Parent_View 	@74
+			    location   	(-1738, -2752)
+			    label      	(object SegLabel @79
+				Parent_View 	@78
+				location   	(618, 1400)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	288
+				justify    	0
+				label      	"occursDataItem"
+				pctDist    	0.545455
+				height     	37
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37EA76AD0000"
+			    client     	@74
+			    supplier   	@73
+			    vertices   	(list Points
+				(466, 1560)
+				(466, 1436)
+				(848, 1436))
+			    line_style 	3
+			    origin_attachment 	(466, 1560)
+			    terminal_attachment 	(848, 1436)
+			    label      	(object SegLabel @80
+				Parent_View 	@78
+				location   	(806, 1397)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.918972
+				height     	40
+				orientation 	0))))
+		(object AssociationViewNew "KeyDataItem" @81
+		    location   	(550, 2241)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37EA9FE100EA"
+		    roleview_list 	(list RoleViews
+			(object RoleView "keyDataSet" @82
+			    Parent_View 	@81
+			    location   	(-1654, -2071)
+			    label      	(object SegLabel @83
+				Parent_View 	@82
+				location   	(416, 2850)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	216
+				justify    	0
+				label      	"keyDataSet"
+				pctDist    	0.937409
+				height     	135
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37EA9FE201A5"
+			    client     	@81
+			    supplier   	@46
+			    line_style 	3
+			    origin_attachment 	(550, 2241)
+			    terminal_attachment 	(550, 2891)
+			    label      	(object SegLabel @84
+				Parent_View 	@82
+				location   	(582, 2855)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.946584
+				height     	32
+				orientation 	0))
+			(object RoleView "keyDataItem" @85
+			    Parent_View 	@81
+			    location   	(-1654, -2071)
+			    label      	(object SegLabel @86
+				Parent_View 	@85
+				location   	(704, 1925)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	228
+				justify    	0
+				label      	"keyDataItem"
+				pctDist    	0.780488
+				height     	37
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37EA9FE20196"
+			    client     	@81
+			    supplier   	@73
+			    vertices   	(list Points
+				(550, 2241)
+				(550, 1888)
+				(848, 1888))
+			    line_style 	3
+			    origin_attachment 	(550, 2241)
+			    terminal_attachment 	(848, 1888)
+			    label      	(object SegLabel @87
+				Parent_View 	@85
+				location   	(819, 1927)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.954878
+				height     	39
+				orientation 	1)
+			    label      	(object SegLabel @88
+				Parent_View 	@85
+				location   	(743, 1863)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	163
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.838256
+				height     	26
+				orientation 	0))))
+		(object AssociationViewNew "FieldBits" @89
+		    location   	(662, 1109)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3821FE2602AB"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dataItem" @90
+			    Parent_View 	@89
+			    location   	(474, -5853)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3821FE280134"
+			    client     	@89
+			    supplier   	@73
+			    line_style 	3
+			    origin_attachment 	(662, 1109)
+			    terminal_attachment 	(848, 1109)
+			    label      	(object SegLabel @91
+				Parent_View 	@90
+				location   	(794, 1069)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.714286
+				height     	41
+				orientation 	0))
+			(object RoleView "fieldBit" @92
+			    Parent_View 	@89
+			    location   	(474, -5853)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3821FE280153"
+			    client     	@89
+			    supplier   	@63
+			    line_style 	3
+			    origin_attachment 	(662, 1109)
+			    terminal_attachment 	(477, 1109)
+			    label      	(object SegLabel @93
+				Parent_View 	@92
+				location   	(537, 1080)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	92
+				justify    	0
+				label      	"0..48"
+				pctDist    	0.677778
+				height     	30
+				orientation 	1))))
+		(object AssociationViewNew "RemapItems" @94
+		    location   	(1625, 1241)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883F7A401FF"
+		    roleview_list 	(list RoleViews
+			(object RoleView "remapItem" @95
+			    Parent_View 	@94
+			    location   	(363, -499)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3883F7A501BB"
+			    client     	@94
+			    supplier   	@65
+			    line_style 	3
+			    origin_attachment 	(1625, 1241)
+			    terminal_attachment 	(1741, 1241)
+			    label      	(object SegLabel @96
+				Parent_View 	@95
+				location   	(1730, 1282)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.912458
+				height     	41
+				orientation 	1))
+			(object RoleView "dataItem" @97
+			    Parent_View 	@94
+			    location   	(363, -499)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3883F7A501E3"
+			    client     	@94
+			    supplier   	@73
+			    line_style 	3
+			    origin_attachment 	(1625, 1241)
+			    terminal_attachment 	(1510, 1241)
+			    label      	(object SegLabel @98
+				Parent_View 	@97
+				location   	(1521, 1282)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.905405
+				height     	41
+				orientation 	0))))
+		(object AssociationViewNew "DataItemStructure" @99
+		    location   	(1835, 1881)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3821FEE001EF"
+		    roleview_list 	(list RoleViews
+			(object RoleView "structure" @100
+			    Parent_View 	@99
+			    location   	(-783, -4783)
+			    label      	(object SegLabel @101
+				Parent_View 	@100
+				location   	(1963, 1924)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	192
+				justify    	0
+				label      	"structure"
+				pctDist    	0.394558
+				height     	43
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3821FEE2003A"
+			    client     	@99
+			    supplier   	@66
+			    line_style 	3
+			    origin_attachment 	(1835, 1881)
+			    terminal_attachment 	(2161, 1881)
+			    label      	(object SegLabel @102
+				Parent_View 	@100
+				location   	(2110, 1924)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.847682
+				height     	43
+				orientation 	1))
+			(object RoleView "dataItem" @103
+			    Parent_View 	@99
+			    location   	(-783, -4783)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3821FEE20097"
+			    client     	@99
+			    supplier   	@73
+			    line_style 	3
+			    origin_attachment 	(1835, 1881)
+			    terminal_attachment 	(1510, 1881)
+			    label      	(object SegLabel @104
+				Parent_View 	@103
+				location   	(1542, 1916)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.901361
+				height     	35
+				orientation 	0))))
+		(object InheritTreeView "" @105
+		    location   	(2348, 2220)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@66
+		    vertices   	(list Points
+			(2348, 2220)
+			(2348, 1942)))
+		(object InheritView "" @106
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"3821D5B20328"
+		    client     	@12
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(1286, 2580)
+		    terminal_attachment 	(1286, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @107
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EFDBC0007D"
+		    client     	@2
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(972, 2538)
+		    terminal_attachment 	(972, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @108
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EFA5E900FA"
+		    client     	@1
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(1789, 2579)
+		    terminal_attachment 	(1789, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @109
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EFA5E402BF"
+		    client     	@44
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(2406, 2576)
+		    terminal_attachment 	(2406, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @110
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883FADB02E9"
+		    client     	@45
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(2939, 2582)
+		    terminal_attachment 	(2939, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @111
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"38713C9900B6"
+		    client     	@17
+		    supplier   	@66
+		    line_style 	3
+		    origin_attachment 	(3339, 2609)
+		    terminal_attachment 	(3339, 2220)
+		    drawSupplier 	@105)
+		(object InheritView "" @112
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EAA61D0167"
+		    client     	@2
+		    supplier   	@21
+		    line_style 	3
+		    origin_attachment 	(817, 2538)
+		    terminal_attachment 	(817, 2401))
+		(object InheritView "" @113
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EAA60C034B"
+		    client     	@5
+		    supplier   	@20
+		    line_style 	3
+		    origin_attachment 	(1351, 3764)
+		    terminal_attachment 	(1351, 3519))
+		(object InheritTreeView "" @114
+		    location   	(1755, 782)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@19
+		    vertices   	(list Points
+			(1755, 782)
+			(1755, 680)))
+		(object InheritView "" @115
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883F71C03C6"
+		    client     	@65
+		    supplier   	@19
+		    line_style 	3
+		    origin_attachment 	(2074, 974)
+		    terminal_attachment 	(2074, 782)
+		    drawSupplier 	@114)
+		(object InheritView "" @116
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EA5DBE029F"
+		    client     	@73
+		    supplier   	@19
+		    line_style 	3
+		    origin_attachment 	(1193, 916)
+		    terminal_attachment 	(1193, 782)
+		    drawSupplier 	@114)
+		(object InheritTreeView "" @117
+		    location   	(2215, 2531)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@18
+		    vertices   	(list Points
+			(2215, 2531)
+			(2215, 2441)))
+		(object InheritView "" @118
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"388A2090008A"
+		    client     	@1
+		    supplier   	@18
+		    line_style 	3
+		    origin_attachment 	(1864, 2580)
+		    terminal_attachment 	(1864, 2531)
+		    drawSupplier 	@117)
+		(object InheritView "" @119
+		    stereotype 	FALSE
+		    line_color 	3342489
+		    quidu      	"37EFE06702CE"
+		    client     	@44
+		    supplier   	@18
+		    line_style 	3
+		    origin_attachment 	(2321, 2576)
+		    terminal_attachment 	(2321, 2531)
+		    drawSupplier 	@117)
+		(object InheritView "" @120
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3883F75F0250"
+		    client     	@45
+		    supplier   	@18
+		    line_style 	3
+		    origin_attachment 	(2833, 2582)
+		    terminal_attachment 	(2833, 2531)
+		    drawSupplier 	@117)
+		(object Label @121
+		    location   	(66, 59)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 4-1 DMSII Package")))))

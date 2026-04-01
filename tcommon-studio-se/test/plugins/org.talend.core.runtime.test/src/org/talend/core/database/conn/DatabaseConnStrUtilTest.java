@@ -1,0 +1,207 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talend Inc. - www.talend.com
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talend SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.core.database.conn;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Assert;
+import org.junit.Test;
+import org.talend.core.database.EDatabaseTypeName;
+import org.talend.core.database.conn.version.EDatabaseVersion4Drivers;
+import org.talend.core.model.metadata.builder.connection.ConnectionFactory;
+import org.talend.core.model.metadata.builder.connection.DatabaseConnection;
+import org.talend.core.model.metadata.connection.hive.HiveModeInfo;
+
+/**
+ * created by cmeng on May 20, 2016
+ * Detailled comment
+ *
+ */
+@SuppressWarnings("nls")
+public class DatabaseConnStrUtilTest {
+
+    private static final String HIVE2_STANDARDLONE_URL = "jdbc:hive2://server:10000/default";
+
+    private DatabaseConnection createDatabaseConnection() {
+        DatabaseConnection databaseConnection = null;
+
+        databaseConnection = ConnectionFactory.eINSTANCE.createDatabaseConnection();
+
+        databaseConnection.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_USE_KRB, "false");
+
+        return databaseConnection;
+    }
+
+    @Test
+    public void testGetURLStringForStandardalone() {
+        String server = "server";
+        String port = "10000";
+        String sidOrDatabase = "default";
+        String trustStorePath = "/home/user/truststore";
+        String trustStorePassword = "pwd123";
+        String additionalJDBCSettings = "additionalJDBCSettings123";
+        String expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";ssl=true;sslTrustStore="
+                + trustStorePath + ";trustStorePassword=encrypted;" + additionalJDBCSettings;
+        DatabaseConnection dc = createDatabaseConnection();
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_USE_SSL, "true");
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_SSL_TRUST_STORE_PATH, trustStorePath);
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_SSL_TRUST_STORE_PASSWORD, trustStorePassword);
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, additionalJDBCSettings);
+        String realValue = DatabaseConnStrUtil.getHiveURLStringForStandardalone(expectValue, dc, server, port, sidOrDatabase);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, "");
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";ssl=true;sslTrustStore=" + trustStorePath
+                + ";trustStorePassword=encrypted";
+        realValue = DatabaseConnStrUtil.getHiveURLStringForStandardalone(expectValue, dc, server, port, sidOrDatabase);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_USE_SSL, "false");
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase;
+        realValue = DatabaseConnStrUtil.getHiveURLStringForStandardalone(expectValue, dc, server, port, sidOrDatabase);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, additionalJDBCSettings);
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";" + additionalJDBCSettings;
+        realValue = DatabaseConnStrUtil.getHiveURLStringForStandardalone(expectValue, dc, server, port, sidOrDatabase);
+        assertTrue(expectValue.equals(realValue));
+
+    }
+
+    @Test
+    public void testGetHiveURLString() {
+        String server = "server";
+        String port = "10000";
+        String sidOrDatabase = "default";
+        String trustStorePath = "/home/user/truststore";
+        String trustStorePassword = "pwd123";
+        String additionalJDBCSettings = "additionalJDBCSettings123";
+        String expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";ssl=true;sslTrustStore="
+                + trustStorePath + ";trustStorePassword=" + trustStorePassword + ";" + additionalJDBCSettings;
+
+        DatabaseConnection dc = createDatabaseConnection();
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_USE_SSL, "true");
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_SSL_TRUST_STORE_PATH, trustStorePath);
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_SSL_TRUST_STORE_PASSWORD, trustStorePassword);
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, additionalJDBCSettings);
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_MODE, HiveModeInfo.STANDALONE.getName());
+
+        String realValue = DatabaseConnStrUtil.getHiveURLString(dc, server, port, sidOrDatabase, HIVE2_STANDARDLONE_URL);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, "");
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";ssl=true;sslTrustStore=" + trustStorePath
+                + ";trustStorePassword=" + trustStorePassword;
+        realValue = DatabaseConnStrUtil.getHiveURLString(dc, server, port, sidOrDatabase, HIVE2_STANDARDLONE_URL);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_USE_SSL, "false");
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase;
+        realValue = DatabaseConnStrUtil.getHiveURLString(dc, server, port, sidOrDatabase, HIVE2_STANDARDLONE_URL);
+        assertTrue(expectValue.equals(realValue));
+
+        dc.getParameters().put(ConnParameterKeys.CONN_PARA_KEY_HIVE_ADDITIONAL_JDBC_SETTINGS, additionalJDBCSettings);
+        expectValue = "jdbc:hive2://" + server + ":" + port + "/" + sidOrDatabase + ";" + additionalJDBCSettings;
+        realValue = DatabaseConnStrUtil.getHiveURLString(dc, server, port, sidOrDatabase, HIVE2_STANDARDLONE_URL);
+        assertTrue(expectValue.equals(realValue));
+    }
+
+    @Test
+    public void testAnalyseURLForVertica(){
+        String url = "jdbc:vertica://localhost:5433/test_db?connectionTimeout=10000";
+        String[] analyseURL = DatabaseConnStrUtil.analyseURL("Vertica", "VERTICA_7", url);
+        Assert.assertEquals(analyseURL.length, 6);
+        Assert.assertEquals(analyseURL[4], "connectionTimeout=10000");
+        url = "jdbc:vertica://localhost:5433/test_db?connectionTimeout=10000&ConnectionLoadBalance=1";
+        analyseURL = DatabaseConnStrUtil.analyseURL("Vertica", "VERTICA_7", url);
+        Assert.assertEquals(analyseURL.length, 6);
+        Assert.assertEquals(analyseURL[4], "connectionTimeout=10000&ConnectionLoadBalance=1");
+        url = "jdbc:vertica://localhost:5433/test_db?";
+        analyseURL = DatabaseConnStrUtil.analyseURL("Vertica", "VERTICA_7", url);
+        Assert.assertEquals(analyseURL.length, 6);
+        Assert.assertEquals(analyseURL[4], "");
+        url = "jdbc:vertica://localhost:5433/test_db";
+        analyseURL = DatabaseConnStrUtil.analyseURL("Vertica", "VERTICA_7", url);
+        Assert.assertEquals(analyseURL.length, 6);
+        Assert.assertEquals(analyseURL[4], "");
+    }
+
+    @Test
+    public void testGetURLStringForMSSQL() {
+        String dbType = EDatabaseTypeName.MSSQL.getDisplayName();
+        String dbVersion = EDatabaseVersion4Drivers.MSSQL_PROP.getVersionValue();
+        String host = "localhost";
+        String port = "";
+        String sid = "master";
+        String[] otherParam = new String[] {};
+        String expectURL = "jdbc:sqlserver://" + host + ";DatabaseName=master;";
+        String realValue = DatabaseConnStrUtil.getURLString(false, dbType, dbVersion, host, "", "", port, sid, "", "", "", "",
+                otherParam);
+        assertTrue(expectURL.equals(realValue));
+
+        port = "1433";
+        expectURL = "jdbc:sqlserver://" + host + ":" + port + ";DatabaseName=master;";
+        realValue = DatabaseConnStrUtil.getURLString(false, dbType, dbVersion, host, "", "", port, sid, "", "", "", "",
+                otherParam);
+        assertTrue(expectURL.equals(realValue));
+    }
+
+    @Test
+    public void testAnalyseURLForDynamicPortMSSQL() {
+        String currentDbType = EDatabaseTypeName.MSSQL.getDisplayName();
+        String dbVersion = "JTDS";
+        String server = "192.168.33.117";
+        String serverLocal = "localhost";
+        String port = "1433";
+        String database = "dd";
+        String additionalProp = "instance=mssql_new";
+
+        String url = "jdbc:jtds:sqlserver://" + serverLocal + "/" + database + ";" + additionalProp;
+        String[] analyseURL = DatabaseConnStrUtil.analyseURL(currentDbType, dbVersion, url);
+        Assert.assertEquals(analyseURL[1], serverLocal);
+        Assert.assertEquals(analyseURL[2], "");
+        Assert.assertEquals(analyseURL[3], database);
+        Assert.assertEquals(analyseURL[4], additionalProp);
+
+        String url2 = "jdbc:jtds:sqlserver://" + server + "/" + database + ";" + additionalProp;
+        String[] analyseURL2 = DatabaseConnStrUtil.analyseURL(currentDbType, dbVersion, url2);
+        Assert.assertEquals(analyseURL2[1], server);
+        Assert.assertEquals(analyseURL2[2], "");
+        Assert.assertEquals(analyseURL2[3], database);
+        Assert.assertEquals(analyseURL2[4], additionalProp);
+
+        String url3 = "jdbc:jtds:sqlserver://" + server + ":" + port + "/" + database + ";" + additionalProp;
+        String[] analyseURL3 = DatabaseConnStrUtil.analyseURL(currentDbType, dbVersion, url3);
+        Assert.assertEquals(analyseURL3[1], server);
+        Assert.assertEquals(analyseURL3[2], port);
+        Assert.assertEquals(analyseURL3[3], database);
+        Assert.assertEquals(analyseURL3[4], additionalProp);
+    }
+
+    @Test
+    public void testGetURLStringForDB2() {
+        // test for StandaloneConnectionContextUtils line 347
+        // TDI-28124:tdb2input can't guess schema from join sql on system table
+        String dbType = EDatabaseTypeName.IBMDB2.getDisplayName();
+        String dbVersion = EDatabaseVersion4Drivers.IBMDB2.getVersionValue();
+        String host = "localhost";
+        String port = "50000";
+        String sid = "TESTDB3:cursorSensitivity=2;";
+        String[] otherParam = new String[] {};
+        String expectURL = "jdbc:db2://" + host + ":" + port + "/" + sid;
+        String realValue = DatabaseConnStrUtil
+                .getURLString(false, dbType, dbVersion, host, "", "", port, sid, "", "", "", "", otherParam);
+        assertEquals(expectURL, realValue);
+    }
+}

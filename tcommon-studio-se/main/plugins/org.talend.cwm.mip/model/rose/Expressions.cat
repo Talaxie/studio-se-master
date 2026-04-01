@@ -1,0 +1,1757 @@
+
+(object Petal
+    version    	43
+    _written   	"Rose 6.5.9232.10"
+    charSet    	0)
+
+(object Class_Category "Expressions"
+    is_unit    	TRUE
+    is_loaded  	TRUE
+    attributes 	(list Attribute_Set
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"xmi.namespace"
+	    value      	"CWM")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"mof.idl_prefix"
+	    value      	"org.omg.cwm.foundation")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.hasImplicitReferences"
+	    value      	"false")
+	(object Attribute
+	    tool       	"JCR"
+	    name       	"java_prefix"
+	    value      	"org.omg.java.cwm.foundation")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.clusteredImport"
+	    value      	(value Text "Core")))
+    quid       	"38207A600078"
+    documentation 	
+|The Expressions package depends on the following packages:
+|
+|    org.omg::CWM::ObjectModel::Core
+|
+|The CWM Expressions metamodel provides basic support for the definition of expression trees within the CWM. The intent of the Expressions metamodel is to provide a place for other CWM packages (such as Transformation) and CWM compliant tools to record shared expressions in a common form that can be used for interchange and lineage tracking.
+|
+|The expression concept in the CWM Foundation takes a functional view of expression trees, resulting in the ability of relatively few expression types to represent a broad range of expressions. Every function or traditional mathematical operator that appears in an expression hierarchy is represented as a FeatureNode. For example, the arithmetic plus operation “a + b” can be thought of as the function “sum(a, b).” The semantics of a particular function or operation are left to specific tool implementations and are not captured by the CWM. 
+|
+|The hierarchical nature of the CWM’s representation of expressions is achieved by the recursive nature of the OperationArgument association. This association allows the sub-hierarchies within an expression to be treated as actual parameters of their parent nodes.
+|
+|OCL Representation of Expressions Constraints
+|
+|[C-5-1] A FeatureNode that has parameters other than the"this" parameter represents a Feature that is also an Operation.
+|context FeatureNode inv:
+|if self.feature.ownerScope = #instance
+|then self.argument->size > 1 implies
+|   self.feature.oclIsKindOf(Operation)
+|else self.argument->size > 0 implies
+|   self.feature.oclIsKindOf(Operation)
+|endif
+|
+|[C-5-2] If the FeatureNode represents an instance-scope feature, the first argument is a "this" or "self" argument; that is, the object invoking the feature. The convention is enforced by checking that the type of the first argument is the same as the type of the feature.
+|context FeatureNode inv:
+|self.feature.ownerScope = #instance implies
+|self.argument->first.type.allFeatures->includes(self.feature)
+|
+|[C-5-3] If the FeatureNode represents a BehavioralFeature, the number of arguments must be equal to the number of the BehavioralFeature’s parameters, plus one for the “this” parameter if the BehavioralFeature is of instance scope.
+|context FeatureNode inv:
+|self.feature.oclIsKindOf(BehavioralFeature) implies
+|(if self.feature.ownerScope = #instance
+|   then self.argument->size =
+|      self.feature.oclAsType(BehavioralFeature).parameters->size + 1
+|   else self.argument->size =
+|      self.feature.oclAsType(BehavioralFeature).parameters->size
+|endif)
+    
+    stereotype 	"metamodel"
+    visible_categories 	(list visibility_relationship_list
+	(object Visibility_Relationship
+	    quid       	"3821C54901E0"
+	    supplier   	"Logical View::org.omg::CWM::Foundation"
+	    quidu      	"3821C43D028B")
+	(object Visibility_Relationship
+	    quid       	"3A8193F7026C"
+	    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core"
+	    quidu      	"3A6600C5031F"))
+    exportControl 	"Public"
+    logical_models 	(list unit_reference_list
+	(object Class "ExpressionNode"
+	    quid       	"376A84310237"
+	    documentation 	
+|All node types within an expression are derived from the ExpressionNode type.
+|
+|An expression is stored as a collection of instances of the subtypes of ExpressionNode arranged in a hierarchical fashion. The ExpressionNode instance at the top (or “root”) of the hierarchy represents the value of the expression and serves as a starting point for expression evaluation. Refer to the descriptions of the subtypes of ExpressionNode (ElementNode, ConstantNode, and FeatureNode) for additional information about the representation of expressions.
+|
+|One important purpose for providing storage of expressions as a general feature of the CWM is to promote sharing them between tools and to provide a means for recording lineage relationships between components within expressions. Specific details of the implementation of expression operators are left to the implementing tools.
+|
+|When ExpressionNode is used as the type of an Attribute, an instance of the Attribute can contain either an expression tree as described here or a textual representation of the expression in body and language values of in an attribute of type Expression (defined ObjectModel). The expression attribute is provided for the latter usage. To obtain CWM’s sharing and lineage tracking features for elements within an expression, the expression must be represented as an expression hierarcy.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"387E5FCA014C"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Element"
+		    quidu      	"327A5C330208"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "expression"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"0..1"))
+		    quid       	"38A0ECA10399"
+		    documentation 	"Contains a textual representation of the expression relevant for this ExpressionNode instance."
+		    type       	"Expression"
+		    exportControl 	"Public")
+		(object ClassAttribute "featureNode"
+		    quid       	"386003C903A7"
+		    documentation 	"Identifies the FeatureNode for which this ExpressionNode instance represents the value of an argument. Because arguments can themselves represent entire expression sub-trees, this reference is used to create hierarchies of expression nodes, permitting representation of entire expression trees within the CWM."
+		    stereotype 	"reference"
+		    type       	"FeatureNode"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "type"
+		    quid       	"3860038F01F1"
+		    documentation 	"Identifies the Classifier instance that represents the type of the expression at this level in the expression hierarchy. Although, formally, each node within an expression tree is capable of having a value and therefore, a data type, this reference is optional because modeling the data type of intermediate nodes in an expression tree is not always interesting, thereby reducing the effort required to create expression trees."
+		    stereotype 	"reference"
+		    type       	"Classifier"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "ConstantNode"
+	    quid       	"376A84C202B4"
+	    documentation 	"Instances of the ConstantNode class are ExpressionNodes that represent constant values within expressions. Appropriate uses of the ConstantNode class place the values of constants in the value attribute, rather than in the expression::body attribute inherited from ExpressionNode. The latter attribute is intended for a different purpose; see the description of the ExpressionNode class for details."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"376A85750072"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode"
+		    quidu      	"376A84310237"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "value"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"IDL Substitute Name"
+			    value      	"umlValue"))
+		    quid       	"376A853C01E9"
+		    documentation 	"The value of a constant in an expression tree."
+		    type       	"Any"
+		    exportControl 	"Public"))
+	    language   	"Visu")
+	(object Class "ElementNode"
+	    quid       	"376A84CD0321"
+	    documentation 	
+|An ElementNode is a node in an expression that references some ModelElement instance. This subclass of ExpressionNode allows an expression to reference any CWM model element that is not a Feature and cannot, therefore, be represented as a FeatureNode.
+|
+|Typically, use of this subclass of ExpressionNode implies that a tool attempting to evaluate the expression will be able to determine if the referenced ModelElement instance is also an instance of some interesting subclass of ModelElement that contains a value of interest in the expression.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"376A85780276"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode"
+		    quidu      	"376A84310237"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "modelElement"
+		    quid       	"3860032D02EB"
+		    documentation 	"Identifies the ModelElement instance which this ElementNode references."
+		    stereotype 	"reference"
+		    type       	"ModelElement"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Class "FeatureNode"
+	    quid       	"376A84D70341"
+	    documentation 	
+|The FeatureNode class represents ExpressionNode instances that are features (i.e., attributes or operations) of some Classifier instance within the CWM.
+|
+|A FeatureNode with a null OperationArgument association represents either a parameter-less operation or an attribute value obtained from some StructuralFeature instance.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"376A857B0266"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode"
+		    quidu      	"376A84310237"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "argument"
+		    quid       	"386003E6025E"
+		    documentation 	"Identifies the ExpressionNode instances that represent the actual arguments for this FeatureNode. By convention, the first actual argument is a reference to the object itself. If the argument reference is null, the FeatureNode is an attribute or parameter-less function or operation."
+		    stereotype 	"reference"
+		    type       	"ExpressionNode"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "feature"
+		    quid       	"386003F80201"
+		    documentation 	"Identifies the Feature (attribute or operation) which this FeatureNode instance represents."
+		    stereotype 	"reference"
+		    type       	"Feature"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Visu")
+	(object Association "ExpressionNodeClassifier"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	(value Text "public_vis")))
+	    quid       	"3820BFAA024D"
+	    documentation 	"The ExpressionNodeClassifier association identifies the type of an ExpressionNode instance."
+	    roles      	(list role_list
+		(object Role "type"
+		    quid       	"3820BFAC02AB"
+		    documentation 	"Identifies the Classifier instance that represents the type of the expression at this level in the expression hierarchy. Although, formally, each node within an expression tree is capable of having a value and therefore, a data type, this reference is optional because modeling the data type of intermediate nodes in an expression tree is not always interesting, thereby reducing the effort required to create expression trees."
+		    label      	"type"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Classifier"
+		    quidu      	"32989FB2023D"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "expressionNode"
+		    quid       	"3820BFAC02E9"
+		    documentation 	"Identifies the ExpressionNode instances for which this Classifier acts as the type."
+		    label      	"expressionNode"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode"
+		    quidu      	"376A84310237"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "NodeFeature"
+	    quid       	"3820C03902E9"
+	    documentation 	"The NodeFeature association identifies the Feature (usually, an Attribute or Operation subtype) that FeatureNode represents."
+	    roles      	(list role_list
+		(object Role "feature"
+		    quid       	"3820C03B00B7"
+		    documentation 	"Identifies the Feature (attribute or operation) which this FeatureNode instance represents."
+		    label      	"feature"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Feature"
+		    quidu      	"32989F9700FE"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "featureNode"
+		    quid       	"3820C03B00C6"
+		    documentation 	"Identifies the FeatureNode instances that use a particular Feature."
+		    label      	"featureNode"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "OperationArgument"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"rose2mof.visibility"
+		    value      	"protected_vis"))
+	    quid       	"3820C15E0153"
+	    documentation 	
+|The OperationArgument association identifies and orders the actual arguments of an Operation indicated by the FeatureNode end of the association. This association is meaningful only if the FeatureNode references, via the NodeFeature association, a Feature that is also an Operation. The association is not meaningful under other
+|circumstances.
+	    
+	    roles      	(list role_list
+		(object Role "featureNode"
+		    quid       	"3820C1610059"
+		    documentation 	"Identifies the FeatureNode for which this ExpressionNode instance represents the value of an argument. Because arguments can themselves represent entire expression sub-trees, this reference is used to create hierarchies of expression nodes, permitting representation of entire expression trees within the CWM."
+		    label      	"featureNode"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "argument"
+		    quid       	"3820C161005A"
+		    documentation 	"Identifies the ExpressionNode instances that represent the actual arguments for this FeatureNode. If the argument reference is null, the FeatureNode is an attribute or parameter-less function or operation."
+		    label      	"argument"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode"
+		    quidu      	"376A84310237"
+		    client_cardinality 	(value cardinality "*")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "ReferencedElement"
+	    quid       	"3820C1EA0088"
+	    documentation 	"The ReferencedElement association links the ElementNode instances of an expression with the ModelElement instances to which they refer."
+	    roles      	(list role_list
+		(object Role "modelElement"
+		    quid       	"3820C1EC0069"
+		    documentation 	"Identifies the ModelElement instance which this ElementNode references."
+		    label      	"modelElement"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "elementNode"
+		    quid       	"3820C1EC0134"
+		    documentation 	"Identifies the ElementNode instances that represent a particular ModelElement in expressions."
+		    label      	"elementNode"
+		    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions::ElementNode"
+		    quidu      	"376A84CD0321"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Mechanism @1
+	    logical_models 	(list unit_reference_list
+		(object Object "$UNNAMED$0"
+		    quid       	"3A766FC30185"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A76731800BA"
+			    supplier   	"Assign"
+			    quidu      	"3A76707F0027")
+			(object Link
+			    quid       	"3A7673AB00A7"
+			    supplier   	"$UNNAMED$1"
+			    quidu      	"3A766FD5014F")
+			(object Link
+			    quid       	"3A7673AE020A"
+			    supplier   	"$UNNAMED$2"
+			    quidu      	"3A7670EC02CD"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$1"
+		    quid       	"3A766FD5014F"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A7673240306"
+			    supplier   	"E"
+			    quidu      	"3A76709700A4"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "Assign"
+		    quid       	"3A76707F0027"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A767382006C"
+			    supplier   	"leftSide"
+			    quidu      	"3A76708603AD")
+			(object Link
+			    quid       	"3A7673960011"
+			    supplier   	"rightSide"
+			    quidu      	"3A7670890234"))
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Operation"
+		    quidu      	"327BB68C0398"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "leftSide"
+		    quid       	"3A76708603AD"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "rightSide"
+		    quid       	"3A7670890234"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "E"
+		    quid       	"3A76709700A4"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Core::Attribute"
+		    quidu      	"3A6F62780143"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$2"
+		    quid       	"3A7670EC02CD"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A76732C0253"
+			    supplier   	"Multiply"
+			    quidu      	"3A76715802D2")
+			(object Link
+			    quid       	"3A7673D30339"
+			    supplier   	"$UNNAMED$3"
+			    quidu      	"3A7670F80248")
+			(object Link
+			    quid       	"3A7673DF0110"
+			    supplier   	"$UNNAMED$4"
+			    quidu      	"3A7671320382"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$3"
+		    quid       	"3A7670F80248"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A767331016A"
+			    supplier   	"m"
+			    quidu      	"3A7670FF0130"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "m"
+		    quid       	"3A7670FF0130"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Core::Attribute"
+		    quidu      	"3A6F62780143"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$4"
+		    quid       	"3A7671320382"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A76733A000E"
+			    supplier   	"Power"
+			    quidu      	"3A76717C00A3")
+			(object Link
+			    quid       	"3A76740E021C"
+			    supplier   	"$UNNAMED$5"
+			    quidu      	"3A76713901FB")
+			(object Link
+			    quid       	"3A76741A0179"
+			    supplier   	"$UNNAMED$6"
+			    quidu      	"3A76713E0267"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$5"
+		    quid       	"3A76713901FB"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A76733F0084"
+			    supplier   	"c"
+			    quidu      	"3A7671A80006"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode"
+		    quidu      	"376A84D70341"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "$UNNAMED$6"
+		    quid       	"3A76713E0267"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A767440037C"
+			    supplier   	"value = 2"
+			    quidu      	"3A76714B0125"))
+		    class      	"Logical View::org.omg::CWM::Foundation::Expressions::ConstantNode"
+		    quidu      	"376A84C202B4"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "value = 2"
+		    quid       	"3A76714B0125"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Core::Integer"
+		    quidu      	"33DD6FD7021C"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "Multiply"
+		    quid       	"3A76715802D2"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A76736102EF"
+			    supplier   	"multiplicand"
+			    quidu      	"3A76715B038B")
+			(object Link
+			    quid       	"3A76736D02A7"
+			    supplier   	"multiplier"
+			    quidu      	"3A76715E00E6"))
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Operation"
+		    quidu      	"327BB68C0398"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "multiplicand"
+		    quid       	"3A76715B038B"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "multiplier"
+		    quid       	"3A76715E00E6"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "Power"
+		    quid       	"3A76717C00A3"
+		    collaborators 	(list link_list
+			(object Link
+			    quid       	"3A7673470248"
+			    supplier   	"exponent"
+			    quidu      	"3A7671900337")
+			(object Link
+			    quid       	"3A7673530277"
+			    supplier   	"base"
+			    quidu      	"3A76718E028A"))
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Operation"
+		    quidu      	"327BB68C0398"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "base"
+		    quid       	"3A76718E028A"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "exponent"
+		    quid       	"3A7671900337"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Behavioral::Parameter"
+		    quidu      	"327BBB9F02B2"
+		    persistence 	"Transient"
+		    multi      	FALSE)
+		(object Object "c"
+		    quid       	"3A7671A80006"
+		    class      	"Logical View::org.omg::CWM::ObjectModel::Core::Attribute"
+		    quidu      	"3A6F62780143"
+		    persistence 	"Transient"
+		    multi      	FALSE))))
+    logical_presentations 	(list unit_reference_list
+	(object ClassDiagram "Figure 8-5-1  Expressions metamodel"
+	    quid       	"376A82DE00C0"
+	    title      	"Figure 8-5-1  Expressions metamodel"
+	    documentation 	"Figure 8-5-1  Expressions metamodel"
+	    zoom       	95
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::Expressions::ConstantNode" @2
+		    ShowCompartmentStereotypes 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1106, 1182)
+		    label      	(object ItemLabel
+			Parent_View 	@2
+			location   	(962, 1100)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	288
+			justify    	0
+			label      	"ConstantNode")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"376A84C202B4"
+		    compartment 	(object Compartment
+			Parent_View 	@2
+			location   	(962, 1154)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	209)
+		    width      	306
+		    height     	188)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Feature" @3
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2235, 1230)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@3
+			location   	(2147, 1179)
+			nlines     	1
+			max_width  	176
+			justify    	0
+			label      	"Feature")
+		    icon_style 	"Icon"
+		    quidu      	"32989F9700FE"
+		    width      	194
+		    height     	126
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Classifier" @4
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(441, 707)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@4
+			location   	(341, 656)
+			nlines     	1
+			max_width  	200
+			justify    	0
+			label      	"Classifier")
+		    icon_style 	"Icon"
+		    quidu      	"32989FB2023D"
+		    width      	218
+		    height     	126
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::Expressions::FeatureNode" @5
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1682, 1209)
+		    label      	(object ItemLabel
+			Parent_View 	@5
+			location   	(1417, 1101)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	530
+			justify    	0
+			label      	"FeatureNode")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"376A84D70341"
+		    compartment 	(object Compartment
+			Parent_View 	@5
+			location   	(1417, 1155)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	537)
+		    width      	548
+		    height     	240)
+		(object AssociationViewNew "NodeFeature" @6
+		    location   	(2047, 1217)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3820C03902E9"
+		    roleview_list 	(list RoleViews
+			(object RoleView "feature" @7
+			    Parent_View 	@6
+			    location   	(596, 161)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C03B00B7"
+			    client     	@6
+			    supplier   	@3
+			    line_style 	3
+			    origin_attachment 	(2047, 1217)
+			    terminal_attachment 	(2138, 1217)
+			    label      	(object SegLabel @8
+				Parent_View 	@7
+				location   	(2119, 1257)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.795918
+				height     	40
+				orientation 	1))
+			(object RoleView "featureNode" @9
+			    Parent_View 	@6
+			    location   	(596, 161)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C03B00C6"
+			    client     	@6
+			    supplier   	@5
+			    line_style 	3
+			    origin_attachment 	(2047, 1217)
+			    terminal_attachment 	(1956, 1217)
+			    label      	(object SegLabel @10
+				Parent_View 	@9
+				location   	(1971, 1261)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.837209
+				height     	44
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::Expressions::ExpressionNode" @11
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1104, 703)
+		    label      	(object ItemLabel
+			Parent_View 	@11
+			location   	(847, 573)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	514
+			justify    	0
+			label      	"ExpressionNode")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"376A84310237"
+		    compartment 	(object Compartment
+			Parent_View 	@11
+			location   	(847, 633)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	510)
+		    width      	532
+		    height     	286
+		    autoResize 	TRUE)
+		(object InheritTreeView "" @12
+		    location   	(1104, 939)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@11
+		    vertices   	(list Points
+			(1104, 939)
+			(1104, 846)))
+		(object InheritView "" @13
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"376A85750072"
+		    client     	@2
+		    supplier   	@11
+		    line_style 	3
+		    origin_attachment 	(1106, 1088)
+		    terminal_attachment 	(1106, 939)
+		    drawSupplier 	@12)
+		(object AssociationViewNew "ExpressionNodeClassifier" @14
+		    location   	(694, 707)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3820BFAA024D"
+		    roleview_list 	(list RoleViews
+			(object RoleView "type" @15
+			    Parent_View 	@14
+			    location   	(-209, -5)
+			    label      	(object SegLabel @16
+				Parent_View 	@15
+				location   	(631, 664)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	108
+				justify    	0
+				label      	"type"
+				pctDist    	0.440367
+				height     	44
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820BFAC02AB"
+			    client     	@14
+			    supplier   	@4
+			    line_style 	3
+			    origin_attachment 	(694, 707)
+			    terminal_attachment 	(550, 707)
+			    label      	(object SegLabel @17
+				Parent_View 	@15
+				location   	(629, 754)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.449541
+				height     	47
+				orientation 	0))
+			(object RoleView "expressionNode" @18
+			    Parent_View 	@14
+			    location   	(-209, -5)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820BFAC02E9"
+			    client     	@14
+			    supplier   	@11
+			    line_style 	3
+			    origin_attachment 	(694, 707)
+			    terminal_attachment 	(838, 707)
+			    label      	(object SegLabel @19
+				Parent_View 	@18
+				location   	(817, 751)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.854545
+				height     	44
+				orientation 	1))))
+		(object InheritView "" @20
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"376A857B0266"
+		    client     	@5
+		    supplier   	@11
+		    line_style 	3
+		    origin_attachment 	(1678, 1089)
+		    terminal_attachment 	(1678, 939)
+		    drawSupplier 	@12)
+		(object AssociationViewNew "OperationArgument" @21
+		    location   	(1752, 701)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3820C15E0153"
+		    roleview_list 	(list RoleViews
+			(object RoleView "featureNode" @22
+			    Parent_View 	@21
+			    location   	(849, -11)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C1610059"
+			    client     	@21
+			    supplier   	@5
+			    vertices   	(list Points
+				(1752, 701)
+				(1812, 701)
+				(1812, 1089))
+			    line_style 	3
+			    origin_attachment 	(1752, 701)
+			    terminal_attachment 	(1812, 1089)
+			    label      	(object SegLabel @23
+				Parent_View 	@22
+				location   	(1888, 1048)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.910828
+				height     	76
+				orientation 	0))
+			(object RoleView "argument" @24
+			    Parent_View 	@21
+			    location   	(849, -11)
+			    label      	(object SegLabel @25
+				Parent_View 	@24
+				location   	(1477, 660)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	224
+				justify    	0
+				label      	"argument"
+				pctDist    	0.720798
+				height     	42
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C161005A"
+			    client     	@21
+			    supplier   	@11
+			    line_style 	3
+			    origin_attachment 	(1752, 701)
+			    terminal_attachment 	(1370, 701)
+			    label      	(object SegLabel @26
+				Parent_View 	@24
+				location   	(1399, 748)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.925926
+				height     	47
+				orientation 	0)
+			    label      	(object SegLabel @27
+				Parent_View 	@24
+				location   	(1513, 735)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	164
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.626781
+				height     	34
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::ModelElement" @28
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(246, 480)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@28
+			location   	(100, 429)
+			nlines     	1
+			max_width  	292
+			justify    	0
+			label      	"ModelElement")
+		    icon_style 	"Icon"
+		    fill_color 	16777215
+		    quidu      	"327A5C7301CC"
+		    width      	310
+		    height     	126
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Foundation::Expressions::ElementNode" @29
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(411, 1178)
+		    label      	(object ItemLabel
+			Parent_View 	@29
+			location   	(107, 1096)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	608
+			justify    	0
+			label      	"ElementNode")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"376A84CD0321"
+		    compartment 	(object Compartment
+			Parent_View 	@29
+			location   	(107, 1150)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	590)
+		    width      	626
+		    height     	188)
+		(object AssociationViewNew "ReferencedElement" @30
+		    location   	(242, 813)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3820C1EA0088"
+		    roleview_list 	(list RoleViews
+			(object RoleView "modelElement" @31
+			    Parent_View 	@30
+			    location   	(-37, -221)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C1EC0069"
+			    client     	@30
+			    supplier   	@28
+			    line_style 	3
+			    origin_attachment 	(242, 813)
+			    terminal_attachment 	(242, 543)
+			    label      	(object SegLabel @32
+				Parent_View 	@31
+				location   	(205, 587)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.839695
+				height     	38
+				orientation 	0))
+			(object RoleView "elementNode" @33
+			    Parent_View 	@30
+			    location   	(-37, -221)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3820C1EC0134"
+			    client     	@30
+			    supplier   	@29
+			    line_style 	3
+			    origin_attachment 	(242, 813)
+			    terminal_attachment 	(242, 1083)
+			    label      	(object SegLabel @34
+				Parent_View 	@33
+				location   	(214, 1051)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.877863
+				height     	29
+				orientation 	1))))
+		(object InheritView "" @35
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"376A85780276"
+		    client     	@29
+		    supplier   	@11
+		    line_style 	3
+		    origin_attachment 	(415, 1084)
+		    terminal_attachment 	(415, 939)
+		    drawSupplier 	@12)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Element" @36
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    ShowOperationSignature 	TRUE
+		    location   	(1089, 277)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@36
+			location   	(1000, 225)
+			nlines     	1
+			max_width  	178
+			justify    	0
+			label      	"Element")
+		    icon_style 	"Icon"
+		    quidu      	"327A5C330208"
+		    width      	196
+		    height     	128
+		    annotation 	8)
+		(object InheritView "" @37
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"387E5FCA014C"
+		    client     	@11
+		    supplier   	@36
+		    line_style 	3
+		    origin_attachment 	(1093, 560)
+		    terminal_attachment 	(1093, 341))
+		(object Label @38
+		    location   	(82, 89)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 8-5-1  Expressions metamodel")))
+	(object ObjectDiagram "Figure 8-5-2  A CWM expression tree for the formula E = mc 2 ."
+	    mechanism_ref 	@1
+	    quid       	"3A766F360377"
+	    title      	"Figure 8-5-2  A CWM expression tree for the formula E = mc 2 ."
+	    documentation 	
+|Figure 8-5-2 A CWM expression tree for the formula E = mc 2 .
+|
+|By way of example, the following instance diagram shows one representation of a CWM expression tree for the well-known Einstein equation E = mc 2 . To better understand how the equation is mapped into the expression tree, the formula can be 
+|rewritten in a functional notation as
+|
+|    Assign(E, Multiply(m, Power(c, 2))).
+|
+|This functional form of the equation is then mapped into a set of expression tree instances as shown in the figure.
+|
+|Alternatively, if sharing and lineage tracking of elements within the expression are not required, the expression could be stored using an Attribute of type ExpressionNode by assigning the string "E = mc 2 " as the Attribute’s expression::body value. For flexibility, use of the expression attribute within an expression hierarcy is allowed, but the precise semantics of such situations are not defined by CWM.
+|
+	    
+	    zoom       	100
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	-428
+	    items      	(list diagram_item_list
+		(object ObjectView "$UNNAMED$0" @39
+		    location   	(211, 268)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@39
+			location   	(78, 219)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A766FC30185"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$1" @40
+		    location   	(359, 463)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@40
+			location   	(226, 414)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A766FD5014F"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "Assign" @41
+		    location   	(1492, 247)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@41
+			location   	(1381, 196)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	222
+			justify    	0
+			label      	"Assign")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76707F0027"
+		    width      	240
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "leftSide" @42
+		    location   	(1631, 412)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@42
+			location   	(1508, 361)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	246
+			justify    	0
+			label      	"leftSide")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76708603AD"
+		    width      	264
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "rightSide" @43
+		    location   	(1648, 600)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@43
+			location   	(1509, 549)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	278
+			justify    	0
+			label      	"rightSide")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7670890234"
+		    width      	296
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "E" @44
+		    location   	(848, 465)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@44
+			location   	(755, 414)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	186
+			justify    	0
+			label      	"E")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76709700A4"
+		    width      	204
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$2" @45
+		    location   	(358, 643)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@45
+			location   	(225, 594)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7670EC02CD"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$3" @46
+		    location   	(532, 824)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@46
+			location   	(399, 775)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7670F80248"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "m" @47
+		    location   	(1029, 824)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@47
+			location   	(933, 773)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	192
+			justify    	0
+			label      	"m")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7670FF0130"
+		    width      	210
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$4" @48
+		    location   	(542, 1055)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@48
+			location   	(409, 1006)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7671320382"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$5" @49
+		    location   	(744, 1255)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@49
+			location   	(611, 1206)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76713901FB"
+		    width      	284
+		    height     	120
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "value = 2" @50
+		    location   	(1106, 1464)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@50
+			location   	(990, 1413)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	232
+			justify    	0
+			label      	"value = 2")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76714B0125"
+		    width      	250
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "Multiply" @51
+		    location   	(1255, 653)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@51
+			location   	(1142, 602)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	226
+			justify    	0
+			label      	"Multiply")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76715802D2"
+		    width      	244
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "multiplicand" @52
+		    location   	(1425, 789)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@52
+			location   	(1278, 738)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	294
+			justify    	0
+			label      	"multiplicand")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76715B038B"
+		    width      	312
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "multiplier" @53
+		    location   	(1400, 976)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@53
+			location   	(1282, 925)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	236
+			justify    	0
+			label      	"multiplier")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76715E00E6"
+		    width      	254
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "Power" @54
+		    location   	(1710, 1053)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@54
+			location   	(1600, 1002)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	220
+			justify    	0
+			label      	"Power")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76717C00A3"
+		    width      	238
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "base" @55
+		    location   	(1850, 1204)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@55
+			location   	(1741, 1153)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	218
+			justify    	0
+			label      	"base")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76718E028A"
+		    width      	236
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "exponent" @56
+		    location   	(1874, 1395)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@56
+			location   	(1741, 1344)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	266
+			justify    	0
+			label      	"exponent")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7671900337"
+		    width      	284
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	0.000000
+		    y_offset   	0.000000)
+		(object ObjectView "$UNNAMED$6" @57
+		    location   	(754, 1467)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@57
+			location   	(611, 1416)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	286
+			justify    	0
+			label      	"")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A76713E0267"
+		    width      	304
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	-0.080000
+		    y_offset   	0.110000)
+		(object Label @58
+		    location   	(506, 409)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object Label @59
+		    location   	(684, 765)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object Label @60
+		    location   	(898, 1190)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object ObjectView "c" @61
+		    location   	(1243, 1245)
+		    font       	(object Font
+			underline  	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@61
+			location   	(1150, 1194)
+			fill_color 	13434879
+			nlines     	2
+			max_width  	186
+			justify    	0
+			label      	"c")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A7671A80006"
+		    width      	204
+		    height     	126
+		    annotation 	4
+		    subobjects 	0
+		    x_offset   	-0.713580
+		    y_offset   	0.651852)
+		(object Label @62
+		    location   	(897, 1009)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object Label @63
+		    location   	(713, 587)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object Label @64
+		    location   	(700, 206)
+		    nlines     	1
+		    max_width  	231
+		    label      	"NodeFeature")
+		(object Label @65
+		    location   	(59, 531)
+		    nlines     	1
+		    max_width  	362
+		    label      	"OperationArgument")
+		(object Label @66
+		    location   	(422, 1334)
+		    nlines     	1
+		    max_width  	362
+		    label      	"OperationArgument")
+		(object Label @67
+		    location   	(238, 909)
+		    nlines     	1
+		    max_width  	362
+		    label      	"OperationArgument")
+		(object Label @68
+		    location   	(1375, 477)
+		    nlines     	1
+		    max_width  	600
+		    label      	"BehavioralFeatureParameter")
+		(object Label @69
+		    location   	(1166, 858)
+		    nlines     	1
+		    max_width  	600
+		    label      	"BehavioralFeatureParameter")
+		(object Label @70
+		    location   	(1572, 1274)
+		    nlines     	1
+		    max_width  	600
+		    label      	"BehavioralFeatureParameter")
+		(object Label @71
+		    location   	(66, 75)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 8-5-2  A CWM expression tree for the formula E = mc 2 .")
+		(object LinkView "" @72
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76731800BA"
+		    client     	@39
+		    supplier   	@41
+		    line_style 	3
+		    origin_attachment 	(353, 259)
+		    terminal_attachment 	(1372, 259))
+		(object LinkView "" @73
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673AB00A7"
+		    client     	@39
+		    supplier   	@40
+		    vertices   	(list Points
+			(151, 328)
+			(151, 459)
+			(217, 459))
+		    line_style 	3
+		    origin_attachment 	(151, 328)
+		    terminal_attachment 	(217, 459))
+		(object LinkView "" @74
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673AE020A"
+		    client     	@39
+		    supplier   	@45
+		    vertices   	(list Points
+			(151, 328)
+			(151, 650)
+			(216, 650))
+		    line_style 	3
+		    origin_attachment 	(151, 328)
+		    terminal_attachment 	(216, 650))
+		(object LinkView "" @75
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673240306"
+		    client     	@40
+		    supplier   	@44
+		    line_style 	3
+		    origin_attachment 	(501, 465)
+		    terminal_attachment 	(746, 465))
+		(object LinkView "" @76
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A767382006C"
+		    client     	@41
+		    supplier   	@42
+		    vertices   	(list Points
+			(1462, 310)
+			(1462, 412)
+			(1499, 412))
+		    line_style 	3
+		    origin_attachment 	(1462, 310)
+		    terminal_attachment 	(1499, 412))
+		(object LinkView "" @77
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673960011"
+		    client     	@41
+		    supplier   	@43
+		    vertices   	(list Points
+			(1463, 310)
+			(1463, 598)
+			(1500, 598))
+		    line_style 	3
+		    origin_attachment 	(1463, 310)
+		    terminal_attachment 	(1500, 598))
+		(object LinkView "" @78
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76732C0253"
+		    client     	@45
+		    supplier   	@51
+		    line_style 	3
+		    origin_attachment 	(500, 644)
+		    terminal_attachment 	(1133, 644))
+		(object LinkView "" @79
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673D30339"
+		    client     	@45
+		    supplier   	@46
+		    vertices   	(list Points
+			(330, 703)
+			(330, 830)
+			(390, 830))
+		    line_style 	3
+		    origin_attachment 	(330, 703)
+		    terminal_attachment 	(390, 830))
+		(object LinkView "" @80
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673DF0110"
+		    client     	@45
+		    supplier   	@48
+		    vertices   	(list Points
+			(330, 703)
+			(330, 1055)
+			(400, 1055))
+		    line_style 	3
+		    origin_attachment 	(330, 703)
+		    terminal_attachment 	(400, 1055))
+		(object LinkView "" @81
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A767331016A"
+		    client     	@46
+		    supplier   	@47
+		    line_style 	3
+		    origin_attachment 	(674, 825)
+		    terminal_attachment 	(924, 825))
+		(object LinkView "" @82
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76733A000E"
+		    client     	@48
+		    supplier   	@54
+		    line_style 	3
+		    origin_attachment 	(684, 1065)
+		    terminal_attachment 	(1591, 1065))
+		(object LinkView "" @83
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76740E021C"
+		    client     	@48
+		    supplier   	@49
+		    vertices   	(list Points
+			(542, 1115)
+			(542, 1255)
+			(602, 1255))
+		    line_style 	3
+		    origin_attachment 	(542, 1115)
+		    terminal_attachment 	(602, 1255))
+		(object LinkView "" @84
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76741A0179"
+		    client     	@48
+		    supplier   	@57
+		    vertices   	(list Points
+			(541, 1115)
+			(541, 1468)
+			(602, 1468))
+		    line_style 	3
+		    origin_attachment 	(541, 1115)
+		    terminal_attachment 	(602, 1468))
+		(object LinkView "" @85
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76733F0084"
+		    client     	@49
+		    supplier   	@61
+		    line_style 	3
+		    origin_attachment 	(886, 1261)
+		    terminal_attachment 	(1141, 1261))
+		(object LinkView "" @86
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A767440037C"
+		    client     	@57
+		    supplier   	@50
+		    line_style 	3
+		    origin_attachment 	(906, 1465)
+		    terminal_attachment 	(981, 1465))
+		(object LinkView "" @87
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76736102EF"
+		    client     	@51
+		    supplier   	@52
+		    vertices   	(list Points
+			(1234, 716)
+			(1234, 789)
+			(1269, 789))
+		    line_style 	3
+		    origin_attachment 	(1234, 716)
+		    terminal_attachment 	(1269, 789))
+		(object LinkView "" @88
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A76736D02A7"
+		    client     	@51
+		    supplier   	@53
+		    vertices   	(list Points
+			(1234, 716)
+			(1234, 976)
+			(1273, 976))
+		    line_style 	3
+		    origin_attachment 	(1234, 716)
+		    terminal_attachment 	(1273, 976))
+		(object LinkView "" @89
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673470248"
+		    client     	@54
+		    supplier   	@56
+		    vertices   	(list Points
+			(1682, 1116)
+			(1682, 1391)
+			(1732, 1391))
+		    line_style 	3
+		    origin_attachment 	(1682, 1116)
+		    terminal_attachment 	(1732, 1391))
+		(object LinkView "" @90
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A7673530277"
+		    client     	@54
+		    supplier   	@55
+		    vertices   	(list Points
+			(1681, 1116)
+			(1681, 1195)
+			(1732, 1195))
+		    line_style 	3
+		    origin_attachment 	(1681, 1116)
+		    terminal_attachment 	(1732, 1195))))))

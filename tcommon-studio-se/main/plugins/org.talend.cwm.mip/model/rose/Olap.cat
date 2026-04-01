@@ -1,0 +1,4485 @@
+
+(object Petal
+    version    	43
+    _written   	"Rose 6.5.9232.10"
+    charSet    	0)
+
+(object Class_Category "Olap"
+    is_unit    	TRUE
+    is_loaded  	TRUE
+    attributes 	(list Attribute_Set
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"xmi.namespace"
+	    value      	"CWMOLAP")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"mof.idl_prefix"
+	    value      	(value Text "org.omg.cwm.analysis"))
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.hasImplicitReferences"
+	    value      	"false")
+	(object Attribute
+	    tool       	"JCR"
+	    name       	"java_prefix"
+	    value      	"org.omg.java.cwm.analysis")
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.clusteredImport"
+	    value      	(value Text 
+|Core,
+|Expressions,
+|Transformation
+	    )))
+    quid       	"365348E80125"
+    documentation 	
+|Online Analytical Processing (OLAP) is a class of analytic application software that exposes business data in a multidimensional format. This multidimensional format usually includes the consolidation of data drawn from multiple and diverse information sources. Unlike more traditionally structured representations (e.g., the tabular format of a relational database), the multidimensional orientation is a more natural expression of the way business enterprises view their strategic data. For example, an analyst might use an OLAP application to examine total sales revenue by product and geographic region over time, or, perhaps, compare sales margins for the same fiscal periods of two consecutive years. The ultimate objective of OLAP is the efficient construction of analytical models that transform raw business data into strategic business insight.
+|
+|There are many ways to implement OLAP. Most OLAP systems are constructed using OLAP server tools that enable logical OLAP structures to be built on top of a variety of physical database systems, such as relational or native multidimensional databases.
+|
+|The following features are generally found in most OLAP systems:
+|
+|    Multidimensional representation of business data.
+|    Upward consolidation of multidimensional data in a hierarchical manner, possibly with the application of specialized processing rules.
+|    The ability to navigate a hierarchy from a consolidated value to the lower level values forming it.
+|    Support for time-series analysis; i.e., OLAP users are generally concerned with data and consolidations at specific points in time -- By date, week, quarter, etc.
+|    Support for modeling and scenario analysis -- A user should be able to apply arbitrary "what-if" analyses to a result set without affecting the stored information.
+|    Consistent response times, regardless of how queries are formulated -- This is critical for effective analysis and modeling.
+|
+|OLAP applications integrate well into the data warehousing environment, because a data warehouse provides relatively clean and stable data stores to drive the OLAP application. These data stores are usually maintained in relational tables that can be read directly by OLAP tools or loaded into OLAP servers. These relational tables are often structured in a manner that reveals the inherent dimensionality of the data (such as the ubiquitous Star and Snowflake schemas). Also, the data transformation and mapping services provided by a data warehouse can be used to supply OLAP systems with both metadata and data. Transformation-related metadata can be used to track the
+|lineage of consolidated OLAP data back to its various sources.
+|
+|The primary objectives of the CWM OLAP package are:
+|
+|    Define a metamodel of essential OLAP concepts common to most OLAP systems.
+|    Provide a facility whereby instances of the OLAP metamodel are mapped to deployment-capable structures (i.e., models of physical data resources, such as the CWM Relational and Multidimensional packages).
+|    Ensure that navigation through the logical OLAP model hierarchy and its various resource models is always performed in a uniform manner (i.e., by defining a standard usage of the CWM Transformation package as a means of implementing these mappings).
+|    Leverage services provided by other CWM packages, where appropriate (e.g., use the CWM Foundation package to supply a standard representation of expressions).
+|
+|The OLAP package depends on the following packages:
+|
+|   org.omg::CWM::ObjectModel::Core
+|   org.omg::CWM::Foundation::Expressions
+|   org.omg::CWM::Analysis::Transformation
+|
+|The major classes and associations of the OLAP metamodel are shown in Figure 14-1.  Schema is the logical container of all elements comprising an OLAP model. It is the root element of the model hierarchy and marks the entry point for navigating OLAP models.
+|
+|A Schema contains Dimensions and Cubes. A Dimension is an ordinate within a multidimensional structure and consists of a list of unique values (i.e., members) that share a common semantic meaning within the domain being modeled. Each member designates a unique position along its ordinate.
+|
+|A Cube is a collection of analytic values (i.e., measures) that share the same dimensionality. This dimensionality is specified by a set of unique Dimensions from the Schema. Each unique combination of members in the Cartesian product of the Cube’s Dimensions identifies precisely one data cell within a multidimensional structure.
+|
+|CubeDimensionAssociation relates a Cube to its defining Dimensions. Features relevant to Cube-Dimension relationships (e.g., calcHierarchy) are exposed by this class.
+|
+|A Dimension has zero or more Hierarchies. A Hierarchy is an organizational structure that describes a traversal pattern through a Dimension, based on parent/child relationships between members of a Dimension. Hierarchies are used to define both navigational and consolidation/computational paths through the Dimension (i.e., a value associated with a child member is aggregated by one or more parents). For example, a Time Dimension with a base periodicity of days might have a Hierarchy
+|specifying the consolidation of days into weeks, weeks into months, months into quarters, and quarters into years.
+|
+|A specific Hierarchy may be designated as the default Hierarchy for display purposes (e.g., a user interface that displays the Dimension as a hierarchical tree of members).  CubeDimensionAssociation can also identify a particular Hierarchy as the default Hierarchy for consolidation calculations performed on the Cube.
+|
+|MemberSelection models mechanisms capable of partitioning a Dimension’s collection of members. For example, consider a Geography Dimension with members representing cities, states, and regions. An OLAP client interested specifically in cities might define an instance of MemberSelection that extracts the city members.
+|
+|CubeRegion models a sub-unit of a Cube that is of the same dimensionality as the Cube itself. Each "dimension" of a CubeRegion is represented by a MemberSelection of the corresponding Dimension  of the Cube. Each MemberSelection may define some subset of its Dimension’s members.
+|
+|CubeRegions are used to implement Cubes. A Cube may be realized by a set of CubeRegions that map portions of the logical Cube to physical data sources. The MemberSelections defining CubeRegions can also be grouped together via MemberSelectionGroups, enabling the definition of CubeRegions with specific semantics. For example, one can specify a CubeRegion containing only the "input level" data cells of a Cube.
+|
+|A CubeRegion may own any number of CubeDeployments. CubeDeployment is a metaclass that represents an implementation strategy for a multidimensional structure. The ordering of the CubeDeployment classes may optionally be given some implementation-specific meaning (e.g., desired order of selection of several possible deployment strategies, based on optimization considerations).
+|
+|The OLAP metamodel defines two special types of Dimension: Time and Measure. A Time Dimension provides a means of representing time-series data within a multidimensional structure. The members of a Time Dimension usually define some base periodicity (e.g., days of the week). The implementation of a Time Dimension might provide support for advanced "time-intelligent" functionality, such as the ability to automatically convert between different periodicities and calendars.
+|
+|The members of a Measure Dimension describe the meaning of the analytic values stored in each data cell of a multidimensional structure. For example, an OLAP application may define Sales, Quantity and Weight as its measures. In this case, each data cell within the Cube stores three values, with each value corresponding to one of the three measures. A measure may have an associated data type. For example, Sales might be of a monetary type, Quantity an integer, and Weight a real number.
+|
+|The OLAP metamodel specifies two subclasses of Hierarchy: LevelBasedHierarchy and ValueBasedHierarchy.
+|
+|LevelBasedHierarchy describes hierarchical relationships between specific levels of a Dimension. LevelBasedHierarchy is used to model both "pure level" hierarchies (e.g., dimension-level tables) and "mixed" hierarchies (i.e., levels plus linked nodes). Dimensional levels are modeled by the Level class, a subclass of MemberSelection that partitions a Dimension’s members into disjoint subsets, each representing a distinct level.
+|
+|For example, the Geography Dimension cited earlier contains members representing cities, states, and regions, such as "Stamford", "Connecticut", and "NorthEast". It might also contain a single member called "USA" representing all regions of the United States. Therefore, the Geography Dimension could have four Levels named "City", "State", 'Region", and "ALL", respectively. Each Level specifies the subset of members belonging to it: All cities belong to the "City" Level, all states belong to the "State" Level, all regions belong to the "Region" Level, and the single "USA" member belongs to the "ALL" Level.
+|
+|When used in the definition of a consolidation path, the meaning of "level" is quite clear: Members occupying a given Level consolidate into the next higher Level (e.g., City rolls up into State, State into Region, and Region into ALL).
+|
+|LevelBasedHierarchy contains an ordered collection of HierarchyLevelAssocations that defines the natural hierarchy of the Dimension. The ordering defines the hierarchical structure in top-down fashion (i.e., the "first" HierarchyLevelAssociation in the ordered collection represents the upper-most level of the dimensional hierarchy).
+|
+|A HierarchyLevelAssociation may own any number of DimensionDeployments. DimensionDeployment is a metaclass that represents an implementation strategy for hierarchical Dimensions. The ordering of the DimensionDeployment classes may optionally be given an implementation-specific meaning (e.g., desired order of selection of several possible deployment strategies, based on optimization
+|considerations).
+|
+|A ValueBasedHierarchy defines a hierarchical ordering of members in which the concept of level has little or no significance. Instead, the topological structure of the hierarchy conveys meaning. ValueBasedHierarchies are often used to model situations where members are classified or ranked according to their distance from a common root member (e.g., an organizational chart of a corporation). In this case, each member of the hierarchy has some specific "metric" or "value" associated it with it. ValueBasedHierarchy can be used to model pure "linked node" hierarchies (e.g.,
+|asymmetric hierarchical graphs or parent-child tables). 
+|
+|As with LevelBasedHierarchy, ValueBasedHierarchy also has an ordered collection of dimensionDeployments, where the ordering semantics are left to implementations to define.
+|
+|Figure 14-3 illustrates how classes of the OLAP metamodel inherit from the CWM
+|Object Model. Two classes requiring further explanation are:
+|
+|    Measure: A subclass of Attribute that describes the meaning of values stored in the data cells of a multidimensional structure. Different OLAP models often give different interpretations to the term "measure". In a relational Star Schema, individual measures might be represented by non-key columns of a Fact table (e.g., "Sales" and "Quantity" columns). In this case, measure may be an attribute of a Cube or CubeRegion that models the Fact table. On the other hand, measures can
+|also be represented by members of a Measure Dimension. A Fact table supporting this representation has a single Measure column with column values consisting of the members "Sales" and "Quantity", and a single "value" column (i.e., an implicit data dimension) storing the corresponding measure values. A similar notion of Measure Dimension is used in modeling pure hypercube representations of
+|multidimensional servers. Thus, the concept of measure can be represented either as a Dimenson or as an Attribute, depending on the type of OLAP system being modeled.
+|
+|    Coded Level: A subclass of Level that assigns a unique encoding, or label, to each of its members. CodedLevel is not essential to the OLAP metamodel, but is provided as a helper class for certain applications that might benefit from the ability of OLAP systems to structure data hierarchically. For example, CodedLevel could be used to model systems of nomenclature or classification.
+|
+|The CWM OLAP metamodel describes logical models of OLAP systems, but does not directly specify how an OLAP system is physically deployed. Modeling the deployment of an OLAP system requires mapping instances of OLAP metaclasses to instances of other CWM metaclasses representing physical resources (e.g., mapping an OLAP Dimension to a Relational Table). This approach offers several advantages:
+|
+|    The status of the OLAP metamodel as a conceptual model is preserved by this level of indirection. When using OLAP, a client may perceive to be working directly with OLAP objects, but the actual implementation of those objects is hidden from the client. For example, a client may view a member as a value of a Dimension, but whether that member value comes from a row of a relational table, or from a cell in a multidimensional database, is usually not obvious to the client. On the other hand, if a client needs to determine how a logical OLAP structure is physically realized, the metadata describing this mapping is fully available (assuming that the implementation allows the client to drill-down through the metadata).
+|
+|    The possibility of defining mappings based on expressions means that the amount of metadata required to describe large models (e.g., Dimensions containing large collections of members) can be kept within reasonable bounds. It is generally more efficient to provide expressions that specify where large metadata sets reside, how to connect to them, and how to map their contents, rather than representing them directly as part of the metadata content.
+|
+|All of the OLAP metaclasses are potential candidates for such deployment mappings. In addition, some OLAP models may also define mappings between several OLAP metaclass instances, forming a natural hierarchy of logical objects (e.g., Dimension Attributes are mapped to Level Attributes which, in turn, are mapped to Table Columns).
+|
+|The CWM Transformation package is used as the primary means of describing these mappings. A modeler constructing an OLAP model based on CWM will generally define instances of the TransformationMap metaclass to link logical OLAP objects together, and to link those logical objects to other objects representing their physical data sources.
+|
+|StructureMap is a subclass of TransformationMap that models structure-oriented transformation mappings (i.e., member identity and hierarchical structure). This type of transformation mapping needs to be connected to the OLAP metamodel in a very specific way (according to Level and Hierarchy), so the StructureMap subclass is defined to make these associations explicit. Two specific usages of StructureMap are defined: ListOfValues, which maps attributes identifying members residing at a specific Level, or at a specific Level within a particular Hierarchy, and ImmediateParent, which maps attributes identifying the hierarchical parent(s) of the members.
+|
+|On the other hand, relatively simple TransformationMaps can be defined within any OLAP model to represent attribute-oriented transformations (e.g., mapping Dimension Attributes to Table Columns that store attribute values).
+|
+|ContentMap is a subclass of TransformationMap that models content-oriented transformaton mappings (i.e., cell data or measure values). For example, an instance of ContentMap might be used to map each of a CubeRegion’s Measures to Columns of an underlying Fact Table.
+|
+|Note that, in either case (structural mapping or content mapping), the traversal patterns used by any CWM OLAP implementation are always the same, since both deployment mappings are based on the same usage of CWM TransformationMaps. In addition to representing structural mappings, instances of TransformationMap and its subclasses are also capable of storing implementation-dependent functions or procedures that yield the instance values associated with mapped model elements. For example, a "list of values" StructureMap might store an SQL statement such as "select memberName from Product where productFamily = ’consumerElectronics’ ", as the value of its formula attribute.
+|
+|Figure 14-4 illustrates the CWM metaclasses and associations that describe deployment mappings between logical OLAP models and physical resource models. Note that it is possible to combine both Cube (content) and Dimension (structure) deployments together within the context of a single OLAP Schema (via the DeploymentGroup metaclass). Thus, an OLAP Schema can have several possible deployments that users may select based on implementation-specific considerations (e.g., physical optimizations).
+|
+|OCL Representation of OLAP Constraints
+|
+|[C-1] Ensure that the Dimensions defining a Cube are unique.
+|context Cube inv:
+|self.cubeDimensionAssociation->forAll( c1, c2 | c1 <> c2 implies
+|c1.dimension <> c2.dimension )
+|
+|[C-2] A Cube without CubeRegions cannot be mapped to a deployment structure (i.e., physical source of data).
+|context Cube inv:
+|self.cubeRegion->isEmpty implies self.isVirtual = true
+|
+|[C-3] If a calcHierarchy is defined, it must be a Hierarchy owned by the Dimension referenced by the CubeDimensionAssociation.
+|context CubeDimensionAssociation inv:
+|self.calcHierarchy->notEmpty implies self.calcHierarchy.dimension = self.dimension
+|
+|[C-4] A "fully realized" CubeRegion has no MemberSelectionGroups (and hence, no MemberSelections).
+|context CubeRegion inv:
+|self.isFullyRealized implies self.memberSelectionGroup->isEmpty
+|
+|[C-5] A CubeRegion defined by MemberSelections must have, for each Dimension of its owning Cube, a corresponding MemberSelection within each of its
+|MemberSelectionGroups.
+|context CubeRegion inv:
+|self.memberSelectionGroup->notEmpty implies
+|self.cube.cubeDimensionAssociation->forAll( d |
+|self.memberSelectionGroup->forAll( g |
+|g.memberSelection->exists( m | m.dimension = d.dimension ) ) )
+|
+|[C-6] A CubeRegion defined by MemberSelections must have, within each MemberSelectionGroup, a MemberSelection corresponding to each Dimension of its
+|owning Cube.
+|context CubeRegion inv:
+|self.memberSelectionGroup->notEmpty implies
+|self.memberSelectionGroup->forAll( g |
+|g.memberSelection->forAll( m |
+|self.cube.cubeDimensionAssociation->exists( d | d.dimension = m.dimension ) ) )
+|
+|[C-7] A Dimension may be a Time Dimension, a Measure Dimension, or neither, but never both types at the same time.
+|context Dimension inv:
+|not ( self.isTime and self.isMeasure )
+|
+|[C-8] The default display Hierarchy (if defined) must be one of the Hierarchies owned by the Dimension.
+|context Dimension inv:
+|self.displayDefault->notEmpty implies self.hierarchy->includes( self.displayDefault )
+|
+|[C-9] An instance of DimensionDeployment must be referenced exclusively by either a HierarchyLevelAssociation or a ValueBasedHierarchy.
+|context DimensionDeployment inv:
+|self.hierarchyLevelAssociation->isEmpty xor self.valueBasedHierarchy->isEmpty
+|
+|[C-10] Within a DimensionDeployment, an "immediate parent" StructureMap must always have an associated and distinct "list of values" StructureMap.
+|context DimensionDeployment inv:
+|self.immediateParent->notEmpty implies
+|( self.listOfValues->notEmpty and self.listOfValues <> self.immediateParent )
+|
+|[C-11] A StructureMap referenced as a "list of values" StructureMap must not reside outside of the DimensionDeployment’s collection of StructureMaps.
+|context DimensionDeployment inv:
+|self.listOfValues->notEmpty implies self.structureMap->includes( self.listOfValues )
+|
+|[C-12] A StructureMap referenced as an "immediate parent" StructureMap must not reside outside of the DimensionDeployment’s collection of StructureMaps.
+|context DimensionDeployment inv:
+|self.immediateParent->notEmpty implies
+|self.structureMap->includes( self.immediateParent )
+|
+|[C-13] The currentLevel of each HierarchyLevelAssociation must refer to a Level owned by the Dimension of the LevelBasedHierarchy containing the HierarchyLevelAssociation.
+|context LevelBasedHierarchy inv:
+|self.hierarchyLevelAssociation->notEmpty implies
+|self.hierarchyLevelAssociation->forAll( h |
+|self.dimension.memberSelection
+|->select( oclType = Olap::Level )->includes( h.currentLevel ) )
+|
+|[C-14] No two HierarchyLevelAssociations may designate the same Level instance as their "current level".
+|context LevelBasedHierarchy inv:
+|self.hierarchyLevelAssociation->forAll( h1, h2 | h1 <> h2 implies
+|h1.currentLevel <> h2.currentLevel )
+    
+    stereotype 	"metamodel"
+    visible_categories 	(list visibility_relationship_list
+	(object Visibility_Relationship
+	    quid       	"3794BDAB0213"
+	    supplier   	"Logical View::org.omg::CWM::Foundation"
+	    quidu      	"3821C43D028B")
+	(object Visibility_Relationship
+	    quid       	"3A81953C022E"
+	    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core"
+	    quidu      	"3A6600C5031F")
+	(object Visibility_Relationship
+	    quid       	"3A8195390088"
+	    supplier   	"Logical View::org.omg::CWM::Foundation::Expressions"
+	    quidu      	"38207A600078")
+	(object Visibility_Relationship
+	    quid       	"37BECDAE0359"
+	    supplier   	"Logical View::org.omg::CWM::Analysis::Transformation"
+	    quidu      	"35E1B0B40042"))
+    exportControl 	"Public"
+    logical_models 	(list unit_reference_list
+	(object Class "ContentMap"
+	    quid       	"3A5680DA0284"
+	    documentation 	"ContentMap is a subclass of TransformationMap that maps CubeRegion attributes to their physical data sources."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A5681050326"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Transformation::TransformationMap"
+		    quidu      	"374322890098"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "cubeDeployment"
+		    quid       	"3A5683CC021A"
+		    documentation 	"References the CubeDeployment owning a ContentMap."
+		    stereotype 	"reference"
+		    type       	"CubeDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "Cube"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Final"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Static"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateDefaultConstructor"
+		    value      	TRUE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateFinalizer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateStaticInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateInstanceInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"ConstructorIs"
+		    value      	("Ctor_Set" 62)))
+	    quid       	"36F832E20069"
+	    documentation 	
+|A Cube is a collection of analytic values (i.e., measures) that share the same dimensionality.  This dimensionality is specified by a set of unique Dimensions from the Schema.  Each unique combination of members in the Cartesian product of the Cube’s Dimensions identifies precisely one data cell within a multidimensional structure.
+|
+|Synonyms: Multidimensional Array, Hypercube, Hypervolume.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A4BF1F6031E"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isVirtual"
+		    quid       	"378B3FA90038"
+		    documentation 	"If true, then this Cube is a Virtual Cube (i.e., it has no physical realization)."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "cubeDimensionAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"3858E5780008"
+		    documentation 	"References the collection of CubeDimensionAssociations owned by a Cube."
+		    stereotype 	"reference"
+		    type       	"CubeDimensionAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeRegion"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"3858E75E01D4"
+		    documentation 	"References the collection of CubeRegions owned by a Cube."
+		    stereotype 	"reference"
+		    type       	"CubeRegion"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "schema"
+		    quid       	"3A6B4871001E"
+		    documentation 	"References the Schema owning a Cube."
+		    stereotype 	"reference"
+		    type       	"Schema"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Java")
+	(object Class "CubeDeployment"
+	    quid       	"3A5634210088"
+	    documentation 	"CubeDeployment represents a particular implementation strategy for the data portions of an OLAP model.  It does so by organizing a collection of ContentMaps, which in turn define a mapping to an implementation model."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A563D650302"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "cubeRegion"
+		    quid       	"3A5638A60177"
+		    documentation 	"References the CubeRegion owning a CubeDeployment."
+		    stereotype 	"reference"
+		    type       	"CubeRegion"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "deploymentGroup"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A563AF6008B"
+		    documentation 	"References the DeploymentGroups referencing a CubeDeployment."
+		    stereotype 	"reference"
+		    type       	"DeploymentGroup"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "contentMap"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A56835E0316"
+		    documentation 	"References the collection of ContentMaps owned by a CubeDeployment."
+		    stereotype 	"reference"
+		    type       	"ContentMap"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "CubeDimensionAssociation"
+	    quid       	"378B40100236"
+	    documentation 	
+|CubeDimensionAssociation relates a Cube to the Dimensions that define it.  Features relevant to Cube-Dimension relationships (e.g., calcHierarchy) are exposed by this class.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"387F188101D3"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dimension"
+		    attributes 	(list Attribute_Set)
+		    quid       	"38592DFB021B"
+		    documentation 	"References the Dimension associated with a CubeDimAssoc."
+		    stereotype 	"reference"
+		    type       	"Dimension"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cube"
+		    quid       	"38592DF40044"
+		    documentation 	"References the Cube owning a CubeDimAssoc."
+		    stereotype 	"reference"
+		    type       	"Cube"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "calcHierarchy"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"0..1"))
+		    quid       	"3859421302FF"
+		    documentation 	"References the default calculation Hierarchy of the Dimension associated with a CubeDimAssoc."
+		    stereotype 	"reference"
+		    type       	"Hierarchy"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "CubeRegion"
+	    quid       	"3A4E8CEF02F0"
+	    documentation 	
+|CubeRegion models a sub-unit of a Cube of the same dimensionality as the Cube itself, with each Dimension optionally subsetted in its list of members.
+|
+|When mapped to its physical source, a CubeRegion contains data cells identified by the member combinations of the Cartesian product of the CubeRegion's associated Dimensions and Measures.
+|
+|The relative ordering of CubeDeployment classes optionally implies a desired order of selection of the CubeDeployments, based on implementation-specific considerations (e.g., optimized access of aggregate data).
+|
+|Synonyms: Sub-Cube, Partition, Slice, Region, Area.
+|
+|Misc. notes:
+|1.  A CubeRegion is not a Cube, and a Cube is not a CubeRegion.
+|2.  A Cube has a Measure and CubeRegion may have a corresponding measure (Measures are Attributes).
+|3.  A Cube may or may not have CubeRegions.
+|4.  If a Cube does not have a CubeRegion, then it's not physically mapped (it's virtual).  All physical mapping is based on the CubeRegion , not the Cube.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A4E8D280216"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isReadOnly"
+		    quid       	"3A4E8DB00366"
+		    documentation 	"If true, then the CubeRegion content is read-only (i.e., may not be written or updated through the CubeRegion -- e.g., a CubeRegion implemented via an SQL view may not permit updates to the underlying base table)."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isFullyRealized"
+		    quid       	"3A4E8DA3024F"
+		    documentation 	"If true, then this CubeRegion has a direct physical realization and is not bound by any MemberSelections."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "memberSelectionGroup"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A4E8DED00D9"
+		    documentation 	"References the collection of MemberSelectionGroups associated with a CubeRegion."
+		    stereotype 	"reference"
+		    type       	"MemberSelectionGroup"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cube"
+		    quid       	"3A4E8DF30163"
+		    documentation 	"References the Cube owning a CubeRegion."
+		    stereotype 	"reference"
+		    type       	"Cube"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A56372A03D3"
+		    documentation 	"References the collection of CubeDeployments associated with a CubeRegion."
+		    stereotype 	"reference"
+		    type       	"CubeDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "DeploymentGroup"
+	    quid       	"3A5639C9022D"
+	    documentation 	
+|DeploymentGroup represents a logical grouping of model elements defining a single, complete deployment of an instance of Olap Schema (i.e., CubeDeployments and DimensionDeployments).
+|
+|The usage of DeploymentGroup is as follows: A user may specify a particular DeploymentGroup as the session-wide, default deployment for all metadata queries performed throughout the session. Alternatively, for queries involving some particular deployed object (e.g., a Cube or a Dimension), the user may be asked to choose from a list of deployments.  This either becomes the default deployment for the remainder of the session, or the user may continue to be asked to specify a deployment for each  subsequent query against deployed objects.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A563D180289"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Package"
+		    quidu      	"327A5D19033E"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "schema"
+		    quid       	"3A5A1765016A"
+		    documentation 	"References the Schema owning a DeploymentGroup."
+		    stereotype 	"reference"
+		    type       	"Schema"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A563BC30306"
+		    documentation 	"References the collection of CubeDeployments referenced by a DeploymentGroup."
+		    stereotype 	"reference"
+		    type       	"CubeDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "dimensionDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A563BCB02AE"
+		    documentation 	"References the collection of DimensionDeployments referenced by a DeploymentGroup."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "Dimension"
+	    quid       	"3777B4770109"
+	    documentation 	
+|A Dimension is an ordinate within a multidimensional structure, and consists of an ordered list of values (i.e.,  members) that share a common semantic meaning within the domain being modeled.  Each member designates a unique position along its ordinate.
+|
+|Typical Dimensions are: Time, Product, Geography, Scenario (e.g., actual, budget, forecast), Measure (e.g., sales, quantity).
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37850152029D"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "isTime"
+		    quid       	"378EB9EC017C"
+		    documentation 	"If true, then this Dimension is a Time Dimension (i.e., its members collectively represent a time series)."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "isMeasure"
+		    quid       	"37781F670265"
+		    documentation 	"If true, then this Dimension is a Measure Dimension (i.e., its members represent Measures)."
+		    type       	"Boolean"
+		    exportControl 	"Public")
+		(object ClassAttribute "hierarchy"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"3859403D0259"
+		    documentation 	"References the collection of Hierarchies owned by a Dimension."
+		    stereotype 	"reference"
+		    type       	"Hierarchy"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "memberSelection"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385940440154"
+		    documentation 	"References the collection of MemberSelections owned by a Dimension."
+		    stereotype 	"reference"
+		    type       	"MemberSelection"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeDimensionAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385E551503B2"
+		    documentation 	"References the collection of CubeDimensionAssociations referencing this Dimension."
+		    stereotype 	"reference"
+		    type       	"CubeDimensionAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "displayDefault"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"0..1"))
+		    quid       	"385943F2002A"
+		    documentation 	"References the default display Hierarchy of a Dimension."
+		    stereotype 	"reference"
+		    type       	"Hierarchy"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "schema"
+		    quid       	"3A6B48AB0248"
+		    documentation 	"References the Schema owning a Dimension."
+		    stereotype 	"reference"
+		    type       	"Schema"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "DimensionDeployment"
+	    quid       	"3A48C4C001EC"
+	    documentation 	
+|DimensionDeployment represents a particular implementation strategy for the dimensional/hierarchical portions of an OLAP model.  It does so by organizing a collection of StructureMaps, which in turn define a mapping to an implementation model.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A4BF56D0180"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "hierarchyLevelAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A48E6DF000C"
+		    documentation 	"References the HierarchyLevelAssociation owning this Deployment."
+		    stereotype 	"reference"
+		    type       	"HierarchyLevelAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "valueBasedHierarchy"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A48E6E80380"
+		    documentation 	"References the ValueBasedHierarchy owning this Deployment."
+		    stereotype 	"reference"
+		    type       	"ValueBasedHierarchy"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "structureMap"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A48E96802B8"
+		    documentation 	"References the collection of StructureMaps owned by an instance of Deployment."
+		    stereotype 	"reference"
+		    type       	"StructureMap"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "listOfValues"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A48EB61015A"
+		    documentation 	
+|References the "list of values" StructureMap (if defined) owned by a Deployment.
+		    
+		    stereotype 	"reference"
+		    type       	"StructureMap"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "immediateParent"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A48EBDD0131"
+		    documentation 	
+|References the "immediate parent" StructureMap (if defined) owned by a Deployment.
+		    
+		    stereotype 	"reference"
+		    type       	"StructureMap"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "deploymentGroup"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A563B420289"
+		    documentation 	"References the DeploymentGroups referencing a DimensionDeployment."
+		    stereotype 	"reference"
+		    type       	"DeploymentGroup"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "Hierarchy"
+	    quid       	"36F91D39014A"
+	    documentation 	"A Hierarchy is an organizational structure that imposes a parent/child ordering on the members of the Dimension, usually to define either a navigational or consolidation/computational paths through the Dimension (i.e., a value associated with a child member is aggregated into one or more parents). "
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"378501E40225"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dimension"
+		    quid       	"385E5B61032B"
+		    documentation 	"References the Dimension owning a Hierarchy."
+		    stereotype 	"reference"
+		    type       	"Dimension"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeDimensionAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"387F1D6A01FC"
+		    documentation 	"References the collection of CubeDimensionAssociations designating this Hierarchy as their default calculation Hierarchy."
+		    stereotype 	"reference"
+		    type       	"CubeDimensionAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "defaultedDimension"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A6B59B302CE"
+		    documentation 	
+|References the Dimension for which this Hierarchy is the "display default" Herarchy.
+		    
+		    stereotype 	"reference"
+		    type       	"Dimension"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Java"
+	    abstract   	TRUE)
+	(object Class "HierarchyLevelAssociation"
+	    quid       	"37488CDF03BA"
+	    documentation 	
+|HierarchyLevelAssociation is a class that orders Levels within a LevelBasedHierarchy, and provides a means of mapping Level/Hierarchy-oriented  Dimension attributes to one or more physical deployments.
+|
+|The relative ordering of DimensionDeployment classes optionally implies a desired order of selection of DimensionDeployments, based on implementation-specific considerations (e.g., optimized access of aggregate data).
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37B8DF33035F"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "levelBasedHierarchy"
+		    quid       	"385E673D0379"
+		    documentation 	"References the LevelBasedHierarchy owning this HierarchyLevelAssoc."
+		    stereotype 	"reference"
+		    type       	"LevelBasedHierarchy"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "currentLevel"
+		    quid       	"38724903031F"
+		    documentation 	
+|References the "currentLevel" Level associated with this HierarchyLevelAssoc.
+		    
+		    stereotype 	"reference"
+		    type       	"Level"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "dimensionDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385E6E9D0399"
+		    documentation 	"References the collection of DimensionDeployments owned by a HierarchyLevelAssoc."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "LevelBasedHierarchy"
+	    quid       	"37488B69027C"
+	    documentation 	
+|A LevelBasedHierarchy is a hierarchy that describes relationships between specific levels of a Dimension. LevelBasedHierarchy can be used to model to "pure level" hierarchies (e.g., dimension-level tables) and "mixed" hierarchies (i.e., levels + linked nodes).
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3793EE24037F"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Hierarchy"
+		    quidu      	"36F91D39014A"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "hierarchyLevelAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385E66E8010A"
+		    documentation 	"References the collection of HierarchyLevelAssociations owned by a LevelBasedHierarchy."
+		    stereotype 	"reference"
+		    type       	"HierarchyLevelAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "MemberSelectionGroup"
+	    quid       	"3846924F008C"
+	    documentation 	"MemberSelectionGroup enables the grouping together of semantically-related MemberSelections."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"38725585015C"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "memberSelection"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"1..*"))
+		    quid       	"385E40B6037E"
+		    documentation 	"References the collection of MemberSelections associated with a MemberSelGrp."
+		    stereotype 	"reference"
+		    type       	"MemberSelection"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "cubeRegion"
+		    quid       	"385E59C00012"
+		    documentation 	"References the CubeRegion owning a MemberSelGrp."
+		    stereotype 	"reference"
+		    type       	"CubeRegion"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "MemberSelection"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Final"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Static"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateDefaultConstructor"
+		    value      	TRUE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateFinalizer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateStaticInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateInstanceInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"ConstructorIs"
+		    value      	("Ctor_Set" 62)))
+	    quid       	"36F91E2C00D9"
+	    documentation 	"MemberSelection represents an arbitrary subset of the members of a Dimension."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A71D2440203"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dimension"
+		    quid       	"385E5836028C"
+		    documentation 	"References the Dimension owning a MemberSelection."
+		    stereotype 	"reference"
+		    type       	"Dimension"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "memberSelectionGroup"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385E584F0129"
+		    documentation 	"References the collection of MemberSelectionGroups associated with a MemberSelection."
+		    stereotype 	"reference"
+		    type       	"MemberSelectionGroup"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Java")
+	(object Class "Schema"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Final"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"Static"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateDefaultConstructor"
+		    value      	TRUE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateFinalizer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateStaticInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"GenerateInstanceInitializer"
+		    value      	FALSE)
+		(object Attribute
+		    tool       	"Java"
+		    name       	"ConstructorIs"
+		    value      	("Ctor_Set" 62)))
+	    quid       	"36F832D2039C"
+	    documentation 	"Schema contains all elements comprising an OLAP model.  A Schema may also contain any number of DeploymentGroups, representing the various physical deployments of the logical Schema."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A4BF1C400FF"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Package"
+		    quidu      	"327A5D19033E"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "cube"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A5A17DA03DF"
+		    documentation 	"References the collection of Cubes owned by a Schema."
+		    stereotype 	"reference"
+		    type       	"Cube"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "dimension"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A5A18BA011A"
+		    documentation 	"References the collection of Dimensions owned by a Schema."
+		    stereotype 	"reference"
+		    type       	"Dimension"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "deploymentGroup"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A5A19000193"
+		    documentation 	"References the collection of DeploymentGroups owned by a Schema."
+		    stereotype 	"reference"
+		    type       	"DeploymentGroup"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Java")
+	(object Class "ValueBasedHierarchy"
+	    quid       	"374992C8031C"
+	    documentation 	
+|ValueBasedHierarchy is a subclass of Hierarchy that ranks Dimension members according to their relative distance from the root.  Each member of a ValueBasedHierarchy has a specific "metric" or "value" associated with it.
+|ValueBasedHierarchy is used to model pure "linked node" hierarchies (e.g., parent-child tables).
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3793EE27029D"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Hierarchy"
+		    quidu      	"36F91D39014A"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dimensionDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "*")))
+		    quid       	"3A48E62E0069"
+		    documentation 	"References the collection of DimensionDeployments owned by a ValueBasedHierarchy."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "Level"
+	    quid       	"37488DB702D4"
+	    documentation 	"Level is a subclass of MemberSelection that assigns each member of a Dimension to a specific hierarchical level within the Dimension."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"378C0EEE0279"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::MemberSelection"
+		    quidu      	"36F91E2C00D9"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "hierarchyLevelAssociation"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	"*"))
+		    quid       	"385E64F60077"
+		    documentation 	
+|References the collection of HierarchyLevelAssociations referencing this Level as "current level".
+		    
+		    stereotype 	"reference"
+		    type       	"HierarchyLevelAssociation"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Class "CodedLevel"
+	    quid       	"37A8A21000D4"
+	    documentation 	"CodedLevel is a subclass of Level that assigns a unique encoding, or label, to each of its Dimension members."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"37A8A71F0133"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Level"
+		    quidu      	"37488DB702D4"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "encoding"
+		    quid       	"37A8A28A00C5"
+		    documentation 	"Encoding is an expression that generates a unique encoding, or label, for each member of a CodedLevel."
+		    type       	"ExpressionNode"
+		    exportControl 	"Public"))
+	    language   	"Seca")
+	(object Class "Measure"
+	    quid       	"382ADE680343"
+	    documentation 	"Measure is a subclass of Attribute representing Dimension Measures (e.g., Sales, Quantity, Weight).  Synonym: Variable."
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"387F1864011D"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Attribute"
+		    quidu      	"3A6F62780143"))
+	    language   	"Seca")
+	(object Class "StructureMap"
+	    quid       	"374CB0810199"
+	    documentation 	
+|StructureMap is a subclass of TransformationMap that maps Dimension attributes to their physical data sources.
+|
+|(Note: Multiple StructureMaps may be grouped together into single, cohesive unit via TransformationTask.)
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3845B98900A6"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Transformation::TransformationMap"
+		    quidu      	"374322890098"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "dimensionDeployment"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A48EC7A01A4"
+		    documentation 	"References the instance of DimensionDeployment owning this StructureMap."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "dimensionDeploymentLV"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A6B363F017D"
+		    documentation 	"References the DimensionDeployment for which this StructureMap evaluates to a list of member values for the Dimension."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "dimensionDeploymentIP"
+		    attributes 	(list Attribute_Set
+			(object Attribute
+			    tool       	"MOF"
+			    name       	"rose2mof.multiplicity"
+			    value      	(value Text "0..1")))
+		    quid       	"3A6B36500037"
+		    documentation 	"References the DimensionDeployment for which this StructureMap evaluates to a list of immediate parents of the member values for the Dimension."
+		    stereotype 	"reference"
+		    type       	"DimensionDeployment"
+		    exportControl 	"Public"
+		    derived    	TRUE))
+	    language   	"Seca")
+	(object Association "LevelBasedHierarchyOwnsHierarchyLevelAssociations"
+	    attributes 	(list Attribute_Set)
+	    quid       	"37488D06008B"
+	    documentation 	"A LevelBasedHierarchy generally owns one or more HierarchyLevelAssociations."
+	    roles      	(list role_list
+		(object Role "levelBasedHierarchy"
+		    quid       	"37488D0602D0"
+		    documentation 	"The LevelBasedHierarchy owning HierarchyLevelAssocs."
+		    label      	"levelBasedHierarchy"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::LevelBasedHierarchy"
+		    quidu      	"37488B69027C"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "hierarchyLevelAssociation"
+		    quid       	"37488D0602D1"
+		    documentation 	"HierarchyLevelAssocs owned by the LevelBasedHierarchy."
+		    label      	"hierarchyLevelAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::HierarchyLevelAssociation"
+		    quidu      	"37488CDF03BA"
+		    client_cardinality 	(value cardinality "n")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "HierarchyLevelAssocsReferenceLevel"
+	    attributes 	(list Attribute_Set)
+	    quid       	"37488F140168"
+	    documentation 	"Each HierarchyLevelAssoc references precisely one Level as its current level."
+	    roles      	(list role_list
+		(object Role "currentLevel"
+		    quid       	"37488F180037"
+		    documentation 	"The Level designated by a HierarchyLevelAssoc as its current level."
+		    label      	"currentLevel"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Level"
+		    quidu      	"37488DB702D4"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "hierarchyLevelAssociation"
+		    quid       	"37488F180041"
+		    documentation 	"The HierarchyLevelAssocs designating this Level as their current level."
+		    label      	"hierarchyLevelAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::HierarchyLevelAssociation"
+		    quidu      	"37488CDF03BA"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DimensionOwnsMemberSelections"
+	    attributes 	(list Attribute_Set)
+	    quid       	"377D39B30221"
+	    documentation 	"A Dimension may own any number of MemberSelections."
+	    roles      	(list role_list
+		(object Role "dimension"
+		    quid       	"377D39B60153"
+		    documentation 	"The Dimension owning MemberSelections."
+		    label      	"dimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "memberSelection"
+		    quid       	"377D39B6015D"
+		    documentation 	"MemberSelections owned by the Dimension."
+		    label      	"memberSelection"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::MemberSelection"
+		    quidu      	"36F91E2C00D9"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "CubeOwnsCubeDimensionAssociations"
+	    attributes 	(list Attribute_Set)
+	    quid       	"378B40D00305"
+	    documentation 	"The dimensionality of a Cube is defined by a collection of unique Dimensions.  Each Dimension is represented by an instance of CubeDimensionAssociation."
+	    roles      	(list role_list
+		(object Role "cube"
+		    quid       	"378B40D10248"
+		    documentation 	"The Cube owning CubeDimAssocs."
+		    label      	"cube"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Cube"
+		    quidu      	"36F832E20069"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "cubeDimensionAssociation"
+		    quid       	"378B40D102A2"
+		    documentation 	"CubeDimAssocs owned by the Cube."
+		    label      	"cubeDimensionAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDimensionAssociation"
+		    quidu      	"378B40100236"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "CubeDimensionAssociationsReferenceDimension"
+	    attributes 	(list Attribute_Set)
+	    quid       	"378B40D802A2"
+	    documentation 	"Each CubeDimenjsionAssociation references a single Dimension."
+	    roles      	(list role_list
+		(object Role "dimension"
+		    quid       	"378B40D9019F"
+		    documentation 	"The Dimension referenced by CubeDimAssocs."
+		    label      	"dimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cubeDimensionAssociation"
+		    quid       	"378B40D901E5"
+		    documentation 	"CubeDimAssocs referencing the Dimension."
+		    label      	"cubeDimensionAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDimensionAssociation"
+		    quidu      	"378B40100236"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DimensionOwnsHierarchies"
+	    attributes 	(list Attribute_Set)
+	    quid       	"378EBB1601E8"
+	    documentation 	"A Dimension may own several Hierarchies."
+	    roles      	(list role_list
+		(object Role "dimension"
+		    quid       	"378EBB170118"
+		    documentation 	"The Dimension owning Hierarchies."
+		    label      	"dimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)
+		(object Role "hierarchy"
+		    quid       	"378EBB17015E"
+		    documentation 	"Hierarchies owned by the Dimension."
+		    label      	"hierarchy"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Hierarchy"
+		    quidu      	"36F91D39014A"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DimensionHasDefaultHierarchy"
+	    attributes 	(list Attribute_Set)
+	    quid       	"378EBB2802CB"
+	    documentation 	"A Dimension may designate a default Hierarchy for display purposes."
+	    roles      	(list role_list
+		(object Role "displayDefault"
+		    quid       	"378EBB2B010C"
+		    documentation 	"The Hierarchy designated by the Dimension as its default Hierarchy for display purposes."
+		    label      	"displayDefault"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Hierarchy"
+		    quidu      	"36F91D39014A"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "defaultedDimension"
+		    quid       	"378EBB2B013E"
+		    documentation 	"The Dimension designating the Hierarchy as its default Hierarchy for display purposes."
+		    label      	"defaultedDimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "CubeDimensionAssociationsReferenceCalcHierarchy"
+	    attributes 	(list Attribute_Set)
+	    quid       	"37A791DE0002"
+	    documentation 	"A CubeDimensionAssociation may designate a default Hierarchy for calculation purposes."
+	    roles      	(list role_list
+		(object Role "calcHierarchy"
+		    quid       	"37A791DE0201"
+		    documentation 	"The Hierarchy designated by a CubeDimAssoc as the default Hierarchy to be used in consolidation calculations performed on the Cube."
+		    label      	"calcHierarchy"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Hierarchy"
+		    quidu      	"36F91D39014A"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cubeDimensionAssociation"
+		    quid       	"37A791DE021F"
+		    documentation 	"CubeDimAssocs designating the default Hierarchy to be used in consolidation calculations performed on the Cube."
+		    label      	"cubeDimensionAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDimensionAssociation"
+		    quidu      	"378B40100236"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "MemberSelectionGroupReferencesMemberSelections"
+	    attributes 	(list Attribute_Set)
+	    quid       	"37BE29730219"
+	    documentation 	"A MemberSelectionGroup references at least one unique MemberSelection."
+	    roles      	(list role_list
+		(object Role "memberSelection"
+		    quid       	"37BE29740058"
+		    documentation 	"MemberSelections referenced by MemberSelGrps."
+		    label      	"memberSelection"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::MemberSelection"
+		    quidu      	"36F91E2C00D9"
+		    client_cardinality 	(value cardinality "1..n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "memberSelectionGroup"
+		    quid       	"37BE2974009E"
+		    documentation 	"MemberSelGrps referencing MemberSelections."
+		    label      	"memberSelectionGroup"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::MemberSelectionGroup"
+		    quidu      	"3846924F008C"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "SchemaOwnsCubes"
+	    quid       	"3A48C16F0379"
+	    documentation 	"A Schema may own any number of Cubes."
+	    roles      	(list role_list
+		(object Role "cube"
+		    quid       	"3A48C17001E0"
+		    documentation 	"The Cubes owned by a Schema."
+		    label      	"cube"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Cube"
+		    quidu      	"36F832E20069"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "schema"
+		    quid       	"3A48C1700212"
+		    documentation 	"The Schema owning a Cube."
+		    label      	"schema"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Schema"
+		    quidu      	"36F832D2039C"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "SchemaOwnsDimensions"
+	    quid       	"3A48C172019D"
+	    documentation 	"A Schema may own any number of Dimensions."
+	    roles      	(list role_list
+		(object Role "dimension"
+		    quid       	"3A48C1730018"
+		    documentation 	"The Dimension owned by a Schema."
+		    label      	"dimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "schema"
+		    quid       	"3A48C1730068"
+		    documentation 	"The Schema owning a Dimension"
+		    label      	"schema"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Schema"
+		    quidu      	"36F832D2039C"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "HierarchyLevelAssociationOwnsDimensionDeployments"
+	    quid       	"3A48E4C400FE"
+	    documentation 	
+|A HierarchyLevelAssociation may own any number of DimensionDeployments.
+|
+|The ordering of the DimensionDeployment classes may optionally be assigned an implementation-specific meaning (e.g., desired order of selection of multiple deployments, based on optimized access to aggregated data).
+	    
+	    roles      	(list role_list
+		(object Role "dimensionDeployment"
+		    quid       	"3A48E4C50019"
+		    documentation 	"The DimensionDepolyments owned by a HierarchyLevelAssociation."
+		    label      	"dimensionDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "n")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "hierarchyLevelAssociation"
+		    quid       	"3A48E4C50037"
+		    documentation 	"The HierarchyLevelAssociation owning DimensionDeployments."
+		    label      	"hierarchyLevelAssociation"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::HierarchyLevelAssociation"
+		    quidu      	"37488CDF03BA"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "ValueBasedHierarchyOwnsDimensionDeployments"
+	    quid       	"3A48E4CC03D1"
+	    documentation 	
+|A ValueBasedHierarchy may own any number of DimensionDeployments.
+|
+|The ordering of the DimensionDeployment classes may optionally be assigned an implementation-specific meaning (e.g., desired order of selection of multiple deployments, based on optimized access to aggregated data).
+	    
+	    roles      	(list role_list
+		(object Role "dimensionDeployment"
+		    quid       	"3A48E4CD02A6"
+		    documentation 	"The DimensionDepolyments owned by a ValueBasedHierarchy."
+		    label      	"dimensionDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "n")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "valueBasedHierarchy"
+		    quid       	"3A48E4CD02C4"
+		    documentation 	"The ValueBasedHierarchy owning a DimensionDeployment."
+		    label      	"valueBasedHierarchy"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::ValueBasedHierarchy"
+		    quidu      	"374992C8031C"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "DimensionDeploymentOwnsStructureMaps"
+	    quid       	"3A48E8D3015F"
+	    documentation 	"An instance of DimensionDeployment may own zero or more StructureMaps."
+	    roles      	(list role_list
+		(object Role "structureMap"
+		    quid       	"3A48E8D40157"
+		    documentation 	"The StructureMaps owned by a DimensionDeployment."
+		    label      	"structureMap"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::StructureMap"
+		    quidu      	"374CB0810199"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dimensionDeployment"
+		    quid       	"3A48E8D40175"
+		    documentation 	"The DimensionDeployment owning a StructureMap."
+		    label      	"dimensionDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "DimensionDeploymentHasListOfValues"
+	    quid       	"3A48E9FE0073"
+	    documentation 	
+|An instance of DimensionDeployment may reference zero or one StructureMaps as its "list of values" StructureMap.
+	    
+	    roles      	(list role_list
+		(object Role "listOfValues"
+		    quid       	"3A48E9FE024A"
+		    documentation 	
+|The StructureMap referenced by a DimensionDeployment as its "list of values" StructureMap.
+		    
+		    label      	"listOfValues"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::StructureMap"
+		    quidu      	"374CB0810199"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dimensionDeploymentLV"
+		    quid       	"3A48E9FE0272"
+		    documentation 	
+|The DimensionDeployment referencing a "list of values" StructureMap.
+		    
+		    label      	"dimensionDeploymentLV"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DimensionDeploymentHasImmediateParent"
+	    quid       	"3A48EA07021B"
+	    documentation 	
+|An instance of DimensionDeployment may reference zero or one StructureMaps as its "immediate parent" StructureMap.
+	    
+	    roles      	(list role_list
+		(object Role "immediateParent"
+		    quid       	"3A48EA08003C"
+		    documentation 	
+|The StructureMap referenced by a DimensionDeployment as its "immediate parent".
+		    
+		    label      	"immediateParent"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::StructureMap"
+		    quidu      	"374CB0810199"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "dimensionDeploymentIP"
+		    quid       	"3A48EA08006E"
+		    documentation 	
+|The DimensionDeployment referencing an "immedate parent" StructureMap.
+		    
+		    label      	"dimensionDeploymentIP"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "CubeOwnsCubeRegions"
+	    quid       	"3A4E8EAF0039"
+	    documentation 	"A Cube may own any number of CubeRegions."
+	    roles      	(list role_list
+		(object Role "cubeRegion"
+		    quid       	"3A4E8EAF02D8"
+		    documentation 	"CubeRegions owned by the Cube."
+		    label      	"cubeRegion"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeRegion"
+		    quidu      	"3A4E8CEF02F0"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cube"
+		    quid       	"3A4E8EAF0300"
+		    documentation 	"The Cube owning CubeRegions."
+		    label      	"cube"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Cube"
+		    quidu      	"36F832E20069"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "CubeRegionOwnsMemberSelectionGroups"
+	    quid       	"3A4E8EB50114"
+	    documentation 	"A CubeRegion may own any number of MemberSelectionGroups."
+	    roles      	(list role_list
+		(object Role "memberSelectionGroup"
+		    quid       	"3A4E8EB502CC"
+		    documentation 	"MemberSelectionGroups owned by the CubeRegion."
+		    label      	"memberSelectionGroup"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::MemberSelectionGroup"
+		    quidu      	"3846924F008C"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cubeRegion"
+		    quid       	"3A4E8EB502F4"
+		    documentation 	"The CubeRegion owning MemberSelectionGroups."
+		    label      	"cubeRegion"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeRegion"
+		    quidu      	"3A4E8CEF02F0"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "CubeRegionOwnsCubeDeployments"
+	    quid       	"3A5636B100A4"
+	    documentation 	"A CubeRegion may own any number of CubeDeployments."
+	    roles      	(list role_list
+		(object Role "cubeDeployment"
+		    quid       	"3A5636B1025D"
+		    documentation 	"The CubeDeployments owned by a CubeRegion."
+		    label      	"cubeDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment"
+		    quidu      	"3A5634210088"
+		    client_cardinality 	(value cardinality "n")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cubeRegion"
+		    quid       	"3A5636B10271"
+		    documentation 	"The CubeRegion owning a CubeDeployment."
+		    label      	"cubeRegion"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeRegion"
+		    quidu      	"3A4E8CEF02F0"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "SchemaOwnsDeploymentGroups"
+	    quid       	"3A5639D9033E"
+	    documentation 	"A Schema may own any number of DeploymentGroups."
+	    roles      	(list role_list
+		(object Role "deploymentGroup"
+		    quid       	"3A5639DA00BE"
+		    documentation 	"The DeploymentGroups owned by a Schema."
+		    label      	"deploymentGroup"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DeploymentGroup"
+		    quidu      	"3A5639C9022D"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "schema"
+		    quid       	"3A5639DA00C9"
+		    documentation 	"The Schema owning a DeploymentGroup."
+		    label      	"schema"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Schema"
+		    quidu      	"36F832D2039C"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "DeploymentGroupReferencesCubeDeployments"
+	    quid       	"3A563A2D03AD"
+	    documentation 	"A DeploymentGroup may reference any number of CubeDeployments."
+	    roles      	(list role_list
+		(object Role "cubeDeployment"
+		    quid       	"3A563A2E01A6"
+		    documentation 	"The CubeDeployments referenced by a DeploymentGroup."
+		    label      	"cubeDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment"
+		    quidu      	"3A5634210088"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "deploymentGroup"
+		    quid       	"3A563A2E01CE"
+		    documentation 	"The DeploymentGroups referencing a CubeDeployment."
+		    label      	"deploymentGroup"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DeploymentGroup"
+		    quidu      	"3A5639C9022D"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "DeploymentGroupReferencesDimensionDeployments"
+	    quid       	"3A563A300130"
+	    documentation 	"A DeploymentGroup may reference any number of DimensionDeployments."
+	    roles      	(list role_list
+		(object Role "dimensionDeployment"
+		    quid       	"3A563A3002F3"
+		    documentation 	"The DimensionDeployments referenced by a DeploymentGroup."
+		    label      	"dimensionDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment"
+		    quidu      	"3A48C4C001EC"
+		    client_cardinality 	(value cardinality "n")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "deploymentGroup"
+		    quid       	"3A563A300343"
+		    documentation 	"The DeploymentGroups referencing a DimensionDeployment."
+		    label      	"deploymentGroup"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::DeploymentGroup"
+		    quidu      	"3A5639C9022D"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "CubeDeploymentOwnsContentMaps"
+	    quid       	"3A568180028D"
+	    documentation 	"A CubeDeployment owns any number of ContentMaps."
+	    roles      	(list role_list
+		(object Role "contentMap"
+		    quid       	"3A5681810144"
+		    documentation 	"The collection of ContentMaps owned by a CubeDeployment."
+		    label      	"contentMap"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::ContentMap"
+		    quidu      	"3A5680DA0284"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "cubeDeployment"
+		    quid       	"3A5681810162"
+		    documentation 	"The CubeDeployment owning a ContentMap."
+		    label      	"cubeDeployment"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment"
+		    quidu      	"3A5634210088"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE)))
+	(object Association "$UNNAMED$0"
+	    quid       	"3A76F3AD01CF"
+	    documentation 	"Added to improve diagram clarity.  See Analysis::Olap::DimensionOwnsMemberSelections for details."
+	    roles      	(list role_list
+		(object Role "/memberSelection"
+		    quid       	"3A76F3AD0387"
+		    label      	"/memberSelection"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Level"
+		    quidu      	"37488DB702D4"
+		    client_cardinality 	(value cardinality "n")
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "/dimension"
+		    quid       	"3A76F3AE000D"
+		    label      	"/dimension"
+		    supplier   	"Logical View::org.omg::CWM::Analysis::Olap::Dimension"
+		    quidu      	"3777B4770109"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE))
+	    derived    	TRUE))
+    logical_presentations 	(list unit_reference_list
+	(object ClassDiagram "Figure 14-1 OLAP Metamodel: Major Classes and Associations"
+	    quid       	"37841A2E038D"
+	    title      	"Figure 14-1 OLAP Metamodel: Major Classes and Associations"
+	    zoom       	100
+	    max_height 	32767
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment" @1
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1656, 2385)
+		    label      	(object ItemLabel
+			Parent_View 	@1
+			location   	(1306, 2254)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	700
+			justify    	0
+			label      	"CubeDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5634210088"
+		    compartment 	(object Compartment
+			Parent_View 	@1
+			location   	(1306, 2315)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	715)
+		    width      	718
+		    height     	286)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeRegion" @2
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(531, 1950)
+		    label      	(object ItemLabel
+			Parent_View 	@2
+			location   	(93, 1769)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	876
+			justify    	0
+			label      	"CubeRegion")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A4E8CEF02F0"
+		    compartment 	(object Compartment
+			Parent_View 	@2
+			location   	(93, 1830)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	6
+			max_width  	921)
+		    width      	894
+		    height     	387)
+		(object AssociationViewNew "CubeRegionOwnsCubeDeployments" @3
+		    location   	(796, 2368)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A5636B100A4"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cubeDeployment" @4
+			    Parent_View 	@3
+			    location   	(234, 596)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5636B1025D"
+			    client     	@3
+			    supplier   	@1
+			    line_style 	3
+			    origin_attachment 	(796, 2368)
+			    terminal_attachment 	(1297, 2368)
+			    label      	(object SegLabel @5
+				Parent_View 	@4
+				location   	(1235, 2332)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.877404
+				height     	37
+				orientation 	0)
+			    label      	(object SegLabel @6
+				Parent_View 	@4
+				location   	(1176, 2421)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	159
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.759615
+				height     	53
+				orientation 	1))
+			(object RoleView "cubeRegion" @7
+			    Parent_View 	@3
+			    location   	(234, 596)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5636B10271"
+			    client     	@3
+			    supplier   	@2
+			    vertices   	(list Points
+				(796, 2368)
+				(519, 2368)
+				(519, 2143))
+			    line_style 	3
+			    origin_attachment 	(796, 2368)
+			    terminal_attachment 	(519, 2143)
+			    label      	(object SegLabel @8
+				Parent_View 	@7
+				location   	(565, 2205)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.877404
+				height     	46
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Cube" @9
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(587, 884)
+		    label      	(object ItemLabel
+			Parent_View 	@9
+			location   	(78, 715)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1019
+			justify    	0
+			label      	"Cube")
+		    icon_style 	"None"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F832E20069"
+		    compartment 	(object Compartment
+			Parent_View 	@9
+			location   	(78, 776)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	5
+			max_width  	1059)
+		    width      	1037
+		    height     	363)
+		(object AssociationViewNew "CubeOwnsCubeRegions" @10
+		    location   	(525, 1410)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A4E8EAF0039"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cubeRegion" @11
+			    Parent_View 	@10
+			    location   	(-37, 699)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A4E8EAF02D8"
+			    client     	@10
+			    supplier   	@2
+			    line_style 	3
+			    origin_attachment 	(525, 1410)
+			    terminal_attachment 	(525, 1756)
+			    label      	(object SegLabel @12
+				Parent_View 	@11
+				location   	(579, 1721)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "cube" @13
+			    Parent_View 	@10
+			    location   	(-37, 699)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A4E8EAF0300"
+			    client     	@10
+			    supplier   	@9
+			    line_style 	3
+			    origin_attachment 	(525, 1410)
+			    terminal_attachment 	(525, 1065)
+			    label      	(object SegLabel @14
+				Parent_View 	@13
+				location   	(579, 1100)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::MemberSelectionGroup" @15
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1655, 1954)
+		    label      	(object ItemLabel
+			Parent_View 	@15
+			location   	(1307, 1848)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	696
+			justify    	0
+			label      	"MemberSelectionGroup")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3846924F008C"
+		    compartment 	(object Compartment
+			Parent_View 	@15
+			location   	(1307, 1909)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	703)
+		    width      	714
+		    height     	236)
+		(object AssociationViewNew "CubeRegionOwnsMemberSelectionGroups" @16
+		    location   	(1138, 1943)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A4E8EB50114"
+		    roleview_list 	(list RoleViews
+			(object RoleView "memberSelectionGroup" @17
+			    Parent_View 	@16
+			    location   	(576, 215)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A4E8EB502CC"
+			    client     	@16
+			    supplier   	@15
+			    line_style 	3
+			    origin_attachment 	(1138, 1943)
+			    terminal_attachment 	(1298, 1943)
+			    label      	(object SegLabel @18
+				Parent_View 	@17
+				location   	(1259, 1996)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.763359
+				height     	53
+				orientation 	1))
+			(object RoleView "cubeRegion" @19
+			    Parent_View 	@16
+			    location   	(576, 215)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A4E8EB502F4"
+			    client     	@16
+			    supplier   	@2
+			    line_style 	3
+			    origin_attachment 	(1138, 1943)
+			    terminal_attachment 	(978, 1943)
+			    label      	(object SegLabel @20
+				Parent_View 	@19
+				location   	(1037, 1993)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.640212
+				height     	50
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Hierarchy" @21
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1734, 1531)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@21
+			location   	(1225, 1403)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1019
+			justify    	0
+			label      	"Hierarchy")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F91D39014A"
+		    compartment 	(object Compartment
+			Parent_View 	@21
+			location   	(1225, 1464)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	1059)
+		    width      	1037
+		    height     	281)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeDimensionAssociation" @22
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1619, 894)
+		    label      	(object ItemLabel
+			Parent_View 	@22
+			location   	(1353, 760)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	532
+			justify    	0
+			label      	"CubeDimensionAssociation")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"378B40100236"
+		    compartment 	(object Compartment
+			Parent_View 	@22
+			location   	(1353, 821)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	490)
+		    width      	550
+		    height     	293)
+		(object AssociationViewNew "CubeDimensionAssociationsReferenceCalcHierarchy" @23
+		    location   	(1675, 1215)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37A791DE0002"
+		    roleview_list 	(list RoleViews
+			(object RoleView "calcHierarchy" @24
+			    Parent_View 	@23
+			    location   	(397, 505)
+			    label      	(object SegLabel @25
+				Parent_View 	@24
+				location   	(1566, 1278)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	276
+				justify    	0
+				label      	"calcHierarchy"
+				pctDist    	0.233252
+				height     	120
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37A791DE0201"
+			    client     	@23
+			    supplier   	@21
+			    line_style 	0
+			    label      	(object SegLabel @26
+				Parent_View 	@24
+				location   	(1657, 1343)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.685432
+				height     	42
+				orientation 	1))
+			(object RoleView "cubeDimensionAssociation" @27
+			    Parent_View 	@23
+			    location   	(397, 505)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37A791DE021F"
+			    client     	@23
+			    supplier   	@22
+			    line_style 	0
+			    label      	(object SegLabel @28
+				Parent_View 	@27
+				location   	(1605, 1068)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	70
+				justify    	0
+				label      	"*"
+				pctDist    	0.882158
+				height     	45
+				orientation 	0))))
+		(object AssociationViewNew "CubeOwnsCubeDimensionAssociations" @29
+		    location   	(1224, 875)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378B40D00305"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cubeDimensionAssociation" @30
+			    Parent_View 	@29
+			    location   	(868, -142)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378B40D102A2"
+			    client     	@29
+			    supplier   	@22
+			    line_style 	3
+			    origin_attachment 	(1224, 875)
+			    terminal_attachment 	(1344, 875)
+			    label      	(object SegLabel @31
+				Parent_View 	@30
+				location   	(1315, 920)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	64
+				justify    	0
+				label      	"*"
+				pctDist    	0.768519
+				height     	45
+				orientation 	1))
+			(object RoleView "cube" @32
+			    Parent_View 	@29
+			    location   	(868, -142)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378B40D10248"
+			    client     	@29
+			    supplier   	@9
+			    line_style 	3
+			    origin_attachment 	(1224, 875)
+			    terminal_attachment 	(1105, 875)
+			    label      	(object SegLabel @33
+				Parent_View 	@32
+				location   	(1152, 918)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.608889
+				height     	43
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Schema" @34
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1618, 387)
+		    label      	(object ItemLabel
+			Parent_View 	@34
+			location   	(1264, 256)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	708
+			justify    	0
+			label      	"Schema")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F832D2039C"
+		    compartment 	(object Compartment
+			Parent_View 	@34
+			location   	(1264, 317)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	715)
+		    width      	726
+		    height     	286)
+		(object AssociationViewNew "SchemaOwnsCubes" @35
+		    location   	(716, 355)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48C16F0379"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cube" @36
+			    Parent_View 	@35
+			    location   	(-784, 107)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48C17001E0"
+			    client     	@35
+			    supplier   	@9
+			    vertices   	(list Points
+				(716, 355)
+				(525, 355)
+				(525, 703))
+			    line_style 	3
+			    origin_attachment 	(716, 355)
+			    terminal_attachment 	(525, 703)
+			    label      	(object SegLabel @37
+				Parent_View 	@36
+				location   	(579, 649)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "schema" @38
+			    Parent_View 	@35
+			    location   	(-784, 107)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48C1700212"
+			    client     	@35
+			    supplier   	@34
+			    line_style 	3
+			    origin_attachment 	(716, 355)
+			    terminal_attachment 	(1255, 355)
+			    label      	(object SegLabel @39
+				Parent_View 	@38
+				location   	(1201, 409)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::MemberSelection" @40
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2794, 1956)
+		    label      	(object ItemLabel
+			Parent_View 	@40
+			location   	(2275, 1849)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1038
+			justify    	0
+			label      	"MemberSelection")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F91E2C00D9"
+		    compartment 	(object Compartment
+			Parent_View 	@40
+			location   	(2275, 1910)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	921)
+		    width      	1056
+		    height     	238)
+		(object AssociationViewNew "MemberSelectionGroupReferencesMemberSelections" @41
+		    location   	(2139, 1954)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37BE29730219"
+		    roleview_list 	(list RoleViews
+			(object RoleView "memberSelectionGroup" @42
+			    Parent_View 	@41
+			    location   	(-608, 76)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37BE2974009E"
+			    client     	@41
+			    supplier   	@15
+			    line_style 	3
+			    origin_attachment 	(2139, 1954)
+			    terminal_attachment 	(2012, 1954)
+			    label      	(object SegLabel @43
+				Parent_View 	@42
+				location   	(2037, 2006)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.809524
+				height     	52
+				orientation 	0))
+			(object RoleView "memberSelection" @44
+			    Parent_View 	@41
+			    location   	(-608, 76)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37BE29740058"
+			    client     	@41
+			    supplier   	@40
+			    line_style 	3
+			    origin_attachment 	(2139, 1954)
+			    terminal_attachment 	(2266, 1954)
+			    label      	(object SegLabel @45
+				Parent_View 	@44
+				location   	(2229, 2005)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1..*"
+				pctDist    	0.707692
+				height     	51
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Dimension" @46
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2659, 887)
+		    label      	(object ItemLabel
+			Parent_View 	@46
+			location   	(2156, 659)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1007
+			justify    	0
+			label      	"Dimension")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3777B4770109"
+		    compartment 	(object Compartment
+			Parent_View 	@46
+			location   	(2156, 720)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	8
+			max_width  	1059)
+		    width      	1025
+		    height     	481)
+		(object AssociationViewNew "DimensionOwnsHierarchies" @47
+		    location   	(2628, 1487)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378EBB1601E8"
+		    roleview_list 	(list RoleViews
+			(object RoleView "hierarchy" @48
+			    Parent_View 	@47
+			    location   	(436, 777)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB17015E"
+			    client     	@47
+			    supplier   	@21
+			    vertices   	(list Points
+				(2628, 1487)
+				(2628, 1547)
+				(2252, 1547))
+			    line_style 	3
+			    origin_attachment 	(2628, 1487)
+			    terminal_attachment 	(2252, 1547)
+			    label      	(object SegLabel @49
+				Parent_View 	@48
+				location   	(2330, 1581)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	64
+				justify    	0
+				label      	"*"
+				pctDist    	0.824324
+				height     	34
+				orientation 	0))
+			(object RoleView "dimension" @50
+			    Parent_View 	@47
+			    location   	(436, 777)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB170118"
+			    client     	@47
+			    supplier   	@46
+			    line_style 	3
+			    origin_attachment 	(2628, 1487)
+			    terminal_attachment 	(2628, 1127)
+			    label      	(object SegLabel @51
+				Parent_View 	@50
+				location   	(2672, 1196)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.811767
+				height     	44
+				orientation 	1))))
+		(object AssociationViewNew "DimensionHasDefaultHierarchy" @52
+		    location   	(2123, 1258)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378EBB2802CB"
+		    roleview_list 	(list RoleViews
+			(object RoleView "defaultedDimension" @53
+			    Parent_View 	@52
+			    location   	(623, 199)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB2B013E"
+			    client     	@52
+			    supplier   	@46
+			    line_style 	0
+			    label      	(object SegLabel @54
+				Parent_View 	@53
+				location   	(2314, 1179)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.888363
+				height     	44
+				orientation 	1))
+			(object RoleView "displayDefault" @55
+			    Parent_View 	@52
+			    location   	(623, 199)
+			    label      	(object SegLabel @56
+				Parent_View 	@55
+				location   	(2104, 1287)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	252
+				justify    	0
+				label      	"displayDefault"
+				pctDist    	0.143309
+				height     	13
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB2B010C"
+			    client     	@52
+			    supplier   	@21
+			    line_style 	0
+			    label      	(object SegLabel @57
+				Parent_View 	@55
+				location   	(2069, 1354)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.439269
+				height     	48
+				orientation 	0))))
+		(object AssociationViewNew "CubeDimensionAssociationsReferenceDimension" @58
+		    location   	(2020, 890)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378B40D802A2"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cubeDimensionAssociation" @59
+			    Parent_View 	@58
+			    location   	(-67, -294)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378B40D901E5"
+			    client     	@58
+			    supplier   	@22
+			    line_style 	0
+			    label      	(object SegLabel @60
+				Parent_View 	@59
+				location   	(1926, 944)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	70
+				justify    	0
+				label      	"*"
+				pctDist    	0.744939
+				height     	53
+				orientation 	0))
+			(object RoleView "dimension" @61
+			    Parent_View 	@58
+			    location   	(-67, -294)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378B40D9019F"
+			    client     	@58
+			    supplier   	@46
+			    line_style 	0
+			    label      	(object SegLabel @62
+				Parent_View 	@61
+				location   	(2116, 935)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.765957
+				height     	46
+				orientation 	1))))
+		(object AssociationViewNew "SchemaOwnsDimensions" @63
+		    location   	(2476, 356)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48C172019D"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimension" @64
+			    Parent_View 	@63
+			    location   	(976, 108)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48C1730018"
+			    client     	@63
+			    supplier   	@46
+			    vertices   	(list Points
+				(2476, 356)
+				(2681, 356)
+				(2681, 647))
+			    line_style 	3
+			    origin_attachment 	(2476, 356)
+			    terminal_attachment 	(2681, 647)
+			    label      	(object SegLabel @65
+				Parent_View 	@64
+				location   	(2735, 597)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "schema" @66
+			    Parent_View 	@63
+			    location   	(976, 108)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48C1730068"
+			    client     	@63
+			    supplier   	@34
+			    line_style 	3
+			    origin_attachment 	(2476, 356)
+			    terminal_attachment 	(1981, 356)
+			    label      	(object SegLabel @67
+				Parent_View 	@66
+				location   	(2031, 410)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))))
+		(object AssociationViewNew "DimensionOwnsMemberSelections" @68
+		    location   	(2853, 1481)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"377D39B30221"
+		    roleview_list 	(list RoleViews
+			(object RoleView "memberSelection" @69
+			    Parent_View 	@68
+			    location   	(375, 772)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"377D39B6015D"
+			    client     	@68
+			    supplier   	@40
+			    line_style 	3
+			    origin_attachment 	(2853, 1481)
+			    terminal_attachment 	(2853, 1836)
+			    label      	(object SegLabel @70
+				Parent_View 	@69
+				location   	(2907, 1800)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "dimension" @71
+			    Parent_View 	@68
+			    location   	(375, 772)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"377D39B60153"
+			    client     	@68
+			    supplier   	@46
+			    line_style 	3
+			    origin_attachment 	(2853, 1481)
+			    terminal_attachment 	(2853, 1127)
+			    label      	(object SegLabel @72
+				Parent_View 	@71
+				location   	(2907, 1162)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1))))
+		(object Label @73
+		    location   	(78, 81)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 14-1 OLAP Metamodel: Major Classes and Associations")))
+	(object ClassDiagram "Figure 14-2 OLAP Metamodel: Dimension and Hierarchy"
+	    quid       	"378422AC02D4"
+	    title      	"Figure 14-2 OLAP Metamodel: Dimension and Hierarchy"
+	    zoom       	100
+	    max_height 	32767
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::ValueBasedHierarchy" @74
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2251, 1515)
+		    label      	(object ItemLabel
+			Parent_View 	@74
+			location   	(1823, 1433)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	857
+			justify    	0
+			label      	"ValueBasedHierarchy")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"374992C8031C"
+		    compartment 	(object Compartment
+			Parent_View 	@74
+			location   	(1823, 1491)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	878)
+		    width      	875
+		    height     	188)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::LevelBasedHierarchy" @75
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1073, 1515)
+		    label      	(object ItemLabel
+			Parent_View 	@75
+			location   	(588, 1433)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	970
+			justify    	0
+			label      	"LevelBasedHierarchy")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37488B69027C"
+		    compartment 	(object Compartment
+			Parent_View 	@75
+			location   	(588, 1491)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	1015)
+		    width      	988
+		    height     	188)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment" @76
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2272, 2018)
+		    label      	(object ItemLabel
+			Parent_View 	@76
+			location   	(1791, 1818)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	963
+			justify    	0
+			label      	"DimensionDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A48C4C001EC"
+		    compartment 	(object Compartment
+			Parent_View 	@76
+			location   	(1791, 1876)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	7
+			max_width  	1015)
+		    width      	981
+		    height     	425)
+		(object AssociationViewNew "ValueBasedHierarchyOwnsDimensionDeployments" @77
+		    location   	(2241, 1706)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48E4CC03D1"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeployment" @78
+			    Parent_View 	@77
+			    location   	(24, 284)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E4CD02A6"
+			    client     	@77
+			    supplier   	@76
+			    line_style 	3
+			    origin_attachment 	(2241, 1706)
+			    terminal_attachment 	(2241, 1805)
+			    label      	(object SegLabel @79
+				Parent_View 	@78
+				location   	(2295, 1795)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0)
+			    label      	(object SegLabel @80
+				Parent_View 	@78
+				location   	(2397, 1754)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	159
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.481203
+				height     	156
+				orientation 	0))
+			(object RoleView "valueBasedHierarchy" @81
+			    Parent_View 	@77
+			    location   	(24, 284)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E4CD02C4"
+			    client     	@77
+			    supplier   	@74
+			    line_style 	3
+			    origin_attachment 	(2241, 1706)
+			    terminal_attachment 	(2241, 1608)
+			    label      	(object SegLabel @82
+				Parent_View 	@81
+				location   	(2308, 1636)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.712821
+				height     	67
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::HierarchyLevelAssociation" @83
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1006, 1997)
+		    label      	(object ItemLabel
+			Parent_View 	@83
+			location   	(584, 1850)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	845
+			justify    	0
+			label      	"HierarchyLevelAssociation")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37488CDF03BA"
+		    compartment 	(object Compartment
+			Parent_View 	@83
+			location   	(584, 1908)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	878)
+		    width      	863
+		    height     	318)
+		(object AssociationViewNew "LevelBasedHierarchyOwnsHierarchyLevelAssociations" @84
+		    location   	(991, 1722)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37488D06008B"
+		    roleview_list 	(list RoleViews
+			(object RoleView "hierarchyLevelAssociation" @85
+			    Parent_View 	@84
+			    location   	(-280, 183)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37488D0602D1"
+			    client     	@84
+			    supplier   	@83
+			    line_style 	3
+			    origin_attachment 	(991, 1722)
+			    terminal_attachment 	(991, 1837)
+			    label      	(object SegLabel @86
+				Parent_View 	@85
+				location   	(1047, 1811)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	64
+				justify    	0
+				label      	"*"
+				pctDist    	0.785276
+				height     	56
+				orientation 	0)
+			    label      	(object SegLabel @87
+				Parent_View 	@85
+				location   	(1203, 1785)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	159
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.546012
+				height     	212
+				orientation 	0))
+			(object RoleView "levelBasedHierarchy" @88
+			    Parent_View 	@84
+			    location   	(-280, 183)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37488D0602D0"
+			    client     	@84
+			    supplier   	@75
+			    line_style 	3
+			    origin_attachment 	(991, 1722)
+			    terminal_attachment 	(991, 1608)
+			    label      	(object SegLabel @89
+				Parent_View 	@88
+				location   	(1044, 1632)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.796178
+				height     	53
+				orientation 	1))))
+		(object AssociationViewNew "HierarchyLevelAssociationOwnsDimensionDeployments" @90
+		    location   	(1609, 1978)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48E4C400FE"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeployment" @91
+			    Parent_View 	@90
+			    location   	(625, -18)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E4C50019"
+			    client     	@90
+			    supplier   	@76
+			    line_style 	3
+			    origin_attachment 	(1609, 1978)
+			    terminal_attachment 	(1782, 1978)
+			    label      	(object SegLabel @92
+				Parent_View 	@91
+				location   	(1765, 2032)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1)
+			    label      	(object SegLabel @93
+				Parent_View 	@91
+				location   	(1689, 2069)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	159
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.462428
+				height     	91
+				orientation 	1))
+			(object RoleView "hierarchyLevelAssociation" @94
+			    Parent_View 	@90
+			    location   	(625, -18)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E4C50037"
+			    client     	@90
+			    supplier   	@83
+			    line_style 	3
+			    origin_attachment 	(1609, 1978)
+			    terminal_attachment 	(1437, 1978)
+			    label      	(object SegLabel @95
+				Parent_View 	@94
+				location   	(1493, 2021)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.675516
+				height     	43
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Hierarchy" @96
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1684, 991)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@96
+			location   	(1168, 856)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1032
+			justify    	0
+			label      	"Hierarchy")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F91D39014A"
+		    compartment 	(object Compartment
+			Parent_View 	@96
+			location   	(1168, 914)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	1059)
+		    width      	1050
+		    height     	294)
+		(object InheritTreeView "" @97
+		    location   	(1681, 1288)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@96
+		    vertices   	(list Points
+			(1681, 1288)
+			(1681, 1138)))
+		(object InheritView "" @98
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3793EE24037F"
+		    client     	@75
+		    supplier   	@96
+		    line_style 	3
+		    origin_attachment 	(988, 1421)
+		    terminal_attachment 	(988, 1288)
+		    drawSupplier 	@97)
+		(object InheritView "" @99
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3793EE27029D"
+		    client     	@74
+		    supplier   	@96
+		    line_style 	3
+		    origin_attachment 	(2232, 1421)
+		    terminal_attachment 	(2232, 1288)
+		    drawSupplier 	@97)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Level" @100
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(540, 918)
+		    label      	(object ItemLabel
+			Parent_View 	@100
+			location   	(56, 837)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	969
+			justify    	0
+			label      	"Level")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37488DB702D4"
+		    compartment 	(object Compartment
+			Parent_View 	@100
+			location   	(56, 895)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	1015)
+		    width      	987
+		    height     	187)
+		(object AssociationViewNew "HierarchyLevelAssocsReferenceLevel" @101
+		    location   	(450, 1580)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37488F140168"
+		    roleview_list 	(list RoleViews
+			(object RoleView "hierarchyLevelAssociation" @102
+			    Parent_View 	@101
+			    location   	(-147, 380)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37488F180041"
+			    client     	@101
+			    supplier   	@83
+			    vertices   	(list Points
+				(450, 1580)
+				(450, 2024)
+				(575, 2024))
+			    line_style 	3
+			    origin_attachment 	(450, 1580)
+			    terminal_attachment 	(575, 2024)
+			    label      	(object SegLabel @103
+				Parent_View 	@102
+				location   	(485, 1991)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	70
+				justify    	0
+				label      	"*"
+				pctDist    	0.843750
+				height     	34
+				orientation 	0))
+			(object RoleView "currentLevel" @104
+			    Parent_View 	@101
+			    location   	(-147, 380)
+			    label      	(object SegLabel @105
+				Parent_View 	@104
+				location   	(315, 1048)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	216
+				justify    	0
+				label      	"currentLevel"
+				pctDist    	0.934974
+				height     	135
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"37488F180037"
+			    client     	@101
+			    supplier   	@100
+			    line_style 	3
+			    origin_attachment 	(450, 1580)
+			    terminal_attachment 	(450, 1011)
+			    label      	(object SegLabel @106
+				Parent_View 	@104
+				location   	(477, 1071)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.894198
+				height     	27
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Dimension" @107
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1306, 425)
+		    label      	(object ItemLabel
+			Parent_View 	@107
+			location   	(784, 193)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1045
+			justify    	0
+			label      	"Dimension")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3777B4770109"
+		    compartment 	(object Compartment
+			Parent_View 	@107
+			location   	(784, 251)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	8
+			max_width  	1059)
+		    width      	1063
+		    height     	488)
+		(object AssociationViewNew "DimensionOwnsHierarchies" @108
+		    location   	(1563, 755)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378EBB1601E8"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimension" @109
+			    Parent_View 	@108
+			    location   	(42, 42)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB170118"
+			    client     	@108
+			    supplier   	@107
+			    line_style 	3
+			    origin_attachment 	(1563, 755)
+			    terminal_attachment 	(1563, 668)
+			    label      	(object SegLabel @110
+				Parent_View 	@109
+				location   	(1613, 699)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.641791
+				height     	50
+				orientation 	1))
+			(object RoleView "hierarchy" @111
+			    Parent_View 	@108
+			    location   	(42, 42)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB17015E"
+			    client     	@108
+			    supplier   	@96
+			    line_style 	3
+			    origin_attachment 	(1563, 755)
+			    terminal_attachment 	(1563, 843)
+			    label      	(object SegLabel @112
+				Parent_View 	@111
+				location   	(1609, 837)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	64
+				justify    	0
+				label      	"*"
+				pctDist    	0.927113
+				height     	46
+				orientation 	0))))
+		(object AssociationViewNew "DimensionHasDefaultHierarchy" @113
+		    location   	(2069, 500)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378EBB2802CB"
+		    roleview_list 	(list RoleViews
+			(object RoleView "displayDefault" @114
+			    Parent_View 	@113
+			    location   	(548, 181)
+			    label      	(object SegLabel @115
+				Parent_View 	@114
+				location   	(2232, 758)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	294
+				justify    	0
+				label      	"displayDefault"
+				pctDist    	0.751337
+				height     	163
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB2B010C"
+			    client     	@113
+			    supplier   	@96
+			    line_style 	3
+			    origin_attachment 	(2069, 500)
+			    terminal_attachment 	(2069, 844)
+			    label      	(object SegLabel @116
+				Parent_View 	@114
+				location   	(2123, 810)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "defaultedDimension" @117
+			    Parent_View 	@113
+			    location   	(548, 181)
+			    label      	(object SegLabel @118
+				Parent_View 	@117
+				location   	(2032, 349)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	360
+				justify    	0
+				label      	"defaultedDimension"
+				pctDist    	0.432000
+				height     	40
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"378EBB2B013E"
+			    client     	@113
+			    supplier   	@107
+			    vertices   	(list Points
+				(2069, 500)
+				(2069, 388)
+				(1837, 388))
+			    line_style 	3
+			    origin_attachment 	(2069, 500)
+			    terminal_attachment 	(1837, 388)
+			    label      	(object SegLabel @119
+				Parent_View 	@117
+				location   	(1872, 442)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	72
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))))
+		(object AssociationViewNew "$UNNAMED$0" @120
+		    location   	(459, 479)
+		    stereotype 	TRUE
+		    quidu      	"3A76F3AD01CF"
+		    roleview_list 	(list RoleViews
+			(object RoleView "/memberSelection" @121
+			    Parent_View 	@120
+			    location   	(-847, 54)
+			    label      	(object SegLabel @122
+				Parent_View 	@121
+				location   	(265, 772)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	362
+				justify    	0
+				label      	"/memberSelection"
+				pctDist    	0.846821
+				height     	194
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A76F3AD0387"
+			    client     	@120
+			    supplier   	@100
+			    line_style 	3
+			    origin_attachment 	(459, 479)
+			    terminal_attachment 	(459, 825)
+			    label      	(object SegLabel @123
+				Parent_View 	@121
+				location   	(513, 790)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "/dimension" @124
+			    Parent_View 	@120
+			    location   	(-847, 54)
+			    label      	(object SegLabel @125
+				Parent_View 	@124
+				location   	(612, 359)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	224
+				justify    	0
+				label      	"/dimension"
+				pctDist    	0.566489
+				height     	60
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A76F3AE000D"
+			    client     	@120
+			    supplier   	@107
+			    vertices   	(list Points
+				(459, 479)
+				(459, 419)
+				(775, 419))
+			    line_style 	3
+			    origin_attachment 	(459, 479)
+			    terminal_attachment 	(775, 419)
+			    label      	(object SegLabel @126
+				Parent_View 	@124
+				location   	(737, 473)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1))))
+		(object Label @127
+		    location   	(66, 47)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 14-2 OLAP Metamodel: Dimension and Hierarchy")))
+	(object ClassDiagram "Figure 14-3 OLAP Metamodel: Inheritance from Object Model"
+	    quid       	"3785007101A6"
+	    title      	"Figure 14-3 OLAP Metamodel: Inheritance from Object Model"
+	    zoom       	100
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Class" @128
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1373, 293)
+		    label      	(object ItemLabel
+			Parent_View 	@128
+			location   	(1248, 243)
+			nlines     	1
+			max_width  	250
+			justify    	0
+			label      	"Class")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    quidu      	"3298A02900FE"
+		    width      	268
+		    height     	125
+		    annotation 	8)
+		(object InheritTreeView "" @129
+		    location   	(1373, 445)
+		    fill_color 	13434879
+		    supplier   	@128
+		    vertices   	(list Points
+			(1373, 445)
+			(1373, 355)))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Hierarchy" @130
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1366, 664)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@130
+			location   	(1266, 621)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	200
+			justify    	0
+			label      	"Hierarchy")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F91D39014A"
+		    width      	218
+		    height     	110)
+		(object InheritView "" @131
+		    stereotype 	TRUE
+		    quidu      	"378501E40225"
+		    client     	@130
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1364, 609)
+		    terminal_attachment 	(1364, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeDimensionAssociation" @132
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(834, 922)
+		    label      	(object ItemLabel
+			Parent_View 	@132
+			location   	(575, 878)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	519
+			justify    	0
+			label      	"CubeDimensionAssociation")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"378B40100236"
+		    width      	537
+		    height     	112
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Package" @133
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(237, 288)
+		    label      	(object ItemLabel
+			Parent_View 	@133
+			location   	(33, 238)
+			nlines     	1
+			max_width  	409
+			justify    	0
+			label      	"Package")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    quidu      	"327A5D19033E"
+		    width      	427
+		    height     	124
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CodedLevel" @134
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2234, 1119)
+		    label      	(object ItemLabel
+			Parent_View 	@134
+			location   	(1993, 1056)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	482
+			justify    	0
+			label      	"CodedLevel")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37A8A21000D4"
+		    compartment 	(object Compartment
+			Parent_View 	@134
+			location   	(1993, 1114)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	1
+			max_width  	506)
+		    width      	500
+		    height     	150)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Transformation::TransformationMap" @135
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(242, 1037)
+		    label      	(object ItemLabel
+			Parent_View 	@135
+			location   	(56, 987)
+			fill_color 	16777215
+			nlines     	1
+			max_width  	372
+			justify    	0
+			label      	"TransformationMap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"374322890098"
+		    width      	390
+		    height     	124
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Level" @136
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2113, 876)
+		    label      	(object ItemLabel
+			Parent_View 	@136
+			location   	(2032, 833)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	162
+			justify    	0
+			label      	"Level")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37488DB702D4"
+		    height     	110)
+		(object InheritView "" @137
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"37A8A71F0133"
+		    client     	@134
+		    supplier   	@136
+		    line_style 	3
+		    origin_attachment 	(2113, 1044)
+		    terminal_attachment 	(2113, 931))
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Attribute" @138
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2523, 300)
+		    label      	(object ItemLabel
+			Parent_View 	@138
+			location   	(2398, 250)
+			nlines     	1
+			max_width  	251
+			justify    	0
+			label      	"Attribute")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    quidu      	"3A6F62780143"
+		    width      	269
+		    height     	125
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Measure" @139
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2524, 662)
+		    label      	(object ItemLabel
+			Parent_View 	@139
+			location   	(2427, 619)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	194
+			justify    	0
+			label      	"Measure")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"382ADE680343"
+		    width      	212
+		    height     	110
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::HierarchyLevelAssociation" @140
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1551, 878)
+		    label      	(object ItemLabel
+			Parent_View 	@140
+			location   	(1320, 837)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	463
+			justify    	0
+			label      	"HierarchyLevelAssociation")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"37488CDF03BA"
+		    width      	481
+		    height     	106
+		    annotation 	8)
+		(object InheritView "" @141
+		    stereotype 	TRUE
+		    quidu      	"37B8DF33035F"
+		    client     	@140
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1523, 824)
+		    terminal_attachment 	(1523, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::StructureMap" @142
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(239, 1336)
+		    label      	(object ItemLabel
+			Parent_View 	@142
+			location   	(103, 1293)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	272
+			justify    	0
+			label      	"StructureMap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"374CB0810199"
+		    width      	290
+		    height     	110)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::MemberSelection" @143
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(2114, 664)
+		    label      	(object ItemLabel
+			Parent_View 	@143
+			location   	(1940, 621)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	348
+			justify    	0
+			label      	"MemberSelection")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F91E2C00D9"
+		    width      	366
+		    height     	110)
+		(object InheritView "" @144
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"378C0EEE0279"
+		    client     	@136
+		    supplier   	@143
+		    line_style 	0)
+		(object InheritView "" @145
+		    stereotype 	TRUE
+		    quidu      	"387F1864011D"
+		    client     	@139
+		    supplier   	@138
+		    line_style 	0)
+		(object InheritView "" @146
+		    stereotype 	TRUE
+		    quidu      	"387F188101D3"
+		    client     	@132
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(879, 865)
+		    terminal_attachment 	(879, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Dimension" @147
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(722, 667)
+		    label      	(object ItemLabel
+			Parent_View 	@147
+			location   	(612, 624)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	220
+			justify    	0
+			label      	"Dimension")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3777B4770109"
+		    width      	238
+		    height     	110)
+		(object InheritView "" @148
+		    stereotype 	TRUE
+		    quidu      	"37850152029D"
+		    client     	@147
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(722, 612)
+		    terminal_attachment 	(722, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Cube" @149
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1018, 667)
+		    label      	(object ItemLabel
+			Parent_View 	@149
+			location   	(937, 624)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	162
+			justify    	0
+			label      	"Cube")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F832E20069"
+		    height     	110)
+		(object InheritView "" @150
+		    stereotype 	TRUE
+		    quidu      	"3A4BF1F6031E"
+		    client     	@149
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1016, 612)
+		    terminal_attachment 	(1016, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::MemberSelectionGroup" @151
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1895, 1309)
+		    label      	(object ItemLabel
+			Parent_View 	@151
+			location   	(1685, 1268)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	420
+			justify    	0
+			label      	"MemberSelectionGroup")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3846924F008C"
+		    width      	438
+		    height     	106
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Schema" @152
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(191, 595)
+		    label      	(object ItemLabel
+			Parent_View 	@152
+			location   	(97, 551)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	188
+			justify    	0
+			label      	"Schema")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F832D2039C"
+		    width      	206
+		    height     	112
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment" @153
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1416, 1118)
+		    label      	(object ItemLabel
+			Parent_View 	@153
+			location   	(1203, 1069)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	426
+			justify    	0
+			label      	"DimensionDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A48C4C001EC"
+		    width      	444
+		    height     	119
+		    annotation 	8)
+		(object InheritTreeView "" @154
+		    location   	(237, 440)
+		    fill_color 	13434879
+		    supplier   	@133
+		    vertices   	(list Points
+			(237, 440)
+			(237, 350)))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeRegion" @155
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1694, 662)
+		    label      	(object ItemLabel
+			Parent_View 	@155
+			location   	(1563, 621)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	263
+			justify    	0
+			label      	"CubeRegion")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A4E8CEF02F0"
+		    width      	281
+		    height     	107
+		    annotation 	8)
+		(object InheritView "" @156
+		    stereotype 	TRUE
+		    quidu      	"3A4E8D280216"
+		    client     	@155
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1692, 609)
+		    terminal_attachment 	(1692, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment" @157
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1156, 1309)
+		    label      	(object ItemLabel
+			Parent_View 	@157
+			location   	(937, 1265)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	439
+			justify    	0
+			label      	"CubeDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5634210088"
+		    width      	457
+		    height     	113
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::DeploymentGroup" @158
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(291, 765)
+		    label      	(object ItemLabel
+			Parent_View 	@158
+			location   	(75, 718)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	432
+			justify    	0
+			label      	"DeploymentGroup")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5639C9022D"
+		    width      	450
+		    height     	119)
+		(object InheritView "" @159
+		    stereotype 	TRUE
+		    quidu      	"3A563D180289"
+		    client     	@158
+		    supplier   	@133
+		    line_style 	3
+		    origin_attachment 	(438, 706)
+		    terminal_attachment 	(438, 440)
+		    drawSupplier 	@154)
+		(object InheritView "" @160
+		    stereotype 	TRUE
+		    quidu      	"3A563D650302"
+		    client     	@157
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1145, 1252)
+		    terminal_attachment 	(1145, 445)
+		    drawSupplier 	@129)
+		(object InheritView "" @161
+		    stereotype 	TRUE
+		    quidu      	"3A4BF56D0180"
+		    client     	@153
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1226, 1058)
+		    terminal_attachment 	(1226, 445)
+		    drawSupplier 	@129)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::ContentMap" @162
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(440, 1509)
+		    label      	(object ItemLabel
+			Parent_View 	@162
+			location   	(312, 1465)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	257
+			justify    	0
+			label      	"ContentMap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5680DA0284"
+		    width      	275
+		    height     	113
+		    annotation 	8)
+		(object InheritTreeView "" @163
+		    location   	(240, 1216)
+		    line_color 	3342489
+		    fill_color 	13434879
+		    supplier   	@135
+		    vertices   	(list Points
+			(240, 1216)
+			(240, 1099)))
+		(object InheritView "" @164
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A5681050326"
+		    client     	@162
+		    supplier   	@135
+		    line_style 	3
+		    origin_attachment 	(488, 1452)
+		    terminal_attachment 	(488, 1216)
+		    drawSupplier 	@163)
+		(object InheritView "" @165
+		    stereotype 	TRUE
+		    quidu      	"38725585015C"
+		    client     	@151
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(1869, 1255)
+		    terminal_attachment 	(1869, 445)
+		    drawSupplier 	@129)
+		(object InheritView "" @166
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3845B98900A6"
+		    client     	@142
+		    supplier   	@135
+		    line_style 	3
+		    origin_attachment 	(188, 1280)
+		    terminal_attachment 	(188, 1216)
+		    drawSupplier 	@163)
+		(object InheritView "" @167
+		    stereotype 	TRUE
+		    quidu      	"3A4BF1C400FF"
+		    client     	@152
+		    supplier   	@133
+		    line_style 	3
+		    origin_attachment 	(163, 539)
+		    terminal_attachment 	(163, 440)
+		    drawSupplier 	@154)
+		(object InheritView "" @168
+		    stereotype 	TRUE
+		    quidu      	"3A71D2440203"
+		    client     	@143
+		    supplier   	@128
+		    line_style 	3
+		    origin_attachment 	(2113, 609)
+		    terminal_attachment 	(2113, 445)
+		    drawSupplier 	@129)
+		(object Label @169
+		    location   	(47, 66)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 14-3 OLAP Metamodel: Inheritance from Object Model")))
+	(object ClassDiagram "Figure 14-4 OLAP Metamodel: Deployment Mapping Structures"
+	    quid       	"3A563941008C"
+	    title      	"Figure 14-4 OLAP Metamodel: Deployment Mapping Structures"
+	    zoom       	100
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::ContentMap" @170
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(432, 1885)
+		    label      	(object ItemLabel
+			Parent_View 	@170
+			location   	(91, 1803)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	682
+			justify    	0
+			label      	"ContentMap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5680DA0284"
+		    compartment 	(object Compartment
+			Parent_View 	@170
+			location   	(91, 1864)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	2
+			max_width  	684)
+		    width      	700
+		    height     	188)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::Schema" @171
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1081, 408)
+		    label      	(object ItemLabel
+			Parent_View 	@171
+			location   	(731, 274)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	701
+			justify    	0
+			label      	"Schema")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"36F832D2039C"
+		    compartment 	(object Compartment
+			Parent_View 	@171
+			location   	(731, 335)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	715)
+		    width      	719
+		    height     	293)
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::CubeDeployment" @172
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(419, 1454)
+		    label      	(object ItemLabel
+			Parent_View 	@172
+			location   	(53, 1326)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	732
+			justify    	0
+			label      	"CubeDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5634210088"
+		    compartment 	(object Compartment
+			Parent_View 	@172
+			location   	(53, 1387)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	715)
+		    width      	750
+		    height     	281)
+		(object AssociationViewNew "CubeDeploymentOwnsContentMaps" @173
+		    location   	(400, 1692)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A568180028D"
+		    roleview_list 	(list RoleViews
+			(object RoleView "contentMap" @174
+			    Parent_View 	@173
+			    location   	(-232, 363)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5681810144"
+			    client     	@173
+			    supplier   	@170
+			    line_style 	3
+			    origin_attachment 	(400, 1692)
+			    terminal_attachment 	(400, 1791)
+			    label      	(object SegLabel @175
+				Parent_View 	@174
+				location   	(454, 1781)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "cubeDeployment" @176
+			    Parent_View 	@173
+			    location   	(-232, 363)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5681810162"
+			    client     	@173
+			    supplier   	@172
+			    line_style 	3
+			    origin_attachment 	(400, 1692)
+			    terminal_attachment 	(400, 1593)
+			    label      	(object SegLabel @177
+				Parent_View 	@176
+				location   	(459, 1629)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.644295
+				height     	59
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::DeploymentGroup" @178
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1084, 892)
+		    label      	(object ItemLabel
+			Parent_View 	@178
+			location   	(653, 757)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	863
+			justify    	0
+			label      	"DeploymentGroup")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A5639C9022D"
+		    compartment 	(object Compartment
+			Parent_View 	@178
+			location   	(653, 818)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	878)
+		    width      	881
+		    height     	294)
+		(object AssociationViewNew "SchemaOwnsDeploymentGroups" @179
+		    location   	(1087, 649)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A5639D9033E"
+		    roleview_list 	(list RoleViews
+			(object RoleView "deploymentGroup" @180
+			    Parent_View 	@179
+			    location   	(71, 371)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5639DA00BE"
+			    client     	@179
+			    supplier   	@178
+			    line_style 	3
+			    origin_attachment 	(1087, 649)
+			    terminal_attachment 	(1087, 745)
+			    label      	(object SegLabel @181
+				Parent_View 	@180
+				location   	(1141, 734)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "schema" @182
+			    Parent_View 	@179
+			    location   	(71, 371)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A5639DA00C9"
+			    client     	@179
+			    supplier   	@171
+			    line_style 	3
+			    origin_attachment 	(1087, 649)
+			    terminal_attachment 	(1087, 554)
+			    label      	(object SegLabel @183
+				Parent_View 	@182
+				location   	(1150, 584)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.686567
+				height     	63
+				orientation 	1))))
+		(object AssociationViewNew "DeploymentGroupReferencesCubeDeployments" @184
+		    location   	(394, 971)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A563A2D03AD"
+		    roleview_list 	(list RoleViews
+			(object RoleView "cubeDeployment" @185
+			    Parent_View 	@184
+			    location   	(-579, 262)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A563A2E01A6"
+			    client     	@184
+			    supplier   	@172
+			    line_style 	3
+			    origin_attachment 	(394, 971)
+			    terminal_attachment 	(394, 1314)
+			    label      	(object SegLabel @186
+				Parent_View 	@185
+				location   	(448, 1279)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "deploymentGroup" @187
+			    Parent_View 	@184
+			    location   	(-579, 262)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A563A2E01CE"
+			    client     	@184
+			    supplier   	@178
+			    vertices   	(list Points
+				(394, 971)
+				(394, 878)
+				(644, 878))
+			    line_style 	3
+			    origin_attachment 	(394, 971)
+			    terminal_attachment 	(644, 878)
+			    label      	(object SegLabel @188
+				Parent_View 	@187
+				location   	(610, 923)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.901841
+				height     	45
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::DimensionDeployment" @189
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1751, 1430)
+		    label      	(object ItemLabel
+			Parent_View 	@189
+			location   	(1273, 1230)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	957
+			justify    	0
+			label      	"DimensionDeployment")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A48C4C001EC"
+		    compartment 	(object Compartment
+			Parent_View 	@189
+			location   	(1273, 1291)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	7
+			max_width  	1015)
+		    width      	975
+		    height     	425)
+		(object AssociationViewNew "DeploymentGroupReferencesDimensionDeployments" @190
+		    location   	(1741, 940)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A563A300130"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeployment" @191
+			    Parent_View 	@190
+			    location   	(768, 231)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A563A3002F3"
+			    client     	@190
+			    supplier   	@189
+			    line_style 	3
+			    origin_attachment 	(1741, 940)
+			    terminal_attachment 	(1741, 1218)
+			    label      	(object SegLabel @192
+				Parent_View 	@191
+				location   	(1795, 1189)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))
+			(object RoleView "deploymentGroup" @193
+			    Parent_View 	@190
+			    location   	(768, 231)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A563A300343"
+			    client     	@190
+			    supplier   	@178
+			    vertices   	(list Points
+				(1741, 940)
+				(1741, 880)
+				(1524, 880))
+			    line_style 	3
+			    origin_attachment 	(1741, 940)
+			    terminal_attachment 	(1524, 880)
+			    label      	(object SegLabel @194
+				Parent_View 	@193
+				location   	(1555, 921)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.888112
+				height     	41
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::Analysis::Olap::StructureMap" @195
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1765, 2107)
+		    label      	(object ItemLabel
+			Parent_View 	@195
+			location   	(1256, 1976)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	1019
+			justify    	0
+			label      	"StructureMap")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"374CB0810199"
+		    compartment 	(object Compartment
+			Parent_View 	@195
+			location   	(1256, 2037)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	4
+			max_width  	928)
+		    width      	1037
+		    height     	287)
+		(object AssociationViewNew "DimensionDeploymentOwnsStructureMaps" @196
+		    location   	(1394, 1803)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48E8D3015F"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeployment" @197
+			    Parent_View 	@196
+			    location   	(-222, -66)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E8D40175"
+			    client     	@196
+			    supplier   	@189
+			    line_style 	3
+			    origin_attachment 	(1394, 1803)
+			    terminal_attachment 	(1394, 1642)
+			    label      	(object SegLabel @198
+				Parent_View 	@197
+				location   	(1445, 1688)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.720497
+				height     	51
+				orientation 	1))
+			(object RoleView "structureMap" @199
+			    Parent_View 	@196
+			    location   	(-222, -66)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E8D40157"
+			    client     	@196
+			    supplier   	@195
+			    line_style 	3
+			    origin_attachment 	(1394, 1803)
+			    terminal_attachment 	(1394, 1964)
+			    label      	(object SegLabel @200
+				Parent_View 	@199
+				location   	(1445, 1931)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.802469
+				height     	51
+				orientation 	0))))
+		(object AssociationViewNew "DimensionDeploymentHasListOfValues" @201
+		    location   	(1787, 1803)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48E9FE0073"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeploymentLV" @202
+			    Parent_View 	@201
+			    location   	(171, -66)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E9FE0272"
+			    client     	@201
+			    supplier   	@189
+			    line_style 	3
+			    origin_attachment 	(1787, 1803)
+			    terminal_attachment 	(1787, 1642)
+			    label      	(object SegLabel @203
+				Parent_View 	@202
+				location   	(1838, 1679)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.767956
+				height     	51
+				orientation 	1))
+			(object RoleView "listOfValues" @204
+			    Parent_View 	@201
+			    location   	(171, -66)
+			    label      	(object SegLabel @205
+				Parent_View 	@204
+				location   	(1898, 1862)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	226
+				justify    	0
+				label      	"listOfValues"
+				pctDist    	0.372671
+				height     	111
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48E9FE024A"
+			    client     	@201
+			    supplier   	@195
+			    line_style 	3
+			    origin_attachment 	(1787, 1803)
+			    terminal_attachment 	(1787, 1964)
+			    label      	(object SegLabel @206
+				Parent_View 	@204
+				location   	(1838, 1934)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.813187
+				height     	51
+				orientation 	0))))
+		(object AssociationViewNew "DimensionDeploymentHasImmediateParent" @207
+		    location   	(2128, 1803)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A48EA07021B"
+		    roleview_list 	(list RoleViews
+			(object RoleView "dimensionDeploymentIP" @208
+			    Parent_View 	@207
+			    location   	(512, -66)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48EA08006E"
+			    client     	@207
+			    supplier   	@189
+			    line_style 	3
+			    origin_attachment 	(2128, 1803)
+			    terminal_attachment 	(2128, 1642)
+			    label      	(object SegLabel @209
+				Parent_View 	@208
+				location   	(2182, 1682)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.751381
+				height     	54
+				orientation 	1))
+			(object RoleView "immediateParent" @210
+			    Parent_View 	@207
+			    location   	(512, -66)
+			    label      	(object SegLabel @211
+				Parent_View 	@210
+				location   	(2287, 1869)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	305
+				justify    	0
+				label      	"immediateParent"
+				pctDist    	0.407407
+				height     	159
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A48EA08003C"
+			    client     	@207
+			    supplier   	@195
+			    line_style 	3
+			    origin_attachment 	(2128, 1803)
+			    terminal_attachment 	(2128, 1964)
+			    label      	(object SegLabel @212
+				Parent_View 	@210
+				location   	(2176, 1935)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.817680
+				height     	48
+				orientation 	0))))
+		(object Label @213
+		    location   	(66, 81)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 14-4 OLAP Metamodel: Deployment Mapping Structures")))))

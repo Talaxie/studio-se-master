@@ -1,0 +1,89 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talend Inc. - www.talend.com
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talend SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.repository.mdm.ui.wizard.concept;
+
+import org.eclipse.jface.dialogs.IDialogPage;
+import org.eclipse.jface.wizard.WizardPage;
+import org.eclipse.swt.widgets.Composite;
+import org.talend.core.model.metadata.builder.connection.MetadataTable;
+import org.talend.core.model.properties.ConnectionItem;
+import org.talend.cwm.helper.TableHelper;
+import org.talend.metadata.managment.ui.wizard.AbstractForm;
+
+/**
+ *
+ *
+ */
+public class MdmConceptWizardPage4 extends WizardPage {
+
+    private MetadataTable metadataTable;
+
+    private ConnectionItem connectionItem;
+
+    private boolean isRepositoryObjectEditable;
+
+    private MDMTableForm tableForm;
+
+    /**
+     * DatabaseWizardPage constructor (to instance IMetadataConnection OR MetaDataTableType). If MetaDataTableType
+     * exist, it's an update of existing metadata else it's a new metadata.
+     *
+     * @param existingNames
+     *
+     * @param ISelection
+     */
+    public MdmConceptWizardPage4(ConnectionItem connectionItem, MetadataTable metadataTable, boolean isRepositoryObjectEditable) {
+        super("wizardPage"); //$NON-NLS-1$
+        this.connectionItem = connectionItem;
+        this.metadataTable = metadataTable;
+        this.isRepositoryObjectEditable = isRepositoryObjectEditable;
+    }
+
+    /**
+     * Create the first composite, addComponentsAndControls and initialize TableWizardPage.
+     *
+     * @see IDialogPage#createControl(Composite)
+     */
+    @Override
+    public void createControl(final Composite parent) {
+        tableForm = new MDMTableForm(parent, connectionItem, metadataTable,
+                TableHelper.getTableNames(connectionItem
+                .getConnection(), metadataTable.getLabel()));
+        tableForm.setPage(this);
+        tableForm.setReadOnly(!isRepositoryObjectEditable);
+        final AbstractForm.ICheckListener listener = new AbstractForm.ICheckListener() {
+
+            @Override
+            public void checkPerformed(final AbstractForm source) {
+                if (source.isStatusOnError()) {
+                    MdmConceptWizardPage4.this.setPageComplete(false);
+                    setErrorMessage(source.getStatus());
+                } else {
+                    MdmConceptWizardPage4.this.setPageComplete(isRepositoryObjectEditable);
+                    setErrorMessage(null);
+                    setMessage(source.getStatus(), source.getStatusLevel());
+                }
+            }
+        };
+        tableForm.setListener(listener);
+        setControl(tableForm);
+    }
+
+    @Override
+    public void setVisible(boolean visible) {
+        super.setVisible(visible);
+        if (visible) {
+            ((CreateConceptWizard) getWizard()).setCurrentPage(this);
+        }
+    }
+}

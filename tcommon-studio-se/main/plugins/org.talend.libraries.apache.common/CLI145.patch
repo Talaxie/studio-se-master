@@ -1,0 +1,173 @@
+Index: src/test/org/apache/commons/cli2/bug/BugCLI145Test.java
+===================================================================
+--- src/test/org/apache/commons/cli2/bug/BugCLI145Test.java	(revision 0)
++++ src/test/org/apache/commons/cli2/bug/BugCLI145Test.java	(revision 0)
+@@ -0,0 +1,102 @@
++package org.apache.commons.cli2.bug;
++
++import junit.framework.TestCase;
++import org.apache.commons.cli2.CommandLine;
++import org.apache.commons.cli2.Group;
++import org.apache.commons.cli2.builder.ArgumentBuilder;
++import org.apache.commons.cli2.builder.DefaultOptionBuilder;
++import org.apache.commons.cli2.builder.GroupBuilder;
++import org.apache.commons.cli2.commandline.Parser;
++import org.apache.commons.cli2.option.DefaultOption;
++
++import java.util.List;
++
++/**
++ * ArgumentBuilder.withMaximum causes parse errors: Unexpeced <value> while processing options
++ *
++ * @author David Biesack
++ * @author brianegge
++ */
++public class BugCLI145Test extends TestCase {
++    public void testWithMaximum() {
++        final DefaultOptionBuilder obuilder = new DefaultOptionBuilder();
++        final ArgumentBuilder abuilder = new ArgumentBuilder();
++        final GroupBuilder gbuilder = new GroupBuilder();
++        DefaultOption aOption = obuilder//
++                .withShortName("a")
++                .withLongName("a")
++                .withArgument(abuilder
++                        .withName("a")
++                        .withDefault("10")
++                        .create())
++                .create();
++        DefaultOption bOption = obuilder
++                .withShortName("b")
++                .withLongName("b")
++                .withArgument(abuilder
++                        .withName("b")
++                        .withMinimum(2)
++                        .withMaximum(4)
++                        .withDefault("100")
++                        .withDefault("1000")
++                        .withDefault("10000")
++                        .withDefault("1000000")
++                        .create())
++                .create();
++        Group options = gbuilder
++                .withName("options")
++                .withOption(aOption)
++                .withOption(bOption)
++                .create();
++        Parser parser = new Parser();
++        parser.setHelpTrigger("--help");
++        parser.setGroup(options);
++        CommandLine cl = parser.parseAndHelp("-a 0 -b 1 2 3 4".split(" "));
++        assertNotNull(cl);
++        int a = Integer.parseInt(cl.getValue(aOption).toString());
++        List b = cl.getValues(bOption);
++        assertEquals(0, a);
++        assertEquals(4, b.size());
++    }
++
++    public void testWithMaximumUsingDefaultValues() {
++        final DefaultOptionBuilder obuilder = new DefaultOptionBuilder();
++        final ArgumentBuilder abuilder = new ArgumentBuilder();
++        final GroupBuilder gbuilder = new GroupBuilder();
++        DefaultOption aOption = obuilder//
++                .withShortName("a")
++                .withLongName("a")
++                .withArgument(abuilder
++                        .withName("a")
++                        .withDefault("10")
++                        .create())
++                .create();
++        DefaultOption bOption = obuilder
++                .withShortName("b")
++                .withLongName("b")
++                .withArgument(abuilder
++                        .withName("b")
++                        .withMinimum(2)
++                        .withMaximum(4)
++                        .withDefault("100")
++                        .withDefault("1000")
++                        .withDefault("10000")
++                        .create())
++                .create();
++        Group options = gbuilder
++                .withName("options")
++                .withOption(aOption)
++                .withOption(bOption)
++                .create();
++        Parser parser = new Parser();
++        parser.setHelpTrigger("--help");
++        parser.setGroup(options);
++        CommandLine cl = parser.parseAndHelp("-a -b".split(" "));
++        assertNotNull(cl);
++        int a = Integer.parseInt(cl.getValue(aOption).toString());
++        List b = cl.getValues(bOption);
++        assertEquals(10, a);
++        assertEquals(3, b.size());
++        assertEquals("10000", b.get(2));
++    }
++}
+Index: src/test/org/apache/commons/cli2/bug/BugLoopingOptionLookAlikeTest.java
+===================================================================
+--- src/test/org/apache/commons/cli2/bug/BugLoopingOptionLookAlikeTest.java	(revision 567964)
++++ src/test/org/apache/commons/cli2/bug/BugLoopingOptionLookAlikeTest.java	(working copy)
+@@ -23,6 +23,7 @@
+ import org.apache.commons.cli2.Argument;
+ import org.apache.commons.cli2.Group;
+ import org.apache.commons.cli2.OptionException;
++import org.apache.commons.cli2.resource.ResourceConstants;
+ import org.apache.commons.cli2.builder.ArgumentBuilder;
+ import org.apache.commons.cli2.builder.DefaultOptionBuilder;
+ import org.apache.commons.cli2.builder.GroupBuilder;
+@@ -73,7 +74,7 @@
+             parser.parse(new String[] { "testfile.txt", "testfile.txt", "testfile.txt", "testfile.txt" });
+             fail("OptionException");
+         } catch (OptionException e) {
+-            assertEquals("Unexpected testfile.txt while processing ", e.getMessage());
++            assertEquals(ResourceConstants.ARGUMENT_UNEXPECTED_VALUE, e.getMessageKey());
+         }
+     }    
+ }
+Index: src/java/org/apache/commons/cli2/OptionException.java
+===================================================================
+--- src/java/org/apache/commons/cli2/OptionException.java	(revision 567964)
++++ src/java/org/apache/commons/cli2/OptionException.java	(working copy)
+@@ -43,6 +43,9 @@
+     /** The message explaining the Exception */
+     private final String message;
+ 
++    /** The id of the message */
++    private final String messageKey;
++
+     /**
+      * Creates a new OptionException.
+      *
+@@ -73,6 +76,7 @@
+                            final String messageKey,
+                            final String value) {
+         this.option = option;
++        this.messageKey = messageKey;
+ 
+         if (messageKey != null) {
+             final StringBuffer buffer = new StringBuffer();
+@@ -104,4 +108,8 @@
+     public String getMessage() {
+         return message;
+     }
++
++    public String getMessageKey() {
++        return messageKey;
++    }
+ }
+Index: src/java/org/apache/commons/cli2/option/ArgumentImpl.java
+===================================================================
+--- src/java/org/apache/commons/cli2/option/ArgumentImpl.java	(revision 567964)
++++ src/java/org/apache/commons/cli2/option/ArgumentImpl.java	(working copy)
+@@ -140,7 +140,8 @@
+                               final ListIterator arguments,
+                               final Option option)
+         throws OptionException {
+-        int argumentCount = commandLine.getValues(option, Collections.EMPTY_LIST).size();
++        // count of arguments processed for this option.
++        int argumentCount = 0;
+ 
+         while (arguments.hasNext() && (argumentCount < maximum)) {
+             final String allValues = stripBoundaryQuotes((String) arguments.next());

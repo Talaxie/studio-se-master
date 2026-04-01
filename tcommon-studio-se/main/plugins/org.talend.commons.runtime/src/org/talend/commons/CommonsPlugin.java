@@ -1,0 +1,254 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talend Inc. - www.talend.com
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talend SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.commons;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+
+import org.apache.commons.lang.ArrayUtils;
+import org.eclipse.core.net.proxy.IProxyService;
+import org.eclipse.core.runtime.FileLocator;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.preferences.InstanceScope;
+import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleActivator;
+import org.osgi.framework.BundleContext;
+import org.osgi.framework.ServiceReference;
+import org.osgi.util.tracker.ServiceTracker;
+import org.talend.commons.exception.ExceptionService;
+import org.talend.commons.runtime.debug.TalendDebugHandler;
+import org.talend.commons.utils.platform.PluginChecker;
+import org.talend.commons.utils.system.EclipseCommandLine;
+
+/**
+ * Activator for Code Generator.
+ *
+ * $Id$
+ *
+ */
+public class CommonsPlugin implements BundleActivator {
+
+    // The plug-in ID
+    public static final String PLUGIN_ID = "org.talend.commons.runtime"; //$NON-NLS-1$
+
+    // The shared instance
+    private static CommonsPlugin plugin;
+
+    private static boolean headless = false;
+
+    private static boolean storeLibsInWorkspace = false;
+
+    private static boolean isSameProjectLogonCommline = false;
+
+    private static boolean useCommandLineRepository = false;
+
+    private static boolean isWorkbenchCreated = false;
+
+    // TESB-17856: For commandline builds ESB Micorservice bundle
+    private static boolean isESBMicorservice = false;
+
+    private static Boolean isJunitWorking;
+
+    private static Boolean isDevMode = null;
+
+    private static ServiceTracker proxyTracker;
+
+    private static Boolean isDebugP2 = null;
+
+    public static boolean isWorkbenchCreated() {
+        return isWorkbenchCreated;
+    }
+
+    public static void setWorkbenchCreated(boolean isWorkbenchCreated) {
+        CommonsPlugin.isWorkbenchCreated = isWorkbenchCreated;
+    }
+
+    public static boolean isStoreLibsInWorkspace() {
+        return storeLibsInWorkspace;
+    }
+
+    public static void setStoreLibsInWorkspace(boolean storeLibsInWorkspace) {
+        CommonsPlugin.storeLibsInWorkspace = storeLibsInWorkspace;
+    }
+
+    public static boolean isUseCommandLineRepository() {
+        return useCommandLineRepository;
+    }
+
+    public static void setUseCommandLineRepository(boolean useCommandLineRepository) {
+        CommonsPlugin.useCommandLineRepository = useCommandLineRepository;
+    }
+
+    private ExceptionService service;
+
+    private BundleContext context;
+
+    /**
+     * Default Constructor.
+     */
+    public CommonsPlugin() {
+        plugin = this;
+    }
+
+    public static CommonsPlugin getDefault() {
+        return plugin;
+    }
+
+    public static boolean isHeadless() {
+        return headless;
+    }
+
+    public static void setHeadless(boolean headless) {
+        CommonsPlugin.headless = headless;
+    }
+
+    public static boolean isScriptCmdlineMode() {
+        return System.getProperty(EclipseCommandLine.PROP_VM) == null;
+    }
+
+    public static boolean isDevMode() {
+        try {
+            if (isDevMode == null) {
+                isDevMode = Platform.getBundle(PluginChecker.RCP_BUNDLE_ID).getBundleContext().getProperty("osgi.dev") != null;
+            }
+            return isDevMode;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static boolean isDebugP2() {
+        try {
+            if (isDebugP2 == null) {
+                isDebugP2 = Boolean.getBoolean("talend.studio.lite.p2.debug");
+            }
+            return isDebugP2;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static boolean isDebugMode() {
+        return Boolean.getBoolean("talendDebug") //$NON-NLS-1$
+                || ArrayUtils.contains(Platform.getApplicationArgs(), TalendDebugHandler.TALEND_DEBUG);
+    }
+
+    public static boolean isJUnitTest() {
+        return Boolean.getBoolean("junit_test"); //$NON-NLS-1$
+    }
+
+    public static boolean isTUJTest() {
+        return "org.talend.rcp.branding.tuj.product".equals(Platform.getProduct().getId()); //$NON-NLS-1$
+    }
+
+    public static boolean isJunitWorking() {
+        if (isJunitWorking == null) {
+            try {
+                String[] args = Platform.getCommandLineArgs();
+                String applicationId = null;
+
+                for (int i = 0; i < args.length - 1; i++) {
+                    if (args[i].equalsIgnoreCase("-application")) { //$NON-NLS-1$
+                        applicationId = args[i + 1];
+                    }
+                }
+
+                if (applicationId != null
+                        && (applicationId.equals("org.eclipse.swtbot.eclipse.junit.headless.swtbottestapplication") //$NON-NLS-1$
+                                || applicationId.equals("org.eclipse.pde.junit.runtime.uitestapplication"))) { //$NON-NLS-1$
+                    isJunitWorking = true;
+                } else {
+                    isJunitWorking = false;
+                }
+            } catch (Throwable e) {
+                isJunitWorking = false;
+            }
+        }
+        if (isJunitWorking == null) {
+            isJunitWorking = false;
+        }
+        return isJunitWorking;
+    }
+
+    /**
+     * Answer the file associated with name. This handles the case of running as a plugin and running standalone which
+     * happens during testing.
+     *
+     * @param filename
+     * @return File
+     */
+    public static InputStream getFileInputStream(String filename) throws IOException {
+        URL url = Platform.getBundle(PLUGIN_ID).getEntry(filename);
+        return url != null ? url.openStream() : null;
+
+    }
+
+    public static boolean isSameProjectLogonCommline() {
+        return isSameProjectLogonCommline;
+    }
+
+    public static void setSameProjectLogonCommline(boolean isSameProjectLogonCommline) {
+        CommonsPlugin.isSameProjectLogonCommline = isSameProjectLogonCommline;
+    }
+
+    @Override
+    public void start(BundleContext context) throws Exception {
+        this.context = context;
+    }
+
+    @Override
+    public void stop(BundleContext context) throws Exception {
+    }
+
+    public ExceptionService getExceptionService() {
+        if (service == null) {
+            ServiceReference sr = context.getServiceReference(ExceptionService.class.getName());
+            if (sr != null) {
+                service = (ExceptionService) context.getService(sr);
+            }
+        }
+        return service;
+    }
+
+    public static boolean isESBMicorservice() {
+        return isESBMicorservice;
+    }
+
+    public static void setESBMicorservice(boolean isESBMicorservice) {
+        CommonsPlugin.isESBMicorservice = isESBMicorservice;
+    }
+
+    public static void setMavenOfflineState(boolean state) {
+    	InstanceScope.INSTANCE.getNode("org.eclipse.m2e.core").putBoolean("eclipse.m2.offline", state);
+    }
+
+    public static URL getBundleRealURL(String bundleId) throws Exception {
+        Bundle bundle = Platform.getBundle(bundleId);
+        if (bundle == null) {
+            return null;
+        }
+        URL entry = bundle.getEntry("/"); //$NON-NLS-1$
+        return FileLocator.toFileURL(entry);
+    }
+
+    public static IProxyService getProxyService() {
+        if (proxyTracker == null) {
+            proxyTracker = new ServiceTracker(Platform.getBundle(PLUGIN_ID).getBundleContext(), IProxyService.class.getName(),
+                    null);
+            proxyTracker.open();
+        }
+        return (IProxyService) proxyTracker.getService();
+    }
+
+}

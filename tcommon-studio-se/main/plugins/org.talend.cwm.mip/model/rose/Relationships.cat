@@ -1,0 +1,832 @@
+
+(object Petal
+    version    	43
+    _written   	"Rose 6.5.9232.10"
+    charSet    	0)
+
+(object Class_Category "Relationships"
+    is_unit    	TRUE
+    is_loaded  	TRUE
+    attributes 	(list Attribute_Set
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.hasImplicitReferences"
+	    value      	(value Text "false"))
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"mof.idl_prefix"
+	    value      	(value Text "org.omg.cwm.objectmodel"))
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"xmi.namespace"
+	    value      	(value Text "CWM"))
+	(object Attribute
+	    tool       	"MOF"
+	    name       	"uml2mof.clusteredImport"
+	    value      	(value Text "Core"))
+	(object Attribute
+	    tool       	"JCR"
+	    name       	"java_prefix"
+	    value      	(value Text "org.omg.java.cwm.objectmodel")))
+    quid       	"3A63421F0357"
+    documentation 	
+|The Relationships metamodel depends on the following package:
+|
+|    org.omg::CWM::ObjectModel::Core
+|
+|The Relationships metamodel collects together classes and associations that describe  the relationships between object within a CWM information store. The Relationships metamodel describes to types of relationships: association and generalization.
+|
+|Association relationships record linkages between model elements. These linkages may represent simple linkages between model elements or aggregation ("is part of") relationships between model elements; aggregation relationships come in two forms -- shared and composite. Associations have two or more named ends that link them to instances of the classes connected by the association.
+|
+|Generalization relationships record arrangements of model elements into type hierarchies in a parent/child (or "is type of") fashion. Child types are said to "specialize", "subclass" or "subtype" their parental  types, represent a subset of parental instances that fulfill the definition of the child type, and inherit the structural features
+|(Attributes, AssociationEnd) and behavioral features (Operations, Methods) of their parents. Parental types are said to "generalize" their child types or to be "superclasses" or "supertypes" of their children.
+|
+|CWM generalization hierarchies support multiple inheritance; that is, child types may have more than one parental type and inherit the union of the features of all their parental types. Although called "hierarchies", multiple inheritance actually represents a directed acyclic graph of parental and child types.
+|
+|OCL Representation of Relationships Constraints
+|
+|Operations
+|
+|The operation allConnections results in the set of all AssociationEnds of the Association.
+|   allConnections : Set(AssociationEnd);
+|   allConnections = self.feature.oclIsKindOf(AssociationEnd)
+|
+|Constraints
+|
+|[C-5-1] An Association must have at least 2 AssociationEnds.
+|context Association inv:
+|self.allConnections->size > 1
+|
+|[C-5-2] The AssociationEnds must have a unique name within the association.
+|context Association inv:
+|self.allConnections->forAll( r1, r2 | r1.name = r2.name implies r1 = r2)
+|
+|[C-5-3] At most one AssociationEnd may be an aggregation or composition.
+|context Association inv:
+|self.allConnections->select(aggregation <> #ak_none)->size <= 1
+|
+|[C-5-4] If an Association has three or more AssociationEnds, then no AssociationEnd may be an aggregation or composition.
+|context Association inv:
+|self.allConnections->size >=3 implies
+|self.allConnections->forall(aggregation = #ak_none)
+|
+|[C-5-5] The connected Classifiers of the AssociationEnds should be included in the Namespace of the Association, or be Classifiers with public visibility in other Namespaces to which the Association has access.
+|context Association inv:
+|self.allConnections->forAll(r | self.namespace.allContents->includes (r.type) ) or
+|self.allConnections->forAll(r | self.namespace.allContents->excludes (r.type))
+|   implies
+|self.namespace.clientDependency->exists (d |
+|   d.supplier.oclAsType(Namespace).ownedElement->select (e |
+|      e.elementOwnership.visibility = #ak_public)->includes (r.type) or
+|   d.supplier.oclAsType(Classifier).allParents.
+|      oclAsType(Namespace).ownedElement->select (e |
+|         e.elementOwnership.visibility = #ak_public)->includes (r.type) or
+|         d.supplier.oclAsType(Package).allImportedElements->select (e |
+|            e.elementImport.visibility = #ak_public) ->includes (r.type) ) )
+|
+|[C-5-6] An AssociationEnd must have an owning Association.
+|context AssociationEnd inv:
+|self.owner.oclIsKindOf(Association)
+|
+|[C-5-7] The Classifier of an AssociationEnd cannot be an Interface or a DataType if the association is navigable away from that end.
+|context AssociationEnd inv:
+|(self.type.oclIsKindOf (Interface) or
+|self.type.oclIsKindOf (DataType)) implies
+|self.owner->select (ae | ae <self)->forAll(ae | ae.isNavigable = #false)
+|
+|[C-5-8] An instance may not belong by composition to more than one composite Instance.
+|context AssociationEnd inv:
+|self.aggregation = #ak_composite implies self.multiplicity.max <= 1
+|
+|[C-5-9] An AssociationEnd with composite or shared aggregation semantics must be owned by an Association.
+|context AssociationEnd inv:
+|self.aggregation = #ak_composite or self.aggregation = #ak_shared implies
+|self.owner.oclIsKindOf(Association)
+|
+    
+    stereotype 	"metamodel"
+    visible_categories 	(list visibility_relationship_list
+	(object Visibility_Relationship
+	    quid       	"3A662D1101C7"
+	    supplier   	"Logical View::org.omg::CWM::ObjectModel"
+	    quidu      	"3A0740600053")
+	(object Visibility_Relationship
+	    quid       	"3A662D2700EC"
+	    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core"
+	    quidu      	"3A6600C5031F"))
+    exportControl 	"Public"
+    logical_models 	(list unit_reference_list
+	(object Class "Association"
+	    quid       	"3A54CBFF0090"
+	    documentation 	
+|An association defines a semantic relationship between classifiers. Associations have two or more named ends. Associations with two or more ends are called "n-ary" whereas associations with exactly two ends are called "binary". Each end, depending
+|upon its multiplicity, connects to zero or more instances of some classifier.
+|
+|In the metamodel, an Association is a declaration of a semantic relationship between Classifiers, such as Classes. Associations must have two, and may have more, association ends. Each end is connected to a Classifier; the same Classifier may be 
+|connected to more than one association end in the same association. (Refer to the ObjectModel’s Instance package, below, for a description of how Associations are instantiated.)
+|
+|Because Associations are classifiers, they own and order their association ends (which are Attributes) via the ClassifierFeature association. In addition, because Associations are Classes, they can also own more traditional StructuralFeatures such as Attributes. Consequently, they may act in a manner similar to "association classes" described by
+|some other object models.
+|
+|An association may represent an aggregation (i.e., a whole/part relationship). In this case, the association end attached to the whole element is designated, and the other association end represents the parts of the aggregation.
+|
+|Associations can be of three different kinds: (1) ordinary association, (2) composite aggregate, and (3) shareable aggregate. Since the aggregate construct can have several different meanings depending on the application area, CWM gives a more precise meaning to two of these constructs (i.e., association and composite aggregate) and leaves the shareable aggregate more loosely defined in between. Only binary Associations can have composite or sharable aggregation semantics.
+|
+|Composite aggregation is a strong form of aggregation which requires that a part instance be included in at most one composite at a time and that the composite object has sole responsibility for the disposition of its parts. This means that the composite object is responsible for the creation and destruction of the parts. In implementation terms, it is responsible for their memory allocation. If a composite object is destroyed, it must destroy all of its parts. It may remove a part and give it to another composite object, which then assumes responsibility for it. If the multiplicity from a part to composite is zero-to-one, the composite may remove the part and the part may assume responsibility for itself, otherwise it may not live apart from a  composite.
+|
+|A consequence of these rules is that a composite aggregation implies propagation semantics (i.e., some of the dynamic semantics of the whole is propagated to its parts). For example, if the whole is copied or destroyed, then so are the parts as well (because a part may belong to at most one composite).
+|
+|A classifier on the composite end of an association may have parts that are classifiers and associations. At the instance level, an instance of a part element is considered "part of" the instance of a composite element. If an association is part of a composite and it connects two classes that are also part of the same composite, then an instance of the association will connect objects that are part of the same composite object of which the instance is part.
+|
+|A shareable aggregation denotes weak ownership (i.e., the part may be included in several aggregates) and its owner may also change over time. However, the semantics of a shareable aggregation does not imply deletion of the parts when an aggregate
+|referencing it is deleted. Both kinds of aggregations define a transitive, antisymmetric relationship (i.e., the instances form a directed, non-cyclic graph). Composition instances form a strict tree (or rather a forest).
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A71D29B0396"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Class"
+		    quidu      	"3298A02900FE")))
+	(object Class "AssociationEnd"
+	    quid       	"3A6F584F03A5"
+	    documentation 	
+|An association end is an endpoint of an association, which connects the association to a classifier. Each association end is part of one association. The association ends of each association are ordered.
+|
+|In the metamodel, an AssociationEnd is part of an Association and specifies the connection of an Association to some other Classifier. Because AssociationEnds are a kind of StructuralFeature, they are owned and ordered by Association instances via the ClassifierFeature association. The StructuralFeatureType association is used to identify the Classifier to which the AssociationEnd is attached. Each AssociationEnd has a name and defines a set of properties of the connection.
+|
+|The multiplicity property of an association end specifies how many instances of the classifier at a given end (the one bearing the multiplicity value) may be associated with a single instance of the classifier at the other end. The association end also states whether or not the connection may be traversed towards the instance playing that role in the connection (the isNavigable attribute), that is, if the instance is directly reachable via the association.
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A71D40C0075"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature"
+		    quidu      	"3298F1A403BF"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "aggregation"
+		    quid       	"3A6F59870169"
+		    documentation 	
+|When placed on one end (the "target" end), specifies whether the class on the target end is an aggregation with respect to the class on the other end (the "source" end). Only one end of an association can be an aggregation.
+		    
+		    type       	"AggregationKind"
+		    exportControl 	"Public")
+		(object ClassAttribute "isNavigable"
+		    quid       	"3A6F599D0070"
+		    documentation 	"When placed on a target end, specifies whether traversal from a source instance to its associated target instances is possible. A value of true means that the association can be navigated by the source class and the target rolename can be used in navigation expressions. Specification of navigability for each direction is defined independently."
+		    type       	"Boolean"
+		    exportControl 	"Public")))
+	(object Class "Generalization"
+	    quid       	"3A54BFAC011D"
+	    documentation 	
+|A generalization is a taxonomic relationship between a more general element and a more specific element. The more specific element is fully consistent with the more general element (it has all of its properties, members, and relationships) and may contain additional information.
+|
+|In the metamodel, a Generalization is a directed inheritance relationship, uniting a Classifier with a more general Classifier in a hierarchy. Generalization is a subtyping relationship; that is, an instance of the more general ("parent") Classifier may be substituted by an instance of the more specific ("child") Classifier.
+|
+|To understand inheritance fully, it is necessary to understand the concept of a full descriptor and a segment descriptor. A full descriptor is the full description needed to describe an instance of a metamodel object. It contains a description of all of the
+|attributes, associations, and operations that the object contains.
+|
+|In a pre-object-oriented language, the full descriptor of a data structure was declared directly in its entirety. In an object-oriented language, the description of an object is built out of incremental segments that are combined using inheritance to produce a full descriptor for an object. The segments are the modeling elements that are actually declared in a model. Each classifier contains a list of features and other relationships that it adds to what it inherits from its ancestors. The mechanism of inheritance defines how full descriptors are produced from a set of segments connected by  generalization.The full descriptors are implicit, but they define the structure of actual instances. Features of a classifier that have private visibility are not visible to descendants of the classifier.
+|
+|If a classifier has no parent, then its full descriptor is the same as its segment descriptor. If a classifier has one or more parents, then its full descriptor contains the union of the features from its own segment descriptor and the segment descriptors of all of its ancestors. No attribute, operation, or association end with the same signature may be declared in more than one of the segments (in other words, they may not be redefined). A method may be declared in more than one segment. A method declared in any segment supersedes and replaces a method with the same signature declared in any ancestor. If two or more methods nevertheless remain, then they conflict and the model is ill-formed. The constraints on the full descriptor are the union of the constraints on the segment itself and all of its ancestors. If any of them are inconsistent, then the model is ill-formed.
+|
+|In any full descriptor for a classifier, each method must have a corresponding operation. In a concrete classifier, each operation in its full descriptor must have a corresponding method in the full descriptor.
+|
+	    
+	    superclasses 	(list inheritance_relationship_list
+		(object Inheritance_Relationship
+		    quid       	"3A6CA02C020D"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::ModelElement"
+		    quidu      	"327A5C7301CC"))
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "child"
+		    quid       	"3A54C9B30023"
+		    documentation 	"Designates a Classifier that occupies the child or specialization position of the Generalization relationship."
+		    stereotype 	"reference"
+		    type       	"Classifier"
+		    exportControl 	"Public"
+		    derived    	TRUE)
+		(object ClassAttribute "parent"
+		    quid       	"3A54C9B60284"
+		    documentation 	"Designates a Classifier that occupies the parent or generalization position of the Generalization relationship."
+		    stereotype 	"reference"
+		    type       	"Classifier"
+		    exportControl 	"Public"
+		    derived    	TRUE)))
+	(object Class "AggregationKind"
+	    attributes 	(list Attribute_Set
+		(object Attribute
+		    tool       	"MOF"
+		    name       	"xmi.enumerationUnprefix"
+		    value      	"ak_"))
+	    quid       	"33DD6F5903A2"
+	    documentation 	
+|An enumeration that denotes what kind of aggregation an Association defines. When placed on a target end, specifies the relationship of the target end to the source end. 
+|
+|The default value is ak_none.
+	    
+	    stereotype 	"enumeration"
+	    class_attributes 	(list class_attribute_list
+		(object ClassAttribute "ak_none"
+		    quid       	"3717E0B800A2"
+		    documentation 	"The end is not an aggregate."
+		    type       	"type"
+		    exportControl 	"Public")
+		(object ClassAttribute "ak_aggregate"
+		    quid       	"3717E0D70332"
+		    documentation 	
+|The end is an aggregate; therefore, the other end is a part and must have the
+|aggregation value of none. The part may be contained in other aggregates.
+		    
+		    type       	"type"
+		    exportControl 	"Public")
+		(object ClassAttribute "ak_composite"
+		    quid       	"3717E0E9023D"
+		    documentation 	
+|The end is a composite; therefore, the other end is a part and must have the aggregation value of none. The part is strongly owned by the composite and may not be part of any other composite.
+|
+		    
+		    type       	"type"
+		    exportControl 	"Public"))
+	    language   	"none")
+	(object Association "ChildElement"
+	    quid       	"3A6CB0FE016E"
+	    documentation 	"The ChildElement association links Classifiers with the Generalization instances that describe where they participate as children in the inheritance hierarchy."
+	    roles      	(list role_list
+		(object Role "child"
+		    quid       	"3A6CB0FF015C"
+		    documentation 	"Identifies the Classifier instance that acts as a child in the Generalization relationship."
+		    label      	"child"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Classifier"
+		    quidu      	"32989FB2023D"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "generalization"
+		    quid       	"3A6CB0FF01A2"
+		    documentation 	
+|Identifies the set of Generalization instances in which the Classifier acts as a child
+|in the inheritance hierarchy.
+		    
+		    label      	"generalization"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Relationships::Generalization"
+		    quidu      	"3A54BFAC011D"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "ParentElement"
+	    quid       	"3A6CB10901EC"
+	    documentation 	"The ParentElement association links Classifiers with the Generalization instances that describe where the Classifiers participate as parents in the inheritance hierarchy."
+	    roles      	(list role_list
+		(object Role "parent"
+		    quid       	"3A6CB10A01BC"
+		    documentation 	"Identifies the Classifier instance that acts as a parent in an inheritance hierarchy."
+		    label      	"parent"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Core::Classifier"
+		    quidu      	"32989FB2023D"
+		    client_cardinality 	(value cardinality "1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "specialization"
+		    quid       	"3A6CB10A0202"
+		    documentation 	"Identifies the set of Generalization instances in which the Classifier acts a parent in the inheritance hierarchy."
+		    label      	"specialization"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Relationships::Generalization"
+		    quidu      	"3A54BFAC011D"
+		    client_cardinality 	(value cardinality "*")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)))
+	(object Association "ClassifierFeature"
+	    quid       	"3A71BA47006F"
+	    documentation 	"Added to improve diagram clarity.  See ObjectModel::Core::ClassifierFeature for details."
+	    roles      	(list role_list
+		(object Role "/feature"
+		    quid       	"3A71BA4802DE"
+		    label      	"/feature"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Relationships::AssociationEnd"
+		    quidu      	"3A6F584F03A5"
+		    client_cardinality 	(value cardinality "*")
+		    Constraints 	"ordered"
+		    Containment 	"By Value"
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE)
+		(object Role "/owner"
+		    quid       	"3A71BA4802E8"
+		    label      	"/owner"
+		    supplier   	"Logical View::org.omg::CWM::ObjectModel::Relationships::Association"
+		    quidu      	"3A54CBFF0090"
+		    client_cardinality 	(value cardinality "0..1")
+		    exportControl 	"Implementation"
+		    is_navigable 	TRUE
+		    is_aggregate 	TRUE))))
+    logical_presentations 	(list unit_reference_list
+	(object ClassDiagram "Figure 7-5-1  Relationships metamodel"
+	    quid       	"3A5A296E00A5"
+	    title      	"Figure 7-5-1  Relationships metamodel"
+	    documentation 	"Figure 7-5-1  Relationships metamodel"
+	    zoom       	100
+	    max_height 	28350
+	    max_width  	21600
+	    origin_x   	0
+	    origin_y   	0
+	    items      	(list diagram_item_list
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::ModelElement" @1
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(245, 374)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@1
+			location   	(101, 325)
+			nlines     	1
+			max_width  	288
+			justify    	0
+			label      	"ModelElement")
+		    icon_style 	"Icon"
+		    quidu      	"327A5C7301CC"
+		    width      	306
+		    height     	122
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Relationships::AssociationEnd" @2
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(346, 1560)
+		    label      	(object ItemLabel
+			Parent_View 	@2
+			location   	(73, 1454)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	546
+			justify    	0
+			label      	"AssociationEnd")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A6F584F03A5"
+		    compartment 	(object Compartment
+			Parent_View 	@2
+			location   	(73, 1512)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	553)
+		    width      	564
+		    height     	236)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Relationships::Association" @3
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1149, 1546)
+		    label      	(object ItemLabel
+			Parent_View 	@3
+			location   	(1026, 1494)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	246
+			justify    	0
+			label      	"Association")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A54CBFF0090"
+		    width      	264
+		    height     	128)
+		(object AssociationViewNew "ClassifierFeature" @4
+		    location   	(822, 1548)
+		    stereotype 	TRUE
+		    quidu      	"3A71BA47006F"
+		    roleview_list 	(list RoleViews
+			(object RoleView "/feature" @5
+			    Parent_View 	@4
+			    location   	(-251, 821)
+			    label      	(object SegLabel @6
+				Parent_View 	@5
+				location   	(727, 1512)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	174
+				justify    	0
+				label      	"/feature"
+				pctDist    	0.492838
+				height     	37
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A71BA4802DE"
+			    client     	@4
+			    supplier   	@2
+			    line_style 	3
+			    origin_attachment 	(822, 1548)
+			    terminal_attachment 	(628, 1548)
+			    label      	(object SegLabel @7
+				Parent_View 	@5
+				location   	(653, 1582)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.871166
+				height     	34
+				orientation 	0)
+			    label      	(object SegLabel @8
+				Parent_View 	@5
+				location   	(737, 1619)
+				anchor     	3
+				anchor_loc 	1
+				nlines     	1
+				max_width  	159
+				justify    	0
+				label      	"{ordered}"
+				pctDist    	0.441718
+				height     	71
+				orientation 	0))
+			(object RoleView "/owner" @9
+			    Parent_View 	@4
+			    location   	(-251, 821)
+			    label      	(object SegLabel @10
+				Parent_View 	@9
+				location   	(931, 1504)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	148
+				justify    	0
+				label      	"/owner"
+				pctDist    	0.558282
+				height     	45
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A71BA4802E8"
+			    client     	@4
+			    supplier   	@3
+			    line_style 	3
+			    origin_attachment 	(822, 1548)
+			    terminal_attachment 	(1017, 1548)
+			    label      	(object SegLabel @11
+				Parent_View 	@9
+				location   	(946, 1596)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	80
+				justify    	0
+				label      	"0..1"
+				pctDist    	0.634483
+				height     	48
+				orientation 	1))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Class" @12
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1134, 1166)
+		    label      	(object ItemLabel
+			Parent_View 	@12
+			location   	(1051, 1116)
+			nlines     	1
+			max_width  	166
+			justify    	0
+			label      	"Class")
+		    icon_style 	"Icon"
+		    quidu      	"3298A02900FE"
+		    width      	184
+		    height     	124
+		    annotation 	8)
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Relationships::Generalization" @13
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(252, 712)
+		    label      	(object ItemLabel
+			Parent_View 	@13
+			location   	(80, 606)
+			fill_color 	13434879
+			nlines     	1
+			max_width  	344
+			justify    	0
+			label      	"Generalization")
+		    icon_style 	"Icon"
+		    line_color 	3342489
+		    fill_color 	13434879
+		    quidu      	"3A54BFAC011D"
+		    compartment 	(object Compartment
+			Parent_View 	@13
+			location   	(80, 664)
+			icon_style 	"Icon"
+			fill_color 	16777215
+			anchor     	2
+			nlines     	3
+			max_width  	350)
+		    width      	362
+		    height     	236)
+		(object InheritView "" @14
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A6CA02C020D"
+		    client     	@13
+		    supplier   	@1
+		    line_style 	3
+		    origin_attachment 	(245, 593)
+		    terminal_attachment 	(245, 435))
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::Classifier" @15
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(1149, 699)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@15
+			location   	(1048, 650)
+			nlines     	1
+			max_width  	202
+			justify    	0
+			label      	"Classifier")
+		    icon_style 	"Icon"
+		    quidu      	"32989FB2023D"
+		    width      	220
+		    height     	122
+		    annotation 	8)
+		(object AssociationViewNew "ChildElement" @16
+		    location   	(736, 663)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A6CB0FE016E"
+		    roleview_list 	(list RoleViews
+			(object RoleView "child" @17
+			    Parent_View 	@16
+			    location   	(382, 90)
+			    label      	(object SegLabel @18
+				Parent_View 	@17
+				location   	(933, 633)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	116
+				justify    	0
+				label      	"child"
+				pctDist    	0.650558
+				height     	31
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A6CB0FF015C"
+			    client     	@16
+			    supplier   	@15
+			    line_style 	3
+			    origin_attachment 	(736, 663)
+			    terminal_attachment 	(1039, 663)
+			    label      	(object SegLabel @19
+				Parent_View 	@17
+				location   	(1018, 636)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.929368
+				height     	28
+				orientation 	0))
+			(object RoleView "generalization" @20
+			    Parent_View 	@16
+			    location   	(382, 90)
+			    label      	(object SegLabel @21
+				Parent_View 	@20
+				location   	(622, 627)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	281
+				justify    	0
+				label      	"generalization"
+				pctDist    	0.375465
+				height     	37
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A6CB0FF01A2"
+			    client     	@16
+			    supplier   	@13
+			    line_style 	3
+			    origin_attachment 	(736, 663)
+			    terminal_attachment 	(433, 663)
+			    label      	(object SegLabel @22
+				Parent_View 	@20
+				location   	(459, 627)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.918216
+				height     	37
+				orientation 	1))))
+		(object AssociationViewNew "ParentElement" @23
+		    location   	(736, 735)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A6CB10901EC"
+		    roleview_list 	(list RoleViews
+			(object RoleView "parent" @24
+			    Parent_View 	@23
+			    location   	(382, 162)
+			    label      	(object SegLabel @25
+				Parent_View 	@24
+				location   	(913, 766)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	141
+				justify    	0
+				label      	"parent"
+				pctDist    	0.583643
+				height     	31
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A6CB10A01BC"
+			    client     	@23
+			    supplier   	@15
+			    line_style 	3
+			    origin_attachment 	(736, 735)
+			    terminal_attachment 	(1039, 735)
+			    label      	(object SegLabel @26
+				Parent_View 	@24
+				location   	(1005, 711)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.891089
+				height     	25
+				orientation 	0))
+			(object RoleView "specialization" @27
+			    Parent_View 	@23
+			    location   	(382, 162)
+			    label      	(object SegLabel @28
+				Parent_View 	@27
+				location   	(611, 770)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	279
+				justify    	0
+				label      	"specialization"
+				pctDist    	0.416357
+				height     	35
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"3A6CB10A0202"
+			    client     	@23
+			    supplier   	@13
+			    line_style 	3
+			    origin_attachment 	(736, 735)
+			    terminal_attachment 	(433, 735)
+			    label      	(object SegLabel @29
+				Parent_View 	@27
+				location   	(451, 776)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.940520
+				height     	41
+				orientation 	0))))
+		(object ClassView "Class" "Logical View::org.omg::CWM::ObjectModel::Core::StructuralFeature" @30
+		    ShowCompartmentStereotypes 	TRUE
+		    SuppressAttribute 	TRUE
+		    SuppressOperation 	TRUE
+		    IncludeAttribute 	TRUE
+		    IncludeOperation 	TRUE
+		    location   	(341, 1166)
+		    font       	(object Font
+			italics    	TRUE)
+		    label      	(object ItemLabel
+			Parent_View 	@30
+			location   	(162, 1116)
+			nlines     	1
+			max_width  	358
+			justify    	0
+			label      	"StructuralFeature")
+		    icon_style 	"Icon"
+		    quidu      	"3298F1A403BF"
+		    width      	376
+		    height     	124
+		    annotation 	8)
+		(object AssociationViewNew "StructuralFeatureType" @31
+		    location   	(744, 931)
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"316437BF0352"
+		    roleview_list 	(list RoleViews
+			(object RoleView "type" @32
+			    Parent_View 	@31
+			    location   	(417, 156)
+			    label      	(object SegLabel @33
+				Parent_View 	@32
+				location   	(987, 841)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	80
+				justify    	0
+				label      	"type"
+				pctDist    	0.744757
+				height     	44
+				orientation 	1)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"316437C003B6"
+			    client     	@31
+			    supplier   	@15
+			    line_style 	0
+			    label      	(object SegLabel @34
+				Parent_View 	@32
+				location   	(1038, 824)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"1"
+				pctDist    	0.900000
+				height     	54
+				orientation 	1))
+			(object RoleView "structuralFeature" @35
+			    Parent_View 	@31
+			    location   	(417, 156)
+			    label      	(object SegLabel @36
+				Parent_View 	@35
+				location   	(694, 1073)
+				anchor     	1
+				anchor_loc 	1
+				nlines     	1
+				max_width  	323
+				justify    	0
+				label      	"structuralFeature"
+				pctDist    	0.333415
+				height     	98
+				orientation 	0)
+			    stereotype 	TRUE
+			    line_color 	3342489
+			    quidu      	"316437C002DA"
+			    client     	@31
+			    supplier   	@30
+			    line_style 	0
+			    label      	(object SegLabel @37
+				Parent_View 	@35
+				location   	(503, 1133)
+				anchor     	2
+				anchor_loc 	1
+				nlines     	1
+				max_width  	15
+				justify    	0
+				label      	"*"
+				pctDist    	0.900000
+				height     	54
+				orientation 	0))))
+		(object InheritView "" @38
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A71D29B0396"
+		    client     	@3
+		    supplier   	@12
+		    line_style 	3
+		    origin_attachment 	(1135, 1481)
+		    terminal_attachment 	(1135, 1228))
+		(object InheritView "" @39
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3378D4F40118"
+		    client     	@12
+		    supplier   	@15
+		    line_style 	3
+		    origin_attachment 	(1135, 1104)
+		    terminal_attachment 	(1135, 760))
+		(object InheritView "" @40
+		    stereotype 	TRUE
+		    line_color 	3342489
+		    quidu      	"3A71D40C0075"
+		    client     	@2
+		    supplier   	@30
+		    line_style 	3
+		    origin_attachment 	(351, 1441)
+		    terminal_attachment 	(351, 1227))
+		(object Label @41
+		    location   	(88, 131)
+		    font       	(object Font
+			size       	12)
+		    nlines     	1
+		    max_width  	600
+		    label      	"Figure 7-5-1  Relationships metamodel")))))

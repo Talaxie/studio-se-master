@@ -1,0 +1,1 @@
+rose_to_emf_problem.png: list of problems that appeared while creating the EMF model from the Rose model.
