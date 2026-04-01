@@ -1,0 +1,36 @@
+/**
+ * // ============================================================================
+ * //
+ * // Copyright (C) 2006-2021 Talend Inc. - www.talend.com
+ * //
+ * // This source code is available under agreement available at
+ * // %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+ * //
+ * // You should have received a copy of the agreement
+ * // along with this program; if not, write to Talend SA
+ * // 9 rue Pages 92150 Suresnes, France
+ * //
+ * // ============================================================================
+ *
+ *
+ * $Id$
+ */
+package org.talend.dataquality.rules;
+
+
+/**
+ * <!-- begin-user-doc -->
+ * A representation of the model object '<em><b>Specified DQ Rule</b></em>'.
+ * <!-- end-user-doc -->
+ *
+ * <!-- begin-model-doc -->
+ * A DQ rule written by someone. (as opposed to inferred)
+ * <!-- end-model-doc -->
+ *
+ *
+ * @see org.talend.dataquality.rules.RulesPackage#getSpecifiedDQRule()
+ * @model
+ * @generated
+ */
+public interface SpecifiedDQRule extends DQRule {
+} // SpecifiedDQRule
