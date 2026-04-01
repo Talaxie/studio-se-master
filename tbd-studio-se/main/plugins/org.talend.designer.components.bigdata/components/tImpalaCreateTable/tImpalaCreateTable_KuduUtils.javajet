@@ -1,0 +1,74 @@
+<%@ jet
+%>
+<%
+    class KuduUtils {
+        private static final String VARCHAR = "VARCHAR";
+        final MappingTypeRetriever mappingTypeRetriever;
+        private boolean hasKey = false;
+        private final StringBuilder keyStringBuilder = new StringBuilder();
+
+        public KuduUtils(MappingTypeRetriever mappingTypeRetriever) {
+            this.mappingTypeRetriever = mappingTypeRetriever;
+        }
+
+
+        void generateKuduSchema(List<IMetadataColumn> listColumn, StringBuilder createTableSQL) {
+            appendKeyColumns(listColumn, createTableSQL);
+            appendNotKeyColumns(listColumn, createTableSQL);
+            if (this.hasKey) {
+                createTableSQL.append(" PRIMARY KEY ( ");
+                createTableSQL.append(this.keyStringBuilder);
+                createTableSQL.append(" )");
+            } else {
+                createTableSQL.deleteCharAt(createTableSQL.length() - 1);
+            }
+        }
+
+        private void appendKeyColumns(List<IMetadataColumn> listColumn, StringBuilder createTableSQL) {
+            for (IMetadataColumn iMetadataColumn : listColumn) {
+                if (iMetadataColumn.isKey()) {
+                    this.keyStringBuilder.append(iMetadataColumn.getOriginalDbColumnName() + ",");
+                    this.hasKey = true;
+                    createTableSQL.append(iMetadataColumn.getOriginalDbColumnName());
+                    createTableSQL.append(" ");
+                    String hiveType = getHiveType(iMetadataColumn);
+                    createTableSQL.append(hiveType);
+                    if (iMetadataColumn.getLength() != null && iMetadataColumn.getPrecision() != null && "DECIMAL".equals(hiveType)) {
+                        createTableSQL.append("(" + iMetadataColumn.getLength() + ", " + iMetadataColumn.getPrecision() + ")");
+                    } else if (iMetadataColumn.getLength() != null && VARCHAR.equals(hiveType)) {
+                        createTableSQL.append("(" + iMetadataColumn.getLength() + ")");
+                    }
+                    createTableSQL.append(",");
+                }
+            }
+            if (this.keyStringBuilder.length() > 0) {
+                this.keyStringBuilder.deleteCharAt(this.keyStringBuilder.length() - 1);
+            }
+        }
+
+        private void appendNotKeyColumns(List<IMetadataColumn> listColumn, StringBuilder createTableSQL) {
+            for (IMetadataColumn metadataColumn : listColumn) {
+                if (!metadataColumn.isKey()) {
+                    createTableSQL.append(metadataColumn.getOriginalDbColumnName());
+                    createTableSQL.append(" ");
+
+                    createTableSQL.append(getHiveType(metadataColumn));
+
+                    if (!metadataColumn.isNullable()) {
+                        createTableSQL.append(" NOT NULL ");
+                    }
+                    createTableSQL.append(",");
+                }
+            }
+        }
+
+        private String getHiveType(IMetadataColumn iMetadataColumn) {
+            if (iMetadataColumn.getType() == null || iMetadataColumn.getType().trim().length() == 0) {
+                return mappingTypeRetriever.getDefaultSelectedDbType(iMetadataColumn.getTalendType());
+            } else {
+                // Replace VARCHAR2 with VARCHAR since Hive can only handle the latter
+                return "VARCHAR2".equals(iMetadataColumn.getType()) ? VARCHAR : iMetadataColumn.getType();
+            }
+        }
+    }
+%>

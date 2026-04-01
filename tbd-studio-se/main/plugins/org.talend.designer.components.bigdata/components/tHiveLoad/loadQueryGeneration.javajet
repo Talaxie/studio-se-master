@@ -1,0 +1,118 @@
+<%@jet
+%>
+<%
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------------------------
+    // This javajet is shared by the tHiveLoad and the tImpalaLoad components. Be careful if you rename and modify it.
+    // ---------------------------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------------------------
+
+    StringBuilder createTableSQL = new StringBuilder();
+    
+    if("LOAD".equals(loadAction)) {
+        createTableSQL.append("LOAD DATA ");
+        if(local) {
+            createTableSQL.append("LOCAL ");
+        }
+        createTableSQL.append("INPATH '");
+%>
+            String path_<%=cid%> = <%=path%>;
+<%
+        createTableSQL.append("\" + ");
+        createTableSQL.append("path_");
+        createTableSQL.append(cid);
+        createTableSQL.append(" + \"'");
+        
+        if("OVERWRITE".equals(fileAction)) {
+            createTableSQL.append(" OVERWRITE ");
+        }
+        createTableSQL.append(" INTO TABLE ");
+%>
+        String tablename_<%=cid%> = <%=tablename%>;
+<%
+        createTableSQL.append("\" + ");
+        createTableSQL.append("tablename_");
+        createTableSQL.append(cid);
+        createTableSQL.append(" + \"");
+        
+        if(setPartition) {
+            createTableSQL.append(" PARTITION (");
+%>
+            String partition_<%=cid%> = <%=partition%>;
+<%
+            createTableSQL.append("\" + ");
+            createTableSQL.append("partition_");
+            createTableSQL.append(cid);
+            createTableSQL.append(" + \"");
+            createTableSQL.append(")");
+        }
+    } else if("INSERT".equals(loadAction)) {
+        createTableSQL.append("INSERT ");
+        
+        String targetType = ElementParameterParser.getValue(node, "__TARGET__");
+        String query = ElementParameterParser.getValue(node, "__QUERY__");
+        query = query.replaceAll("\n"," ");
+        query = query.replaceAll("\r"," ");
+        
+        if("TABLE".equals(targetType)) {
+            boolean createIfNotExist = "true".equals(ElementParameterParser.getValue(node, "__CREATE_IF_NOT_EXIST__"));
+            
+            if("OVERWRITE".equals(fileAction)) {
+                createTableSQL.append("OVERWRITE ");
+            } else if("APPEND".equals(fileAction)) {
+                createTableSQL.append("INTO ");
+            }
+            createTableSQL.append("TABLE ");
+%>
+            String tablename_<%=cid%> = <%=tablename%>;
+<%
+            createTableSQL.append("\" + ");
+            createTableSQL.append("tablename_");
+            createTableSQL.append(cid);
+            createTableSQL.append(" + \" ");
+            
+            if(setPartition) {
+                createTableSQL.append(" PARTITION (");
+%>
+                String partition_<%=cid%> = <%=partition%>;
+<%
+                createTableSQL.append("\" + ");
+                createTableSQL.append("partition_");
+                createTableSQL.append(cid);
+                createTableSQL.append(" + \"");
+                createTableSQL.append(") ");
+                
+                if(createIfNotExist) {
+                    createTableSQL.append(" IF NOT EXISTS ");
+                }
+            }
+        } else if("DIRECTORY".equals(targetType)) {
+            createTableSQL.append("OVERWRITE ");
+            
+            if(local) {
+                createTableSQL.append("LOCAL ");
+            }
+            
+            createTableSQL.append("DIRECTORY '");
+%>
+            String path_<%=cid%> = <%=path%>;
+<%
+            createTableSQL.append("\" + ");
+            createTableSQL.append("path_");
+            createTableSQL.append(cid);
+            createTableSQL.append(" + \"' ");
+        }
+%>
+        String query_<%=cid%> = <%=query%>;
+<%
+        createTableSQL.append("\" + ");
+        createTableSQL.append("query_");
+        createTableSQL.append(cid);
+        createTableSQL.append(" + \"");
+    }
+%>
+
+    String querySQL_<%=cid %> = "<%=createTableSQL.toString()%>";

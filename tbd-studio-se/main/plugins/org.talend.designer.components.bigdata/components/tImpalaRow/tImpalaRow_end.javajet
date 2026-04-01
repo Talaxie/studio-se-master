@@ -1,0 +1,59 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.MappingTypeRetriever
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.designer.runprocess.ProcessorException
+		org.talend.designer.runprocess.ProcessorUtilities
+		java.util.List	
+		java.util.Map
+		java.util.Set
+		java.util.HashSet
+		" 
+%>
+<%
+	CodeGeneratorArgument loadCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)loadCodeGenArgument.getArgument();
+	final String cid = node.getUniqueName();
+	
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean usePrepareStatement = "true".equals(ElementParameterParser.getValue(node,"__USE_PREPAREDSTATEMENT__"));
+	boolean useExistingConn = "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	
+	if (usePrepareStatement) {
+%>
+		pstmt_<%=cid %>.close();	
+<%
+	} else {
+%>
+		stmt_<%=cid %>.close();	
+<%
+	}
+	if(!useExistingConn) {
+		if(isLog4jEnabled) {
+%>
+			log.info("<%=cid%> - Closing the connection to the database.");
+<%
+		}
+%>
+		conn_<%=cid %> .close();
+<%
+		if(isLog4jEnabled) {
+%>
+			log.info("<%=cid%> - Connection to the database closed.");
+<%
+		}
+	}
+
+	if(isLog4jEnabled) {
+%>
+		log.info("<%=cid%> - Done.");
+<%
+	}
+%>

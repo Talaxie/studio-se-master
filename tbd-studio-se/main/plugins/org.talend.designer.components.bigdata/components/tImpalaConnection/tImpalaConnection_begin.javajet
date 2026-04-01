@@ -1,0 +1,219 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.designer.runprocess.ProcessorException
+		org.talend.designer.runprocess.ProcessorUtilities
+		java.util.List
+		java.util.Map		
+	"
+%>
+<%
+	// ---------------------------------------------------------------------------------------------
+	// ---------------------------------------------------------------------------------------------
+	// ---------------------------------------------------------------------------------------------
+	// This javajet is included in other tImpala components. Be careful if you rename and modify it.
+	// ---------------------------------------------------------------------------------------------
+	// ---------------------------------------------------------------------------------------------
+	// ---------------------------------------------------------------------------------------------
+
+	CodeGeneratorArgument connectionCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode connectionNode = (INode)connectionCodeGenArgument.getArgument();
+	String distributionName = ElementParameterParser.getValue(connectionNode, "__DISTRIBUTION__");
+	String impalaVersionName = ElementParameterParser.getValue(connectionNode, "__IMPALA_VERSION__");
+	String impalaDriver = ElementParameterParser.getValue(connectionNode, "__IMPALA_DRIVER__");
+	
+	boolean supportImpalaConnector = false;
+	 // use HiveComponent type to get all necessary methods but there is something to fix about the design on the current typing 
+	org.talend.hadoop.distribution.component.HiveComponent componentDistrib = null;
+	try {
+	   componentDistrib = (org.talend.hadoop.distribution.component.HiveComponent)org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distributionName, impalaVersionName);
+	   supportImpalaConnector = componentDistrib.doSupportImpalaConnector();
+	} catch (java.lang.Exception e) {
+		e.printStackTrace();
+		return "	throw new IllegalStateException(\"Unexpected Error: Hive Distribution can not be found for '"+distributionName+"-"+impalaVersionName+"'\");";
+
+	}
+	boolean isCustom = componentDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/HelpClass/HelpClass.javajet"%>
+	
+
+<%   if(supportImpalaConnector && "impala".equalsIgnoreCase(impalaDriver)){%>
+         <%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaConnection/tImpalaConnectionUtilImpalaDriver.javajet"%>
+<%       connUtil = new ConnectionUtilImpala(componentDistrib);
+     }else{
+%>
+         <%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaConnection/tImpalaConnectionUtil.javajet"%>
+<%       connUtil = new ConnectionUtil(componentDistrib);
+     }
+%>
+
+<%//----------------------------component codes-----------------------------------------%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/AbstractDBConnection.javajet"%>
+
+<%
+	String storeByHBase = ElementParameterParser.getValue(node, "__STORE_BY_HBASE__");
+	String connectionMode = ElementParameterParser.getValue(node, "__CONNECTION_MODE__");
+	String hiveVersion = ElementParameterParser.getValue(node, "__HIVE_VERSION__");
+	String zookeeperQuorumForHBase = ElementParameterParser.getValue(node, "__ZOOKEEPER_QUORUM__");
+	String zookeeperClientPortForHBase = ElementParameterParser.getValue(node, "__ZOOKEEPER_CLIENT_PORT__");
+	boolean setZNodeParent = "true".equals(ElementParameterParser.getValue(node, "__SET_ZNODE_PARENT__"));
+	String zNodeParent = ElementParameterParser.getValue(node, "__ZNODE_PARENT__");
+	String hbaseMasterPrincipal = ElementParameterParser.getValue(node, "__HBASE_MASTER_PRINCIPAL__");
+	String hbaseRegionServerPrincipal = ElementParameterParser.getValue(node, "__HBASE_REGIONSERVER_PRINCIPAL__");
+
+	String defineRegisterJar = ElementParameterParser.getValue(node, "__DEFINE_REGISTER_JAR__");
+	List<Map<String, String>> registerJarForHBase = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__REGISTER_JAR__");
+
+	boolean useYarn = "true".equals(ElementParameterParser.getValue(node, "__USE_YARN__"));
+	boolean setResourceManager = "true".equals(ElementParameterParser.getValue(node, "__SET_RESOURCE_MANAGER__"));
+
+	String yarnClasspathSeparator = ElementParameterParser.getValue(node, "__CLASSPATH_SEPARATOR__");
+
+	boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	boolean securityIsEnabled = useKrb && (isCustom || componentDistrib.doSupportKerberos() );
+
+	boolean isKerberosAvailableHadoop2 = !isCustom && componentDistrib.isHadoop2() && componentDistrib.doSupportKerberos();
+	boolean isHadoop2 = !isCustom && componentDistrib.isHadoop2();
+	boolean isKerberosAvailableHadoop1 = !isCustom && componentDistrib.isHadoop1() && componentDistrib.doSupportKerberos();
+	boolean configureFromClassPath = "true".equals(ElementParameterParser.getValue(node, "__CONFIGURATIONS_FROM_CLASSPATH__"));
+
+%>
+	globalMap.put("current_client_path_separator", System.getProperty("path.separator"));
+	System.setProperty("path.separator", "<%=yarnClasspathSeparator%>");
+
+	java.sql.Statement init_<%=cid%> = conn_<%=cid%>.createStatement();
+<%
+	if((isCustom && useYarn) || (!isCustom && isHadoop2)) {
+		if(!configureFromClassPath && setResourceManager) {
+			String resourceManager = ElementParameterParser.getValue(node, "__RESOURCE_MANAGER__");
+%>
+    		init_<%=cid%>.execute("SET mapreduce.framework.name=yarn");
+    		init_<%=cid%>.execute("SET yarn.resourcemanager.address=" + <%=resourceManager%>);
+<%
+		}
+
+		boolean setJobHistoryAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_JOBHISTORY_ADDRESS__"));
+		if(!configureFromClassPath && setJobHistoryAddress) {
+			String jobHistoryAddress = ElementParameterParser.getValue(node,"__JOBHISTORY_ADDRESS__");
+			%>
+			init_<%=cid%>.execute("SET mapreduce.jobhistory.address=" + <%=jobHistoryAddress%>);
+			<%
+		}
+
+		if ("true".equals(ElementParameterParser.getValue(node, "__USE_DATANODE_HOSTNAME__"))) {
+%>
+			init_<%=cid%>.execute("SET dfs.client.use.datanode.hostname=true");
+<%
+		}
+
+		boolean setSchedulerAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_SCHEDULER_ADDRESS__"));
+		if(!configureFromClassPath && setSchedulerAddress) {
+			String schedulerAddress = ElementParameterParser.getValue(node,"__RESOURCEMANAGER_SCHEDULER_ADDRESS__");
+%>
+			init_<%=cid%>.execute("SET yarn.resourcemanager.scheduler.address=" + <%=schedulerAddress%>);
+<%
+		}
+
+		if(!configureFromClassPath && "true".equals(ElementParameterParser.getValue(node, "__SET_FS_DEFAULT_NAME__"))) {
+			String namenode = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+%>
+			init_<%=cid%>.execute("SET fs.default.name=" + <%=namenode%>);
+<%
+		}
+
+		boolean setMemory = "true".equals(ElementParameterParser.getValue(node, "__SET_MEMORY__"));
+		if(setMemory) {
+			String mapMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_MAP_MEMORY_MB__");
+			String reduceMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_REDUCE_MEMORY_MB__");
+			String amMemory = ElementParameterParser.getValue(node,"__YARN_APP_MAPREDUCE_AM_RESOURCE_MB__");
+%>
+			init_<%=cid%>.execute("SET mapreduce.map.memory.mb=" + <%=mapMemory%>);
+			init_<%=cid%>.execute("SET mapreduce.reduce.memory.mb=" + <%=reduceMemory%>);
+			init_<%=cid%>.execute("SET yarn.app.mapreduce.am.resource.mb=" + <%=amMemory%>);
+<%
+		}
+	}
+
+	List<Map<String, String>> advProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_PROPERTIES__");
+	if(advProps!=null) {
+		for(Map<String, String> item : advProps){
+%>
+			init_<%=cid%>.execute("SET "+<%=item.get("PROPERTY")%>+"="+<%=item.get("VALUE")%>);
+<%
+		}
+	}
+%>
+
+	init_<%=cid%>.close();
+
+	<%if("true".equalsIgnoreCase(storeByHBase) && (isCustom || componentDistrib.doSupportHBaseForHive())) {%>
+		java.sql.Statement statement_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(!configureFromClassPath && zookeeperQuorumForHBase!=null && !"".equals(zookeeperQuorumForHBase) && !"\"\"".equals(zookeeperQuorumForHBase)) {%>
+			statement_<%=cid%>.execute("SET hbase.zookeeper.quorum="+<%=zookeeperQuorumForHBase%>);
+		<%}%>
+
+		<%if(!configureFromClassPath && zookeeperClientPortForHBase!=null && !"".equals(zookeeperClientPortForHBase) && !"\"\"".equals(zookeeperClientPortForHBase)) {%>
+			statement_<%=cid%>.execute("SET hbase.zookeeper.property.clientPort="+<%=zookeeperClientPortForHBase%>);
+		<%}%>
+
+		<%if(!configureFromClassPath && setZNodeParent && zNodeParent!=null && !"".equals(zNodeParent) && !"\"\"".equals(zNodeParent)) {%>
+			statement_<%=cid%>.execute("SET zookeeper.znode.parent="+<%=zNodeParent%>);
+		<%}%>
+
+		<%if(!configureFromClassPath && useKrb){%>
+			statement_<%=cid%>.execute("SET hbase.security.authentication=kerberos");
+			statement_<%=cid%>.execute("SET hbase.rpc.engine=org.apache.hadoop.hbase.ipc.SecureRpcEngine");
+
+			<%if(hbaseMasterPrincipal!=null && !"".equals(hbaseMasterPrincipal) && !"\"\"".equals(hbaseMasterPrincipal)){%>
+				statement_<%=cid%>.execute("SET hbase.master.kerberos.principal="+<%=hbaseMasterPrincipal%>);
+			<%}%>
+			<%if(hbaseRegionServerPrincipal!=null && !"".equals(hbaseRegionServerPrincipal) && !"\"\"".equals(hbaseRegionServerPrincipal)){%>
+				statement_<%=cid%>.execute("SET hbase.regionserver.kerberos.principal="+<%=hbaseRegionServerPrincipal%>);
+			<%}%>
+		<%}%>
+
+		<%if("true".equalsIgnoreCase(defineRegisterJar) && registerJarForHBase!=null && registerJarForHBase.size()>0) {
+			for(Map<String, String> jar : registerJarForHBase){
+				String path = jar.get("JAR_PATH");
+				if(path == null || "".equals(path) || "\"\"".equals(path)) {
+					continue;
+				}
+		%>
+				statement_<%=cid%>.execute("add jar "+<%=path%>);
+		<%
+			}
+		}%>
+		statement_<%=cid%>.close();
+	<%}%>
+	globalMap.put("conn_<%=cid%>",conn_<%=cid%>);
+
+	globalMap.put("db_<%=cid%>",<%=dbname%>);
+
+	String currentClientPathSeparator_<%=cid%> = (String)globalMap.get("current_client_path_separator");
+	if(currentClientPathSeparator_<%=cid%>!=null) {
+		System.setProperty("path.separator", currentClientPathSeparator_<%=cid%>);
+		globalMap.put("current_client_path_separator", null);
+	}
+
+	String currentClientUsername_<%=cid%> = (String)globalMap.get("current_client_user_name");
+	if(currentClientUsername_<%=cid%>!=null) {
+		System.setProperty("user.name", currentClientUsername_<%=cid%>);
+		globalMap.put("current_client_user_name", null);
+	}
+
+	String originalHadoopUsername_<%=cid%> = (String)globalMap.get("HADOOP_USER_NAME_<%=cid%>");
+	if(originalHadoopUsername_<%=cid%>!=null) {
+		System.setProperty("HADOOP_USER_NAME", originalHadoopUsername_<%=cid%>);
+		globalMap.put("HADOOP_USER_NAME_<%=cid%>", null);
+	} else {
+		System.clearProperty("HADOOP_USER_NAME");
+	}

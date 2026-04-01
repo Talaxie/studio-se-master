@@ -1,0 +1,108 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser
+	java.util.Map 
+    java.util.List 
+	"
+%>
+
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/GetFileSystem.javajet"%>
+		
+<%	
+	 String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+	 String rowSeparator = ElementParameterParser.getValue(node,"__ROWSEPARATOR__");
+	 String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+	 boolean ignoreEmptyRow = "true".equals(ElementParameterParser.getValue(node, "__IGNORE_EMPTY_ROW__"));
+	
+	 boolean uncompress = "true".equals(ElementParameterParser.getValue(node, "__UNCOMPRESS__"));
+	 String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+%>
+	  String filename_<%=cid%> = <%=filename%>;
+	  int emptyLineCount_<%=cid%> = 0;
+	  org.apache.hadoop.fs.Path file_<%=cid%> = new org.apache.hadoop.fs.Path(filename_<%=cid%>);
+	  org.apache.hadoop.fs.FSDataInputStream fsdis_<%=cid%> = fs_<%=cid%>.open(file_<%=cid%>);
+	
+	  int lineCount_<%=cid %> = 0;
+	  
+	  <%
+	  if(!uncompress) {
+	  %>
+	  	java.io.BufferedReader br_<%=cid %> = new java.io.BufferedReader(new java.io.InputStreamReader(fsdis_<%=cid%>, <%=encoding%>));
+	  <%
+	  } else {
+	  	if("GZIP".equals(compression)) {
+	  %>
+	    org.apache.hadoop.io.compress.GzipCodec codec_<%=cid%> = new org.apache.hadoop.io.compress.GzipCodec();
+		codec_<%=cid%>.setConf(conf_<%=cid%>);	
+	  <%
+	  	} else if("BZIP2".equals(compression)) {
+	  %>
+	  	org.apache.hadoop.io.compress.CompressionCodec codec_<%=cid%> = org.apache.hadoop.util.ReflectionUtils.newInstance(org.apache.hadoop.io.compress.BZip2Codec.class, conf_<%=cid%>);
+	  <%
+	  	}
+	  %>
+	  	org.apache.hadoop.io.compress.CompressionInputStream in<%=cid%> = codec_<%=cid%>.createInputStream(fsdis_<%=cid%>);
+	  	java.io.BufferedReader br_<%=cid %> = new java.io.BufferedReader(new java.io.InputStreamReader(in<%=cid%>, <%=encoding%>));
+	  <%
+	  }
+	  %>
+	  
+	  			
+	  String rowSeparator_<%=cid %> = <%=rowSeparator %>;
+	  byte[] bytes_<%=cid %> = rowSeparator_<%=cid %>.getBytes();
+	  int index_<%=cid %> = 0, oneChar_<%=cid %> = 0, tipEmptyLineCount_<%=cid %> = 0; 
+	  boolean bTipEmptyFlagOpen_<%=cid %> = true, bReadyEOF_<%=cid%> = false;
+			
+	  if(bytes_<%=cid %>.length > 0) {
+	    while ((oneChar_<%=cid %> = br_<%=cid %>.read()) != -1) {
+	      if (oneChar_<%=cid %> == bytes_<%=cid %>[index_<%=cid %>]) {
+	      
+	        if (index_<%=cid %> < bytes_<%=cid %>.length - 1){
+	          index_<%=cid %> ++ ;
+	          continue; // match next char
+	        }
+	        
+	        if (index_<%=cid %> == bytes_<%=cid %>.length - 1) {                  
+	          lineCount_<%=cid %>++;
+	          if(bTipEmptyFlagOpen_<%=cid %>) {
+	            tipEmptyLineCount_<%=cid %> ++;
+	            emptyLineCount_<%=cid%> ++;
+	          }
+	          bReadyEOF_<%=cid%> = false; // next row must be have char(or EOF flag)
+	          bTipEmptyFlagOpen_<%=cid %> = true; 
+	          index_<%=cid %> = 0;
+	        }
+	        
+	      }else{      
+	        bReadyEOF_<%=cid%> = true;
+	        bTipEmptyFlagOpen_<%=cid %> = false;
+	        tipEmptyLineCount_<%=cid %> = 0;
+	        index_<%=cid %> = 0;        
+	      }
+	    }
+	    
+	    if (bReadyEOF_<%=cid%>) lineCount_<%=cid %> ++ ; // add last row if not end by row separator
+	    
+	    if (bTipEmptyFlagOpen_<%=cid %>) {
+	      lineCount_<%=cid %> -= tipEmptyLineCount_<%=cid %>;
+	      emptyLineCount_<%=cid%> -= tipEmptyLineCount_<%=cid %>;
+	    }          
+	  }
+	  br_<%=cid %>.close();
+	<%
+  	if (ignoreEmptyRow){
+	%>
+  	lineCount_<%=cid %> -= emptyLineCount_<%=cid%>;
+	<%}%>   
+  	globalMap.put("<%=cid %>_COUNT",lineCount_<%=cid %>);
+  	
+	<%
+	if(isLog4jEnabled) {
+	%>
+	log.info("<%=cid%> - file : " + file_<%=cid%> + " line count is " + lineCount_<%=cid %>);
+	<%
+	}
+	
+	%>

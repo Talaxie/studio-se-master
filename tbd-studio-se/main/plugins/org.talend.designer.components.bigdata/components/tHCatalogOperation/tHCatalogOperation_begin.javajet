@@ -1,0 +1,608 @@
+<%@ jet
+	imports="
+	java.util.List
+	java.util.Map
+	org.talend.core.model.process.ElementParameterParser	
+	org.talend.core.model.process.INode
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.types.Java2STLangTypesHelper
+	"
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    
+	log4jFileUtil.componentStartInfo(node);
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	String templeton_host = ElementParameterParser.getValue(node, "__TEMPLETON_HOST__");
+	String templeton_port = ElementParameterParser.getValue(node, "__TEMPLETON_PORT__");
+	
+	String database = ElementParameterParser.getValue(node, "__DATABASE_NAME__");
+	String table = ElementParameterParser.getValue(node, "__TABLE_NAME__");
+	String partition = ElementParameterParser.getValue(node, "__PARTITION_NAME__");
+	String username = ElementParameterParser.getValue(node, "__USERNAME__");
+	boolean setFileLocation = "true".equals(ElementParameterParser.getValue(node, "__SET_FILE_LOCATION__"));
+	String fileLocation = ElementParameterParser.getValue(node, "__FILE_LOCATION__");
+	
+	String operationOn = ElementParameterParser.getValue(node, "__OPERATION_ON__");
+	String operation = ElementParameterParser.getValue(node, "__OPERATION__");
+	String option = ElementParameterParser.getValue(node, "__OPTION__");
+	
+	boolean setUserGroup = "true".equals(ElementParameterParser.getValue(node, "__SET_USER_GROUP__"));
+	boolean setPermissions = "true".equals(ElementParameterParser.getValue(node, "__SET_PERMISSIONS__"));
+	String userGroup = ElementParameterParser.getValue(node, "__USER_GROUP__");
+	String permissions = ElementParameterParser.getValue(node, "__PERMISSIONS__");
+	
+	String dbLocation = ElementParameterParser.getValue(node, "__DB_LOCATION__");
+	String dbDescription = ElementParameterParser.getValue(node, "__DB_DESCRIPTION__");
+	
+	boolean createExternal = "true".equals(ElementParameterParser.getValue(node, "__CREATE_EXTERNAL__"));
+	boolean setPartitions = "true".equals(ElementParameterParser.getValue(node, "__SET_PARTITIONS__"));
+	boolean setHDFSLocation = "true".equals(ElementParameterParser.getValue(node, "__SET_HDFS_LOCATION__"));
+	String hdfsLocation = ElementParameterParser.getValue(node, "__HDFS_LOCATION__");
+	String tableComment = ElementParameterParser.getValue(node, "__TABLE_COMMENT__");
+	String storageFormat = ElementParameterParser.getValue(node, "__STORAGE_FORMAT__");
+	
+	boolean setRowFormat = "true".equals(ElementParameterParser.getValue(node, "__SET_ROW_FORMAT__"));
+	String fieldsTerminatedBy = ElementParameterParser.getValue(node, "__FIELD_TERMINATED_BY__");
+	String collectionItemsTerminatedBy = ElementParameterParser.getValue(node, "__COLLECTION_ITEM_TERMINATED_BY__");
+	String mapKeysTerminatedBy = ElementParameterParser.getValue(node, "__MAP_KEY_TERMINATED_BY__");
+	String linesTerminatedBy = ElementParameterParser.getValue(node, "__LINES_TERMINATED_BY__");
+	
+	boolean setFieldsTerminatedBy = "true".equals(ElementParameterParser.getValue(node, "__SET_FIELD_TERMINATED_BY__"));
+	boolean setCollectionItemsTerminatedBy = "true".equals(ElementParameterParser.getValue(node, "__SET_COLLECTION_ITEM_TERMINATED_BY__"));
+	boolean setMapKeysTerminatedBy = "true".equals(ElementParameterParser.getValue(node, "__SET_MAP_KEY_TERMINATED_BY__"));
+	boolean setLinesTerminatedBy = "true".equals(ElementParameterParser.getValue(node, "__SET_LINES_TERMINATED_BY__"));
+	
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	boolean activateLog = "true".equals(ElementParameterParser.getValue(node, "__ACTIVATE_LOG__"));
+	
+	String stdout = ElementParameterParser.getValue(node, "__STDOUT__");
+	String stderr = ElementParameterParser.getValue(node, "__STDERR__");
+	
+	List<Map<String, String>> templetonProperties = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__TEMPLETON_PROPERTIES__");
+	
+	boolean useKerberos = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	String krb_realm = ElementParameterParser.getValue(node, "__KRB_REALM__");
+	String krb_princ = ElementParameterParser.getValue(node, "__KRB_PRINC__");
+	
+	boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+	String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+	String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+	
+	
+    boolean setPassword = ElementParameterParser.getBooleanValue(node, "__SET_PASSWORD__");
+    String passwordFieldName = "__PASSWORD__";
+	
+	boolean drop=false;
+	boolean dropIfExist=false;
+	boolean create=false;
+	boolean createIfNotExist=false;
+	boolean dropIfExistAndCreate=false;
+	boolean dropAndCreate=false;
+	
+	if("DROP".equals(operation))
+		drop=true;
+	if("DROP_IF_EXIST".equals(operation))
+		dropIfExist=true;
+	if("CREATE".equals(operation))
+		create=true;
+	if("DROP_IF_EXIST_CREATE".equals(operation))
+		dropIfExistAndCreate=true;
+	if("DROP_CREATE".equals(operation))
+		dropAndCreate=true;
+		
+	boolean checkIfExist = "true".equals(ElementParameterParser.getValue(node, "__CREATE_TABLE_IF_NOT_EXIST__"));
+		
+	StringBuilder parameters=new StringBuilder();
+%>
+	<%@ include file="../templates/HCatalog/RestResponse.javajet"%>
+<%
+	ParseRestResult parserResult = new ParseRestResult();
+%>
+	try {
+<%
+		parserResult.declareVariable(node);
+		if(useKerberos) {
+%>
+			class KerberosPolicyConfig_<%=cid%> extends javax.security.auth.login.Configuration {
+				private java.util.Map<String, String> properties;
+
+				public KerberosPolicyConfig_<%=cid%>() {
+					properties = java.util.Collections
+							.<String, String> emptyMap();
+				}
+
+				public KerberosPolicyConfig_<%=cid%>(
+						java.util.Map<String, String> properties) {
+					this.properties = properties;
+				}
+
+				public javax.security.auth.login.AppConfigurationEntry[] getAppConfigurationEntry(
+						String name) {
+					return new javax.security.auth.login.AppConfigurationEntry[] { new javax.security.auth.login.AppConfigurationEntry(
+							com.sun.security.auth.module.Krb5LoginModule.class
+									.getName(),
+							javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+							properties) };
+				}
+			}
+
+			org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor kbInterceptor_<%=cid%> = new org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor();
+
+			org.apache.cxf.configuration.security.AuthorizationPolicy policy_<%=cid%> = new org.apache.cxf.configuration.security.AuthorizationPolicy();
+			policy_<%=cid%>.setAuthorizationType(org.apache.cxf.transport.http.auth.HttpAuthHeader.AUTH_TYPE_NEGOTIATE);
+
+			kbInterceptor_<%=cid%>.setPolicy(policy_<%=cid%>);
+			java.util.Map<String, String> properties_<%=cid%> = new java.util.HashMap<String, String>();
+			kbInterceptor_<%=cid%>.setServicePrincipalName(<%=krb_princ%>);
+			kbInterceptor_<%=cid%>.setRealm(<%=krb_realm%>);
+			properties_<%=cid%>.put("useTicketCache", "true");
+			properties_<%=cid%>.put("refreshKrb5Config", "true");
+			properties_<%=cid%>.put("renewTGT", "true");
+			<%
+				if(useKeytab) {
+			%>
+					properties_<%=cid%>.put("useKeyTab", "true");
+					properties_<%=cid%>.put("keyTab", <%=keytabPath%>);
+					properties_<%=cid%>.put("principal", <%=userPrincipal%>);
+			<%
+				}
+			%>
+			kbInterceptor_<%=cid%>.setLoginConfig(new KerberosPolicyConfig_<%=cid%>(properties_<%=cid%>));
+<%
+		}
+%>
+
+<%
+		if("OP_DATABASE".equals(operationOn)) {
+		
+			/* ---------------------------------------------------------------- 
+			   ------------DROP DATABASE or DROP DATABASE IF EXIST ------------
+			   ---------------------------------------------------------------- */
+			if(drop || dropIfExist || dropIfExistAndCreate || dropAndCreate) { // DROP DATABASE or DROP DATABASE IF EXIST
+				if(drop || dropAndCreate)
+					parameters.append(" + \"&ifExists=false" + "\"");
+				if(dropIfExist || dropIfExistAndCreate)
+					parameters.append(" + \"&ifExists=true" + "\"");
+				if(!("none".equals(option)))
+					parameters.append(" + \"&option=\" + \"" + option + "\"");
+				if(setUserGroup) {
+					parameters.append(" + \"&group=\" + " + userGroup);
+				}
+				if(setPermissions) {
+					parameters.append(" + \"&permissions=\" + " + permissions);
+				}
+%>
+				org.apache.cxf.jaxrs.client.WebClient client_drop_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_drop_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_drop_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_drop_<%=cid%>).getBytes());
+                    client_drop_<%=cid%>.header("Authorization", authorizationHeader_drop_<%=cid%>);
+<%
+                }
+%>
+				
+				client_drop_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%>);
+				client_drop_<%=cid%>.accept("application/json");
+		
+				javax.ws.rs.core.Response response_drop_<%=cid%> = client_drop_<%=cid%>.delete();
+<%
+				parserResult.getJSONObject(node, "drop");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "drop");
+			}
+			
+			/* ----------------------------------------------------------------- 
+			   ---------------------- CREATE DATABASE --------------------------
+			   ----------------------------------------------------------------- */
+			if(create ||  dropIfExistAndCreate ||  dropAndCreate) {
+				if(templetonProperties.size()>0) {
+%>
+					org.json.simple.JSONObject columnPropertiesJSON_<%=cid%> = new org.json.simple.JSONObject();
+<%
+					for(Map<String, String> item : templetonProperties){
+%>
+						columnPropertiesJSON_<%=cid%>.put(<%=item.get("KEY")%>, <%=item.get("VALUE")%>);
+<%
+					}
+%>
+					jsonRow_<%=cid%>.put("properties", columnPropertiesJSON_<%=cid%>);
+<%
+				}
+%>
+				jsonRow_<%=cid%>.put("comment", <%=dbDescription%>);
+				jsonRow_<%=cid%>.put("location", <%=dbLocation%>);
+				org.apache.cxf.jaxrs.client.WebClient client_create_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_create_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_create_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_create_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_create_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_create_<%=cid%>).getBytes());
+                    client_create_<%=cid%>.header("Authorization", authorizationHeader_create_<%=cid%>);
+<%
+                }
+%>
+				
+				client_create_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%>);
+				client_create_<%=cid%>.type("application/json").accept("application/json");
+				
+				javax.ws.rs.core.Response response_create_<%=cid%> = client_create_<%=cid%>.put(jsonRow_<%=cid%>.toJSONString());
+<%
+				parserResult.getJSONObject(node, "create");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "create");
+			}
+			// -------------------------------------------------------
+		} else if("OP_TABLE".equals(operationOn)) {
+
+			/* ---------------------------------------------------------------- 
+			   -------------- DROP TABLE or DROP TABLE IF EXIST ---------------
+			   ---------------------------------------------------------------- */
+			if(drop || dropIfExist || dropIfExistAndCreate || dropAndCreate) {
+				if(drop || dropAndCreate)
+					parameters.append(" + \"&ifExists=false" + "\"");
+				if(dropIfExist || dropIfExistAndCreate)
+					parameters.append(" + \"&ifExists=true" + "\"");
+				if(!("none".equals(option)))
+					parameters.append(" + \"&option=\" + \"" + option + "\"");
+				if(setUserGroup) {
+					parameters.append(" + \"&group=\" + " + userGroup );
+				}
+				if(setPermissions) {
+					parameters.append(" + \"&permissions=\" + " + permissions);
+				}
+%>
+				org.apache.cxf.jaxrs.client.WebClient client_drop_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_drop_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_drop_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_drop_<%=cid%>).getBytes());
+                    client_drop_<%=cid%>.header("Authorization", authorizationHeader_drop_<%=cid%>);
+<%
+                }
+%>
+				
+				client_drop_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%> + "/table/" + <%=table%>);
+				client_drop_<%=cid%>.accept("application/json");
+				
+				javax.ws.rs.core.Response response_drop_<%=cid%> = client_drop_<%=cid%>.delete();
+<%
+				parserResult.getJSONObject(node, "drop");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "drop");
+			}
+			
+			/* ---------------------------------------------------------------- 
+			   ------------------------ CREATE TABLE --------------------------
+			   ---------------------------------------------------------------- */
+			if(create ||  dropIfExistAndCreate ||  dropAndCreate) {
+				if(templetonProperties.size()>0) {
+%>
+					org.json.simple.JSONObject columnPropertiesJSON_<%=cid%> = new org.json.simple.JSONObject();
+<%
+					for(Map<String, String> item : templetonProperties){
+%>
+						columnPropertiesJSON_<%=cid%>.put(<%=item.get("KEY")%>, <%=item.get("VALUE")%>);
+<%
+					}
+%>
+					jsonRow_<%=cid%>.put("properties", columnPropertiesJSON_<%=cid%>);
+<%
+				}
+				
+				if(checkIfExist) {
+%>
+					jsonRow_<%=cid%>.put("ifNotExists", "true");
+<%
+				} else {
+%>
+					jsonRow_<%=cid%>.put("ifNotExists", "false");
+<%
+				}
+				
+				if(createExternal) {
+%>
+					jsonRow_<%=cid%>.put("external", "true");
+<%
+				}
+				
+				if(setHDFSLocation) {
+%>
+					jsonRow_<%=cid%>.put("location", <%=hdfsLocation%>);
+<%
+				}
+%>
+				jsonRow_<%=cid%>.put("comment", <%=dbDescription%>);
+				org.json.simple.JSONObject storage_<%=cid%> = new org.json.simple.JSONObject();
+				storage_<%=cid%>.put("storedAs", "<%=storageFormat%>");
+<%
+				if(setRowFormat) {
+%>
+					org.json.simple.JSONObject rowFormat_<%=cid%> = new org.json.simple.JSONObject();
+					<%if(setFieldsTerminatedBy){%>rowFormat_<%=cid%>.put("fieldsTerminatedBy", <%=fieldsTerminatedBy%>);<%}%>
+					<%if(setCollectionItemsTerminatedBy){%>rowFormat_<%=cid%>.put("collectionItemsTerminatedBy", <%=collectionItemsTerminatedBy%>);<%}%>
+					<%if(setMapKeysTerminatedBy){%>rowFormat_<%=cid%>.put("mapKeysTerminatedBy", <%=mapKeysTerminatedBy%>);<%}%>
+					<%if(setLinesTerminatedBy){%>rowFormat_<%=cid%>.put("linesTerminatedBy", <%=linesTerminatedBy%>);<%}%>
+					org.json.simple.JSONObject serde_<%=cid%> = new org.json.simple.JSONObject();
+					serde_<%=cid%>.put("name", "org.apache.hadoop.hive.serde2.columnar.ColumnarSerDe");
+					
+					rowFormat_<%=cid%>.put("serde", serde_<%=cid%>);
+					storage_<%=cid%>.put("rowFormat", rowFormat_<%=cid%>);
+<%
+				}
+%>
+				jsonRow_<%=cid%>.put("format", storage_<%=cid%>);
+<%
+				List<IMetadataTable> metadatas = node.getMetadataList();
+				if ((metadatas!=null)&&(metadatas.size()>0)) {
+					IMetadataTable metadata = metadatas.get(0);
+					if (metadata!=null) {
+						List<IMetadataColumn> columnList = metadata.getListColumns();
+						if(columnList != null && columnList.size() > 0) {
+%>
+							org.json.simple.JSONArray columnListForJson_<%=cid%> = new org.json.simple.JSONArray();
+							org.json.simple.JSONObject columnObjJson_<%=cid%>;
+<%
+							for(int i=0; i<columnList.size(); i++) {
+%>
+								columnObjJson_<%=cid%> = new org.json.simple.JSONObject();
+								columnObjJson_<%=cid%>.put("name", "<%=columnList.get(i).getLabel()%>");
+								columnObjJson_<%=cid%>.put("type", "<%=Java2STLangTypesHelper.getHCatType(metadata, columnList.get(i).getLabel())%>");
+								columnObjJson_<%=cid%>.put("comment", "<%=columnList.get(i).getComment()%>");
+								columnListForJson_<%=cid%>.add(columnObjJson_<%=cid%>);
+<%
+							}
+%>							
+							jsonRow_<%=cid%>.put("columns", columnListForJson_<%=cid%>);
+<%
+						} else {
+							// Undefined schema
+							if(dieOnError) {
+%>
+							 if(true){
+							 	throw new Exception("Schema must be defined for <%=cid%>");
+							 }
+<%
+							}else{
+%>
+							System.err.println("Schema must be defined for <%=cid%>");
+<%
+								if(isLog4jEnabled) {
+%>
+									log.error("<%=cid%> - Schema must be defined for <%=cid%>");
+<%
+								}
+							}
+						}
+					}
+				}
+				if(setPartitions) {
+					metadatas = node.getMetadataList();
+					if ((metadatas!=null)&&(metadatas.size()>0)) {
+						IMetadataTable metadata = metadatas.get(1);
+						if (metadata!=null) {
+							List<IMetadataColumn> columnList = metadata.getListColumns();
+							if(columnList != null && columnList.size() > 0) {
+%>
+								org.json.simple.JSONArray partitionListForJson_<%=cid%> = new org.json.simple.JSONArray();
+								org.json.simple.JSONObject partitionObjJson_<%=cid%>;
+<%
+								for(int i=0; i<columnList.size(); i++) {
+%>
+									partitionObjJson_<%=cid%> = new org.json.simple.JSONObject();
+									partitionObjJson_<%=cid%>.put("name", "<%=columnList.get(i).getLabel()%>");
+									partitionObjJson_<%=cid%>.put("type", "<%=Java2STLangTypesHelper.getHCatType(metadata, columnList.get(i).getLabel())%>");
+									partitionObjJson_<%=cid%>.put("comment", "<%=columnList.get(i).getComment()%>");
+									partitionListForJson_<%=cid%>.add(partitionObjJson_<%=cid%>);
+<%
+								}
+%>							
+								jsonRow_<%=cid%>.put("partitionedBy", partitionListForJson_<%=cid%>);
+<%
+							}
+						}
+					}
+				}
+%>
+				
+				org.apache.cxf.jaxrs.client.WebClient client_create_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_create_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_create_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_create_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_create_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_create_<%=cid%>).getBytes());
+
+                    client_create_<%=cid%>.header("Authorization", authorizationHeader_create_<%=cid%>);
+<%
+                }
+%>
+				
+				client_create_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%> + "/table/" + <%=table%>);
+				client_create_<%=cid%>.type("application/json").accept("application/json");
+				
+				javax.ws.rs.core.Response response_create_<%=cid%> = client_create_<%=cid%>.put(jsonRow_<%=cid%>.toJSONString());
+<%
+				parserResult.getJSONObject(node, "create");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "create");
+			}
+			
+		} else if("OP_PARTITION".equals(operationOn)) {		
+			/* ---------------------------------------------------------------- 
+			   ------------DROP PARTITION or DROP PARTITION IF EXIST ------------
+			   ---------------------------------------------------------------- */
+			if(drop || dropIfExist || dropIfExistAndCreate || dropAndCreate) {
+				if(drop || dropAndCreate)
+					parameters.append(" + \"&ifExists=false" + "\"");
+				if(dropIfExist || dropIfExistAndCreate)
+					parameters.append(" + \"&ifExists=true" + "\"");
+				if(!("none".equals(option)))
+					parameters.append(" + \"&option=\" + \"" + option + "\"");
+				if(setUserGroup) {
+					parameters.append(" + \"&group=\" + " + userGroup );
+				}
+				if(setPermissions) {
+					parameters.append(" + \"&permissions=\" + " + permissions);
+				}
+%>
+				org.apache.cxf.jaxrs.client.WebClient client_drop_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_drop_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_drop_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_drop_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_drop_<%=cid%>).getBytes());
+                    client_drop_<%=cid%>.header("Authorization", authorizationHeader_drop_<%=cid%>);
+<%
+                }
+%>				
+
+				client_drop_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%> +"/table/" + <%=table%> + "/partition/" + <%=partition%>);
+				client_drop_<%=cid%>.accept("application/json");
+				
+				javax.ws.rs.core.Response response_drop_<%=cid%> = client_drop_<%=cid%>.delete();
+<%
+				parserResult.getJSONObject(node, "drop");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "drop");
+			}
+			
+			/* ----------------------------------------------------------------- 
+			   ---------------------- CREATE PARTITION --------------------------
+			   ----------------------------------------------------------------- */
+			if(create ||  dropIfExistAndCreate ||  dropAndCreate) {
+				if(setFileLocation) {
+%>
+					jsonRow_<%=cid%>.put("location", <%=fileLocation%>);
+<%
+				}
+%>
+				org.apache.cxf.jaxrs.client.WebClient client_create_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%><%=parameters%>);
+<%
+				if(useKerberos) {
+%>
+					org.apache.cxf.jaxrs.client.WebClient.getConfig(client_create_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+				} else if (setPassword) {
+                    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+                        final String decryptedPassword_create_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+                    } else {
+%>
+                        final String decryptedPassword_create_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+                    }
+%>                  
+                    String authorizationHeader_create_<%=cid%> = "Basic "
+                        + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_create_<%=cid%>).getBytes());
+                    client_create_<%=cid%>.header("Authorization", authorizationHeader_create_<%=cid%>);
+<%
+                }
+%>
+				
+				client_create_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%>+"/table/" + <%=table%> + "/partition/" + <%=partition%>);
+				client_create_<%=cid%>.type("application/json").accept("application/json");
+				
+				javax.ws.rs.core.Response response_create_<%=cid%> = client_create_<%=cid%>.put(jsonRow_<%=cid%>.toJSONString());
+<%
+				parserResult.getJSONObject(node, "create");
+				parserResult.manageError(node, activateLog);
+				parserResult.manageResponseStatus(node, "create");
+			}
+			// -------------------------------------------------------
+		}
+%>		
+	} catch (Exception e_<%=cid%>) {
+<%
+		if(dieOnError) {
+%>
+			throw e_<%=cid%>;
+<%
+		} else {
+%>
+			System.err.println(e_<%=cid%>.getMessage());
+<%
+			if(isLog4jEnabled) {
+%>
+			log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+<%
+			}
+		}
+
+%>
+	}
+	

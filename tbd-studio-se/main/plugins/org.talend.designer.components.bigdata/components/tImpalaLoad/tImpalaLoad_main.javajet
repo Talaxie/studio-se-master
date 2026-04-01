@@ -1,0 +1,95 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.MappingTypeRetriever
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.designer.runprocess.ProcessorException
+		org.talend.designer.runprocess.ProcessorUtilities
+		java.util.List	
+		java.util.Map
+		java.util.Set
+		java.util.HashSet
+		" 
+%>
+<%
+	CodeGeneratorArgument loadCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode loadNode = (INode)loadCodeGenArgument.getArgument();
+	final String loadCid = loadNode.getUniqueName();
+	
+	boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(loadNode,"__USE_EXISTING_CONNECTION__"));
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(loadNode.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	if(useExistingConnection) { // We re-use a connection. Get the connection from the global map.
+		String connection = ElementParameterParser.getValue(loadNode, "__CONNECTION__");
+		String db = "db_" + connection;
+%>
+		java.sql.Connection conn_<%=loadCid%> = (java.sql.Connection)globalMap.get("conn_<%=connection%>");
+		String dbname_<%=loadCid%> = (String)globalMap.get("<%=db%>");
+<%
+	} else { //We do not use an existing connection. Create it.
+%>
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaConnection/tImpalaConnection_begin.javajet"%>
+		String dbname_<%=loadCid%> = <%=dbname%>;
+<%
+		// The connection object is created in the tImpalaConnection_begin.javajet.
+	}
+	
+	final String cid = loadCid;
+	INode node = loadNode;
+%>
+	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+		java.sql.Statement goToDatabase_<%=cid%> = conn_<%=cid%>.createStatement();
+		goToDatabase_<%=cid%>.execute("use " + dbname_<%=cid%>);
+		goToDatabase_<%=cid%>.close();
+    }	
+<%
+	
+	String loadAction = ElementParameterParser.getValue(node, "__LOAD_ACTION__");
+	boolean local = "true".equals(ElementParameterParser.getValue(node, "__LOCAL__"));
+	String path = ElementParameterParser.getValue(node, "__FILEPATH__");
+	String fileAction = ElementParameterParser.getValue(node, "__FILE_ACTION__");
+	String tablename = ElementParameterParser.getValue(node, "__TABLE__");
+	boolean setPartition = "true".equals(ElementParameterParser.getValue(node, "__SET_PARTITIONS__"));
+	String partition = ElementParameterParser.getValue(node, "__PARTITION__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+
+%>
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/tHiveLoad/loadQueryGeneration.javajet"%>
+	try (java.sql.Statement stmt_<%=cid %> = conn_<%=cid %>.createStatement()) {
+			stmt_<%=cid%>.execute(querySQL_<%=cid %>);	
+	} catch(java.sql.SQLException e_<%=cid%>) {
+	    <%if(("true").equals(dieOnError)) {
+	    %>
+	    	throw e_<%=cid%>;
+	    <%
+	    } else {
+	    %> 
+	    	System.err.println("Exception in the component <%=cid%>:" + e_<%=cid%>.getMessage());
+	    <%
+	    }%>
+	} finally {
+<%
+	if(!useExistingConnection) {
+		if(isLog4jEnabled) {
+%>
+		log.info("<%=cid%> - Closing the connection to the database.");
+<%
+		}
+%>
+		conn_<%=cid %>.close();
+<%
+		if(isLog4jEnabled) {
+%>
+		log.info("<%=cid%> - Connection to the database closed.");	
+<%	
+	}
+}
+%>
+	}//of finally
+	globalMap.put("<%=cid%>_QUERY", querySQL_<%=cid %>);

@@ -1,0 +1,145 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+    	org.talend.core.model.process.ElementParameterParser		
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String sstablePath = ElementParameterParser.getValue(node,"__SSTABLE_STORE_PATH__");
+String keySpace = ElementParameterParser.getValue(node,"__KEY_SPACE__");
+String columnFamily = ElementParameterParser.getValue(node,"__COLUMN_FAMILY__");
+String host = ElementParameterParser.getValue(node,"__HOST__");
+String port = ElementParameterParser.getValue(node,"__PORT__");
+String version = ElementParameterParser.getValue(node,"__DB_VERSION__");
+boolean requireAuth = "true".equals(ElementParameterParser.getValue(node,"__REQUIRED_AUTHENTICATION__"));
+boolean needAuth =  requireAuth;
+String username = ElementParameterParser.getValue(node,"__USERNAME__");
+String password = ElementParameterParser.getValue(node,"__PASSWORD__"); 
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%> 	
+
+java.util.List<String> args_<%=cid%> = new java.util.ArrayList<String>();
+<%
+if("CASSANDRA_4_0".equals(version)) {
+%>
+	args_<%=cid%>.add("load");
+	args_<%=cid%>.add("-h");
+	args_<%=cid%>.add(<%=host%>);
+	args_<%=cid%>.add("-port");
+	args_<%=cid%>.add("" + (<%=port%>));
+	
+	<%if(needAuth){%>
+
+	<%
+	String passwordFieldName = "__PASSWORD__";
+	%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+	args_<%=cid%>.add("-u");
+	args_<%=cid%>.add(<%=username%>);
+
+	args_<%=cid%>.add("-p");
+	args_<%=cid%>.add(decryptedPassword_<%=cid%>);
+	
+	<%}
+	boolean useConfFile = ElementParameterParser.getBooleanValue(node, "__USE_CONF_FILE_4_0__");
+	if(useConfFile){
+		String confFile = ElementParameterParser.getValue(node, "__CONF_FILE_4_0__");
+		%>
+		args_<%=cid%>.add("-f");
+		args_<%=cid%>.add(<%=confFile%>);
+	<%
+	} else {
+		boolean useHeader = ("true").equals(ElementParameterParser.getValue(node, "__USE_HEADER__"));
+		boolean append = ("true").equals(ElementParameterParser.getValue(node, "__APPEND__"));
+		String filePath = ElementParameterParser.getValue(node, "__DATA_FILE_PATH__");
+		String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+		String commentLineChar = ElementParameterParser.getValue(node,"__COMMENTROWCHAR__");
+		String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+		String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+		boolean useStatement = ("true").equals(ElementParameterParser.getValue(node, "__USE_STATEMENT__"));
+		String mappingType = ElementParameterParser.getValue(node,"__STMT_MAPPING_TYPE__");
+		String mapping = "";
+		IMetadataTable metadata = null;
+		List<IMetadataTable> metadatas = node.getMetadataList();
+		if((metadatas!=null) && (metadatas.size()>0)){
+			metadata = metadatas.get(0);
+		}
+		if("AUTO_GENERATE".equals(mappingType) && metadata != null) {
+			List<IMetadataColumn> columns = null;
+			columns = metadata.getListColumns();
+			mapping += "\"";
+			for(int i = 0; i < columns.size(); i++) {
+				if(i > 0) {
+					mapping += ", ";
+				}
+				mapping += i + "=" + columns.get(i).getOriginalDbColumnName();
+			}
+			mapping += "\"";
+		} else if("MANUAL".equals(mappingType)) {
+			mapping = ElementParameterParser.getValue(node,"__STMT_MAPPING__");
+		}
+		%>
+		//Mapping is <%=mapping%>
+		<%
+		if(!"NONE".equals(mappingType) && mapping != null && !mapping.isEmpty()) {
+		%>
+			args_<%=cid%>.add("--dsbulk.schema.mapping");
+			args_<%=cid%>.add(<%=mapping%>);
+		<%
+		}
+		if(useStatement) {
+			String insertStatement = ElementParameterParser.getValue(node, "__STMT__");
+			if(insertStatement != null) {
+				%>
+				//write statement
+				args_<%=cid%>.add("--dsbulk.schema.query");
+				args_<%=cid%>.add(<%=insertStatement%>);
+				<%
+			}
+		} else {
+		%>
+			args_<%=cid%>.add("--dsbulk.schema.keyspace");
+			args_<%=cid%>.add(<%=keySpace%>);
+			args_<%=cid%>.add("--dsbulk.schema.table");
+			args_<%=cid%>.add(<%=columnFamily%>);
+		<%
+		}
+		%>
+			//write use header
+			args_<%=cid%>.add("--connector.csv.header");
+			args_<%=cid%>.add("<%=useHeader%>");
+			//write data file path
+			args_<%=cid%>.add("--dsbulk.connector.csv.url");
+			args_<%=cid%>.add(<%=filePath%>);
+			args_<%=cid%>.add("--dsbulk.connector.csv.delimiter");
+			args_<%=cid%>.add(<%=fieldSeparator%>);
+			args_<%=cid%>.add("--dsbulk.connector.csv.comment");
+			args_<%=cid%>.add(<%=commentLineChar%>);
+			args_<%=cid%>.add("--dsbulk.connector.csv.escape");
+			args_<%=cid%>.add(<%=escapeChar1.replace("\\", "\\\\")%>);
+	<%
+	}
+	%>
+	com.datastax.oss.dsbulk.url.BulkLoaderURLStreamHandlerFactory.install();
+    com.datastax.oss.dsbulk.runner.ExitStatus status = new com.datastax.oss.dsbulk.runner.DataStaxBulkLoader(args_<%=cid%>.toArray(new String[0])).run();
+	if(status.exitCode() != 0) {
+		throw new Exception("Could not finish bulk import process successfully.");
+	}
+	<%
+	
+}
+%>

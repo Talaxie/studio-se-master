@@ -1,0 +1,90 @@
+<%
+	// This is the tKafkaCreateTopic_begin javajet part for Kafka 2.4.x
+	
+	// Since kafka.admin.AdminUtils methods have been changed in Kafka 2.4.x, we must split the javajets
+	// in order to generate the relevant code depending of the current Kafka version.
+%>
+
+// Topic configuration
+java.util.Map<String, String> <%=cid%>_topicProperties = new java.util.HashMap<>();
+
+<%
+	if(tKafkaCreateTopicUtil.isRetentionSet()) {
+%>
+		<%=cid%>_topicProperties.put( org.apache.kafka.common.config.TopicConfig.RETENTION_MS_CONFIG, String.valueOf(<%=tKafkaCreateTopicUtil.getRetention()%>));
+<%
+	}
+%>
+<%
+	for(Entry<String, String> topicProperty : tKafkaCreateTopicUtil.getKafkaTopicProperties().entrySet()) {
+%>
+		<%=cid%>_topicProperties.put(<%=topicProperty.getKey()%>, String.valueOf(<%=topicProperty.getValue()%>));
+<%
+	}
+%>
+
+java.util.Map<String, Object> <%=cid%>_clientConf = new java.util.HashMap<>();
+<%=cid%>_clientConf.put(org.apache.kafka.clients.consumer.ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,<%=tKafkaCreateTopicUtil.getKafkaConnect()%>);
+<%
+for(Entry<String, String> property : tKafkaCreateTopicUtil.getKafkaClientProperties().entrySet()) {
+%>
+	<%=cid%>_clientConf.put(<%=property.getKey()%>, <%=property.getValue()%>);
+<%
+}
+%>
+org.apache.kafka.clients.admin.KafkaAdminClient <%=cid%>_client =  (org.apache.kafka.clients.admin.KafkaAdminClient) org.apache.kafka.clients.admin.KafkaAdminClient.create(<%=cid%>_clientConf);
+<%
+	if(tKafkaCreateTopicUtil.isCreate()) {
+%>
+		try{
+			org.apache.kafka.clients.admin.NewTopic <%=cid%>_newTopic = 
+					new org.apache.kafka.clients.admin.NewTopic(<%=tKafkaCreateTopicUtil.getTopic()%>, 
+					Integer.valueOf(<%=tKafkaCreateTopicUtil.getNbPartitions()%>), Integer.valueOf(<%=tKafkaCreateTopicUtil.getReplicationFactor()%>).shortValue());
+			<%=cid%>_newTopic.configs(<%=cid%>_topicProperties);
+	        <%=cid%>_client.createTopics(java.util.Collections.singleton(<%=cid%>_newTopic)).all().get(<%=tKafkaCreateTopicUtil.getKafkaTimeout()%>, java.util.concurrent.TimeUnit.MILLISECONDS);
+	        
+	        
+			
+		} catch (Exception e) {
+<%
+		if (tKafkaCreateTopicUtil.isCreateIfNotExists()) {
+%>
+			
+            if(e.getCause() instanceof org.apache.kafka.common.errors.TopicExistsException) {
+	            // nothing to do even through the topic already exists, continue the job
+            }
+<%
+		} else {
+%>
+			// topic already exists, stop the job
+			throw e;
+<%
+		}
+%>
+		}finally {
+			<%=cid%>_client.close();
+		}
+<%
+	} else if(tKafkaCreateTopicUtil.isAlter()) {
+%>
+
+		
+		
+		org.apache.kafka.common.config.ConfigResource <%=cid%>_resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.TOPIC, <%=tKafkaCreateTopicUtil.getTopic()%>);
+		java.util.List <%=cid%>_list = new java.util.ArrayList();
+		<%=cid%>_topicProperties.forEach((k, v) -> {
+			<%=cid%>_list.add(new org.apache.kafka.clients.admin.AlterConfigOp(new org.apache.kafka.clients.admin.ConfigEntry(k, v), org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET));
+        });
+		java.util.Map <%=cid%>_newTopicProperties = new java.util.HashMap();
+		<%=cid%>_newTopicProperties.put(<%=cid%>_resource,<%=cid%>_list);
+		try{
+		<%=cid%>_client.incrementalAlterConfigs(<%=cid%>_newTopicProperties).all().get(<%=tKafkaCreateTopicUtil.getKafkaTimeout()%>, java.util.concurrent.TimeUnit.MILLISECONDS);
+		}finally {
+			<%=cid%>_client.close();
+		}
+		
+<%
+	}
+%>
+
+

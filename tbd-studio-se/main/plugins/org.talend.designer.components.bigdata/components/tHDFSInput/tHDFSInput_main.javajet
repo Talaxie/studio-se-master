@@ -1,0 +1,140 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.process.IConnectionCategory
+	
+    java.util.List 
+  " 
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean customEncoding="true".equals( ElementParameterParser.getValue(node,"__CUSTOM_ENCODING__"));
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+String firstConnName = "";
+if (conns!=null) {
+	if (conns.size()>0) {
+		IConnection conn = conns.get(0);
+		if(conn!=null && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+			firstConnName = conn.getName();
+%>
+<%=firstConnName %> = new <%=conn.getName() %>Struct();
+<%
+			}
+		}
+	}
+	
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0) && firstConnName.length()>0) {
+		IMetadataTable metadata = metadatas.get(0);
+	
+		String typeFile = ElementParameterParser.getValue(node,"__TYPEFILE__");
+		if (typeFile.equals("SEQUENCE")) {
+		
+			String keyColumn = ElementParameterParser.getValue(node,"__KEYCOLUMN__");
+			String valueColumn = ElementParameterParser.getValue(node,"__VALUECOLUMN__");
+			
+			List<IMetadataColumn> listColumns = metadata.getListColumns();
+			String talendKeyClass = "";
+			String talendValueClass = "";
+			for (IMetadataColumn column : listColumns) {
+				if (column.getLabel().equals(keyColumn)) {
+					talendKeyClass = column.getTalendType();
+				}
+				if (column.getLabel().equals(valueColumn)) {
+					talendValueClass = column.getTalendType();
+				}
+			}
+			
+			String hadoopVersion = null;
+			String distribution = null;
+			boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"));
+			if(!useExistingConnection) {
+				distribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+				hadoopVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			} else {
+				String connectionSid = ElementParameterParser.getValue(node, "__CONNECTION__");
+				List<? extends INode> nodes = node.getProcess().getGeneratingNodes();
+				for(INode targetNode : nodes){
+					if (targetNode.getUniqueName().equals(connectionSid)) {
+						hadoopVersion = ElementParameterParser.getValue(targetNode, "__DB_VERSION__"); 
+						distribution = ElementParameterParser.getValue(targetNode, "__DISTRIBUTION__");
+						break;
+					}
+				}
+			}
+
+			org.talend.hadoop.distribution.component.HDFSComponent hdfsDistrib = null;
+			try {
+				hdfsDistrib = (org.talend.hadoop.distribution.component.HDFSComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, hadoopVersion);
+			} catch (java.lang.Exception e) {
+				e.printStackTrace();
+				return "";
+			}
+			boolean isCustom = hdfsDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+%>
+			<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/SequenceFileMapping.javajet"%>
+		
+		<%=firstConnName %>.<%=keyColumn %> = <%=talendKeyClass.equals("id_Short")?"(short)":""%>key_<%=cid%>.<%=((keyClass.equals("org.apache.hadoop.io.Text"))?"toString()":"get()") %>;
+		<%=firstConnName %>.<%=valueColumn %> = <%=talendValueClass.equals("id_Short")?"(short)":""%>value_<%=cid%>.<%=((valueClass.equals("org.apache.hadoop.io.Text"))?"toString()":"get()") %>;
+<%
+		} else {
+			if (metadata!=null) {
+				List<IMetadataColumn> listColumns = metadata.getListColumns();
+				for (int valueN = 0; valueN < listColumns.size(); valueN++) {
+					IMetadataColumn column = listColumns.get(valueN);
+
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+<%=firstConnName %>.<%=column.getLabel() %> = fid_<%=cid %>.get(<%=valueN %>);
+<%
+					} else {
+%>
+if(fid_<%=cid %>.get(<%=valueN %>)!=null && fid_<%=cid %>.get(<%=valueN %>).length() > 0) {
+<%
+						if (javaType == JavaTypesManager.DATE) {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(fid_<%=cid %>.get(<%=valueN %>), <%= patternValue %>);
+<%
+						} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = fid_<%=cid %>.get(<%=valueN %>).getBytes(<%=(customEncoding?encoding:"utf8Charset")%>);
+<%
+						} else {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(fid_<%=cid %>.get(<%=valueN %>));
+<%
+						}
+%>
+}else{
+	<%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+}
+<%
+					}
+				} // for
+			}
+		}
+		
+%>
+		nb_line_<%=cid %>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+	}
+%>

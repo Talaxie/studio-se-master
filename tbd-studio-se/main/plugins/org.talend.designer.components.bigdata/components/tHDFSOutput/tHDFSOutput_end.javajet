@@ -1,0 +1,48 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser 
+    java.util.List 
+	"
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	List<? extends IConnection> inConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+	IConnection inConn = null;
+	IMetadataTable metadata = null;
+	
+	if(inConns!=null && inConns.size()> 0) {
+		inConn = inConns.get(0);
+		metadata = inConn.getMetadataTable();
+	}
+	
+	if (metadata!=null) {
+		String typeFile = ElementParameterParser.getValue(node,"__TYPEFILE__");
+		if (typeFile.equals("SEQUENCE")) {	
+%>
+		writer_<%=cid%>.close();
+<%
+		} else {
+%>
+		if(out<%=cid%>!=null){
+			out<%=cid%>.close();
+		}
+<%
+		}
+		
+		log4jFileUtil.writeDataFinishInfo(node);
+	}
+	
+%>
+
+	

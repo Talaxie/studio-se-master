@@ -1,0 +1,71 @@
+<%@ jet %>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/tSetKeystore/SSL_Helper.javajet"%>
+	<%
+	String dbVersion_connection = ElementParameterParser.getValue(node, "__DB_VERSION__");
+	String host = ElementParameterParser.getValue(node,"__HOST__");
+	String port = ElementParameterParser.getValue(node,"__PORT__");
+	String dataCenter = ElementParameterParser.getValue(node,"__DATACENTER__");
+	
+	String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+	String passWord = ElementParameterParser.getPasswordValue(node, "__PASSWORD__");
+	boolean authentication = ElementParameterParser.getBooleanValue(node, "__REQUIRED_AUTHENTICATION__");
+	INode sslNode = ElementParameterParser.getLinkedNodeValue(node, "__HTTPS_SETTING__");
+	SSL_HELPER sslHelper = new SSL_HELPER(sslNode);
+	boolean useSSL = ElementParameterParser.getBooleanValue(node, "__USE_HTTPS__") && sslHelper.useHTTPS();
+	if(useSSL){
+	%>
+		javax.net.ssl.KeyManagerFactory kmf_<%=cid%> = null;
+		<%if(sslHelper.needKS()){%>
+			java.security.KeyStore ks_<%=cid%> = java.security.KeyStore.getInstance("<%=sslHelper.getKSType()%>");
+			ks_<%=cid%>.load(new java.io.FileInputStream(<%=sslHelper.getKSPath()%>), <%=sslHelper.getKSPwd()%>.toCharArray());
+			kmf_<%=cid%> = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
+			kmf_<%=cid%>.init(ks_<%=cid%>, <%=sslHelper.getKSPwd()%>.toCharArray());
+		<%}%>
+		
+		javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = null;
+		<%if(sslHelper.needTrustStore()){%>
+			java.security.KeyStore ts_<%=cid%> = java.security.KeyStore.getInstance("<%=sslHelper.getTSType()%>");
+			ts_<%=cid%>.load(new java.io.FileInputStream(<%=sslHelper.getTSPath()%>), <%=sslHelper.getTSPwd()%>.toCharArray());
+			tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+			tmf_<%=cid%>.init(ts_<%=cid%>);
+		<%}%>
+		
+		javax.net.ssl.SSLContext sslContext_<%=cid%> = javax.net.ssl.SSLContext.getInstance("TLS");
+		sslContext_<%=cid%>.init(kmf_<%=cid%> == null ? null : kmf_<%=cid%>.getKeyManagers(), tmf_<%=cid%> == null ? null : tmf_<%=cid%>.getTrustManagers(), new java.security.SecureRandom());
+	<%
+	}
+	if("CASSANDRA_4_0".equals(dbVersion_connection)) {
+	
+		boolean dataCenterIsSet = dataCenter!=null && !"".equals(dataCenter) && !"\"\"".equals(dataCenter);
+	%>
+		java.util.List<java.net.InetSocketAddress> contactPoints = new java.util.ArrayList<>();
+	
+    	for(String host : <%=host%>.split(",")) {
+    		contactPoints.add(java.net.InetSocketAddress.createUnresolved(host, Integer.parseInt(<%=port%>)));
+    	}
+    	
+    	com.datastax.oss.driver.api.core.CqlSession connection_<%=cid%> = com.datastax.oss.driver.api.core.CqlSession.builder()
+    																.addContactPoints(contactPoints)
+    																<%
+    																if(dataCenterIsSet) {
+    																%>
+    																.withLocalDatacenter(<%=dataCenter%>)
+    																<%
+    																}
+    																%>
+    																<%
+    																if(authentication){
+    																%>
+    																	.withAuthCredentials(<%=userName%>, <%=passWord%>)
+    																<%
+    																}
+    																if(useSSL){
+    																%>
+    																	.withSslContext(sslContext_<%=cid%>)
+    																<%
+    																}
+    																%>
+    																.build();
+	<%
+	}
+	%>

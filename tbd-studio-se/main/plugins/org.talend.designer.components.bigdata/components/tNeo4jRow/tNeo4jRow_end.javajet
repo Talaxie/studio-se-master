@@ -1,0 +1,66 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.utils.NodeUtil
+	"
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean shutdownDb = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__SHUTDOWN_DB__"));
+    String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__"); 
+
+    boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"));
+    String dbVersion = ElementParameterParser.getValue(node,"__DB_VERSION__");
+	if(useExistingConnection){
+	    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+        INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+        dbVersion = ElementParameterParser.getValue(connectionNode, "__DB_VERSION__");
+    }
+    if ("NEO4J_3_2_X".equals(dbVersion)) {
+    %>
+        transaction_<%=cid%>.success();
+    	transaction_<%=cid%>.close();
+        globalMap.put("<%=cid %>_NB_NODE_INSERTED", nbNodeInserted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_RELATIONSHIP_INSERTED", nbRelationshipInserted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_PROPERTY_UPDATED", nbPropertiesUpdated_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_NODE_DELETED", nbNodeDeleted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_RELATIONSHIP_DELETED", nbRelationshipDeleted_<%=cid%>);
+		
+    <%
+    } else{
+    	 if ("NEO4J_1_X_X".equals(dbVersion)) {
+        %>
+        if (counter_<%=cid%> % Long.parseLong(<%=commitEvery%>) > 0) {
+            tx_<%=cid%>.success();
+            tx_<%=cid%>.finish();
+        }
+        <%
+    } else { // NEO4J_2_1_X or NEO4J_2_2_X
+        %>
+        try {
+            tx_<%=cid%>.success();
+        } finally {
+            tx_<%=cid%>.close();
+        }
+        <%
+    }
+	if (!useExistingConnection||(useExistingConnection && shutdownDb)) {
+%>
+	databaseService_<%=cid%>.shutdown();
+	resourceMap.put("finish_<%=cid%>", true); 
+<%
+	}
+%>
+	if(engine_<%=cid%>!=null){
+		globalMap.put("<%=cid %>_NB_NODE_INSERTED", nbNodeInserted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_RELATIONSHIP_INSERTED", nbRelationshipInserted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_PROPERTY_UPDATED", nbPropertiesUpdated_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_NODE_DELETED", nbNodeDeleted_<%=cid%>);
+		globalMap.put("<%=cid %>_NB_RELATIONSHIP_DELETED", nbRelationshipDeleted_<%=cid%>);
+	}
+	<%}%>
+	

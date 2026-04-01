@@ -1,0 +1,176 @@
+<%@ jet
+	imports="
+	java.util.List
+	org.talend.core.model.process.ElementParameterParser	
+	org.talend.core.model.process.INode
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.metadata.IMetadataTable
+	"
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    
+	log4jFileUtil.componentStartInfo(node);
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	String templeton_host = ElementParameterParser.getValue(node, "__TEMPLETON_HOST__");
+	String templeton_port = ElementParameterParser.getValue(node, "__TEMPLETON_PORT__");
+	
+	String database = ElementParameterParser.getValue(node, "__DATABASE_NAME__");
+	String table = ElementParameterParser.getValue(node, "__TABLE_NAME__");
+	String partition = ElementParameterParser.getValue(node, "__PARTITION_NAME__");
+	String username = ElementParameterParser.getValue(node, "__USERNAME__");
+    boolean setPassword = ElementParameterParser.getBooleanValue(node, "__SET_PASSWORD__");
+    String passwordFieldName = "__PASSWORD__";
+	String fileLocation = ElementParameterParser.getValue(node, "__FILE_LOCATION__");
+	
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	boolean activateLog = "true".equals(ElementParameterParser.getValue(node, "__ACTIVATE_LOG__"));
+	
+	boolean useKerberos = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	String krb_realm = ElementParameterParser.getValue(node, "__KRB_REALM__");
+	String krb_princ = ElementParameterParser.getValue(node, "__KRB_PRINC__");
+	boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+	String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+	String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+	
+	if(useKerberos) {
+%>
+		class KerberosPolicyConfig_<%=cid%> extends javax.security.auth.login.Configuration {
+			private java.util.Map<String, String> properties;
+
+			public KerberosPolicyConfig_<%=cid%>() {
+				properties = java.util.Collections
+						.<String, String> emptyMap();
+			}
+
+			public KerberosPolicyConfig_<%=cid%>(
+					java.util.Map<String, String> properties) {
+				this.properties = properties;
+			}
+
+			public javax.security.auth.login.AppConfigurationEntry[] getAppConfigurationEntry(
+					String name) {
+				return new javax.security.auth.login.AppConfigurationEntry[] { new javax.security.auth.login.AppConfigurationEntry(
+						com.sun.security.auth.module.Krb5LoginModule.class
+								.getName(),
+						javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+						properties) };
+			}
+		}
+
+		org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor kbInterceptor_<%=cid%> = new org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor();
+
+		org.apache.cxf.configuration.security.AuthorizationPolicy policy_<%=cid%> = new org.apache.cxf.configuration.security.AuthorizationPolicy();
+		policy_<%=cid%>.setAuthorizationType(org.apache.cxf.transport.http.auth.HttpAuthHeader.AUTH_TYPE_NEGOTIATE);
+
+		kbInterceptor_<%=cid%>.setPolicy(policy_<%=cid%>);
+		java.util.Map<String, String> properties_<%=cid%> = new java.util.HashMap<String, String>();
+		kbInterceptor_<%=cid%>.setServicePrincipalName(<%=krb_princ%>);
+		kbInterceptor_<%=cid%>.setRealm(<%=krb_realm%>);
+		properties_<%=cid%>.put("useTicketCache", "true");
+		properties_<%=cid%>.put("refreshKrb5Config", "true");
+		properties_<%=cid%>.put("renewTGT", "true");
+<%		
+		if(useKeytab) {
+%>
+			properties_<%=cid%>.put("useKeyTab", "true");
+			properties_<%=cid%>.put("keyTab", <%=keytabPath%>);
+			properties_<%=cid%>.put("principal", <%=userPrincipal%>);
+<%
+		}
+%>
+		kbInterceptor_<%=cid%>.setLoginConfig(new KerberosPolicyConfig_<%=cid%>(properties_<%=cid%>));
+<%
+	}	
+	
+%>
+	<%@ include file="../templates/HCatalog/RestResponse.javajet"%>
+	try {
+<%
+		ParseRestResult parserResult = new ParseRestResult();
+		parserResult.declareVariable(node);
+%>
+		jsonRow_<%=cid%>.put("location", <%=fileLocation%>);
+		org.apache.cxf.jaxrs.client.WebClient client_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templeton_host%> + ":" + <%=templeton_port%> + "?user.name=" + <%=username%>);
+<%
+	if(useKerberos) {
+%>
+		org.apache.cxf.jaxrs.client.WebClient.getConfig(client_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+	} else if (setPassword) {
+        if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+            final String decryptedPassword_drop_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+        } else {
+%>
+            final String decryptedPassword_drop_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+        }
+%>                  
+        String authorizationHeader_<%=cid%> = "Basic "
+            + org.apache.cxf.common.util.Base64Utility.encode((<%=username%> + ":" + decryptedPassword_drop_<%=cid%>).getBytes());
+        client_<%=cid%>.header("Authorization", authorizationHeader_<%=cid%>);
+<%
+    }
+%>
+		
+		client_<%=cid%>.path("templeton/v1/ddl/database/" + <%=database%> + "/table/" + <%=table%> + "/partition/" + <%=partition%>);
+		client_<%=cid%>.type("application/json").accept("application/json");
+		
+		javax.ws.rs.core.Response response_<%=cid%> = client_<%=cid%>.put(jsonRow_<%=cid%>.toJSONString());
+		
+<%
+			parserResult.getJSONObject(node, null);
+			parserResult.manageError(node, activateLog);
+			parserResult.manageResponseStatus(node, null);
+%>		
+		
+	} catch (Exception e_<%=cid%>) {
+<%
+		if(dieOnError) {
+%>
+			throw e_<%=cid%>;
+<%
+		} else {
+%>
+			System.err.println(e_<%=cid%>.getMessage());
+<%
+			if(isLog4jEnabled) {
+%>
+			log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+<%
+			}
+		}
+%>
+	}
+<%
+if(node.isVirtualGenerateNode()){
+	List<? extends IConnection> outConns = node.getOutgoingSortedConnections();
+	if(outConns.size()>0){
+		INode previousNode = node.getIncomingConnections().get(0).getSource();
+		List<? extends IConnection> inConns  = previousNode.getIncomingConnections();
+		IConnection inConn = inConns.get(0);
+		String origin = ElementParameterParser.getValue(node, "__DESTINATION__");
+		cid = origin;
+		String con_name = org.talend.core.model.utils.NodeUtil.getPrivateConnClassName(inConn);
+		List<IMetadataTable> mestadataTableListOut = node.getMetadataList();
+		if (mestadataTableListOut!=null && mestadataTableListOut.size()>0) {
+		    IMetadataTable metadataTableOutput = mestadataTableListOut.get(0);
+		    if (metadataTableOutput!=null) { 
+				if (outConns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+		for(<%=con_name%>Struct row_<%=cid%>:<%=con_name%>_list_<%=cid%>){
+<%
+				}
+			}
+		}
+	}
+}
+%>

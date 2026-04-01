@@ -1,0 +1,135 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.ElementParameterParser
+	java.util.Map 
+    java.util.List 
+	"
+%>
+
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/GetFileSystem.javajet"%>
+	
+<%
+	String file = ElementParameterParser.getValue(node, "__FILE__");
+	Boolean print = new Boolean(ElementParameterParser.getValue(node, "__PRINT__"));
+	String differMessage = ElementParameterParser.getValue(node, "__DIFFER_MESSAGE__");
+	String noDifferMessage = ElementParameterParser.getValue(node, "__NO_DIFFER_MESSAGE__");
+	String fileRef = ElementParameterParser.getValue(node, "__FILE_REF__");
+	String cmpMode = ElementParameterParser.getValue(node, "__COMPARISON_MODE__");
+	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+%>
+	boolean result_<%=cid%> = true;
+	
+	org.apache.hadoop.fs.Path path_<%=cid%> = new org.apache.hadoop.fs.Path(<%=file%>);
+	org.apache.hadoop.fs.Path ref_path_<%=cid%> = new org.apache.hadoop.fs.Path(<%=fileRef%>);
+	
+	<%
+	if(!("TEXT_CMP").equals(cmpMode))
+	{%>
+	long fileLength_<%=cid%> = fs_<%=cid%>.getFileStatus(path_<%=cid%>).getLen();
+	long fileRefLength_<%=cid%> = fs_<%=cid%>.getFileStatus(ref_path_<%=cid%>).getLen();
+	if(fileLength_<%=cid%> != fileRefLength_<%=cid%>)
+	{
+		result_<%=cid%> = false;
+	}
+	<%}%>
+	if (result_<%=cid%>)
+	{
+		org.apache.hadoop.fs.FSDataInputStream file_is_<%=cid%> = fs_<%=cid%>.open(path_<%=cid%>);
+		org.apache.hadoop.fs.FSDataInputStream file_ref_is_<%=cid%> = fs_<%=cid%>.open(ref_path_<%=cid%>);
+	<%
+	if(("TEXT_CMP").equals(cmpMode))
+	{
+		%>
+		java.io.BufferedReader file_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(file_is_<%=cid%>,<%=encoding %>));
+		java.io.BufferedReader fileRef_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(file_ref_is_<%=cid%>,<%=encoding %>));
+		String content_<%=cid%> = null,contentRef_<%=cid%> = null;
+		while((content_<%=cid%> = file_<%=cid%>.readLine()) != null && (contentRef_<%=cid%> = fileRef_<%=cid%>.readLine()) != null)
+		{
+			if(content_<%=cid%>.compareTo(contentRef_<%=cid%>) != 0)
+			{
+				result_<%=cid%> = false;
+				break;
+			}
+		}
+		
+		// Check if files has a different number of lines:
+		if(content_<%=cid%> == null){
+		    // This step is done in case of the while upper ignore second part:
+		    contentRef_<%=cid%> = fileRef_<%=cid%>.readLine();
+		}
+		if(content_<%=cid%> != null || contentRef_<%=cid%> != null){
+		    result_<%=cid%> = false;
+		}
+		
+		file_<%=cid%>.close();
+		fileRef_<%=cid%>.close();
+		<%
+	}
+	else
+	{
+		%>
+    	java.io.BufferedInputStream file_<%=cid%> = new java.io.BufferedInputStream(file_is_<%=cid%>);
+    	java.io.BufferedInputStream fileRef_<%=cid%> = new java.io.BufferedInputStream(file_ref_is_<%=cid%>);
+    	int content_<%=cid%> = -1,contentRef_<%=cid%> = -1;
+    	while((content_<%=cid%> = file_<%=cid%>.read()) != -1 && (contentRef_<%=cid%> = fileRef_<%=cid%>.read()) != -1)
+    	{
+    		if(content_<%=cid%> != contentRef_<%=cid%>)
+    		{
+    			result_<%=cid%> = false;
+    			break;
+    		}
+    	}
+    	file_<%=cid%>.close();
+    	fileRef_<%=cid%>.close();			
+		<%
+	}
+	%>
+	}
+
+	String message<%=cid %> = "";
+	if (result_<%=cid %>) {
+		message<%=cid %> = <%=noDifferMessage%>;
+		
+	} else {
+		message<%=cid %> = <%=differMessage%>;
+	}
+	globalMap.put("<%=cid %>_DIFFERENCE",result_<%=cid %>);
+
+	<%
+	if (print) {
+	%>
+    System.out.println(message<%=cid %>);
+	<%
+	}
+	
+	if(isLog4jEnabled) {
+	%>
+	log.info("<%=cid%> - Compare result : " + message<%=cid %> + ".");
+	<%
+	}
+	
+	for (IConnection conn : node.getOutgoingConnections()) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	%>
+	<%=conn.getName() %>.file = <%=file %>;
+	<%=conn.getName() %>.file_ref = <%=fileRef %>;	
+	<%=conn.getName() %>.moment = java.util.Calendar.getInstance().getTime();
+	<%=conn.getName() %>.job = jobName;
+	<%=conn.getName() %>.component = currentComponent;
+	<%=conn.getName() %>.differ = (result_<%=cid%>)?0:1;
+	<%=conn.getName() %>.message = message<%=cid %>;
+	<%
+			if(isLog4jEnabled) {
+			%>
+			log.info("<%=cid%> - Compare date : " + routines.system.FormatterUtils.format_Date(<%=conn.getName() %>.moment,"dd-MM-yyyy HH:mm:ss") + ".");
+			<%
+			}
+		}
+	}
+	
+	%>
+	

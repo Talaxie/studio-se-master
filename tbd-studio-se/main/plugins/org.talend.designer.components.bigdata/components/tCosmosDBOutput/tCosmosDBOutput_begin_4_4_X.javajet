@@ -1,0 +1,74 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		java.util.Map
+	" 
+%>
+
+    <%
+    boolean upsert_with_set = "UPSERT_WITH_SET".equalsIgnoreCase(dataAction);
+    boolean insertOnlyColumnExists = false;
+    boolean updateOnlyColumnExists = false;
+    if(upsert_with_set) {
+        for (java.util.Map<String, String> map: mapping) {
+            boolean updatable = true;
+            boolean insertable = true;
+            if(insertable && !updatable) {
+                insertOnlyColumnExists = true;
+                continue;
+            }
+            if(updatable && !insertable) {
+                updateOnlyColumnExists = true;
+                continue;
+           }
+        }
+        if(insertOnlyColumnExists) {%>
+            DBObjectUtil_<%=cid%> insertObjectOnlyUtil_<%=cid%>=new DBObjectUtil_<%=cid%>();
+            <%
+        }
+        if(updateOnlyColumnExists) {%>
+            DBObjectUtil_<%=cid%> updateObjectOnlyUtil_<%=cid%>=new DBObjectUtil_<%=cid%>();
+            <%
+        }
+    }%>
+
+    <%@ include file="@{org.talend.designer.components.bigdata}/components/templates/MongoDB/GridFS/GetMongoDBConnection_4_4_X.javajet"%>
+
+    <%if(dropExistCollection) {%>
+        db_<%=cid%>.getCollection(<%=collection%>).drop();
+        <%
+    }%>
+    com.mongodb.client.MongoCollection<org.bson.Document> coll_<%=cid%> = db_<%=cid%>.getCollection(<%=collection%>);
+
+    <%if(bulkWrite) {// BulkWrite
+        boolean updateAll = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__UPDATE_ALL__"));
+        String updateModel = (updateAll ? "UpdateManyModel" : "UpdateOneModel");
+        
+        if("INSERT".equalsIgnoreCase(dataAction)) {%>
+            List<com.mongodb.client.model.InsertOneModel<org.bson.Document>> bulkWriteOperation_<%=cid%> = new java.util.ArrayList<>();
+            <%
+        } else if("UPSERT".equalsIgnoreCase(dataAction)||"UPDATE".equalsIgnoreCase(dataAction)) {%>
+            List<com.mongodb.client.model.ReplaceOneModel<org.bson.Document>> bulkWriteOperation_<%=cid%> = new java.util.ArrayList<>();
+            <%
+        } else if("DELETE".equalsIgnoreCase(dataAction)) {%>
+            List<com.mongodb.client.model.DeleteOneModel<org.bson.Document>> bulkWriteOperation_<%=cid%> = new java.util.ArrayList<>();
+            <%
+        } else if(upsert_with_set) {%>
+            List<com.mongodb.client.model.<%=updateModel%><org.bson.Document>> bulkWriteOperation_<%=cid%> = new java.util.ArrayList<>();
+            <%if(updateOnlyColumnExists) {%>
+                List<com.mongodb.client.model.<%=updateModel%><org.bson.Document>> bulkWriteOperationForUpdateOnlyColumn_<%=cid%> = new java.util.ArrayList<>();
+                int bulkWriteOperationCounterForUpdateOnlyColumn_<%=cid%> = 1;
+                <%
+            }
+        } else {%>//set
+            List<com.mongodb.client.model.<%=updateModel%><org.bson.Document>> bulkWriteOperation_<%=cid%> = new java.util.ArrayList<>();
+            <%
+        }%>
+        int bulkWriteOperationCounter_<%=cid%> = 1;
+        final int bulkWriteOperationSize_<%=cid%> = Integer.parseInt(<%=bulkWriteOperationSize%>);
+        <%
+    }%>

@@ -1,0 +1,268 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.metadata.IMetadataTable 
+	org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.utils.NodeUtil
+	java.util.Map 
+    java.util.List 
+	"
+%>
+
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/GetFileSystem.javajet"%>
+
+	<%
+	List<? extends IConnection> inConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+	IConnection inConn = null;
+	String connName = null;
+	IMetadataTable metadata = null;
+	
+	if(inConns!=null && inConns.size()> 0) {
+		inConn = inConns.get(0);
+		connName = inConn.getName();
+		metadata = inConn.getMetadataTable();
+	}
+	
+	if (metadata == null) {
+		return stringBuffer.toString();
+	}
+	
+	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+	
+	//boolean fileAction = "true".equals(ElementParameterParser.getValue(node, "__FILE_ACTION__"));
+	String fileAction = ElementParameterParser.getValue(node, "__FILE_ACTION__");
+	
+	boolean customEncoding="true".equals( ElementParameterParser.getValue(node,"__CUSTOM_ENCODING__"));
+	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+	
+	String typeFile = ElementParameterParser.getValue(node,"__TYPEFILE__");
+	
+	boolean compress = "true".equals(ElementParameterParser.getValue(node, "__COMPRESS__"));
+	String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+	
+	boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+	%>
+	org.apache.hadoop.fs.Path path_<%=cid%> = new org.apache.hadoop.fs.Path(<%=fileName%>);
+	int nb_line_<%=cid %> = 0;
+	<%
+	if (typeFile.equals("TEXT")) {
+		List<IMetadataColumn> columns = metadata.getListColumns();
+        int sizeColumns = columns.size();
+		%>			
+		org.apache.hadoop.fs.FSDataOutputStream fsDataOutputStream_<%=cid%> = null;
+		<%if("APPEND".equals(fileAction)){%>
+    		if(!fs_<%=cid%>.exists(path_<%=cid%>)) {
+    			fsDataOutputStream_<%=cid%> = fs_<%=cid%>.create(path_<%=cid%>,false);
+    		} else {
+				fsDataOutputStream_<%=cid%> = fs_<%=cid%>.append(path_<%=cid%>);
+			}
+		<%}else{//Create and Overwrite%>
+			fsDataOutputStream_<%=cid%> = fs_<%=cid%>.create(path_<%=cid%>, <%="CREATE".equals(fileAction)?false:true%>);
+		<%}%>
+		<%
+		if(!compress) {
+		%>
+			java.io.Writer out<%=cid%> = null;
+			out<%=cid%>=new java.io.BufferedWriter(new java.io.OutputStreamWriter(fsDataOutputStream_<%=cid%><%if(customEncoding){%>,<%=encoding%><%}%>));
+		<%
+		} else {
+			if("GZIP".equals(compression)) {
+			%>
+				org.apache.hadoop.io.compress.GzipCodec codec_<%=cid%> = new org.apache.hadoop.io.compress.GzipCodec();
+				codec_<%=cid%>.setConf(conf_<%=cid%>);
+			<%
+			} else if("BZIP2".equals(compression)) {
+			%>
+				org.apache.hadoop.io.compress.CompressionCodec codec_<%=cid%> = org.apache.hadoop.util.ReflectionUtils.newInstance(org.apache.hadoop.io.compress.BZip2Codec.class, conf_<%=cid%>);
+			<%
+			}
+			%>
+			org.apache.hadoop.io.compress.CompressionOutputStream out<%=cid%> = codec_<%=cid%>.createOutputStream(fsDataOutputStream_<%=cid%>);
+		<%
+		}
+		
+		if(isIncludeHeader) {
+			String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+        	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+        	
+			if("APPEND".equals(fileAction)){
+			%>
+				boolean fileExistAndHasContent_<%=cid%> = false;
+				if(fs_<%=cid%>.exists(path_<%=cid%>)) {
+					org.apache.hadoop.fs.FileStatus statu_<%=cid%> = fs_<%=cid%>.getFileStatus(path_<%=cid%>);
+					fileExistAndHasContent_<%=cid%> = (!statu_<%=cid%>.isDir()) && (statu_<%=cid%>.getLen() != 0);
+				}
+				if(!fileExistAndHasContent_<%=cid%>) {
+			<%
+			}
+			%>
+					StringBuilder header_<%=cid %> = new StringBuilder();
+					<%
+			        for (int i = 0; i < sizeColumns; i++) {
+			        	IMetadataColumn column = columns.get(i);
+						%>
+						header_<%=cid %>.append("<%=column.getLabel() %>");
+						<%
+			            if(i != sizeColumns - 1) {
+						%>
+		                	header_<%=cid %>.append(<%=fieldSeparator%>);
+						<%
+			            }
+			        }
+					%>
+					header_<%=cid %>.append(<%=rowSeparator%>);
+					<%
+					if(!compress) {
+					%>
+						out<%=cid %>.write(header_<%=cid %>.toString());
+					<%
+					} else {
+					%>
+						out<%=cid%>.write(header_<%=cid %>.toString().getBytes(<%=customEncoding?encoding:""%>));
+					<%
+					}
+			if("APPEND".equals(fileAction)){
+			%>
+				}
+			<%
+			}
+		}
+		//start to split assign value method to avoid too big method
+		int schemaOptNum=100;
+		String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+		if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+			schemaOptNum = Integer.parseInt(schemaOptNumStr);
+		}
+		boolean isOptimizeCode = false;
+		if(schemaOptNum < sizeColumns){
+			isOptimizeCode = true;
+		}
+		if(isOptimizeCode){
+		%>
+		class AssignValueUtil_<%=cid%> {
+			<%
+			for (int i = 0; i < sizeColumns; i++) {
+	    		IMetadataColumn column = columns.get(i);
+	    		String columnName = column.getLabel();
+	    		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+	    		if(i % schemaOptNum == 0){
+	    		%>
+	    			public void assignValue_<%=i/schemaOptNum%>(final <%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=connName%>, StringBuilder holder_<%=cid%>, String fieldSeparator){
+   				<%
+   				}
+   				%>
+   						<%
+	    				if (!isPrimitive) {
+						%>
+							if(<%=connName%>.<%=columnName%> != null) {
+						<%
+						}
+						%>
+							holder_<%=cid%>.append(
+								<%
+								String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+								if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+								%>
+									FormatterUtils.format_Date(<%=connName%>.<%=columnName%>, <%= pattern%>)
+								<%	
+								} else if(javaType == JavaTypesManager.BIGDECIMAL){
+								%>
+									<%=column.getPrecision() == null ? connName + "." + columnName : connName + "." + columnName + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+								<%
+								} else if(javaType == JavaTypesManager.BYTE_ARRAY){
+								%>
+									java.nio.charset.Charset.forName(<%=(customEncoding?encoding:"utf8Charset")%>).decode(java.nio.ByteBuffer.wrap(<%=connName%>.<%=columnName%>)).toString()
+								<%
+								} else {
+								%>
+									<%=connName%>.<%=columnName%>
+								<%				
+								}
+								%>
+							);
+						
+						<%
+	    				if (!isPrimitive) {
+						%>
+							}
+						<%
+						}
+						if (i != sizeColumns - 1) {
+	    				%>
+	    					holder_<%=cid %>.append(fieldSeparator);
+	    				<%
+	    				}
+	    				%>
+	    		<%
+    			if((i+1) % schemaOptNum == 0){
+                %>
+                    }
+                <%
+	    		}
+	    	}
+	    	if(sizeColumns > 0 && (sizeColumns % schemaOptNum) > 0){ // if schemaOptNum is 2, and sizeColumns is 3, this } for the last one column
+	    	%>
+	    		}
+	    	<%
+	    	}
+			%>	
+		}
+		AssignValueUtil_<%=cid%> assignValueUtil_<%=cid%> = new AssignValueUtil_<%=cid%>();
+		<%
+		}
+	} else {
+		String keyColumn = ElementParameterParser.getValue(node,"__KEYCOLUMN__");
+		String valueColumn = ElementParameterParser.getValue(node,"__VALUECOLUMN__");
+			
+		List<IMetadataColumn> listColumns = metadata.getListColumns();
+		String talendKeyClass = "";
+		String talendValueClass = "";
+		for (IMetadataColumn column : listColumns) {
+			if (column.getLabel().equals(keyColumn)) {
+				talendKeyClass = column.getTalendType();
+			}
+			if (column.getLabel().equals(valueColumn)) {
+				talendValueClass = column.getTalendType();
+			}
+		}
+		%>
+
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/SequenceFileMapping.javajet"%>
+
+		<%		
+		if(!compress) {
+		%>
+			org.apache.hadoop.io.SequenceFile.Writer writer_<%=cid%> = new org.apache.hadoop.io.SequenceFile.Writer(fs_<%=cid%>, conf_<%=cid%>, path_<%=cid%>, <%=keyClass%>.class, <%=valueClass%>.class);
+		<%
+		} else {
+			if("GZIP".equals(compression)) {
+			%>
+				org.apache.hadoop.io.SequenceFile.Writer writer_<%=cid%> = org.apache.hadoop.io.SequenceFile.createWriter(fs_<%=cid%>, conf_<%=cid%>, path_<%=cid%>, <%=keyClass%>.class, <%=valueClass%>.class, org.apache.hadoop.io.SequenceFile.CompressionType.BLOCK, new org.apache.hadoop.io.compress.GzipCodec());
+			<%
+			} else if("BZIP2".equals(compression)) {
+			%>
+				org.apache.hadoop.io.SequenceFile.Writer writer_<%=cid%> = org.apache.hadoop.io.SequenceFile.createWriter(fs_<%=cid%>, conf_<%=cid%>, path_<%=cid%>, <%=keyClass%>.class, <%=valueClass%>.class, org.apache.hadoop.io.SequenceFile.CompressionType.BLOCK, new org.apache.hadoop.io.compress.BZip2Codec());
+			<%
+			}
+		}
+	}
+	
+	if(node.isVirtualGenerateNode() && metadata!=null){
+		if (inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			String origin = ElementParameterParser.getValue(node, "__DESTINATION__");
+			cid = origin;
+			String con_name = org.talend.core.model.utils.NodeUtil.getPrivateConnClassName(inConn);
+			%>
+			List<<%=con_name%>Struct> <%=con_name%>_list_<%=cid%>= new java.util.ArrayList<<%=con_name%>Struct>();
+			<%
+		}
+	}
+	%>

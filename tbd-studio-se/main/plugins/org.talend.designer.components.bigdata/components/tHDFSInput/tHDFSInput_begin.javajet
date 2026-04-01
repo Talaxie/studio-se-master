@@ -1,0 +1,142 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+	org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser
+	java.util.Map 
+    java.util.List 
+	"
+%>
+
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/GetFileSystem.javajet"%>
+
+<%
+    	IMetadataTable metadata = null;
+    	List<IMetadataTable> metadatas = node.getMetadataList();
+    	if((metadatas==null) || (metadatas.size() == 0) || ((metadata = metadatas.get(0)) == null)) {
+    		return stringBuffer.toString();
+    	}
+    	
+		String mapredJobTracker = ElementParameterParser.getValue(node, "__MAPRED_JOB_TRACKER__");
+    	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+    	boolean incldSubdir = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDSUBDIR__"));
+    	
+    	String fileAction = ElementParameterParser.getValue(node, "__FILE_ACTION__");
+    	
+    	String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+    	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+    	boolean customEncoding="true".equals( ElementParameterParser.getValue(node,"__CUSTOM_ENCODING__"));
+    	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+    	
+    	String typeFile = ElementParameterParser.getValue(node,"__TYPEFILE__");
+    	
+    	boolean uncompress = "true".equals(ElementParameterParser.getValue(node, "__UNCOMPRESS__"));
+    	String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+    	
+    	String header = ElementParameterParser.getValue(node, "__HEADER__");
+    	if(("").equals(header)){
+    		header="0";
+    	}
+%>
+		org.apache.hadoop.fs.Path rootPath_<%=cid%> = new org.apache.hadoop.fs.Path(<%=fileName%>);
+		org.apache.hadoop.fs.FileStatus rootStatu_<%=cid%> = fs_<%=cid%>.getFileStatus(rootPath_<%=cid%>);
+		final java.util.List<org.apache.hadoop.fs.FileStatus> status_<%=cid%> = new java.util.ArrayList<org.apache.hadoop.fs.FileStatus>();
+		if(rootStatu_<%=cid%>.isDir()) {
+        	final org.apache.hadoop.fs.FileSystem filesystem_<%=cid%> = fs_<%=cid%>;
+        	filesystem_<%=cid%>.listStatus(rootPath_<%=cid%>,new org.apache.hadoop.fs.PathFilter() {
+        	
+        		public boolean accept(org.apache.hadoop.fs.Path path) {
+        			try {
+        				org.apache.hadoop.fs.FileStatus statu = filesystem_<%=cid%>.getFileStatus(path);
+        				String name = path.getName();
+        				if(statu.isDir()) {
+        					<%if(incldSubdir) {%>
+        					filesystem_<%=cid%>.listStatus(path, this);
+        					<%}%>
+        				} else if (name.startsWith(".") || name.startsWith("_")) {
+        				} else {
+        					status_<%=cid%>.add(statu);
+        				}
+        			} catch (java.io.FileNotFoundException e) {
+        				e.printStackTrace();
+        				
+        				<%if(isLog4jEnabled) {%>
+       					log.error("<%=cid%> - " + e.getMessage());
+        				<%}%>
+        			} catch (java.io.IOException e) {
+        				e.printStackTrace();
+        				
+    					<%if(isLog4jEnabled) {%>
+       					log.error("<%=cid%> - " + e.getMessage());
+        				<%}%>
+        			}
+        			return false;
+        		}
+        
+        	});			
+		} else {
+			status_<%=cid%>.add(rootStatu_<%=cid%>);
+		}
+		
+<%
+		log4jFileUtil.startRetriveDataInfo();
+%>
+		int nb_line_<%=cid%> = 0;
+		
+		for(org.apache.hadoop.fs.FileStatus statu_<%=cid%> : status_<%=cid%>) {
+			org.apache.hadoop.fs.Path path_<%=cid%> = statu_<%=cid%>.getPath();
+<%
+		if (typeFile.equals("TEXT")) {
+%>
+		org.apache.hadoop.fs.FSDataInputStream fsDataInputStream_<%=cid%> = fs_<%=cid%>.open(path_<%=cid%>);
+<%
+			if(!uncompress) {
+%>
+		org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(fsDataInputStream_<%=cid%>,  <%=(customEncoding?encoding:null) %>,<%=fieldSeparator %>,<%=rowSeparator %>,false,<%=header%>,0,-1,-1, false);
+<%
+			} else {
+				if("GZIP".equals(compression)) {
+%>
+				org.apache.hadoop.io.compress.GzipCodec codec_<%=cid%> = new org.apache.hadoop.io.compress.GzipCodec();
+				codec_<%=cid%>.setConf(conf_<%=cid%>);				
+<%
+				} else if("BZIP2".equals(compression)) {
+%>
+				org.apache.hadoop.io.compress.CompressionCodec codec_<%=cid%> = org.apache.hadoop.util.ReflectionUtils.newInstance(org.apache.hadoop.io.compress.BZip2Codec.class, conf_<%=cid%>);
+<%
+				}
+%>
+			org.apache.hadoop.io.compress.CompressionInputStream in<%=cid%> = codec_<%=cid%>.createInputStream(fsDataInputStream_<%=cid%>);
+			org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(in<%=cid%>,  <%=(customEncoding?encoding:null) %>,<%=fieldSeparator %>,<%=rowSeparator %>,false,<%=header%>,0,-1,-1, false);
+<%
+			}
+%>
+		while (fid_<%=cid %>.nextRecord()) {
+<%
+		} else {
+			String keyColumn = ElementParameterParser.getValue(node,"__KEYCOLUMN__");
+			String valueColumn = ElementParameterParser.getValue(node,"__VALUECOLUMN__");
+			
+			List<IMetadataColumn> listColumns = metadata.getListColumns();
+			String talendKeyClass = "";
+			String talendValueClass = "";
+			for (IMetadataColumn column : listColumns) {
+				if (column.getLabel().equals(keyColumn)) {
+					talendKeyClass = column.getTalendType();
+				}
+				if (column.getLabel().equals(valueColumn)) {
+					talendValueClass = column.getTalendType();
+				}
+			}
+%>
+			<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/SequenceFileMapping.javajet"%>
+			
+		org.apache.hadoop.io.SequenceFile.Reader reader_<%=cid%> = new org.apache.hadoop.io.SequenceFile.Reader(fs_<%=cid%>, path_<%=cid%>,  conf_<%=cid%>);
+		<%=keyClass%> key_<%=cid%> = (<%=keyClass%>) reader_<%=cid%>.getKeyClass().newInstance();
+		<%=valueClass%> value_<%=cid%> = (<%=valueClass%>) reader_<%=cid%>.getValueClass().newInstance();
+		while (reader_<%=cid%>.next(key_<%=cid%>, value_<%=cid%>)) {
+<%
+		}
+%>

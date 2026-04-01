@@ -1,0 +1,90 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%
+	class ParseRestResult {
+	
+		protected String cid;
+		protected boolean activateLog;
+		protected String stdout;
+		protected String stderr;
+	
+	
+		public void declareVariable(INode node) {
+			this.cid = node.getUniqueName();
+%>
+			String err_<%=cid%> = "";
+			org.json.simple.JSONObject jsonRow_<%=cid%> = new org.json.simple.JSONObject();
+			java.io.InputStream is_<%=cid%>;
+			Object obj_<%=cid%>;
+			org.json.simple.JSONObject object_<%=cid%>;
+			Object error_<%=cid%>;
+<%
+		}
+	
+		public void getJSONObject(INode node, String context) {
+			this.cid = node.getUniqueName();
+%>
+			is_<%=cid%> = (java.io.InputStream) response_<%=context==null?"":context+"_"%><%=cid%>.getEntity();
+			String result_<%=context==null?"":context+"_"%><%=cid%> = org.apache.cxf.helpers.IOUtils.toString(is_<%=cid%>);
+			obj_<%=cid%>=org.json.simple.JSONValue.parse(result_<%=context==null?"":context+"_"%><%=cid%>);
+			object_<%=cid%>=(org.json.simple.JSONObject)obj_<%=cid%>;
+<%
+		}
+		
+		public void manageError(INode node, boolean activateLog) {
+			this.cid = node.getUniqueName();
+			this.activateLog = activateLog;
+%>
+			error_<%=cid%> = object_<%=cid%>.get("error");
+			if(error_<%=cid%>!=null) {
+				err_<%=cid%> = error_<%=cid%>.toString();
+			}
+<%
+			if(this.activateLog) {
+				this.stdout = ElementParameterParser.getValue(node, "__STDOUT__");
+				this.stderr = ElementParameterParser.getValue(node, "__STDERR__");
+%>
+				if(((org.json.simple.JSONObject)object_<%=cid%>.get("exec"))!=null) {
+					String time_<%=cid%> = TalendDate.formatDate("yyyyMMddHHmmss", TalendDate.getCurrentDate());
+					Object stdout_<%=cid%> = ((org.json.simple.JSONObject)object_<%=cid%>.get("exec")).get("stdout");
+					Object stderr_<%=cid%> = ((org.json.simple.JSONObject)object_<%=cid%>.get("exec")).get("stderr");
+					String stdout_filename_<%=cid%> = "/" + projectName + "_" + jobName + "_" + jobVersion + "_" + time_<%=cid%> + "_" + "<%=cid%>" + "_stdout.log";
+					String stderr_filename_<%=cid%> = "/" + projectName + "_" + jobName + "_" + jobVersion + "_" + time_<%=cid%> + "_" + "<%=cid%>" + "_stderr.log";
+					java.io.FileWriter fw_out_<%=cid%> = new java.io.FileWriter(new java.io.File(<%=this.stdout%>+stdout_filename_<%=cid%>));
+					java.io.FileWriter fw_err_<%=cid%> = new java.io.FileWriter(new java.io.File(<%=this.stderr%>+stderr_filename_<%=cid%>));
+					fw_out_<%=cid%>.write(stdout_<%=cid%>!=null?stdout_<%=cid%>.toString():"");
+					fw_err_<%=cid%>.write(stderr_<%=cid%>!=null?stderr_<%=cid%>.toString():"");
+					fw_out_<%=cid%>.close();
+					fw_err_<%=cid%>.close();
+				}
+<%
+			}
+		}
+		
+		public void manageResponseStatus(INode node, String context) {
+			this.cid = node.getUniqueName();
+%>
+			if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()!=200) {
+				if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()==400) {
+					throw new Exception("Error 400 (Bad request): The request was invalid.\n--->" + err_<%=cid%>);
+				} else if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()==401) {
+					throw new Exception("Error 401 (Unauthorized): Credentials were missing or incorrect.\n--->" + err_<%=cid%>);
+				} else if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()==404) {
+					throw new Exception("Error 404 (Not found): The URI requested is invalid or the resource requested does not exist.\n--->" + err_<%=cid%>);
+				} else if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()==500) {
+					throw new Exception("Error 500 (Internal Server Error): We received an unexpected result.\n--->" + err_<%=cid%>);
+				} else if(response_<%=context==null?"":context+"_"%><%=cid%>.getStatus()==503) {
+					throw new Exception("Error 503 (Busy, please retry): The server is busy.\n--->" + err_<%=cid%>);
+				} else {
+					throw new Exception(object_<%=cid%>.get("errorCode") + ":" + object_<%=cid%>.get("error") + object_<%=cid%>.get("errorDetail"));
+				}
+			}
+<%
+		}
+	}
+%>

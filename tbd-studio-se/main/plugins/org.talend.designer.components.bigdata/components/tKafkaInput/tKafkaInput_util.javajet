@@ -1,0 +1,398 @@
+<%
+
+class TKafkaInputUtil {
+
+    private INode node;
+
+    private INode connNode;
+    
+    private TSetKeystoreUtil tSetKeystoreUtil;
+
+    private IConnection outgoingConnection;
+
+    private Map<String, String> kafkaConsumerProperties;
+
+    private boolean useExistingConn;
+
+    private TSetKeystoreUtil tSetKeystoreUtilSchemaRegistry;
+
+    public TKafkaInputUtil(INode node) {
+        this.node = node;
+        this.connNode = Boolean.valueOf(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"))
+            ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__")
+            : node;
+        this.tSetKeystoreUtil = new TSetKeystoreUtil(connNode);
+        // reuse kafka ssl settings for schema registry if ssl for kafka is enabled
+        this.tSetKeystoreUtilSchemaRegistry = new TSetKeystoreUtil(connNode);
+        if (!useHttps()) {
+            // If ssl for kafka is disabled - use schema registry's own keystore settings
+            INode schemaRegistryKeystoreSettingsNode = ElementParameterParser.getLinkedNodeValue(node, "__SCHEMA_REGISTRY_KEYSTORE_SETTINGS__");
+            this.tSetKeystoreUtilSchemaRegistry.setSettingsNode(schemaRegistryKeystoreSettingsNode);
+        }
+        this.outgoingConnection = findOutgoingConnection();
+        this.kafkaConsumerProperties = findKafkaConsumerProperties();
+    }
+
+    public String getOutputType() {
+        return ElementParameterParser.getValue(node, "__OUTPUT_TYPE__");
+    }
+
+    public String getZookeeperConnect() {
+        return ElementParameterParser.getValue(connNode, "__ZOOKEEPER_CONNECT__");
+    }
+    
+    public String getBrokerList() {
+        return ElementParameterParser.getValue(connNode, "__BROKER_LIST__");
+    }
+
+    public String getTopic() {
+        return ElementParameterParser.getValue(node, "__KAFKA_TOPIC__");
+    }
+
+    public String getGroupId() {
+        return ElementParameterParser.getValue(node, "__GROUP_ID__");
+    }
+
+    public boolean isResetNewConsumerGroup() {
+        return "true".equals(ElementParameterParser.getValue(node, "__RESET_OFFSET__"));
+    }
+
+    public String getAutoOffsetResetNew() {
+        return ElementParameterParser.getValue(node, "__AUTO_OFFSET_RESET_NEW__").toLowerCase();
+	 }
+	 
+	 public String getAutoOffsetReset() {
+        return ElementParameterParser.getValue(node, "__AUTO_OFFSET_RESET__").toLowerCase();
+	 }
+
+    public String getOffsetStorage() {
+        return ElementParameterParser.getValue(node, "__KAFKA_OFFSET_STORAGE__").toLowerCase();
+    }
+
+    public boolean isDualCommit() {
+        return "kafka".equals(getOffsetStorage()) && "true".equals(ElementParameterParser.getValue(node, "__KAFKA_DUAL_COMMIT_CHECK__"));
+    }
+
+    public boolean isAutoCommitOffset() {
+        return "true".equals(ElementParameterParser.getValue(node, "__AUTO_COMMIT_OFFSET__"));
+    }
+
+    public String getAutoCommitInterval() {
+        return ElementParameterParser.getValue(node, "__KAFKA_COMMIT_INTERVAL__");
+    }
+
+    public boolean isStopOnMaxDuration() {
+        return "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_MAX_DURATION__"));
+    }
+
+    public String getMaxDuration() {
+        return ElementParameterParser.getValue(node, "__BATCH_MAX_DURATION__");
+    }
+
+    public boolean isStopOnMaxSize() {
+        return "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_MAX_SIZE__"));
+    }
+
+    public String getMaxSize() {
+        return ElementParameterParser.getValue(node, "__BATCH_MAX_SIZE__");
+    }
+
+    public boolean isStopOnMaxMsgWait() {
+        return "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_MESSAGE_TIMEOUT__"));
+    }
+
+    public String getMaxMsgWait() {
+        return ElementParameterParser.getValue(node, "__BATCH_MESSAGE_TIMEOUT__");
+    }
+
+    public String getConsumerTimeout() {
+        if (isStopOnMaxDuration()) {
+            return getPrecision();
+        } else if (isStopOnMaxMsgWait()) {
+            return getMaxMsgWait();
+        } else if (!isKafkaVersion("KAFKA_0_8_2_0")) {
+            return getPrecision();
+        }
+        // If we're not stopping, then don't ever wait for consumer timeout.
+        return "-1";
+    }
+
+    public String getEncoding() {
+        String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+        if (encoding == null || "".equals(encoding)) {
+            encoding = "\"UTF-8\"";
+        }
+        return encoding;
+   }
+
+    public Map<String, String> getKafkaConsumerProperties() {
+        return this.kafkaConsumerProperties;
+    }
+
+    public String getOutStructName() {
+        return this.outgoingConnection.getName() + "Struct";
+    }
+
+    public String getOutgoingConnectionName() {
+        return this.outgoingConnection.getName();
+    }
+
+    public String getOutgoingColumnName() {
+        return this.outgoingConnection.getMetadataTable().getListColumns().get(0).getLabel();
+    }
+    
+    private String getPrecision() {
+			String precision = ElementParameterParser.getValue(node, "__KAFKA_CONSUMER_TIMEOUT__");
+			return "\"-1\"".equals(precision) || "-1".equals(precision) ? "1000" : precision;
+    }
+
+    private String getIntProperty(String inputMaybeNumeric) {
+        if (inputMaybeNumeric.matches("-?\\d+"))
+            return "\"" + inputMaybeNumeric + "\"";
+        return inputMaybeNumeric;
+    }
+    
+    public boolean isKafkaVersion(String... versions) {
+    	String kafkaVersion = ElementParameterParser.getValue(connNode, "__KAFKA_VERSION__");
+            for (String version : versions) {
+                if(version.equals(kafkaVersion)){
+                    return true;
+                }
+            }
+            return false;
+//            return java.util.Arrays.stream(versions).anyMatch(kafkaVersion::equals);
+        }
+
+    public String getAsLong(String inputMaybeLong) {
+        if (inputMaybeLong.matches("-?\\d+[lL]?"))
+            return inputMaybeLong;
+        if (inputMaybeLong.matches("\"-?\\d+[lL]?\""))
+            return inputMaybeLong.substring(1, inputMaybeLong.length() - 1);
+        return "Long.valueOf("+inputMaybeLong+")";
+    }
+    
+    public TSetKeystoreUtil getTSetKeystoreUtil() {
+        return tSetKeystoreUtil;
+    }
+    
+    public String getSecurityProtocol() {
+			if (useHttps()) {
+				return useKrb() ? "SASL_SSL" : "SSL";
+			} else {
+				return useKrb() ? "SASL_PLAINTEXT" : "PLAINTEXT";
+			}
+    }
+
+    public boolean useHttps() {
+        return "true".equals(ElementParameterParser.getValue(connNode, "__USE_HTTPS__"));
+    }
+
+    public boolean useKrb() {
+			return "true".equals(ElementParameterParser.getValue(connNode, "__USE_KRB__"));
+    }
+    
+    public String getJAASConf() {
+    		return ElementParameterParser.getValue(connNode, "__JAAS_CONF__");
+    }
+    
+    public String getKrbServiceName() {
+    		return ElementParameterParser.getValue(connNode, "__KRB_SERVICE_NAME__");
+    }
+    
+    public boolean isSetKinitPath() {
+			return "true".equals(ElementParameterParser.getValue(connNode, "__SET_KINIT_PATH__"));
+    }
+    
+    public String getKinitPath() {
+    		return ElementParameterParser.getValue(connNode, "__KINIT_PATH__");
+    }
+    
+    public boolean isSetKrb5Conf() {
+			return "true".equals(ElementParameterParser.getValue(connNode, "__SET_KRB5_CONF__"));
+    }
+    
+    public String getKrb5Conf() {
+    		return ElementParameterParser.getValue(connNode, "__KRB5_CONF__");
+    }
+
+    public boolean isSetKeystore() {
+        return "true".equals(ElementParameterParser.getValue(connNode, "__SET_KEYSTORE__"));
+    }
+
+    public boolean applySecurityPropertiesAfterAdvanced() {
+        return "true".equals(ElementParameterParser.getValue(node, "__APPLY_SECURITY_PROPERTIES_AFTER_ADVANCED__"));
+    }
+
+    public boolean useConsumerRecord() {
+        return "CONSUMER_RECORD".equals(getOutputType());
+    }
+
+    public boolean useSchemaRegistry() {
+        return "true".equals(ElementParameterParser.getValue(node, "__USE_SCHEMA_REGISTRY__"));
+    }
+
+    public String getSchemaRegistryUrl() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_URL__");
+    }
+
+    public boolean useSchemaRegistryBasicAuth() {
+        return "true".equals(ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_BASIC_AUTH__"));
+    }
+
+    public String getSchemaRegistryUsername() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_USERNAME__");
+    }
+
+    public String getSchemaRegistryPassword() {
+        return ElementParameterParser.getPasswordValue(node, "__SCHEMA_REGISTRY_PASSWORD__");
+    }
+
+    public boolean isSchemaRegistrySetKeystore() {
+        return "true".equals(ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_SET_KEYSTORE__"));
+    }
+
+    public String getSchemaRegistryKeyDeserializer() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_KEY_DESERIALIZER__");
+    }
+
+    public String getSchemaRegistryCustomKeyDeserializer() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_CUSTOM_KEY_DESERIALIZER__");
+    }
+
+    public String getSchemaRegistryValueDeserializer() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_VALUE_DESERIALIZER__");
+    }
+
+    public String getSchemaRegistryCustomValueDeserializer() {
+        return ElementParameterParser.getValue(node, "__SCHEMA_REGISTRY_CUSTOM_VALUE_DESERIALIZER__");
+    }
+
+    private Map<String, String> findKafkaConsumerProperties() {
+        java.util.Map<String, String> result = new java.util.TreeMap<String, String>();
+        if(isKafkaVersion("KAFKA_0_8_2_0")) {
+				// Old consumer API configuration
+	        result.put("\"auto.commit.enable\"", "\"" + isAutoCommitOffset() + "\"");
+	        result.put("\"auto.commit.interval.ms\"", getIntProperty(getAutoCommitInterval()));
+	        result.put("\"auto.offset.reset\"", "\"" + getAutoOffsetReset() + "\"");
+	        result.put("\"consumer.timeout.ms\"", getIntProperty(getConsumerTimeout()));
+	        result.put("\"dual.commit.enabled\"", "\"" + isDualCommit() + "\"");
+	        result.put("\"group.id\"", getGroupId());
+	        result.put("\"offsets.storage\"", "\"" + getOffsetStorage() + "\"");
+	        result.put("\"serializer.encoding\"", getEncoding());
+	        result.put("\"zookeeper.connect\"", getZookeeperConnect());
+            setCustomProps(result);
+        } else {
+            // New consumer API configuration
+            result.put("\"enable.auto.commit\"", "\"" + isAutoCommitOffset() + "\"");
+            result.put("\"auto.commit.interval.ms\"", getIntProperty(getAutoCommitInterval()));
+            result.put("\"auto.offset.reset\"", "\"" + getAutoOffsetResetNew() + "\"");
+            result.put("\"group.id\"", getGroupId());
+            result.put("\"bootstrap.servers\"", getBrokerList());
+            result.put("\"security.protocol\"", "\"" + getSecurityProtocol() + "\"");
+
+            setConsumerRecordProps(result);
+            setSchemaRegistryProps(result);
+
+            if (applySecurityPropertiesAfterAdvanced()) {
+                setCustomProps(result);
+                setSecurityProps(result);
+            } else {
+                setSecurityProps(result);
+                setCustomProps(result);
+            }
+        }
+        return result;
+    }
+
+    private void setSecurityProps(java.util.Map<String, String> result) {
+        if (!isKafkaVersion("KAFKA_0_8_2_0")) {
+            // SSL configuration
+            if (useHttps() && isSetKeystore() && tSetKeystoreUtil.useHTTPS()) {
+                if (tSetKeystoreUtil.needTrustStore()) {
+                    result.put("\"ssl.truststore.type\"", tSetKeystoreUtil.getTrustStoreType());
+                    result.put("\"ssl.truststore.location\"", tSetKeystoreUtil.getTrustStorePath());
+                    result.put("\"ssl.truststore.password\"", tSetKeystoreUtil.getTrustStorePassword());
+                }
+                
+                if (tSetKeystoreUtil.needClientAuth()) {
+                    result.put("\"ssl.keystore.type\"", tSetKeystoreUtil.getKeyStoreType());
+                    result.put("\"ssl.keystore.location\"", tSetKeystoreUtil.getKeyStorePath());
+                    result.put("\"ssl.keystore.password\"", tSetKeystoreUtil.getKeyStorePassword());
+                }
+            }
+
+            // Kerberos configuration
+            if (useKrb()) {
+                result.put("\"sasl.kerberos.service.name\"", getKrbServiceName());
+                if (isSetKinitPath()) {
+                    result.put("\"sasl.kerberos.kinit.cmd\"", getKinitPath());
+                }
+            }
+        }
+    }
+
+    private void setConsumerRecordProps(java.util.Map<String, String> result) {
+        // If output type is ConsumerRecord - deserialize key, value as byte[] by default
+        if (useConsumerRecord() && isKafkaVersion("KAFKA_2_2_1","KAFKA_2_4_0","KAFKA_3_2_3")) {
+            result.put("\"key.deserializer\"", "\"org.apache.kafka.common.serialization.ByteArrayDeserializer\"");
+            result.put("\"value.deserializer\"", "\"org.apache.kafka.common.serialization.ByteArrayDeserializer\"");
+        }
+    }
+
+    private void setSchemaRegistryProps(java.util.Map<String, String> result) {
+        if (useSchemaRegistry() && useConsumerRecord() && isKafkaVersion("KAFKA_2_2_1","KAFKA_2_4_0","KAFKA_3_2_3")) {
+            // Schema registry
+            result.put("\"schema.registry.url\"", getSchemaRegistryUrl());
+            if (useSchemaRegistryBasicAuth()) {
+               result.put("\"basic.auth.credentials.source\"", "\"USER_INFO\"");
+               String userInfo = getSchemaRegistryUsername() + " + ':' + " + getSchemaRegistryPassword();
+               result.put("\"basic.auth.user.info\"", userInfo);
+            }
+            if ((useHttps() && isSetKeystore() || !useHttps() && isSchemaRegistrySetKeystore())
+                    && tSetKeystoreUtilSchemaRegistry.useHTTPS()) {
+               result.put("\"schema.registry.ssl.truststore.type\"", tSetKeystoreUtilSchemaRegistry.getTrustStoreType());
+               result.put("\"schema.registry.ssl.truststore.location\"", tSetKeystoreUtilSchemaRegistry.getTrustStorePath());
+               result.put("\"schema.registry.ssl.truststore.password\"", tSetKeystoreUtilSchemaRegistry.getTrustStorePassword());
+               if (tSetKeystoreUtilSchemaRegistry.needClientAuth()) {
+                   result.put("\"schema.registry.ssl.keystore.type\"", tSetKeystoreUtilSchemaRegistry.getKeyStoreType());
+                   result.put("\"schema.registry.ssl.keystore.location\"", tSetKeystoreUtilSchemaRegistry.getKeyStorePath());
+                   result.put("\"schema.registry.ssl.keystore.password\"", tSetKeystoreUtilSchemaRegistry.getKeyStorePassword());
+               }
+            }
+            if ("AVRO".equals(getSchemaRegistryKeyDeserializer())) {
+                result.put("\"key.deserializer\"", "\"io.confluent.kafka.serializers.KafkaAvroDeserializer\"");
+            } else {
+                result.put("\"key.deserializer\"", getSchemaRegistryCustomKeyDeserializer());
+            }
+            if ("AVRO".equals(getSchemaRegistryValueDeserializer())) {
+                result.put("\"value.deserializer\"", "\"io.confluent.kafka.serializers.KafkaAvroDeserializer\"");
+            } else {
+                result.put("\"value.deserializer\"", getSchemaRegistryCustomValueDeserializer());
+            }
+        }
+    }
+
+    private void setCustomProps(java.util.Map<String, String> result) {
+        java.util.List<java.util.Map<String, String>> customProps = (java.util.List<java.util.Map<String, String>>)
+                ElementParameterParser.getObjectValue(node, "__KAFKA_CONSUMER_PROPERTIES__");
+        if (customProps != null) {
+            for (java.util.Map<String, String> prop : customProps) {
+                result.put(prop.get("PROPERTY"), prop.get("VALUE"));
+            }
+        }
+    }
+
+    private IConnection findOutgoingConnection() {
+        IConnection result = null;
+        List<? extends IConnection> connections = node.getOutgoingConnections();
+        for(IConnection connection : connections) {
+            if(connection.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                result = connection;
+                break;
+            }
+        }
+        return result;
+    }
+}
+%>
+

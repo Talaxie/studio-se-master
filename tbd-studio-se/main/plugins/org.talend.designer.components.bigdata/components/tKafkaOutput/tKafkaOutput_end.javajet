@@ -1,0 +1,81 @@
+<%@ jet
+    imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+    java.util.List
+    java.util.Map
+    java.util.HashMap
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+final boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+final boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+String kafkaVersion;
+if(useExistingConnection) {
+	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+	kafkaVersion = ElementParameterParser.getValue(connectionNode, "__KAFKA_VERSION__");
+} else {
+	kafkaVersion = ElementParameterParser.getValue(node, "__KAFKA_VERSION__");
+}
+boolean isKafka0820Version = "KAFKA_0_8_2_0".equals(kafkaVersion);
+boolean isKafka0901Version = "KAFKA_0_9_0_1".equals(kafkaVersion);
+
+//%cid%_kafkaProducer.close();
+%>
+
+<%if(!isKafka0820Version) {%>
+<%=cid%>_kafkaProducer.flush();
+<%}%>
+final long <%=cid%>_startCheckingTime = System.nanoTime();
+while (<%=cid%>_counter_send > <%=cid%>_counter_rev.intValue() && java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - <%=cid%>_startCheckingTime) < <%=cid%>_EXCEPTION_CATCH_TIMEOUT){
+    Thread.sleep(100);
+}
+if (<%=cid%>_counter_send <= <%=cid%>_counter_rev.intValue()) {
+	if (!<%=cid%>_producerExceptions.isEmpty()) {
+		Exception e = <%=cid%>_producerExceptions.iterator().next();
+		<%
+		if (dieOnError) {
+		%>
+			throw e;
+		<%
+		} else {
+		// if DIE_ON_ERROR unchecked, the process stops when there is AuthenticationException, AuthorizationException, UnknownServerException or UnsupportedVersionException
+		%>
+		<%if(isKafka0820Version) {%>
+			if (e instanceof org.apache.kafka.common.errors.UnknownServerException) {
+			<%
+		} else if(isKafka0901Version) {%>
+			if (e instanceof org.apache.kafka.common.errors.AuthorizationException || e instanceof org.apache.kafka.common.errors.UnknownServerException) {
+			<%
+		} else {%>
+			if (e instanceof org.apache.kafka.common.errors.AuthenticationException || e instanceof org.apache.kafka.common.errors.AuthorizationException || e instanceof org.apache.kafka.common.errors.UnknownServerException || e instanceof org.apache.kafka.common.errors.UnsupportedVersionException) {
+		<%}%>
+				throw e;
+			} else {
+				<%if(isLog4jEnabled){%>	
+					log.error("<%=cid%> - " + e.getMessage());
+			<%}else{%>
+			    System.err.println("<%=cid%> - " + e.getMessage());
+			<%}%>
+			}
+		<%
+		}
+		%>
+	}
+}
+globalMap.put("<%=cid %>_NB_LINE",<%=cid%>_counter_send);
+globalMap.put("<%=cid %>_NB_SUCCESS",<%=cid%>_counter_rev.intValue() - <%=cid%>_producerExceptions.size());
+globalMap.put("<%=cid %>_NB_ERRORS",<%=cid%>_producerExceptions.size());

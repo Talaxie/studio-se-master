@@ -1,0 +1,183 @@
+<%@ jet
+    imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    java.util.HashMap
+"
+%>
+
+<%
+class TKafkaCreateTopicUtil {
+
+	private INode node;
+
+	private INode connNode;
+	
+    private TSetKeystoreUtil tSetKeystoreUtil;
+
+	private Map<String, String> kafkaTopicProperties;
+
+	private Map<String, String> kafkaClientProperties;
+
+	public TKafkaCreateTopicUtil(INode node) {
+		this.node = node;
+		
+		this.connNode = Boolean.valueOf(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"))
+			? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__")
+			: node;
+		
+		this.tSetKeystoreUtil = new TSetKeystoreUtil(connNode);
+		this.kafkaTopicProperties = findKafkaTopicProperties();
+		this.kafkaClientProperties = findKafkaClientProperties();
+	}
+	
+    public TSetKeystoreUtil getTSetKeystoreUtil() {
+        return tSetKeystoreUtil;
+    }
+    
+    private void setSecurityProps(java.util.Map<String, String> result) {
+        if (isKafkaVersion("KAFKA_2_4_0") || isKafkaVersion("KAFKA_3_2_3")) {
+            // SSL configuration
+            if (useHttps() && isSetKeystore() && tSetKeystoreUtil.useHTTPS()) {
+                if (tSetKeystoreUtil.needTrustStore()) {
+                    result.put("\"ssl.truststore.type\"", tSetKeystoreUtil.getTrustStoreType());
+                    result.put("\"ssl.truststore.location\"", tSetKeystoreUtil.getTrustStorePath());
+                    result.put("\"ssl.truststore.password\"", tSetKeystoreUtil.getTrustStorePassword());
+                }
+                
+                if (tSetKeystoreUtil.needClientAuth()) {
+                    result.put("\"ssl.keystore.type\"", tSetKeystoreUtil.getKeyStoreType());
+                    result.put("\"ssl.keystore.location\"", tSetKeystoreUtil.getKeyStorePath());
+                    result.put("\"ssl.keystore.password\"", tSetKeystoreUtil.getKeyStorePassword());
+                }
+            }
+            result.put("\"security.protocol\"", "\"" + getSecurityProtocol() + "\"");
+        }
+    }
+    
+    public String getSecurityProtocol() {
+			if (useHttps()) {
+				return useKrb() ? "SASL_SSL" : "SSL";
+			} else {
+				return useKrb() ? "SASL_PLAINTEXT" : "PLAINTEXT";
+			}
+    }
+    
+    public boolean useKrb() {
+			return "true".equals(ElementParameterParser.getValue(connNode, "__USE_KRB__"));
+    }
+
+    public Map<String, String> findKafkaClientProperties() {
+        Map<String, String> result = new HashMap<String, String>();
+        setSecurityProps(result);
+        if (isKafkaVersion("KAFKA_3_2_3")) {
+            List<Map<String, String>> properties = (List<Map<String, String>>) ElementParameterParser
+                    .getObjectValue(node, "__KAFKA_PROPERTIES__");
+            if (properties != null) {
+                for (Map<String, String> property : properties) {
+                    result.put(property.get("PROPERTY"), property.get("VALUE"));
+                }
+            }
+        }
+        return result;
+   }
+
+    public boolean useHttps() {
+        return "true".equals(ElementParameterParser.getValue(connNode, "__USE_HTTPS__"));
+    }
+    
+    public boolean isSetKeystore() {
+        return "true".equals(ElementParameterParser.getValue(connNode, "__SET_KEYSTORE__"));
+    }
+    
+    
+
+	public boolean isCreate() {
+		return "CREATE_TOPIC".equals(ElementParameterParser.getValue(node, "__TOPICACTION__")) || isCreateIfNotExists();
+	}
+
+	public boolean isCreateIfNotExists() {
+		return "CREATE_IF_NOT_EXISTS".equals(ElementParameterParser.getValue(node, "__TOPICACTION__"));
+	}
+
+	public boolean isAlter() {
+		return "ALTER_TOPIC".equals(ElementParameterParser.getValue(node, "__TOPICACTION__"));
+	}
+
+	public String getZookeeperConnect() {
+		return ElementParameterParser.getValue(connNode, "__ZOOKEEPER_CONNECT__");
+	}
+	
+	public String getKafkaConnect() {
+		return ElementParameterParser.getValue(connNode, "__BROKER_LIST__");
+	}
+
+	public boolean isRetentionSet() {
+		return "true".equals(ElementParameterParser.getValue(node, "__KAFKA_RETENTION_CHECK__"));
+	}
+	
+	public boolean isZookeeperSecurityEnabled() {
+		return "true".equals(ElementParameterParser.getValue(node, "__ZOOKEEPER_SECURITY_IS_ENABLED__"));
+	}
+
+	public String getRetention() {
+		return ElementParameterParser.getValue(node, "__KAFKA_RETENTION__");
+	}
+
+	public String getTopic() {
+		return ElementParameterParser.getValue(node, "__KAFKA_TOPIC__");
+	}
+
+	public String getReplicationFactor() {
+		return ElementParameterParser.getValue(node, "__KAFKA_REPLICATION__");
+	}
+
+	public String getNbPartitions() {
+		return ElementParameterParser.getValue(node, "__KAFKA_PARTITION__");
+	}
+
+	public Map<String, String> getKafkaTopicProperties(){
+		return this.kafkaTopicProperties;
+	}
+
+    public Map<String, String> getKafkaClientProperties(){
+        return this.kafkaClientProperties;
+    }
+
+	
+	public boolean isKafkaVersion(String version) {
+		return (version != null) ? version.equals(ElementParameterParser.getValue(connNode, "__KAFKA_VERSION__")) : false;
+	}
+
+	private Map<String, String> findKafkaTopicProperties() {
+		Map<String, String> result = new HashMap<String, String>();
+		List<Map<String, String>> topicPropertiesFromStudio = (List<Map<String, String>>) ElementParameterParser
+		        .getObjectValue(node, "__KAFKA_TOPIC_PROPERTIES__");
+		for (Map<String, String> topicPropertyFromStudio : topicPropertiesFromStudio) {
+		    result.put(topicPropertyFromStudio.get("PROPERTY"), topicPropertyFromStudio.get("VALUE"));
+		}
+		return result;
+   }
+
+    public String getZookeeperTimeout() {
+        String timeout = ElementParameterParser.getValue(node, "__ZOOKEEPER_TIMEOUT__");
+
+        if (timeout == null || "".equals(timeout)) {
+            timeout = "10000";
+        }
+        return timeout;
+    }
+
+    public String getKafkaTimeout() {
+        String timeout = ElementParameterParser.getValue(node, "__KAFKA_TIMEOUT__");
+
+        if (timeout == null || "".equals(timeout)) {
+            timeout = "10000";
+        }
+        return timeout;
+    }
+}
+%>

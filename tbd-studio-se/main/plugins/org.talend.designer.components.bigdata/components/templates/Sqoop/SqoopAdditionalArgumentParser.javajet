@@ -1,0 +1,64 @@
+<%@ jet
+%>
+
+class SqoopAdditionalArgumentParser_<%=cid%> {
+
+    public String[] parse(String command) {
+        final char QUOTE = '\"';
+        final char SINGLEQUOTE = '\'';
+        final char SPACE = ' ';
+        final char BACKSLASH = '\\';
+        java.util.List<String> list = new java.util.ArrayList<String>();
+        if (command == null) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        char[] chars = command.trim().toCharArray();
+        boolean backslash = true;
+        boolean withinString = false;
+        for (char c : chars) {
+            switch (c) {
+            case SPACE:
+                if (!withinString) {
+                    if (sb.toString().trim().length() > 0) {
+                        list.add(sb.toString());
+                        sb = new StringBuilder();
+                    }
+                } else {
+                    sb.append(c);
+                }
+                break;
+            case SINGLEQUOTE:
+                if (!withinString) {
+                    withinString = true;
+                } else {
+                    withinString = false;
+                }
+                break;
+            case QUOTE:
+                if (backslash && !withinString) {
+                    withinString = true;
+                }
+                if (backslash && withinString) {
+                    withinString = false;
+                }
+                break;
+            case BACKSLASH:
+                if (!backslash) {
+                    backslash = true;
+                } else {
+                    backslash = false;
+                }
+                break;
+            default:
+                sb.append(c);
+            }
+        }
+        if (sb.toString().trim().length() > 0) {
+            list.add(sb.toString());
+        }
+        return list.toArray(new String[list.size()]);
+    }
+}
+SqoopAdditionalArgumentParser_<%=cid%> parser_<%=cid%> = new SqoopAdditionalArgumentParser_<%=cid%>();

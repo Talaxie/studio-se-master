@@ -1,0 +1,23 @@
+<%@ jet 
+imports="
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.bigdata.di.components.iceberg.TIcebergOutput
+" 
+%>
+
+<%
+final TIcebergOutput ticebergOutput = new TIcebergOutput((CodeGeneratorArgument) argument);
+%>
+
+java.sql.Connection connection_<%=ticebergOutput.getCid()%> = (java.sql.Connection) globalMap.get("connection_<%=ticebergOutput.getConnectionComponentName()%>");
+org.talend.bigdata.core.di.components.iceberg.ImmutableTIcebergOutput component_<%=ticebergOutput.getCid()%> = org.talend.bigdata.core.di.components.iceberg.ImmutableTIcebergOutput.builder()
+    .connection(connection_<%=ticebergOutput.getCid()%>)
+    .table(<%=ticebergOutput.getTable()%>)
+    <% if (ticebergOutput.useBatch()) { %>
+    .useBatch(true)
+    .batchSize(<%=ticebergOutput.batchSize()%>)
+    <% } %>
+<% for (org.talend.designer.bigdata.di.components.Schema.Field field : ticebergOutput.getFields()) {%>
+    .addFields(org.talend.bigdata.core.di.components.ImmutableField.builder().name("<%=field.getName()%>").type("<%=field.getType()%>").build())
+<%}%>
+    .build();

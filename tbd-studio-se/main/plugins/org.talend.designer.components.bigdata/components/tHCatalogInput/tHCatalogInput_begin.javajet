@@ -1,0 +1,338 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.ElementParameterParser
+	java.util.Map 
+    java.util.List 
+	"
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	log4jFileUtil.componentStartInfo(node);
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+	boolean customEncoding="true".equals( ElementParameterParser.getValue(node,"__CUSTOM_ENCODING__"));
+	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+	
+	String templetonHost = ElementParameterParser.getValue(node, "__TEMPLETON_HOST__");
+	String templetonPort = ElementParameterParser.getValue(node, "__TEMPLETON_PORT__");
+	String database = ElementParameterParser.getValue(node, "__DATABASE_NAME__");
+	String table = ElementParameterParser.getValue(node, "__TABLE_NAME__");
+	String partition = ElementParameterParser.getValue(node, "__PARTITION_NAME__");
+	String user = ElementParameterParser.getValue(node, "__USERNAME__");
+	
+	String fsDefaultName = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+	List<Map<String, String>> hadoopProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HADOOP_ADVANCED_PROPERTIES__");
+		
+	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+	
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	boolean activateLog = "true".equals(ElementParameterParser.getValue(node, "__ACTIVATE_LOG__"));
+	
+	String stdout = ElementParameterParser.getValue(node, "__STDOUT__");
+	String stderr = ElementParameterParser.getValue(node, "__STDERR__");
+	
+	IConnection outConn = null;
+	IMetadataTable metadata = null;
+	
+	boolean useKerberos = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	String krb_realm = ElementParameterParser.getValue(node, "__KRB_REALM__");
+	String krb_princ = ElementParameterParser.getValue(node, "__KRB_PRINC__");
+	String kerberosPrincipal = ElementParameterParser.getValue(node, "__NAMENODE_PRINCIPAL__");
+	boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+	String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+	String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+	
+	boolean useMapRTicket = ElementParameterParser.getBooleanValue(node, "__USE_MAPRTICKET__");
+    String passwordFieldName = "__MAPRTICKET_PASSWORD__";
+    String mapRTicketCluster = ElementParameterParser.getValue(node, "__MAPRTICKET_CLUSTER__");
+    String mapRTicketDuration = ElementParameterParser.getValue(node, "__MAPRTICKET_DURATION__");
+
+    boolean setMapRHomeDir = ElementParameterParser.getBooleanValue(node, "__SET_MAPR_HOME_DIR__");
+    String mapRHomeDir = ElementParameterParser.getValue(node, "__MAPR_HOME_DIR__");
+
+    boolean setMapRHadoopLogin = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_LOGIN__");
+    String mapRHadoopLogin = ElementParameterParser.getValue(node, "__HADOOP_LOGIN__");
+    String distribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+    String hcatVersion = ElementParameterParser.getValue(node, "__HCAT_VERSION__");
+    boolean isCustom = "CUSTOM".equals(ElementParameterParser.getValue(node, "__DISTRIBUTION__"));
+	
+    org.talend.hadoop.distribution.component.HDFSComponent hcatDistrib = null;
+    try {
+        hcatDistrib = (org.talend.hadoop.distribution.component.HDFSComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, hcatVersion);
+    } catch (java.lang.Exception e) {
+        e.printStackTrace();
+        return "";
+    }
+	if(useKerberos) {
+%>
+		class KerberosPolicyConfig_<%=cid%> extends javax.security.auth.login.Configuration {
+			private java.util.Map<String, String> properties;
+
+			public KerberosPolicyConfig_<%=cid%>() {
+				properties = java.util.Collections
+						.<String, String> emptyMap();
+			}
+
+			public KerberosPolicyConfig_<%=cid%>(
+					java.util.Map<String, String> properties) {
+				this.properties = properties;
+			}
+
+			public javax.security.auth.login.AppConfigurationEntry[] getAppConfigurationEntry(
+					String name) {
+				return new javax.security.auth.login.AppConfigurationEntry[] { new javax.security.auth.login.AppConfigurationEntry(
+						com.sun.security.auth.module.Krb5LoginModule.class
+								.getName(),
+						javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+						properties) };
+			}
+		}
+
+		org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor kbInterceptor_<%=cid%> = new org.apache.cxf.jaxrs.security.KerberosAuthOutInterceptor();
+
+		org.apache.cxf.configuration.security.AuthorizationPolicy policy_<%=cid%> = new org.apache.cxf.configuration.security.AuthorizationPolicy();
+		policy_<%=cid%>.setAuthorizationType(org.apache.cxf.transport.http.auth.HttpAuthHeader.AUTH_TYPE_NEGOTIATE);
+
+		kbInterceptor_<%=cid%>.setPolicy(policy_<%=cid%>);
+		java.util.Map<String, String> properties_<%=cid%> = new java.util.HashMap<String, String>();
+		kbInterceptor_<%=cid%>.setServicePrincipalName(<%=krb_princ%>);
+		kbInterceptor_<%=cid%>.setRealm(<%=krb_realm%>);
+		properties_<%=cid%>.put("useTicketCache", "true");
+		properties_<%=cid%>.put("refreshKrb5Config", "true");
+		properties_<%=cid%>.put("renewTGT", "true");
+<%
+			if(useKeytab) {
+%>
+				properties_<%=cid%>.put("useKeyTab", "true");
+				properties_<%=cid%>.put("keyTab", <%=keytabPath%>);
+				properties_<%=cid%>.put("principal", <%=userPrincipal%>);
+<%
+			}
+%>
+		kbInterceptor_<%=cid%>.setLoginConfig(new KerberosPolicyConfig_<%=cid%>(properties_<%=cid%>));
+<%
+	}	
+%>
+	String credentials_<%=cid%> = "?user.name=" + <%=user%> + "&format=extended";
+	org.apache.cxf.jaxrs.client.WebClient client_<%=cid%> = org.apache.cxf.jaxrs.client.WebClient.create("http://" + <%=templetonHost%> + ":" + <%=templetonPort%> + credentials_<%=cid%>);
+<%
+	if(useKerberos) {
+%>
+		org.apache.cxf.jaxrs.client.WebClient.getConfig(client_<%=cid%>).getOutInterceptors().add(kbInterceptor_<%=cid%>);
+<%
+	} else if ((isCustom || hcatDistrib.doSupportMapRTicket()) && useMapRTicket) {
+	    if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%>
+	        final String decryptedPassword_client_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+	    } else {
+%>
+	        final String decryptedPassword_client_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+        }
+%>
+        String authorizationHeader_drop_<%=cid%> = "Basic "
+                + org.apache.cxf.common.util.Base64Utility.encode((<%=user%> + ":" + decryptedPassword_client_<%=cid%>).getBytes());
+        client_<%=cid%>.header("Authorization", authorizationHeader_drop_<%=cid%>);
+<%
+	}
+%>
+	String pathEndpoint_<%=cid%> = "/templeton/v1/ddl/database/" + <%=database%> + "/table/" + <%=table%>;
+	if(!"".equals(<%=partition%>)) {
+		pathEndpoint_<%=cid%> += "/partition/" + <%=partition%>;
+	}
+	
+	String location_<%=cid%> = "";
+	<%@ include file="../templates/HCatalog/RestResponse.javajet"%>
+<%
+		ParseRestResult parserResult = new ParseRestResult();
+		parserResult.declareVariable(node);
+%>
+	try {
+		client_<%=cid%>.path(pathEndpoint_<%=cid%>);
+		client_<%=cid%>.accept("application/json");
+		
+		javax.ws.rs.core.Response response_<%=cid%> = client_<%=cid%>.get();
+
+<%
+			parserResult.getJSONObject(node, null);
+			parserResult.manageError(node, activateLog);
+			parserResult.manageResponseStatus(node, null);
+%>		
+		Object loc_<%=cid%> = object_<%=cid%>.get("location");
+		if(loc_<%=cid%>!=null) {
+			location_<%=cid%> = loc_<%=cid%>.toString();
+		}
+	} catch (Exception e_<%=cid%>) {
+<%
+		if(dieOnError) {
+%>
+			throw e_<%=cid%>;
+<%
+		} else {
+%>
+			System.err.println(e_<%=cid%>.getMessage());
+<%
+			if(isLog4jEnabled) {
+%>
+			log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+<%
+			}
+		}
+%>
+	}
+	
+	if(location_<%=cid%> == null || "".equals(location_<%=cid%>) || location_<%=cid%>.length() <= 0) {
+<%
+		if(dieOnError) {
+%>
+			throw new Exception("Error during the response parsing. The Templeton server has returned a bad value or the location isn't available");
+<%
+		} else {
+%>
+			System.err.println("Error during the response parsing. The Templeton server has returned a bad value or the location isn't available");
+<%
+			if(isLog4jEnabled) {
+%>
+			log.error("<%=cid%> - Error during the response parsing. The Templeton server has returned a bad value or the location isn't available");
+<%
+			}
+		}
+%>
+	}
+		
+	String pathHDFS_<%=cid%> = "";
+	String namenode_<%=cid%> = "";
+	
+	if(location_<%=cid%>.contains(":")) {
+<%
+        if(!isCustom && hcatVersion!=null && hcatVersion.contains("MAPR")) {
+%>
+		pathHDFS_<%=cid%> = location_<%=cid%>;
+		namenode_<%=cid%> = "maprfs:///";
+<%
+		} else {
+%>
+		java.net.URI uri_location_<%=cid%> = java.net.URI.create(location_<%=cid%>);
+		pathHDFS_<%=cid%> = uri_location_<%=cid%>.getPath();
+		namenode_<%=cid%> = uri_location_<%=cid%>.getScheme() + "://" + uri_location_<%=cid%>.getAuthority();
+<%
+		}
+%>
+	}
+<%
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		metadata = metadatas.get(0);
+		if (metadata!=null) { 
+%>
+		String username_<%=cid%> = "";
+		org.apache.hadoop.fs.FileSystem fs_<%=cid%> = null;
+<%   
+		String hadoopVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+%>
+		org.apache.hadoop.conf.Configuration conf_<%=cid%> = new org.apache.hadoop.conf.Configuration();
+		conf_<%=cid%>.set("fs.default.name", namenode_<%=cid%>);
+<%
+		if(useKerberos) {
+		    if ((isCustom || hcatDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                %>
+                System.setProperty("pname", "MapRLogin");
+                System.setProperty("https.protocols", "TLSv1.2");
+                System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+                System.setProperty("hadoop.login", <%=setMapRHadoopLogin ? mapRHadoopLogin : "\"kerberos\""%>);
+                <%
+            }
+		    %>
+			conf_<%=cid%>.set("dfs.namenode.kerberos.principal", <%=kerberosPrincipal%>);
+<%
+			if(useKeytab) {
+%>
+				org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+<%
+			}
+            if ((isCustom || hcatDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                %>
+                com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+                maprLogin_<%=cid%>.getMapRCredentialsViaKerberos(<%=mapRTicketCluster%>, <%=mapRTicketDuration%>);
+                <%
+            }
+		} else {
+		    // MapR Ticket
+		    if ((isCustom || hcatDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                %>
+                System.setProperty("pname", "MapRLogin");
+                System.setProperty("https.protocols", "TLSv1.2");
+                System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+                com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+                <%
+                if (setMapRHadoopLogin) {
+                    %>
+                    System.setProperty("hadoop.login", <%=mapRHadoopLogin%>);
+                    <%
+                } else {
+                    %>
+                    maprLogin_<%=cid%>.setCheckUGI(false);
+                    <%
+                }
+                %>
+                <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+                <%
+                if(hcatDistrib.doSupportMaprTicketV52API()) {
+					%>
+                	maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=user%>, decryptedPassword_<%=cid%>, <%=mapRTicketDuration%>, "");
+                	<%
+                } else {
+                	%>
+                	maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=user%>, decryptedPassword_<%=cid%>, <%=mapRTicketDuration%>);
+                	<%
+                }
+            }
+%>
+			username_<%=cid%> = <%=user%>;
+<%
+		}
+		if(hadoopProps.size() > 0){
+			for(Map<String, String> item : hadoopProps){
+%>
+				conf_<%=cid%>.set(<%=item.get("PROPERTY") %> ,<%=item.get("VALUE") %>);
+<% 
+			} 
+		}
+%>
+		if(username_<%=cid%> == null || "".equals(username_<%=cid%>)){
+			fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(conf_<%=cid%>);
+		}else{
+			fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(new java.net.URI(conf_<%=cid%>.get("fs.default.name")),conf_<%=cid%>,username_<%=cid%>);
+		}	
+
+		org.apache.hadoop.fs.FileStatus [] fileStatus_<%=cid%>= fs_<%=cid%>.listStatus(new org.apache.hadoop.fs.Path(pathHDFS_<%=cid%>));
+<%
+		log4jFileUtil.startRetriveDataInfo();
+%>
+		for(int i_<%=cid%>=0; i_<%=cid%><fileStatus_<%=cid%>.length; i_<%=cid%>++) {
+			if(fileStatus_<%=cid%>[i_<%=cid%>].isDir()) {
+				continue;
+			}
+			org.apache.hadoop.fs.Path path_<%=cid%> = fileStatus_<%=cid%>[i_<%=cid%>].getPath();
+			org.apache.hadoop.fs.FSDataInputStream fsDataInputStream_<%=cid%> = fs_<%=cid%>.open(path_<%=cid%>);
+			org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(fsDataInputStream_<%=cid%>, <%=(customEncoding?encoding:null) %>,<%=fieldSeparator %>,<%=rowSeparator %>,false,0,0,-1,-1, false);
+			while (fid_<%=cid %>.nextRecord()) {
+<%
+		}
+	}
+%>
+
+	

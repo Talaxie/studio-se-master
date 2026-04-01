@@ -1,0 +1,347 @@
+<COMPONENT>
+    <HEADER
+        PLATEFORM="ALL"
+        SERIAL=""
+        VERSION="0.101"
+        STATUS="ALPHA"
+
+        COMPATIBILITY="ALL"
+        AUTHOR="Talend"
+        RELEASE_DATE="20170608A"
+        STARTABLE="true"
+        LOG4J_ENABLED="true"
+    >
+        <SIGNATURE/>
+    </HEADER>
+    <FAMILIES>
+        <FAMILY>Databases/DB Specifics/Cosmos DB</FAMILY>
+        <FAMILY>Cloud/Azure/Cosmos DB</FAMILY>
+    </FAMILIES>
+    <DOCUMENTATION>
+        <URL />
+    </DOCUMENTATION>
+    <CONNECTORS>
+        <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="1"/>
+        <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1"/>
+        <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="COMPONENT_OK"/>
+        <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+        <CONNECTOR CTYPE="RUN_IF"/>
+    </CONNECTORS>
+
+    <PARAMETERS>
+        <PARAMETER
+            NAME="USE_EXISTING_CONNECTION"
+            FIELD="CHECK"
+            NUM_ROW="2"
+            GROUP="CONNECTION"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="CONNECTION"
+            FIELD="COMPONENT_LIST"
+            REQUIRED="true" FILTER="tCosmosDBConnection"
+            NUM_ROW="2"
+            SHOW_IF="USE_EXISTING_CONNECTION == 'true'"
+            GROUP="CONNECTION"
+        />
+		<PARAMETER
+			NAME="API"
+			FIELD="CLOSED_LIST"
+			NUM_ROW="3"
+			SHOW_IF="(USE_EXISTING_CONNECTION == 'false')"
+			GROUP="CONNECTION"
+		>
+			<ITEMS DEFAULT="MONGODB">
+				<ITEM NAME="MONGODB" VALUE="MONGODB" />
+			</ITEMS>
+		</PARAMETER>
+        <PARAMETER NAME="DB_VERSION" 
+            FIELD="CLOSED_LIST" REPOSITORY_VALUE="DB_VERSION" NUM_ROW="3" GROUP="CONNECTION" 
+            SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (API=='MONGODB')">
+            <ITEMS DEFAULT="MONGODB_4_4_X">
+                <ITEM NAME="MONGODB_4_4_X" VALUE="MONGODB_4_4_X"/>
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            FIELD="CHECK"
+            NAME="USE_REPLICA_SET"
+            NUM_ROW="4"
+            SHOW_IF="(USE_EXISTING_CONNECTION == 'false')"
+            GROUP="CONNECTION">
+            <DEFAULT>"false"</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="REPLICA_SET"
+            FIELD="TABLE"
+            REQUIRED="true"
+            NUM_ROW="5"
+            NB_LINES="5"
+            SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (USE_REPLICA_SET=='true')"
+            GROUP="CONNECTION">
+            <ITEMS>
+                <ITEM NAME="REPLICA_HOST" FIELD="TEXT" />
+                <ITEM NAME="REPLICA_PORT" FIELD="TEXT" />
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="HOST"
+            NUM_ROW="6"
+            REQUIRED="true"
+            SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (USE_REPLICA_SET=='false')"
+            GROUP="CONNECTION"
+        >
+            <DEFAULT>"localhost"</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="PORT"
+            NUM_ROW="6"
+            SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (USE_REPLICA_SET=='false')"
+            GROUP="CONNECTION"
+        >
+            <DEFAULT>10255</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="DATABASE"
+            NUM_ROW="7"
+            REQUIRED="true"
+            SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+            GROUP="CONNECTION"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER FIELD="CHECK" NAME="USE_SSL" NUM_ROW="8" SHOW="false" GROUP="CONNECTION">
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER FIELD="CHECK" NAME="SET_READ_PREFERENCE" NUM_ROW="9" GROUP="READ_PREFERENCE_GROUP"
+            NOT_SHOW_IF="((USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION== 'MONGODB_4_4_X'))">
+            <DEFAULT>"false"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER NAME="READ_PREFERENCE" FIELD="CLOSED_LIST" NUM_ROW="10" GROUP="READ_PREFERENCE_GROUP"
+            SHOW_IF="(((USE_EXISTING_CONNECTION == 'false') AND (SET_READ_PREFERENCE=='true')) OR ((SET_READ_PREFERENCE=='true') AND (USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION != 'MONGODB_4_4_X')))">
+            <ITEMS DEFAULT="PRIMARY">
+                <ITEM NAME="PRIMARY" VALUE="PRIMARY"/>
+                <ITEM NAME="PRIMARY_PREFERRED" VALUE="PRIMARY_PREFERRED"/>
+                <ITEM NAME="SECONDARY" VALUE="SECONDARY"/>
+                <ITEM NAME="SECONDARY_PREFERRED" VALUE="SECONDARY_PREFERRED"/>
+                <ITEM NAME="NEAREST" VALUE="NEAREST"/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER NAME="READ_PREFERENCE_NOTE" FIELD="LABEL" NUM_ROW="11" GROUP="READ_PREFERENCE_GROUP"
+            SHOW_IF="((USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION== 'MONGODB_4_4_X'))">
+            <DEFAULT>Note : Use Connection component to set Read Preference</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="REQUIRED_AUTHENTICATION"
+            FIELD="CHECK"
+            NUM_ROW="14"
+            SHOW="false"
+            GROUP="AUTHENTICATION"
+        >
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER NAME="AUTHENTICATION_MECHANISM" FIELD="CLOSED_LIST" NUM_ROW="15"
+                SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (REQUIRED_AUTHENTICATION == 'true')" GROUP="AUTHENTICATION">
+            <ITEMS DEFAULT="NEGOTIATE_MEC">
+                <ITEM NAME="NEGOTIATE_MEC" VALUE="NEGOTIATE_MEC"/>
+                <ITEM NAME="PLAIN_MEC" VALUE="PLAIN_MEC"/>
+                <ITEM NAME="SCRAMSHA1_MEC" VALUE="SCRAMSHA1_MEC"/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER FIELD="CHECK" NAME="SET_AUTHENTICATION_DATABASE"
+            NUM_ROW="18" SHOW_IF="((AUTHENTICATION_MECHANISM=='NEGOTIATE_MEC') OR (AUTHENTICATION_MECHANISM=='SCRAMSHA1_MEC')) AND (REQUIRED_AUTHENTICATION == 'true') AND (USE_EXISTING_CONNECTION == 'false')" GROUP="AUTHENTICATION">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER FIELD="TEXT" NAME="AUTHENTICATION_DATABASE" NUM_ROW="19"
+            SHOW_IF="(SET_AUTHENTICATION_DATABASE=='true') AND (isShow[SET_AUTHENTICATION_DATABASE])" GROUP="AUTHENTICATION">
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="USERNAME"
+            NUM_ROW="20"
+            SHOW_IF="((AUTHENTICATION_MECHANISM=='NEGOTIATE_MEC') OR (AUTHENTICATION_MECHANISM=='PLAIN_MEC') OR (AUTHENTICATION_MECHANISM=='SCRAMSHA1_MEC')) AND (REQUIRED_AUTHENTICATION == 'true') AND (USE_EXISTING_CONNECTION == 'false')"
+            GROUP="AUTHENTICATION"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            FIELD="PASSWORD"
+            NAME="PASSWORD"
+            NUM_ROW="20"
+            SHOW_IF="((AUTHENTICATION_MECHANISM=='NEGOTIATE_MEC') OR (AUTHENTICATION_MECHANISM=='PLAIN_MEC') OR (AUTHENTICATION_MECHANISM=='SCRAMSHA1_MEC')) AND (REQUIRED_AUTHENTICATION == 'true') AND (USE_EXISTING_CONNECTION == 'false')"
+            GROUP="AUTHENTICATION"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="COLLECTION"
+            REQUIRED="true"
+            NUM_ROW="30"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="SCHEMA_FLOW"
+            FIELD="SCHEMA_TYPE"
+            NUM_ROW="35"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER NAME="QUERY_TYPE" REPOSITORY_VALUE="QUERY_TYPE" FIELD="CLOSED_LIST" NUM_ROW="39" GROUP="QUERY_SPECS" 
+            SHOW_IF="(((USE_EXISTING_CONNECTION == 'false') AND (DB_VERSION == 'MONGODB_4_4_X')) OR ((USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION== 'MONGODB_4_4_X')))">
+            <ITEMS DEFAULT="FIND_QUERY">
+                <ITEM NAME="FIND_QUERY" VALUE="FIND_QUERY"/>
+                <ITEM NAME="AGGREGATION_QUERY" VALUE="AGGREGATION_QUERY" />
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER NAME="NOTE_ISOLATION" FIELD="LABEL"
+            NUM_ROW="40" GROUP="QUERY_SPECS">
+            <DEFAULT>Note : Surround String values in your query with single quotes
+Note : If you are running on a Sharded Cluster, please make sure to include the shard key in the query.</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            FIELD="MEMO"
+            NAME="QUERY"
+            REQUIRED="true"
+            NUM_ROW="41"
+            NB_LINES="5"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='FIND_QUERY'">
+            <DEFAULT>"{}"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="AGGREGATION_STAGES"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="45"
+            NB_LINES="5"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='AGGREGATION_QUERY'">
+            <ITEMS>
+                <ITEM NAME="AGGREGATION_STAGE" FIELD="TEXT" />
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="SPECIFY_FIELDS"
+            FIELD="CHECK"
+            REPOSITORY_VALUE="SPECIFY_FIELDS"
+            NUM_ROW="46"
+            GROUP="QUERY_SPECS"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            FIELD="TABLE"
+            NAME="FIELDS_TO_RETURN"
+            REQUIRED="false"
+            NUM_ROW="47"
+            NB_LINES="3"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="(SPECIFY_FIELDS == 'true')">
+            <ITEMS>
+                <ITEM NAME="FIELD_NAME" FIELD="TEXT" VALUE=""/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="MAPPING"
+            FIELD="TABLE"
+            REQUIRED="true"
+            NUM_ROW="48"
+            NB_LINES="5"
+            GROUP="QUERY_SPECS" >
+            <ITEMS BASED_ON_SCHEMA="true">
+                <ITEM NAME="PARENT_NODE_PATH" FIELD="TEXT" />
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="SORT"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="50"
+            NB_LINES="5"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='FIND_QUERY'">
+            <ITEMS>
+                <ITEM NAME="COLNAME" FIELD="TEXT" VALUE=""/>
+                <ITEM NAME="ORDER" FIELD="CLOSED_LIST">
+                    <ITEMS DEFAULT="ASC">
+                        <ITEM NAME="ASC" VALUE="asc" />
+                        <ITEM NAME="DESC" VALUE="desc" />
+                    </ITEMS>
+                </ITEM>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="LIMIT"
+            NUM_ROW="55"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='FIND_QUERY'"
+        />
+        
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="SKIP"
+            NUM_ROW="55"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='FIND_QUERY'"
+        />
+        
+        <PARAMETER
+            FIELD="TEXT"
+            NAME="BATCHSIZE"
+            NUM_ROW="55"
+            GROUP="QUERY_SPECS"
+            SHOW_IF="QUERY_TYPE=='FIND_QUERY'"
+        />
+        
+    </PARAMETERS>
+
+    <ADVANCED_PARAMETERS>
+        <PARAMETER FIELD="CHECK" NAME="QUERYOPTION_NOTIMEOUT"
+            NUM_ROW="40" GROUP="ADVANCED_QUERY_OPTIONS" SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND ((QUERY_TYPE != 'AGGREGATION_QUERY') AND (DB_VERSION != 'MONGODB_4_4_X'))">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER FIELD="CHECK" NAME="EXTERNAL_SORT_AGGREGATION"
+            NUM_ROW="50" GROUP="ADVANCED_AGGREGATION_OPTIONS" SHOW="false">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+    </ADVANCED_PARAMETERS>
+
+    <CODEGENERATION>
+        <IMPORTS>
+            <IMPORT MODULE="mongodb-driver-core-4.10.2.jar" MVN="mvn:org.mongodb/mongodb-driver-core/4.10.2" NAME="mongodb-driver-core-4.10.2" REQUIRED_IF="((USE_EXISTING_CONNECTION == 'false') AND ((API=='MONGODB') AND (DB_VERSION == 'MONGODB_4_4_X')))" />
+            <IMPORT MODULE="mongodb-driver-sync-4.10.2.jar" MVN="mvn:org.mongodb/mongodb-driver-sync/4.10.2" NAME="mongodb-driver-sync-4.10.2" REQUIRED_IF="((USE_EXISTING_CONNECTION == 'false') AND ((API=='MONGODB') AND (DB_VERSION == 'MONGODB_4_4_X')))" />
+            <IMPORT MODULE="bson-4.10.2.jar" MVN="mvn:org.mongodb/bson/4.10.2" NAME="bson-4.10.2" REQUIRED_IF="((USE_EXISTING_CONNECTION == 'false') AND ((API=='MONGODB') AND (DB_VERSION == 'MONGODB_4_4_X')))" />
+        </IMPORTS>
+    </CODEGENERATION>
+    <RETURNS>
+        <RETURN AVAILABILITY="AFTER" NAME="NB_LINE" TYPE="id_Integer" />
+    </RETURNS>
+</COMPONENT>

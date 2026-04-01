@@ -1,0 +1,388 @@
+<%@ page import="org.talend.core.model.metadata.IMetadataColumn" %>
+<%@ page import="java.util.List" %>
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.MappingTypeRetriever
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+	CodeGeneratorArgument createTableCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode createTableNode = (INode)createTableCodeGenArgument.getArgument();
+	String createTableCid = createTableNode.getUniqueName();
+	
+	boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(createTableNode,"__USE_EXISTING_CONNECTION__"));
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(createTableNode.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(createTableNode, "__DIE_ON_ERROR__"));
+	
+	if(useExistingConnection) { // We re-use a connection. Get the connection from the global map.
+		String connection = ElementParameterParser.getValue(createTableNode, "__CONNECTION__");
+		String db = "db_" + connection;
+%>
+		java.sql.Connection conn_<%=createTableCid%> = (java.sql.Connection)globalMap.get("conn_<%=connection%>");
+		String dbname_<%=createTableCid%> = (String)globalMap.get("<%=db%>");
+<%
+	} else { //We do not use an existing connection. Create it.
+%>
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaConnection/tImpalaConnection_begin.javajet"%>
+		String dbname_<%=createTableCid%> = <%=dbname%>;
+<%
+		// The connection object is created in the tImpalaConnection_begin.javajet.
+	}
+	
+	final String cid = createTableCid; // The variable named cid is required in the javajet GetJarsToRegister.
+%>
+	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+		java.sql.Statement goToDatabase_<%=cid%> = conn_<%=cid%>.createStatement();
+		goToDatabase_<%=cid%>.execute("use " + dbname_<%=cid%>);
+		goToDatabase_<%=cid%>.close();
+    }
+<%
+
+	String impalaVersion = ElementParameterParser.getValue(createTableNode, "__IMPALA_VERSION__");
+	String distribution = ElementParameterParser.getValue(createTableNode, "__DISTRIBUTION__");
+	
+	if(useExistingConnection) {
+		distribution = "";
+		impalaVersion = "";
+		String connection = ElementParameterParser.getValue(createTableNode, "__CONNECTION__");
+		for (INode pNode : createTableNode.getProcess().getNodesOfType("tHiveConnection")) {
+			if(connection!=null && connection.equals(pNode.getUniqueName())) {
+				distribution = ElementParameterParser.getValue(pNode, "__DISTRIBUTION__");
+				impalaVersion = ElementParameterParser.getValue(pNode, "__HIVE_VERSION__");
+				break;
+			}
+		}
+	}
+	
+	boolean isCustom = "CUSTOM".equals(distribution);
+	
+	String storageFormat = ElementParameterParser.getValue(createTableNode, "__STORAGE_FORMAT__");
+	List<Map<String, String>> serdeProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(createTableNode, "__SERDE_PROPERTIES__");
+	boolean setDelimitedRowFormat = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_ROW_FORMAT__"));
+	
+	boolean setLocation = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_FILE_LOCATION__"));
+	String location = ElementParameterParser.getValue(createTableNode, "__FILE_LOCATION__");
+	
+	boolean isS3Location = "true".equals(ElementParameterParser.getValue(createTableNode, "__S3_LOCATION__"));
+	
+	String tableName = ElementParameterParser.getValue(createTableNode, "__TABLE__");
+	boolean external = "true".equals(ElementParameterParser.getValue(createTableNode, "__CREATE_EXTERNAL__"));
+	String tableAction = ElementParameterParser.getValue(createTableNode,"__TABLEACTION__");
+	boolean createIfNotExist = "CREATE_IF_NOT_EXIST".equals(tableAction);
+	boolean setPartitioned = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_PARTITIONS__"));
+	boolean setClustered = false;
+	boolean setSkewed = false;
+	
+	List<Map<String, String>> tableProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(createTableNode, "__TABLE_PROPERTIES__");
+	boolean setRowFormat = setDelimitedRowFormat;
+	boolean storeAsParquet = "PARQUET".equals(storageFormat);
+	boolean storeAsAvro = "AVRO".equals(storageFormat);
+	boolean needToGenerateJarsToRegister = "PARQUET".equals(storageFormat);
+	boolean storeAsKudu = "KUDU".equals(storageFormat);
+	String kuduPartition = ElementParameterParser.getValue(createTableNode, "__KUDU_PARTITION__");
+
+
+	if(needToGenerateJarsToRegister) {
+%>
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/generateJarsToRegister.javajet"%>
+<%	
+		//GenerateJarsToRegister jarsGenInstance = new GenerateJarsToRegister("parquet-hive-bundle,snappy-java");
+		GenerateJarsToRegister jarsGenInstance = new GenerateJarsToRegister(null); // This operation is not available for now in Impala JDBC.
+		java.util.List<String> jarsPath = jarsGenInstance.getJarsToRegisterPath(createTableNode.getProcess().getId());
+		if(jarsPath!=null && jarsGenInstance.jarsToRegister()!=null) {
+%>
+			routines.system.GetJarsToRegister getJarsToRegister_<%=cid %> = new routines.system.GetJarsToRegister();
+			java.sql.Statement addJar_<%=cid%> = null;
+<%
+			for(String jarToRegister : jarsGenInstance.jarsToRegister()) {
+				for(String pathToRegister : jarsPath) {
+					if(pathToRegister.contains(jarToRegister)) {
+%>
+						addJar_<%=cid%> = conn_<%=cid%>.createStatement();
+						try {
+							addJar_<%=cid%>.execute("add jar " + getJarsToRegister_<%=cid %>.replaceJarPaths("<%=pathToRegister%>"));
+						} catch (Exception e) {
+							e.printStackTrace();
+						} finally {
+							addJar_<%=cid%>.close();
+						}
+<%
+					}
+				}
+			}
+		}
+	}
+%>
+	java.sql.Statement stmt_<%=cid %> = conn_<%=cid %>.createStatement();
+	String query_<%=cid %> = "";
+	String tableName_<%=cid%> = <%=tableName%>;
+<%
+	List<IMetadataColumn> listColumn = null;
+	List<IMetadataTable> metadatas = createTableNode.getMetadataList();
+	if(metadatas != null && metadatas.size() > 0) {
+	    IMetadataTable metadata = metadatas.get(0);
+	    listColumn = metadata.getListColumns();
+	}
+
+	if(storeAsKudu && setPartitioned) {
+		external = false;
+	}
+	StringBuilder createTableSQL = new StringBuilder();
+
+	createTableSQL.append("CREATE ");
+	createTableSQL.append(external || isS3Location ?"EXTERNAL":"");
+	createTableSQL.append(" TABLE ");
+	createTableSQL.append(createIfNotExist?"IF NOT EXISTS":"");
+	createTableSQL.append(" \" + ");
+	createTableSQL.append("tableName_");
+	createTableSQL.append(cid);
+	createTableSQL.append(" + \"");
+
+	boolean likeTable = "true".equals(ElementParameterParser.getValue(createTableNode, "__LIKE_TABLE__"));
+	if(likeTable) {
+		String likeTableName = ElementParameterParser.getValue(createTableNode, "__LIKE_TABLE_NAME__");
+%>
+		String likeTableName_<%=cid%> = <%=likeTableName%>;
+<%
+		createTableSQL.append(" LIKE ");
+		createTableSQL.append("\" + ");
+		createTableSQL.append("likeTableName_");
+		createTableSQL.append(cid);
+		createTableSQL.append(" + \"");
+	
+		if(setLocation) {
+%>
+			String location_<%=cid%> = <%=location%>;
+<%
+	    	createTableSQL.append(" LOCATION '");
+	    	createTableSQL.append("\" + ");
+	    	createTableSQL.append("location_");
+	    	createTableSQL.append(cid);
+	    	createTableSQL.append(" + \"'");
+		}
+%>
+		String querySQL_<%=cid %> = "<%=createTableSQL.toString()%>";
+		try {
+    		stmt_<%=cid%>.execute(querySQL_<%=cid %>);
+    	} catch(java.sql.SQLException e_<%=cid%>) {
+<%
+			if(dieOnError) {
+%>
+				throw e_<%=cid%>;
+<%
+    		}else {
+%> 
+    			System.err.println("Exception in the component <%=cid%>:" + e_<%=cid%>.getMessage());
+<%
+    		}
+%>
+    	}
+		stmt_<%=cid %>.close();	
+		globalMap.put("<%=cid%>_QUERY", querySQL_<%=cid %>);
+		
+		String currentClientPathSeparator_<%=cid%> = (String)globalMap.get("current_client_path_separator");
+		if(currentClientPathSeparator_<%=cid%>!=null) {
+			System.setProperty("path.separator", currentClientPathSeparator_<%=cid%>);
+	    	globalMap.put("current_client_path_separator", null);
+		}
+<%	
+		if(!useExistingConnection) {
+%>
+			conn_<%=cid %>.close();
+<%
+		}
+		return stringBuffer.toString();
+	}
+
+	boolean asSelect = "true".equals(ElementParameterParser.getValue(createTableNode, "__AS_SELECT__"));
+
+	final MappingTypeRetriever mappingType = org.talend.core.model.metadata.MetadataTalendType.getMappingTypeRetriever("hive_id");
+%>
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/tHiveCreateTable/hiveUtil.javajet"%>
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaCreateTable/tImpalaCreateTable_KuduUtils.javajet"%>
+<%
+	Util util = new Util();
+	KuduUtils kuduUtils = new KuduUtils(mappingType);
+
+	if(!asSelect) {
+		if (storeAsKudu && !external){
+			createTableSQL.append("(");
+			kuduUtils.generateKuduSchema(listColumn,createTableSQL);
+			createTableSQL.append(")");
+		}
+		else {
+			createTableSQL.append("(");
+			util.generateColumnsSQL(listColumn, createTableSQL);
+			createTableSQL.append(")");
+		}
+	}
+
+	String tableComment = ElementParameterParser.getValue(createTableNode, "__TABLE_COMMENT__");
+	if(tableComment!=null && !"".equals(tableComment) && !"\"\"".equals(tableComment)) {
+%>
+		String tableComment_<%=cid%> = <%=tableComment%>;
+<%
+		createTableSQL.append(" COMMENT '");
+		createTableSQL.append("\" + ");
+		createTableSQL.append("tableComment_");
+		createTableSQL.append(cid);
+		createTableSQL.append(" + \"'");
+	}
+	
+	if(setPartitioned) {
+		if(storeAsKudu) {
+%>
+String kuduPartition_<%=cid%> = <%=kuduPartition%>;
+<%
+			createTableSQL.append(" PARTITION BY ");
+			createTableSQL.append(" \" + ");
+			createTableSQL.append("kuduPartition_");
+			createTableSQL.append(cid);
+			createTableSQL.append(" + \"");
+
+		} else if((metadatas!=null)&&(metadatas.size()>0)) {
+			IMetadataTable metadata = metadatas.get(1);
+			if (metadata!=null) {
+				List<IMetadataColumn> columnList = metadata.getListColumns();
+	    		if(columnList != null && columnList.size() > 0) {
+	    			createTableSQL.append(" PARTITIONED BY (");
+					util.generateColumnsSQL(columnList,createTableSQL);
+	    			createTableSQL.append(")");
+	    		}
+	    	}
+		}
+	}
+	
+	if(storeAsParquet || storeAsAvro) {
+		util.generatePros(" WITH SERDEPROPERTIES ", serdeProps, createTableSQL);
+	}
+	
+	if(setRowFormat && !storeAsParquet && !storeAsAvro && !storeAsKudu) {
+		createTableSQL.append(" ROW FORMAT ");
+		if(setDelimitedRowFormat) {
+			createTableSQL.append("DELIMITED ");
+			boolean setField = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_FIELD_TERMINATED_BY__"));
+			if(setField) {
+	    		String fieldChar = ElementParameterParser.getValue(createTableNode, "__FIELD_TERMINATED_BY__");
+%>
+				String fieldChar_<%=cid%> = <%=fieldChar%>;
+<%
+	    		createTableSQL.append(" FIELDS TERMINATED BY '");
+	    		createTableSQL.append("\" + ");
+				createTableSQL.append("fieldChar_");
+				createTableSQL.append(cid);
+	    		createTableSQL.append(" + \"'");
+    		
+	    		boolean setEscape = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_FIELD_ESCAPE_BY__"));
+	    		if(setEscape) {
+	    			String escapeChar = ElementParameterParser.getValue(createTableNode, "__FIELD_ESCAPE_BY__");
+%>
+					String escapeChar_<%=cid%> = <%=escapeChar%>;
+<%
+		    		createTableSQL.append(" ESCAPED BY '");
+	        		createTableSQL.append("\" + ");
+	    			createTableSQL.append("escapeChar_");
+	    			createTableSQL.append(cid);
+	        		createTableSQL.append(" + \"'");
+	    		}
+			}
+		
+			boolean setLine = "true".equals(ElementParameterParser.getValue(createTableNode, "__SET_LINES_TERMINATED_BY__"));
+			if(setLine) {
+	    		String lineChar = ElementParameterParser.getValue(createTableNode, "__LINES_TERMINATED_BY__");
+%>
+				String lineChar_<%=cid%> = <%=lineChar%>;
+<%
+	    		createTableSQL.append(" LINES TERMINATED BY '");
+	    		createTableSQL.append("\" + ");
+				createTableSQL.append("lineChar_");
+				createTableSQL.append(cid);
+	    		createTableSQL.append(" + \"'");
+			}
+		}
+	}
+
+	createTableSQL.append(" STORED AS ");
+	createTableSQL.append(storageFormat);
+	if(setLocation) {
+		if (isS3Location) {
+			String s3bucket = ElementParameterParser.getValue(createTableNode, "__S3_BUCKET__");
+			String s3username = ElementParameterParser.getValue(createTableNode, "__S3_USERNAME__");
+	    
+			String passwordFieldName = "__S3_PASSWORD__";
+			// Get the decrypted password under the variable decryptedS3Password
+	        
+			if (ElementParameterParser.canEncrypt(createTableNode, passwordFieldName)) {
+%> 
+				String decryptedS3Password_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(createTableNode, passwordFieldName)%>);
+<%
+        	} else {
+%>
+				String decryptedS3Password_<%=cid%> = <%= ElementParameterParser.getValue(createTableNode, passwordFieldName)%>; 
+<%
+			}
+%>
+        String location_<%=cid%> = "s3n://" + <%=s3username%> +":" + decryptedS3Password_<%=cid%> + "@" + <%=s3bucket%>;
+<%
+		} else {
+%>
+			String location_<%=cid%> = <%=location%>;
+<%
+		}
+		createTableSQL.append(" LOCATION '");
+		createTableSQL.append("\" + ");
+		createTableSQL.append("location_");
+		createTableSQL.append(cid);
+		createTableSQL.append(" + \"'");
+	}
+
+	if(!storeAsKudu){
+		util.generatePros(" TBLPROPERTIES ", tableProps, createTableSQL);
+	}
+	if(asSelect) {
+		String sql = ElementParameterParser.getValue(createTableNode, "__SELECT__");
+		sql = sql.replaceAll("\n"," ");
+		sql = sql.replaceAll("\r"," ");
+%>
+		String select_<%=cid%> = <%=sql%>;
+<%
+		createTableSQL.append(" AS ");
+		createTableSQL.append("\" + ");
+		createTableSQL.append("select_");
+		createTableSQL.append(cid);
+		createTableSQL.append(" + \"");
+	}
+%>
+	String querySQL_<%=cid %> = "<%=createTableSQL.toString()%>";
+	try {
+		stmt_<%=cid%>.execute(querySQL_<%=cid %>);
+	} catch(java.sql.SQLException e_<%=cid%>) {
+<%
+		if(dieOnError) {
+%>
+			throw e_<%=cid%>;
+<%
+		}else {
+%> 
+			System.err.println("Exception in the component <%=cid%>:" + e_<%=cid%>.getMessage());
+<%
+		}
+%>
+	}
+	stmt_<%=cid %>.close();	
+<%
+	if(!useExistingConnection) {
+%>
+		conn_<%=cid %>.close();
+<%
+	}
+%>
+    
+	globalMap.put("<%=cid%>_QUERY", querySQL_<%=cid %>);

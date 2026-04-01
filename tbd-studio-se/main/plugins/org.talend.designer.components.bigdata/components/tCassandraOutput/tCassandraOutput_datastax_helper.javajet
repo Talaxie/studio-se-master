@@ -1,0 +1,204 @@
+<%@ jet %>
+<%@ include file="@{org.talend.designer.components.bigdata}/components/tCassandraOutput/CQL_Helper.javajet"%>
+<%
+class CassandraOutputGenHelper{
+	INode node;
+	String cid;
+    IMetadataTable metadata = null;
+    IConnection conn = null;
+    List<IMetadataColumn> columns = null;
+	String dbVersion = null;
+	String cqlPackage = null;
+    
+	CQLManager cqlManager;
+	public CassandraOutputGenHelper(INode node){
+		this.node = node;
+		boolean useExistConn = ElementParameterParser.getBooleanValue(node, "__USE_EXISTING_CONNECTION__");
+		INode nodeWithVersion = useExistConn ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__") : node;
+		this.dbVersion = ElementParameterParser.getValue(nodeWithVersion, "__DB_VERSION__");
+		%>
+		//dbVersion=<%=dbVersion%>
+		<%
+		cqlPackage = "com.datastax.oss.driver.api.core.cql";
+		
+	}
+	
+	public void init(){
+		cid = node.getUniqueName();
+		List<IMetadataTable> metadatas = node.getMetadataList();
+	    if((metadatas!=null) && (metadatas.size() > 0)){
+	        metadata = metadatas.get(0);
+	        if(metadata != null){
+	    		columns = metadata.getListColumns();		
+	    	}
+	    }
+	    List<? extends IConnection> conns = node.getIncomingConnections();
+	    if(conns != null && conns.size() > 0 && conns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+	        conn = conns.get(0);
+	    }
+		cqlManager = new CQLManagerV4Driver(node, columns);
+	}
+	public String getCid(){
+		return cid;
+	}
+	public IMetadataTable getMetadata(){
+		return metadata;
+	}
+	public IConnection getConn(){
+		return conn;
+	}
+	public List<IMetadataColumn> getColumns(){
+		return columns;
+	}
+	public boolean validGen(){
+		return columns == null || columns.isEmpty() || conn == null;
+	}
+	public CQLManager getCQLManager(){
+		return cqlManager;
+	}
+	public void genConn(){
+		boolean useExistConn = ElementParameterParser.getBooleanValue(node, "__USE_EXISTING_CONNECTION__");
+    	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+    	if(useExistConn){
+			if("CASSANDRA_4_0".equals(dbVersion)) {
+			%>
+				com.datastax.oss.driver.api.core.CqlSession connection_<%=cid%> = (com.datastax.oss.driver.api.core.CqlSession)globalMap.get("connection_<%=connection%>");
+			<%
+			}
+	    }else{  
+	    %>
+	        <%@ include file="@{org.talend.designer.components.bigdata}/components/tCassandraConnection/tCassandraConnection_datastax_connect.javajet"%>
+	        resourceMap.put("connection_<%=cid%>", connection_<%=cid%>);
+	    <%
+	    }
+	    %>
+	<%
+	}
+	
+	public void genKSAction(){
+		String keyspaceAction = ElementParameterParser.getValue(node, "__ACTION_ON_KEYSPACE__");
+		String dataAction = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+		if(!"NONE".equals(keyspaceAction) && !"DELETE".equals(dataAction)){
+	    	if("DROP_CREATE".equals(keyspaceAction)){
+	    	%>
+	    		connection_<%=cid%>.execute(<%=cqlManager.getDropKSSQL(false)%>);
+	    		connection_<%=cid%>.execute(<%=cqlManager.getCreateKSSQL(false)%>);
+	    	<%
+	    	}else if("CREATE".equals(keyspaceAction)){
+	    	%>
+	    		connection_<%=cid%>.execute(<%=cqlManager.getCreateKSSQL(false)%>);
+	    	<%
+	    	}else if("CREATE_IF_NOT_EXISTS".equals(keyspaceAction)){
+	    	%>
+	    		connection_<%=cid%>.execute(<%=cqlManager.getCreateKSSQL(true)%>);
+	    	<%
+	    	}else if("DROP_IF_EXISTS_AND_CREATE".equals(keyspaceAction)){
+	    	%>
+	    		connection_<%=cid%>.execute(<%=cqlManager.getDropKSSQL(true)%>);
+	    		connection_<%=cid%>.execute(<%=cqlManager.getCreateKSSQL(false)%>);
+	    	<%
+	    	}
+	    }
+	}
+	
+	public void genCFAction(){
+		String tableAction = ElementParameterParser.getValue(node, "__ACTION_ON_COLUMN_FAMILY__");
+	    String dataAction = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+		if(!"NONE".equals(tableAction) && !"DELETE".equals(dataAction)){
+			if("DROP_CREATE".equals(tableAction)){
+			%>
+				connection_<%=cid%>.execute(<%=cqlManager.getDropTableSQL(false)%>);
+	            connection_<%=cid%>.execute(<%=cqlManager.getCreateTableSQL(false)%>);
+	            <%
+	            if(cqlManager.containsUnsupportTypes()){
+	            %>
+	                System.err.println("Don't support create table with set/list/map");
+	            <%
+	            }
+	            %>
+			<%
+			}else if("CREATE".equals(tableAction)){
+			%>
+				connection_<%=cid%>.execute(<%=cqlManager.getCreateTableSQL(false)%>);
+	            <%
+	            if(cqlManager.containsUnsupportTypes()){
+	            %>
+	                System.err.println("Don't support create table with set/list/map");
+	            <%
+	            }
+	            %>
+			<%
+	        }else if("DROP_IF_EXISTS_AND_CREATE".equals(tableAction)){
+	        %>
+	            connection_<%=cid%>.execute(<%=cqlManager.getDropTableSQL(true)%>);
+	            connection_<%=cid%>.execute(<%=cqlManager.getCreateTableSQL(false)%>);
+	            <%
+	            if(cqlManager.containsUnsupportTypes()){
+	            %>
+	                System.err.println("Don't support create table with set/list/map");
+	            <%
+	            }
+	            %>
+	        <%    
+	        }else if("CREATE_IF_NOT_EXISTS".equals(tableAction)){
+	        %>
+	            connection_<%=cid%>.execute(<%=cqlManager.getCreateTableSQL(true)%>);
+	            <%
+	            if(cqlManager.containsUnsupportTypes()){
+	            %>
+	                System.err.println("Don't support create table with set/list/map");
+	            <%
+	            }
+	            %>
+	        <%
+	        }else if("CLEAR".equals(tableAction)){
+	        %>
+	            connection_<%=cid%>.execute(<%=cqlManager.getDeleteTableSQL()%>);
+	        <%
+	        }else if("TRUNCATE".equals(tableAction)){
+	        %>
+	            connection_<%=cid%>.execute(<%=cqlManager.getTruncateTableSQL()%>);
+	        <% 
+	        }
+	    }
+	}
+	
+	//DI only, better to move
+	public void genInit(){
+	%>
+		int nb_line_<%=cid%> = 0;
+	    <%=cqlPackage%>.PreparedStatement prepareStmt_<%=cid%> = null;
+	    prepareStmt_<%=cid%> = connection_<%=cid%>.prepare(<%=cqlManager.generatePreActionSQL()%>);
+	    <%=cqlPackage%>.BoundStatement boundStmt_<%=cid%> = null;
+	    <%
+	    if(ElementParameterParser.getBooleanValue(node, "__USE_UNLOGGED_BATCH__")){
+    	%>
+	    	java.util.List<String> columns_<%=cid%> = new java.util.ArrayList<String>();	
+	    	<%
+	    	for(String col : cqlManager.getValueColumns()){
+	    	%>
+	    		columns_<%=cid%>.add("<%=col%>");
+	    	<%	
+	    	}
+	    	String batchClass = ElementParameterParser.getBooleanValue(node, "__GROUP_CACHE__") ? "BatchCacheExecutor" : "BatchExecutor";
+	    	%>
+	    	org.talend.bigdata.cassandra.<%=batchClass%> cassandraBatchExec_<%=cid%> = new org.talend.bigdata.cassandra.<%=batchClass%>(
+	    																					connection_<%=cid%>, 
+	    																					StringHandling.DQUOTE(<%=ElementParameterParser.getValue(node, "__KEY_SPACE__")%>),
+	    																					StringHandling.DQUOTE(<%=ElementParameterParser.getValue(node, "__COLUMN_FAMILY__")%>), 
+	    																					columns_<%=cid%>,
+	    																					org.talend.bigdata.cassandra.BatchGroupingKey.fromString("<%=ElementParameterParser.getValue(node, "__GROUP_METHOD__")%>"),
+	    																					<%=ElementParameterParser.getValue(node, "__BATCH_SIZE__")%>,
+	    																					<%=ElementParameterParser.getBooleanValue(node, "__ASYNC__")%>,
+	    																					<%=ElementParameterParser.getValue(node, "__CONCURRENT_TASKS__")%>);
+    	<%
+        } else{
+            if("CASSANDRA_4_0".equals(dbVersion)) {
+        %>
+            boundStmt_<%=cid%> = prepareStmt_<%=cid%>.bind();
+        <%
+            }
+	    }
+	}
+}
+%>

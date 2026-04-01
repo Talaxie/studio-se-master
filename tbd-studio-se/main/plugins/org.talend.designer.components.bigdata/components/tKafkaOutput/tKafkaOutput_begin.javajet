@@ -1,0 +1,91 @@
+<%@ jet
+    imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    java.util.Map.Entry
+    java.util.HashMap
+    "
+%>
+
+<%@ include file="@{org.talend.designer.components.bigdata}/components/tKafkaConnection/tSetKeystore_util.javajet"%>
+<%@ include file="@{org.talend.designer.components.bigdata}/components/tKafkaOutput/tKafkaOutput_util.javajet"%>
+
+<%
+// Parse the inputs to this javajet generator.
+final CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+final String cid = node.getUniqueName();
+
+TKafkaOutputUtil tKafkaOutputUtil = new TKafkaOutputUtil(node);
+TSetKeystoreUtil tSetKeystoreUtil = tKafkaOutputUtil.getTSetKeystoreUtil();
+%>
+
+// Producer configuration
+java.util.Properties <%=cid%>_kafkaProperties = new java.util.Properties();
+<%
+	if(tKafkaOutputUtil.getBrokerList() == null || "".equals(tKafkaOutputUtil.getBrokerList())){
+%>
+		if(true){
+			throw new Exception("A broker list must be provided.");
+		}
+<%
+	} else {
+		// Basic and advanced configuration
+		for(Entry<String, String> kafkaProperty : tKafkaOutputUtil.getKafkaProducerProperties().entrySet()) {
+%>
+			<%=cid%>_kafkaProperties.put(<%=kafkaProperty.getKey()%>, <%=kafkaProperty.getValue()%>);
+<%
+		} // end for
+
+		// Kerberos configuration
+		if (tKafkaOutputUtil.useKrb()) {
+%>
+			// Make sure the new security information is picked up.
+			javax.security.auth.login.Configuration.setConfiguration(null);
+
+			System.setProperty("java.security.auth.login.config", <%=tKafkaOutputUtil.getJAASConf()%>);
+<%
+			if (tKafkaOutputUtil.isSetKrb5Conf()) {
+%>
+				System.setProperty("java.security.krb5.conf", <%=tKafkaOutputUtil.getKrb5Conf()%>);
+<%
+			}
+		}	// end Kerberos configuration
+	} // end else -> (brokerList is provided)
+
+    if (tKafkaOutputUtil.useProducerRecord()) {
+%>
+        org.apache.kafka.clients.producer.KafkaProducer<Object, Object> <%=cid%>_kafkaProducer = (org.apache.kafka.clients.producer.KafkaProducer<Object, Object>)globalMap.get("<%=cid%>_kafkaProducer");
+<%
+    } else {
+%>
+        org.apache.kafka.clients.producer.KafkaProducer<byte[], byte[]> <%=cid%>_kafkaProducer = (org.apache.kafka.clients.producer.KafkaProducer<byte[], byte[]>)globalMap.get("<%=cid%>_kafkaProducer");
+<%
+    }
+%>
+if (null == <%=cid%>_kafkaProducer) {
+    <%
+        if (tKafkaOutputUtil.useProducerRecord()) {
+    %>
+            <%=cid%>_kafkaProducer = new org.apache.kafka.clients.producer.KafkaProducer<Object, Object>(<%=cid%>_kafkaProperties);
+    <%
+        } else {
+    %>
+            <%=cid%>_kafkaProducer = new org.apache.kafka.clients.producer.KafkaProducer<byte[], byte[]>(<%=cid%>_kafkaProperties, new org.apache.kafka.common.serialization.ByteArraySerializer(), new org.apache.kafka.common.serialization.ByteArraySerializer());
+    <%
+        }
+    %>
+    globalMap.put("<%=cid%>_kafkaProducer", <%=cid%>_kafkaProducer);
+}
+
+final java.util.Set<Exception> <%=cid%>_producerExceptions = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<Exception, Boolean>());
+final int <%=cid%>_EXCEPTION_CATCH_TIMEOUT = 5;
+int <%=cid%>_counter_send = 0;
+final java.util.concurrent.atomic.AtomicInteger <%=cid%>_counter_rev = new java.util.concurrent.atomic.AtomicInteger();

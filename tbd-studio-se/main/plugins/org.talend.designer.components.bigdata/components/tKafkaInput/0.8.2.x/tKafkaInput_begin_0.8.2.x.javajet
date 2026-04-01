@@ -1,0 +1,118 @@
+<%
+	// This is the tKafkaInput_begin javajet part for Kafka 0.8.2.x
+	
+	// Since the new Consumer API was introduced in Kafka 0.9.0.x, we must split the javajets
+	// in order to generate code with the relevant Consumer API depending of the current Kafka version.
+%>
+
+<%
+String outStructName = tKafkaInputUtil.getOutStructName();
+%>
+
+class <%=cid%>_ValueDecoder implements kafka.serializer.Decoder<<%=outStructName%>> {
+
+    private final kafka.serializer.StringDecoder stringDecoder;
+
+    public <%=cid%>_ValueDecoder(kafka.utils.VerifiableProperties props){
+        this.stringDecoder = new kafka.serializer.StringDecoder(props);
+    }
+
+    public <%=outStructName%> fromBytes(byte[] bytes) {
+        <%=outStructName%> result = new <%=outStructName%>();
+        <%
+        if("STRING".equals(tKafkaInputUtil.getOutputType())) {
+            %>
+            String line = this.stringDecoder.fromBytes(bytes);
+            result.<%=tKafkaInputUtil.getOutgoingColumnName()%> = line;
+            <%
+        } else if("BYTES".equals(tKafkaInputUtil.getOutputType())) {
+            %>
+            result.<%=tKafkaInputUtil.getOutgoingColumnName()%> = bytes;
+            <%
+        }
+        %>
+        return result;
+    }
+}
+
+class <%=cid%>_KeyDecoder implements kafka.serializer.Decoder<byte[]> {
+
+    public <%=cid%>_KeyDecoder(kafka.utils.VerifiableProperties props){
+        // nothing but Decoder implementations must define a constructor with VerifiableProperties
+    }
+
+    public byte[] fromBytes(byte[] bytes) {
+        return bytes;
+    }
+}
+
+// Consumer configuration
+java.util.Properties <%=cid%>_kafkaProperties = new java.util.Properties();
+<%
+for (java.util.Map.Entry<String, String> kafkaProperty : tKafkaInputUtil.getKafkaConsumerProperties().entrySet()) {
+    %>
+    <%=cid%>_kafkaProperties.put(<%=kafkaProperty.getKey()%>, <%=kafkaProperty.getValue()%>);
+    <%
+}
+%>
+kafka.utils.VerifiableProperties <%=cid%>_verifiableProperties = new kafka.utils.VerifiableProperties(<%=cid%>_kafkaProperties);
+
+<%
+if (tKafkaInputUtil.isResetNewConsumerGroup()) {
+    %>
+    // Reset consumer offsets
+    kafka.utils.ZkUtils.maybeDeletePath(<%=tKafkaInputUtil.getZookeeperConnect()%>, "/consumers/"+<%=cid%>_kafkaProperties.get("group.id"));
+    <%
+}
+%>
+
+// Single-threaded consumer
+kafka.javaapi.consumer.ConsumerConnector <%=cid%>_consumerConnector = kafka.consumer.Consumer.createJavaConsumerConnector(new kafka.consumer.ConsumerConfig(<%=cid%>_kafkaProperties));
+java.util.Map<String, Integer> <%=cid%>_topicCountMap = new java.util.HashMap<String, Integer>();
+<%=cid%>_topicCountMap.put(<%=tKafkaInputUtil.getTopic()%>, 1);
+java.util.Map<String, List<kafka.consumer.KafkaStream<byte[], <%=outStructName%>>>> <%=cid%>_consumerMap = <%=cid%>_consumerConnector.createMessageStreams(<%=cid%>_topicCountMap, new <%=cid%>_KeyDecoder(<%=cid%>_verifiableProperties), new <%=cid%>_ValueDecoder(<%=cid%>_verifiableProperties));
+java.util.List<kafka.consumer.KafkaStream<byte[], <%=outStructName%>>> <%=cid%>_streams = <%=cid%>_consumerMap.get(<%=tKafkaInputUtil.getTopic()%>);
+
+globalMap.put("<%=cid%>_consumerConnector", <%=cid%>_consumerConnector);
+
+<%
+// Save the global deadline for all messages.
+if (tKafkaInputUtil.isStopOnMaxDuration()) {
+    %>
+    // Stop processing messages if the job has passed this time.
+    long maxDurationDeadline_<%=cid%> = System.currentTimeMillis() + <%=tKafkaInputUtil.getAsLong(tKafkaInputUtil.getMaxDuration())%>;
+    <%
+    // These only need to be set if both maxDuration and maxMsgWait are used.
+    if (tKafkaInputUtil.isStopOnMaxMsgWait()) {
+        %>
+        long maxMsgWait_<%=cid%> = <%=tKafkaInputUtil.getAsLong(tKafkaInputUtil.getMaxMsgWait())%>;
+        long maxMsgWaitDeadline_<%=cid%> = 0;
+        <%
+    }
+}
+%>
+
+// Start consumption
+kafka.consumer.ConsumerIterator<byte[], <%=outStructName%>> <%=cid%>_consumerIterator = <%=cid%>_streams.get(0).iterator();
+while (true) {
+    try {
+
+        <%
+        // Save the global deadline for all messages.
+        if (tKafkaInputUtil.isStopOnMaxDuration()) {
+            %>
+            // Immediately stop processing messagesDeadline if the max duration deadline has passed.
+            if (System.currentTimeMillis() > maxDurationDeadline_<%=cid%>)
+                break;
+            <%
+            // These only need to be set if both maxDuration and maxMsgWait are used.
+            if (tKafkaInputUtil.isStopOnMaxMsgWait()) {
+                %>
+                maxMsgWaitDeadline_<%=cid%> = System.currentTimeMillis() + maxMsgWait_<%=cid%>;;
+                <%
+            }
+        }
+        %>
+
+        if (!<%=cid%>_consumerIterator.hasNext())
+            break;

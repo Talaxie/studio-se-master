@@ -1,0 +1,726 @@
+<%@ jet %>
+	<%
+	class Column{
+
+        IMetadataColumn column;
+        private String mark = "?";
+        private String assignmentOperation = "=";
+        private Column assignmentKey;
+        private boolean asColumnKey = false;
+        public Column(IMetadataColumn column){
+            this.column = column;
+        }
+        public String getName(){
+            return column.getLabel();
+        }
+        public String getDBName(){
+        	return column.getOriginalDbColumnName();
+        }
+        public String getTalendType(){
+        	return column.getTalendType();
+        }
+        public String getDBType(){
+        	return column.getType();
+        }
+        public JavaType getJavaType(){
+        	return JavaTypesManager.getJavaTypeFromId(getTalendType());
+        }
+        public boolean isObject(){
+        	return !JavaTypesManager.isJavaPrimitiveType(getJavaType(), column.isNullable());
+        }
+        public boolean isKey(){
+        	return column.isKey();
+        }
+        public String getMark(){
+        	return mark;
+        }
+        public void setMark(String mark){
+        	this.mark = mark;
+        }
+        public void setAssignmentOperation(String op){
+            this.assignmentOperation = op;
+        }
+        public String getAssignmentOperation(){
+            return assignmentOperation;
+        }
+        public void setAssignmentKey(Column keyColumn){
+            this.assignmentKey = keyColumn;
+        }
+        public Column getAssignmentKey(){
+            return assignmentKey;
+        }
+        public void setAsColumnKey(boolean asColumnKey){
+            this.asColumnKey = asColumnKey;
+        }
+        public boolean getAsColumnKey(){
+            return asColumnKey;
+        }
+    }
+    
+	class CQLManager{
+		private String CASSANDRA = "cassandra_datastax_id";
+		private String CASSANDRA22 = "cassandra22_datastax_id";
+        
+        private String[] KeyWords = {"ADD","ALL","ALLOW","ALTER","AND","ANY","APPLY","AS","ASC","ASCII","AUTHORIZE","BATCH","BEGIN","BIGINT","BLOB","BOOLEAN","BY","CLUSTERING","COLUMNFAMILY","COMPACT","CONSISTENCY","COUNT","COUNTER","CREATE","CUSTOM","DECIMAL","DELETE","DESC","DISTINCT","DOUBLE","DROP","EACH_QUORUM","EXISTS","FILTERING","FLOAT","FROM","frozen","GRANT","IF","IN","INDEX","INET","INFINITY","INSERT","INT","INTO","KEY","KEYSPACE","KEYSPACES","LEVEL","LIMIT","LIST","LOCAL_ONE","LOCAL_QUORUM","MAP","MODIFY","NAN","NORECURSIVE","NOSUPERUSER","NOT","OF","ON","ONE","ORDER","PASSWORD","PERMISSION","PERMISSIONS","PRIMARY","QUORUM","RENAME","REVOKE","SCHEMA","SELECT","SET","STATIC","STORAGE","SUPERUSER","TABLE","TEXT","TIMESTAMP","TIMEUUID","THREE","TO","TOKEN","TRUNCATE","TTL","TWO","TYPE","UNLOGGED","UPDATE","USE","USER","USERS","USING","UUID","VALUES","VARCHAR","VARINT","WHERE","WITH","WRITETIME"};
+        
+        private INode node;
+        private String action;
+        private String keyspace;
+        private String tableName;
+        private Boolean useSpark = false;
+        private Boolean version22 = true;
+        private List<Column> valueColumns;
+        private String apiPackageName = "com.datastax.driver.";
+
+        public CQLManager(INode node, List<IMetadataColumn> columnList){
+        	this.node = node;
+            this.action = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+            this.keyspace = "StringHandling.DQUOTE(" + ElementParameterParser.getValue(node, "__KEY_SPACE__") + ")";
+            this.tableName = this.keyspace + " + \".\" + " + "StringHandling.DQUOTE(" + ElementParameterParser.getValue(node, "__COLUMN_FAMILY__") + ")";
+            createColumnList(columnList);
+            this.valueColumns = collectValueColumns();
+        }
+        
+        public CQLManager(INode node, List<IMetadataColumn> columnList, boolean version22, boolean useSpark){
+            this(node, columnList);
+            this.version22 = version22;
+            this.useSpark = useSpark;
+            this.apiPackageName = "shade.com.datastax.spark.connector.driver.";
+        }
+
+        private List<Column> all;
+    	private List<Column> keys;
+    	private List<Column> normals;
+    	private List<Column> conditions;
+    	private Column ttl;
+    	private Column timestamp;
+
+        private void createColumnList(List<IMetadataColumn> columnList){
+            all = new ArrayList<Column>();            
+            for(IMetadataColumn column : columnList){
+                all.add(new Column(column));
+            }
+            keys = new ArrayList<Column>();
+    		normals = new ArrayList<Column>();
+    		conditions = new ArrayList<Column>();
+			boolean usingTimestamp = "true".equals(ElementParameterParser.getValue(node, "__USING_TIMESTAMP__"));
+			String timestampColName = ElementParameterParser.getValue(node, "__TIMESTAMP__");
+			for(Column column : all){
+    			if("INSERT".equals(action) || "UPDATE".equals(action)){
+					boolean usingTTL = "true".equals(ElementParameterParser.getValue(node, "__USING_TTL__"));
+					String ttlColName = ElementParameterParser.getValue(node, "__TTL__");
+    				if(usingTTL && ttlColName.equals(column.getName())){
+    					ttl = column;
+    					ttl.setMark("TTL ?");
+    					continue;
+    				}
+    			}
+				if(usingTimestamp && timestampColName.equals(column.getName())){
+					timestamp = column;
+					timestamp.setMark("TIMESTAMP ?");
+					continue;
+				}
+				if(column.isKey()){
+    				keys.add(column);
+    				continue;
+    			}
+    			if("UPDATE".equals(action) || ("DELETE".equals(action) && !"true".equals(ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__")))){
+    				List<Map<String,String>> ifCoditions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__IF_CONDITION__");
+    				boolean matched = false;
+    				for(Map<String, String> ifCodition : ifCoditions){
+    					if(ifCodition.get("COLUMN_NAME").equals(column.getName())){
+    						conditions.add(column);
+    						matched = true;
+    						continue;
+    					}
+    				}
+    				if(matched){
+    					continue;
+    				}
+    			}
+    			normals.add(column);
+			}
+            if("UPDATE".equals(action)){
+                List<Map<String,String>> assignOperations = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ASSIGNMENT_OPERATION__");
+                List<Column> keyColumns = new ArrayList<Column>();
+                for(Column column : normals){
+                    for(Map<String, String> operation : assignOperations){
+                        String updateColumnKeyName = operation.get("KEY_COLUMN");
+                        String updateColumnOperation = operation.get("OPERATION");
+                        if("p/k".equals(updateColumnOperation) && column.getName().equals(updateColumnKeyName)){
+                            keyColumns.add(column);
+                        }
+                    }
+                }
+                normals.removeAll(keyColumns);
+                for(Column column : normals){
+                    for(Map<String, String> operation : assignOperations){
+                        String updateColumnName = operation.get("COLUMN_NAME");
+                        String updateColumnKeyName = operation.get("KEY_COLUMN");
+                        String updateColumnOperation = operation.get("OPERATION");
+                        if(updateColumnName.equals(column.getName())){
+                            column.setAssignmentOperation(updateColumnOperation);
+                            if("p/k".equals(updateColumnOperation)){
+                                for(Column keyColumn : keyColumns){
+                                    if(keyColumn.getName().equals(updateColumnKeyName)){
+                                        column.setAssignmentKey(keyColumn);
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            if("DELETE".equals(action)){
+                List<Map<String,String>> columnsKey = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DELETE_COLUMN_BY_POSITION_KEY__");
+                for(Column column : normals){
+                    for(Map<String, String> columnKey : columnsKey){
+                        if(column.getName().equals(columnKey.get("COLUMN_NAME"))){
+                            column.setAsColumnKey(true);
+                        }
+                    }
+                }
+            }
+        }
+        private List<Column> collectValueColumns(){
+        	List<Column> columns = new ArrayList<Column>();
+        	if("INSERT".equals(action)){
+	        	columns.addAll(keys);
+	        	columns.addAll(normals);
+	        	if(ttl != null)
+	        		columns.add(ttl);
+	        	if(timestamp != null)
+	        		columns.add(timestamp);
+        	}else if("UPDATE".equals(action)){
+	        	if(ttl != null)
+	        		columns.add(ttl);
+	        	if(timestamp != null)
+	        		columns.add(timestamp);
+	            for(Column normal : normals){
+	                if(normal.getAssignmentKey() != null){
+	                    columns.add(normal.getAssignmentKey());
+	                }
+	                columns.add(normal);
+	            }
+	        	columns.addAll(keys);
+	        	columns.addAll(conditions);
+        	}else if("DELETE".equals(action)){
+	            for(Column column : normals){
+	                if(column.getAsColumnKey()){
+	                    columns.add(column);
+	                }
+	            }
+	        	if(timestamp != null)
+	        		columns.add(timestamp);
+	        	columns.addAll(keys);
+	        	boolean ifExist = "true".equals(ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__"));
+	            if(!ifExist){
+		        	columns.addAll(conditions);
+		        }
+		    }
+        	return columns;
+        }
+        protected String getDBMSId(){
+            if(version22){
+            	return CASSANDRA22;
+            }else{
+            	return CASSANDRA;
+            }
+        }
+        private String getLProtectedChar(String keyword){
+            return "\\\""; 
+        }
+        private String getRProtectedChar(String keyword){
+            return "\\\"";
+        }  
+        private String wrapProtectedChar(String keyword){
+        	if(keyword.matches("^[a-z]+$")){
+        		return keyword;
+        	}else{
+        		return getLProtectedChar(keyword) + keyword + getRProtectedChar(keyword);
+        	}
+        }
+        public List<String> getValueColumns(){
+        	java.util.List<String> valueColumnsName = new java.util.ArrayList<String>();
+        	for(Column col : valueColumns){
+        		valueColumnsName.add(col.getName());
+        	}
+        	return valueColumnsName;
+        }
+        public String getDropKSSQL(boolean ifExists){
+        	StringBuilder dropKSSQL = new StringBuilder();
+        	dropKSSQL.append("\"DROP KEYSPACE ");
+        	if(ifExists){
+        		dropKSSQL.append("IF EXISTS ");
+        	}
+        	dropKSSQL.append("\" + ");
+        	dropKSSQL.append(this.keyspace);
+        	return dropKSSQL.toString();
+        }
+        public String getCreateKSSQL(boolean ifNotExists){
+        	StringBuilder createKSSQL = new StringBuilder();
+        	createKSSQL.append("\"CREATE KEYSPACE ");
+        	if(ifNotExists){
+        		createKSSQL.append("IF NOT EXISTS ");
+        	}
+        	createKSSQL.append("\" + ");
+        	createKSSQL.append(this.keyspace);
+        	createKSSQL.append(" + \"");
+        	createKSSQL.append("WITH REPLICATION = {\'class\' : \'" + ElementParameterParser.getValue(this.node, "__REPLICA_STRATEGY__") + "\',");
+        	if("SimpleStrategy".equals(ElementParameterParser.getValue(this.node, "__REPLICA_STRATEGY__"))){
+        		createKSSQL.append("'replication_factor' : \" + " + ElementParameterParser.getValue(this.node, "__SIMEPLE_REPLICA_NUMBER__") + " + \"}\"");
+        	}else{
+        		List<Map<String, String>> replicas = ElementParameterParser.getTableValue(this.node, "__NETWORK_REPLICA_TABLE__");
+        		int count = 1;
+        		for(Map<String, String> replica : replicas){
+        			createKSSQL.append("\'\" + " + replica.get("DATACENTER_NAME") + " + \"\' : \" + " + replica.get("REPLICA_NUMBER") + " + \"");
+        			if(count < replicas.size()){
+        				createKSSQL.append(",");
+        			}
+        			count++;
+        		}
+        		createKSSQL.append("}\"");
+        	}
+        	
+        	return createKSSQL.toString();
+        }
+ 	    public String getDropTableSQL(boolean ifExists){
+ 	    	StringBuilder dropTableSQL = new StringBuilder();
+            dropTableSQL.append("\"DROP TABLE ");
+        	if(ifExists){
+	            dropTableSQL.append("IF EXISTS ");
+        	}
+            dropTableSQL.append("\" + " + tableName);
+            return dropTableSQL.toString();
+ 	    }   
+        public String getCreateTableSQL(boolean ifNotExists){
+            StringBuilder createSQL = new StringBuilder();
+            createSQL.append("\"CREATE TABLE ");
+            if(ifNotExists){
+            	createSQL.append("IF NOT EXISTS ");
+            }
+            createSQL.append("\" + " + tableName + " + \"(");
+            List<Column> columns = new ArrayList<Column>();
+            if(!"DELETE".equals(action)){
+            	columns.addAll(keys);
+            	columns.addAll(normals);
+            	if("UPDATE".equals(action)){
+            		columns.addAll(conditions);
+            	}
+            }
+            int count = 1;
+            for(Column column : columns){
+                createSQL.append(wrapProtectedChar(column.getDBName()));
+                createSQL.append(" ");
+                createSQL.append(validateDBType(column));
+				if(count < columns.size()){
+                	createSQL.append(",");
+                }
+                count++;
+            }
+            if(keys.size() > 0){
+                createSQL.append(",PRIMARY KEY(");
+                int i = 1;
+                for(Column column : keys){
+                    createSQL.append(wrapProtectedChar(column.getDBName()));
+                    if(i < keys.size()){
+                        createSQL.append(",");
+                    }
+                    i++;
+                }
+                createSQL.append(")");
+            }
+            createSQL.append(")\"");
+            return createSQL.toString();
+        }
+        public boolean containsUnsupportTypes(){
+        	boolean unsupport = false;
+        	List<String> unsupportTypes = java.util.Arrays.asList(new String[]{"set", "list", "map"});
+        	List<Column> columns = new ArrayList<Column>();
+            if("INSERT".equals(action)){
+            	columns.addAll(keys);
+            	columns.addAll(normals);
+            }
+            for(Column column : columns){
+                if(unsupportTypes.contains(validateDBType(column))){
+                	return true;
+                }
+            }
+            return false;
+        }
+        public String getDeleteTableSQL(){
+            StringBuilder deleteTableSQL = new StringBuilder();
+            deleteTableSQL.append("\"DELETE FROM \" + " + tableName);
+            return deleteTableSQL.toString();
+        }
+        public String getTruncateTableSQL(){
+            StringBuilder truncateTableSQL = new StringBuilder();
+            truncateTableSQL.append("\"TRUNCATE \" + " + tableName);
+            return truncateTableSQL.toString();
+        }
+        public String generatePreActionSQL(){
+        	if("INSERT".equals(action)){
+        		return generatePreInsertSQL();
+        	}else if("UPDATE".equals(action)){
+        		return generatePreUpdateSQL();
+        	}else if("DELETE".equals(action)){
+        		return generatePreDeleteSQL();
+        	}else{
+        		return "";
+        	}
+        }
+        public String generateStmt(String assignStmt, String inConnName){
+        	if("INSERT".equals(action) || "UPDATE".equals(action) || "DELETE".equals(action)){
+	        	StringBuilder stmt = new StringBuilder();
+	        	int index = 0;
+	        	for(Column column : valueColumns){
+	        		stmt.append(generateSetStmt(assignStmt, column, inConnName, index));
+	        		index++;
+	        	}
+	        	return stmt.toString();
+        	}else{
+        		return "";
+        	}
+        }
+        /*INSERT INTO table_name
+		 *( identifier, column_name...)
+		 *VALUES ( value, value ... )
+		 *USING option AND option
+		 */
+        private String generatePreInsertSQL(){
+        	List<Column> columns = new ArrayList<Column>();
+        	columns.addAll(keys);
+        	columns.addAll(normals);
+        	
+        	int count = 1;
+        	StringBuilder preInsertSQL = new StringBuilder();
+        	preInsertSQL.append("\"INSERT INTO \" + " + tableName + " + \" (");
+        	for(Column column : columns){
+                preInsertSQL.append(wrapProtectedChar(column.getDBName()));
+				if(count < columns.size()){
+                	preInsertSQL.append(",");
+                }
+                count++;
+            }
+            preInsertSQL.append(") VALUES (");
+            count = 1;
+        	for(Column column : columns){
+                preInsertSQL.append(column.getMark());
+				if(count < columns.size()){
+                	preInsertSQL.append(",");
+                }
+                count++;
+            }
+            preInsertSQL.append(")");
+            boolean ifNotExist = "true".equals(ElementParameterParser.getValue(node, "__INSERT_IF_NOT_EXISTS__"));
+            if(ifNotExist){
+            	preInsertSQL.append(" IF NOT EXISTS");
+            }
+            if(ttl != null || timestamp != null){
+            	preInsertSQL.append(" USING ");
+            	if(ttl != null){
+            		preInsertSQL.append(ttl.getMark());
+            		if(timestamp != null){
+            			preInsertSQL.append(" AND ");
+            		}
+            	}
+            	if(timestamp != null){
+            		preInsertSQL.append(timestamp.getMark());
+            	}
+            }
+            preInsertSQL.append("\"");
+            return preInsertSQL.toString();
+        }
+        private String generatePreUpdateSQL(){
+        	StringBuilder preUpdateSQL = new StringBuilder();
+        	preUpdateSQL.append("\"UPDATE \" + " + tableName + "+ \"");
+        	if(ttl != null || timestamp != null){
+            	preUpdateSQL.append(" USING ");
+            	if(ttl != null){
+            		preUpdateSQL.append(ttl.getMark());
+            		if(timestamp != null){
+            			preUpdateSQL.append(" AND ");
+            		}
+            	}
+            	if(timestamp != null){
+            		preUpdateSQL.append(timestamp.getMark());
+            	}
+            }
+            preUpdateSQL.append(" SET ");
+        	int count = 1;
+        	for(Column column : normals){
+                
+                String assignment = wrapProtectedChar(column.getDBName()) + "=" + column.getMark();
+                
+                if("+v".equals(column.getAssignmentOperation())){
+                    assignment = wrapProtectedChar(column.getDBName()) + "=" + wrapProtectedChar(column.getDBName()) + "+" + column.getMark();     
+                }else if("v+".equals(column.getAssignmentOperation())){
+                    assignment = wrapProtectedChar(column.getDBName()) + "=" + column.getMark() + "+" + wrapProtectedChar(column.getDBName());     
+                }else if("-".equals(column.getAssignmentOperation())){
+                    assignment = wrapProtectedChar(column.getDBName()) + "=" + wrapProtectedChar(column.getDBName()) + "-" + column.getMark();     
+                }else if("p/k".equals(column.getAssignmentOperation())){
+                    assignment = wrapProtectedChar(column.getDBName()) + "[?]=" + column.getMark(); 
+                }
+
+                preUpdateSQL.append(assignment);
+
+				if(count < normals.size()){
+                	preUpdateSQL.append(",");
+                }
+                count++;
+            }
+            preUpdateSQL.append(" WHERE ");
+            count = 1;
+        	for(Column column : keys){
+                preUpdateSQL.append(wrapProtectedChar(column.getDBName()));
+                preUpdateSQL.append(rowKeyInList(column) ? " IN " : "=");
+                preUpdateSQL.append(column.getMark());
+				if(count < keys.size()){
+                	preUpdateSQL.append(" AND ");
+                }
+                count++;
+            }
+            if(conditions.size() > 0){
+         	   	preUpdateSQL.append(" IF ");
+	            count = 1;
+	            for(Column column : conditions){
+	            	preUpdateSQL.append(wrapProtectedChar(column.getDBName()));
+	            	preUpdateSQL.append("=");
+                	preUpdateSQL.append(column.getMark());
+	            	if(count < conditions.size()){
+	                	preUpdateSQL.append(" AND ");
+	                }
+	                count++;	
+	            }
+            }
+	        // can't work actually, even it supported on office document
+            // boolean ifExist = "true".equals(ElementParameterParser.getValue(node, "__UPDATE_IF_EXISTS__"));
+            // if(ifExist){
+            // 	preUpdateSQL.append(" IF EXISTS");
+            // }
+            
+            preUpdateSQL.append("\"");
+            return preUpdateSQL.toString();
+
+        }
+        private boolean rowKeyInList(Column column){
+            List<Map<String,String>> rowKeyInList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROW_KEY_IN_LIST__");
+            for(Map<String, String> rowKey : rowKeyInList){
+                if(column.getName().equals(rowKey.get("COLUMN_NAME"))){
+                    return true;
+                }
+            }
+            return false;
+        }
+        private String generatePreDeleteSQL(){
+        	StringBuilder preDeleteSQL = new StringBuilder();
+        	preDeleteSQL.append("\"DELETE ");
+        	int count = 1;
+        	for(Column column : normals){
+                preDeleteSQL.append(wrapProtectedChar(column.getDBName()));
+                if(column.getAsColumnKey()){
+                    preDeleteSQL.append("[?]");
+                }
+				if(count < normals.size()){
+                	preDeleteSQL.append(",");
+                }
+                count++;
+            }
+            preDeleteSQL.append(" FROM \" + " + tableName + " + \"");
+        	if(timestamp != null){
+            	preDeleteSQL.append(" USING ");
+        		preDeleteSQL.append(timestamp.getMark());
+            }
+            if(keys.size() > 0){
+                preDeleteSQL.append(" WHERE ");
+                count = 1;
+            	for(Column column : keys){
+            		preDeleteSQL.append(wrapProtectedChar(column.getDBName()));
+            		preDeleteSQL.append(rowKeyInList(column) ? " IN " : "=");
+                    preDeleteSQL.append(column.getMark());
+    				if(count < keys.size()){
+                    	preDeleteSQL.append(" AND ");
+                    }
+                    count++;
+                }
+            }
+            boolean ifExist = "true".equals(ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__"));
+            if(ifExist){
+            	preDeleteSQL.append(" IF EXISTS");
+            }else{
+	            if(conditions.size() > 0){
+	         	   	preDeleteSQL.append(" IF ");
+		            count = 1;
+		            for(Column column : conditions){
+		            	preDeleteSQL.append(wrapProtectedChar(column.getDBName()));
+		            	preDeleteSQL.append("=");
+	                	preDeleteSQL.append(column.getMark());
+		            	if(count < conditions.size()){
+		                	preDeleteSQL.append(" AND ");
+		                }
+		                count++;	
+		            }
+		        }
+		    }
+            preDeleteSQL.append("\"");
+            return preDeleteSQL.toString();
+        }
+        protected String validateDBType(Column column){
+        	String dbType = column.getDBType();
+        	if(dbType == null || "".equals(dbType.trim())){//TODO: throw error or use default value?
+        		MappingTypeRetriever mappingType = MetadataTalendType.getMappingTypeRetriever(getDBMSId());
+                dbType = mappingType.getDefaultSelectedDbType(column.getTalendType());
+            } 
+            return dbType;
+        }
+        protected String generateSetStmt(String assignStmt, Column column, String inConnName, int index){
+            String dbType = validateDBType(column);
+            String columnValue = inConnName + "." + column.getName();
+            StringBuilder setStmt = new StringBuilder();
+            if(column.isObject()){
+                setStmt.append("if(" + columnValue + " == null){\r\n");
+                setStmt.append(assignStmt + ".setToNull(" + index + ");\r\n");
+                setStmt.append("} else {");
+            }
+
+            if("ascii".equals(dbType) || "text".equals(dbType) || "varchar".equals(dbType)){
+            	if(JavaTypesManager.STRING == column.getJavaType()){
+                    setStmt.append(assignStmt +".setString(" + index + ", " + columnValue + ");\r\n");
+            	}else if(JavaTypesManager.CHARACTER == column.getJavaType()){
+            		setStmt.append(assignStmt +".setString(" + index + ", String.valueOf(" + columnValue + "));\r\n");
+            	}
+            }else if("timeuuid".equals(dbType) || "uuid".equals(dbType)){
+                setStmt.append(assignStmt +".setUUID(" + index + ", java.util.UUID.fromString(" + columnValue + "));\r\n");
+            }else if("varint".equals(dbType)){
+                setStmt.append(assignStmt +".setVarint(" + index + ", (java.math.BigInteger)" + columnValue + ");\r\n");
+            }else if("inet".equals(dbType)){
+                setStmt.append(assignStmt +".setInet(" + index + ", (java.net.InetAddress)" + columnValue + ");\r\n");
+            }else if("map".equals(dbType)){
+                setStmt.append(assignStmt +".setMap(" + index + ", (java.util.Map)" + columnValue + ");\r\n");
+            }else if("set".equals(dbType)){
+                setStmt.append(assignStmt +".setSet(" + index + ", (java.util.Set)" + columnValue + ");\r\n");
+            }else if("list".equals(dbType)){
+                setStmt.append(assignStmt +".setList(" + index + ", " + columnValue + ");\r\n");
+            }else if("boolean".equals(dbType)){
+                setStmt.append(assignStmt +".setBool(" + index + ", " + columnValue + ");\r\n");
+            }else if("blob".equals(dbType)){
+                if (useSpark) {
+                    setStmt.append(assignStmt +".setBytes(" + index + ", " + columnValue + ");\r\n");
+                } else {
+                    setStmt.append(assignStmt +".setBytes(" + index + ", java.nio.ByteBuffer.wrap(" + columnValue + "));\r\n");
+                }
+            }else if("timestamp".equals(dbType)){
+            	if(version22){
+                	setStmt.append(assignStmt +".setTimestamp(" + index + ", " + columnValue + ");\r\n");
+                }else{
+                	setStmt.append(assignStmt +".setDate(" + index + ", " + columnValue + ");\r\n");
+                }
+            }else if("decimal".equals(dbType)){
+                setStmt.append(assignStmt +".setDecimal(" + index + ", " + columnValue + ");\r\n");
+            }else if("double".equals(dbType)){
+                setStmt.append(assignStmt +".setDouble(" + index + ", " + columnValue + ");\r\n");
+            }else if("float".equals(dbType)){
+                setStmt.append(assignStmt +".setFloat(" + index + ", " + columnValue + ");\r\n");
+            }else if("int".equals(dbType)){
+            	setStmt.append(assignStmt +".setInt(" + index + ", " + columnValue + ");\r\n");
+            }else if("bigint".equals(dbType) || "count".equals(dbType)){
+                setStmt.append(assignStmt +".setLong(" + index + ", " + columnValue + ");\r\n");
+            }else if(version22){
+            	if("smallint".equals(dbType)){
+            		setStmt.append(assignStmt +".setShort(" + index + ", " + columnValue + ");\r\n");
+            	}else if("tinyint".equals(dbType)){
+            		setStmt.append(assignStmt +".setByte(" + index + ", " + columnValue + ");\r\n");
+            	}else if("time".equals(dbType)){
+            		setStmt.append(assignStmt +".setTime(" + index + ", " + columnValue + ");\r\n");
+            	}else if("date".equals(dbType)){
+            		setStmt.append(assignStmt +".setDate(" + index + ", "+apiPackageName+"core.LocalDate.fromMillisSinceEpoch(" + columnValue + ".getTime()));\r\n");
+            	}
+            }
+
+            if(column.isObject()){
+                setStmt.append("}\r\n");
+            }
+            return setStmt.toString();
+        }
+    }
+	class CQLManagerV4Driver extends CQLManager {
+		public CQLManagerV4Driver(INode node, List<IMetadataColumn> columnList){
+        	super(node, columnList);
+        }
+		
+		protected String getDBMSId(){
+            return "cassandra40_datastax_id";
+        }
+		
+		protected String generateSetStmt(String assignStmt, Column column, String inConnName, int index){
+            String dbType = validateDBType(column);
+            String columnValue = inConnName + "." + column.getName();
+            StringBuilder setStmt = new StringBuilder();
+            if(column.isObject()){
+                setStmt.append("if(" + columnValue + " == null){\r\n");
+				setStmt.append(assignStmt).append(" = ");
+                setStmt.append(assignStmt + ".setToNull(" + index + ");\r\n");
+                setStmt.append("} else {");
+            }
+			setStmt.append(assignStmt).append(" = ");
+
+            if("ascii".equals(dbType) || "text".equals(dbType) || "varchar".equals(dbType)){
+            	if(JavaTypesManager.STRING == column.getJavaType()){
+                    setStmt.append(assignStmt +".setString(" + index + ", " + columnValue + ");\r\n");
+            	}else if(JavaTypesManager.CHARACTER == column.getJavaType()){
+            		setStmt.append(assignStmt +".setString(" + index + ", String.valueOf(" + columnValue + "));\r\n");
+            	}
+            }else if("timeuuid".equals(dbType) || "uuid".equals(dbType)){
+                setStmt.append(assignStmt +".setUuid(" + index + ", java.util.UUID.fromString(" + columnValue + "));\r\n");
+            }else if("varint".equals(dbType)){
+                setStmt.append(assignStmt +".setBigInteger(" + index + ", (java.math.BigInteger)" + columnValue + ");\r\n");
+            }else if("inet".equals(dbType)){
+                setStmt.append(assignStmt +".setInetAddress(" + index + ", (java.net.InetAddress)" + columnValue + ");\r\n");
+            }else if("map".equals(dbType)){
+                setStmt.append(assignStmt +".setMap(" + index + ", (java.util.Map)" + columnValue + ", (Class)(((java.util.Map)" + columnValue + ").isEmpty() ? String.class : ((java.util.Map<Object, Object>)" + columnValue + ").entrySet().iterator().next().getKey().getClass()), (Class)(((java.util.Map)" + columnValue + ").isEmpty() ? String.class : ((java.util.Map<Object, Object>)" + columnValue + ").entrySet().iterator().next().getValue().getClass()));\r\n");
+            }else if("set".equals(dbType)){
+                setStmt.append(assignStmt +".setSet(" + index + ", (java.util.Set)" + columnValue + ", (Class)(((java.util.Set)" + columnValue + ").isEmpty() ? String.class : ((java.util.Set)" + columnValue + ").iterator().next().getClass()));\r\n");
+            }else if("list".equals(dbType)){
+                setStmt.append(assignStmt +".setList(" + index + ", " + columnValue + ", (Class)(" + columnValue + ".isEmpty() ? String.class : " + columnValue + ".get(0).getClass()));\r\n");
+            }else if("boolean".equals(dbType)){
+                setStmt.append(assignStmt +".setBoolean(" + index + ", " + columnValue + ");\r\n");
+            }else if("blob".equals(dbType)){
+                setStmt.append(assignStmt +".setByteBuffer(" + index + ", java.nio.ByteBuffer.wrap(" + columnValue + "));\r\n");
+            }else if("timestamp".equals(dbType)){
+				if(JavaTypesManager.LONG == column.getJavaType()) {
+					setStmt.append(assignStmt +".setInstant(" + index + ", java.time.Instant.ofEpochMilli(" + columnValue + "));\r\n");
+				} else if(JavaTypesManager.DATE == column.getJavaType()) {
+					setStmt.append(assignStmt +".setInstant(" + index + ", " + columnValue + ".toInstant());\r\n");
+                }
+            }else if("decimal".equals(dbType)){
+                setStmt.append(assignStmt +".setBigDecimal(" + index + ", " + columnValue + ");\r\n");
+            }else if("double".equals(dbType)){
+                setStmt.append(assignStmt +".setDouble(" + index + ", " + columnValue + ");\r\n");
+            }else if("float".equals(dbType)){
+                setStmt.append(assignStmt +".setFloat(" + index + ", " + columnValue + ");\r\n");
+            }else if("int".equals(dbType)){
+            	setStmt.append(assignStmt +".setInt(" + index + ", " + columnValue + ");\r\n");
+            }else if("bigint".equals(dbType) || "count".equals(dbType)){
+                setStmt.append(assignStmt +".setLong(" + index + ", " + columnValue + ");\r\n");
+            }else if("smallint".equals(dbType)){
+            	setStmt.append(assignStmt +".setShort(" + index + ", " + columnValue + ");\r\n");
+            }else if("tinyint".equals(dbType)){
+            	setStmt.append(assignStmt +".setByte(" + index + ", " + columnValue + ");\r\n");
+            }else if("time".equals(dbType)){
+				if(JavaTypesManager.DATE == column.getJavaType()) {
+					setStmt.append(assignStmt +".setLocalTime(" + index + ", " + columnValue + ".toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalTime());\r\n");
+				} else if(JavaTypesManager.LONG == column.getJavaType()) {
+					setStmt.append(assignStmt +".setLocalTime(" + index + ", new java.util.Date(" + columnValue + ").toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalTime());\r\n");
+				}
+            }else if("date".equals(dbType)){
+            	setStmt.append(assignStmt +".setLocalDate(" + index + ", " + columnValue + ".toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate());\r\n");
+            }
+
+            if(column.isObject()){
+                setStmt.append("}\r\n");
+            }
+            return setStmt.toString();
+        }
+	}
+    %>

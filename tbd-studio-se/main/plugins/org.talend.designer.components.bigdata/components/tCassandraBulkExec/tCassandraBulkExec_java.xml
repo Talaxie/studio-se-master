@@ -1,0 +1,388 @@
+<COMPONENT>
+    <HEADER
+        AUTHOR="Talend"
+        COMPATIBILITY="ALL"
+        DATA_AUTO_PROPAGATE="true"
+        PLATEFORM="ALL"
+        RELEASE_DATE="20080229A"
+        SERIAL=""
+        STATUS="ALPHA"
+        VERSION="0.102"
+        STARTABLE="true"
+        LOG4J_ENABLED="true"
+    >
+        <SIGNATURE />
+    </HEADER>
+    <FAMILIES>
+        <FAMILY>Databases NoSQL/Cassandra</FAMILY>
+        <FAMILY>Big Data/Cassandra</FAMILY>
+    </FAMILIES>
+    <DOCUMENTATION>
+        <URL />
+    </DOCUMENTATION>
+    <CONNECTORS>
+        <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0"/>
+        <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0"/>
+        <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="COMPONENT_OK"/>
+        <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+        <CONNECTOR CTYPE="RUN_IF"/>
+    </CONNECTORS>
+    <PARAMETERS>
+        <PARAMETER NAME="PROPERTY" FIELD="PROPERTY_TYPE" NUM_ROW="1" REPOSITORY_VALUE="NOSQL:CASSANDRA"/>
+        <PARAMETER
+            NAME="DB_VERSION"
+            FIELD="CLOSED_LIST"
+            REPOSITORY_VALUE="DB_VERSION"
+            NUM_ROW="3"
+            >
+            <ITEMS DEFAULT="CASSANDRA_4_0">
+				<ITEM NAME="CASSANDRA_4_0" VALUE="CASSANDRA_4_0"/>
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            NAME="HOST"
+            FIELD="TEXT"
+            REPOSITORY_VALUE="HOST"
+            REQUIRED="true"
+            NUM_ROW="6"
+        >
+            <DEFAULT>"localhost"</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="PORT"
+            FIELD="TEXT"
+            REPOSITORY_VALUE="PORT"
+            REQUIRED="true"
+            NUM_ROW="6"
+        >
+            <DEFAULT>"9042"</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="REQUIRED_AUTHENTICATION"
+            FIELD="CHECK"
+            REPOSITORY_VALUE="REQUIRED_AUTHENTICATION"
+            NUM_ROW="11"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="USERNAME"
+            FIELD="TEXT"
+            REPOSITORY_VALUE="USERNAME"
+            REQUIRED="true"
+            NUM_ROW="12"
+            SHOW_IF="(isShow[REQUIRED_AUTHENTICATION]) AND (REQUIRED_AUTHENTICATION == 'true')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="PASSWORD"
+            FIELD="PASSWORD"
+            REPOSITORY_VALUE="PASSWORD"
+            REQUIRED="true"
+            NUM_ROW="12"
+            SHOW_IF="(isShow[REQUIRED_AUTHENTICATION]) AND (REQUIRED_AUTHENTICATION == 'true')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="USE_HTTPS" FIELD="CHECK" NUM_ROW="14" SHOW="false">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="HTTPS_SETTING" FIELD="COMPONENT_LIST" FILTER="tSetKeystore"
+            NUM_ROW="14" SHOW_IF="(isShow[USE_HTTPS]) AND (USE_HTTPS == 'true')"
+            DYNAMIC_SETTINGS="true" />
+        <PARAMETER NAME="USE_CONF_FILE" FIELD="CHECK" NUM_ROW="15" NOT_SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0')">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="CONF_FILE"
+            FIELD="FILE"
+            REQUIRED="true"
+            NUM_ROW="15"
+            SHOW_IF="(isShow[USE_CONF_FILE]) AND (USE_CONF_FILE == 'true')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+		
+        <PARAMETER
+            NAME="KEY_SPACE"
+            FIELD="TEXT"
+            REPOSITORY_VALUE="KEY_SPACE"
+            REQUIRED="true"
+            NUM_ROW="17"
+			NOT_SHOW_IF="((DB_VERSION=='CASSANDRA_4_0') AND (USE_STATEMENT=='true')) OR ((DB_VERSION=='CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='true'))"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="COLUMN_FAMILY"
+            FIELD="TEXT"
+            REQUIRED="true"
+            NUM_ROW="17"
+			NOT_SHOW_IF="((DB_VERSION=='CASSANDRA_4_0') AND (USE_STATEMENT=='true')) OR ((DB_VERSION=='CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='true'))"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+		<PARAMETER
+			NAME="STMT_MAPPING_TYPE"
+			FIELD="CLOSED_LIST"
+			NUM_ROW="28"
+			REQUIRED="true"
+            SHOW_IF="((DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false'))"
+		>
+			<ITEMS DEFAULT="NONE">
+                <ITEM NAME="NONE" VALUE="NONE"/>
+                <ITEM NAME="MANUAL" VALUE="MANUAL"/>
+            </ITEMS>
+		</PARAMETER>
+		<PARAMETER
+            NAME="STMT_MAPPING"
+            FIELD="TEXT"
+            NUM_ROW="29"
+            REQUIRED="true"
+            SHOW_IF="((DB_VERSION == 'CASSANDRA_4_0') AND isShow[STMT_MAPPING_TYPE] AND (STMT_MAPPING_TYPE=='MANUAL'))"
+        >
+          <DEFAULT>"0=id, 1=name, 2=birthday"</DEFAULT>
+        </PARAMETER>
+		<PARAMETER
+            NAME="DATA_FILE_PATH"
+            FIELD="FILE"
+            REQUIRED="true"
+            NUM_ROW="34"
+			SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+		
+        <PARAMETER
+            NAME="SSTABLE_STORE_PATH"
+            FIELD="DIRECTORY"
+            REQUIRED="true"
+            NUM_ROW="21"
+			NOT_SHOW_IF="(DB_VERSION=='CASSANDRA_4_0')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+    </PARAMETERS>
+    <ADVANCED_PARAMETERS>
+		<PARAMETER NAME="FIELDSEPARATOR" FIELD="TEXT" REQUIRED="true" NUM_ROW="31" REPOSITORY_VALUE="FIELD_SEPARATOR" SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')">
+		  <DEFAULT>","</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="ESCAPE_CHAR" FIELD="TEXT" REQUIRED="true" NUM_ROW="32" MAX_LENGTH="1" REPOSITORY_VALUE="ESCAPE_CHAR" SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')">
+		  <DEFAULT>"\\"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="COMMENTROWCHAR" FIELD="TEXT" REQUIRED="true" NUM_ROW="33" MAX_LENGTH="1" REPOSITORY_VALUE="COMMENTROWCHAR" SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')">
+		  <DEFAULT>"#"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="ENCODING" FIELD="ENCODING_TYPE" NUM_ROW="50" REQUIRED="true" REPOSITORY_VALUE="ENCODING" SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')">
+		  <DEFAULT>"ISO-8859-15"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="USE_CONF_FILE_4_0" FIELD="CHECK" NUM_ROW="55" SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0')">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="CONF_FILE_4_0"
+            FIELD="FILE"
+            REQUIRED="true"
+            NUM_ROW="56"
+            SHOW_IF="(isShow[USE_CONF_FILE_4_0]) AND (USE_CONF_FILE_4_0 == 'true')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+		<PARAMETER
+			NAME="USE_STATEMENT"
+			FIELD="CHECK"
+			NUM_ROW="60"
+			REQUIRED="true"
+            SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')"
+		>
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+        <PARAMETER
+            NAME="STMT"
+            FIELD="TEXT"
+            NUM_ROW="61"
+            REQUIRED="true"
+            SHOW_IF="(isShow[USE_STATEMENT] AND (USE_STATEMENT=='true'))"
+        >
+          <DEFAULT>"insert into ks.tb (id, name, birthday) values (?, ?, ?)"</DEFAULT>
+        </PARAMETER>
+		<PARAMETER
+			NAME="USE_HEADER"
+			FIELD="CHECK"
+			NUM_ROW="65"
+			REQUIRED="true"
+            SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')"
+		>
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER
+			NAME="APPEND"
+			FIELD="CHECK"
+			NUM_ROW="65"
+			REQUIRED="true"
+			SHOW_IF="(DB_VERSION == 'CASSANDRA_4_0') AND (USE_CONF_FILE_4_0=='false')"
+		>
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+    </ADVANCED_PARAMETERS>
+    <CODEGENERATION>
+        <IMPORTS>
+            <IMPORT NAME="reload4j-1.2.22" MODULE="reload4j-1.2.22.jar"
+                    MVN="mvn:ch.qos.reload4j/reload4j/1.2.22"/>
+
+			<IMPORTS REQUIRED_IF="(DB_VERSION == 'CASSANDRA_4_0')">
+				<IMPORT
+					NAME="dsbulk-batcher-api-1.8.0"
+					MODULE="dsbulk-batcher-api-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-batcher-api/1.8.0" />
+				<IMPORT
+				    NAME="dsbulk-batcher-reactor-1.8.0"
+					MODULE="dsbulk-batcher-reactor-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-batcher-reactor/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-codecs-api-1.8.0"
+					MODULE="dsbulk-codecs-api-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-codecs-api/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-codecs-text-1.8.0"
+					MODULE="dsbulk-codecs-text-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-codecs-text/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-config-1.8.0"
+					MODULE="dsbulk-config-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-config/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-connectors-api-1.8.0"
+					MODULE="dsbulk-connectors-api-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-connectors-api/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-connectors-commons-1.8.0"
+					MODULE="dsbulk-connectors-commons-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-connectors-commons/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-connectors-csv-1.8.0"
+					MODULE="dsbulk-connectors-csv-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-connectors-csv/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-cql-1.8.0"
+					MODULE="dsbulk-cql-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-cql/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-executor-api-1.8.0"
+					MODULE="dsbulk-executor-api-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-executor-api/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-executor-reactor-1.8.0"
+					MODULE="dsbulk-executor-reactor-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-executor-reactor/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-format-1.8.0"
+					MODULE="dsbulk-format-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-format/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-io-1.8.0"
+					MODULE="dsbulk-io-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-io/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-mapping-1.8.0"
+					MODULE="dsbulk-mapping-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-mapping/1.8.0" />   
+				<IMPORT
+					NAME="dsbulk-partitioner-1.8.0"
+					MODULE="dsbulk-partitioner-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-partitioner/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-runner-1.8.0"
+					MODULE="dsbulk-runner-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-runner/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-sampler-1.8.0"
+					MODULE="dsbulk-sampler-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-sampler/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-url-1.8.0"
+					MODULE="dsbulk-url-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-url/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-workflow-api-1.8.0"
+					MODULE="dsbulk-workflow-api-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-workflow-api/1.8.0" />
+				<IMPORT
+					NAME="dsbulk-workflow-commons-1.8.0.1"
+					MODULE="dsbulk-workflow-commons-1.8.0.1.jar" MVN="mvn:com.datastax.oss/dsbulk-workflow-commons/1.8.0.1" />
+				<IMPORT
+					NAME="dsbulk-workflow-load-1.8.0"
+					MODULE="dsbulk-workflow-load-1.8.0.jar" MVN="mvn:com.datastax.oss/dsbulk-workflow-load/1.8.0" />
+				<IMPORT
+					NAME="java-driver-core-4.13.0"
+					MODULE="java-driver-core-4.13.0.jar" MVN="mvn:com.datastax.oss/java-driver-core/4.13.0" />
+				<IMPORT
+					NAME="java-driver-shaded-guava-25.1-jre-graal-sub-1"
+					MODULE="java-driver-shaded-guava-25.1-jre-graal-sub-1.jar" MVN="mvn:com.datastax.oss/java-driver-shaded-guava/25.1-jre-graal-sub-1" />
+				<IMPORT
+					NAME="jnr-posix-3.1.5.jar"
+					MODULE="jnr-posix-3.1.5.jar" MVN="mvn:com.github.jnr/jnr-posix/3.1.5" />
+				<IMPORT
+					NAME="native-protocol-1.5.0"
+					MODULE="native-protocol-1.5.0.jar" MVN="mvn:com.datastax.oss/native-protocol/1.5.0" />
+				<IMPORT
+					NAME="reactor-core-3.4.2"
+					MODULE="reactor-core-3.4.2.jar" MVN="mvn:io.projectreactor/reactor-core/3.4.2" />
+				<IMPORT
+					NAME="jul-to-slf4j-1.7.29"
+					MODULE="jul-to-slf4j-1.7.29.jar" MVN="mvn:org.slf4j/jul-to-slf4j/1.7.29" />
+				<IMPORT MODULE="netty-common-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-common/4.1.97.Final"
+					NAME="netty-common-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-buffer-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-buffer/4.1.97.Final"
+					NAME="netty-buffer-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-transport-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-transport/4.1.97.Final"
+					NAME="netty-transport-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-resolver-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-resolver/4.1.97.Final"
+					NAME="netty-resolver-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-handler-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-handler/4.1.97.Final"
+					NAME="netty-handler-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-transport-native-unix-common-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-transport-native-unix-common/4.1.97.Final"
+					NAME="netty-transport-native-unix-common-4.1.97.Final.jar" />
+				<IMPORT MODULE="netty-codec-4.1.97.Final.jar"
+					MVN="mvn:io.netty/netty-codec/4.1.97.Final"
+					NAME="netty-codec-4.1.97.Final.jar" />
+				<IMPORT MODULE="jackson-databind-2.14.3.jar"
+					MVN="mvn:com.fasterxml.jackson.core/jackson-databind/2.14.3"
+					NAME="jackson-databind-2.14.3.jar" />
+				<IMPORT MODULE="jackson-core-2.14.3.jar"
+					MVN="mvn:com.fasterxml.jackson.core/jackson-core/2.14.3"
+					NAME="jackson-core-2.14.3.jar" />
+				<IMPORT MODULE="jackson-annotations-2.14.3.jar"
+					MVN="mvn:com.fasterxml.jackson.core/jackson-annotations/2.14.3"
+					NAME="jackson-annotations-2.14.3.jar" />
+				<IMPORT MODULE="antlr4-runtime-4.9.1.jar"
+					MVN="mvn:org.antlr/antlr4-runtime/4.9.1"
+					NAME="antlr4-runtime-4.9.1.jar" />
+				<IMPORT MODULE="caffeine-2.8.8.jar"
+					MVN="mvn:com.github.ben-manes.caffeine/caffeine/2.8.8"
+					NAME="caffeine-2.8.8.jar" />
+				<IMPORT MODULE="metrics-core-4.1.18.jar"
+					MVN="mvn:io.dropwizard.metrics/metrics-core/4.1.18"
+					NAME="metrics-core-4.1.18.jar" />
+				<IMPORT MODULE="metrics-jmx-4.1.17.jar"
+					MVN="mvn:io.dropwizard.metrics/metrics-jmx/4.1.17"
+					NAME="metrics-jmx-4.1.17.jar" />
+				<IMPORT MODULE="HdrHistogram-2.1.12.jar"
+					MVN="mvn:org.hdrhistogram/HdrHistogram/2.1.12"
+					NAME="HdrHistogram-2.1.12.jar" />
+				<IMPORT MODULE="jctools-core-3.2.0.jar"
+					MVN="mvn:org.jctools/jctools-core/3.2.0"
+					NAME="jctools-core-3.2.0.jar" />
+					 
+					
+				<IMPORT
+					NAME="commons-compress-1.21"
+					MODULE="commons-compress-1.21.jar" MVN="mvn:org.apache.commons/commons-compress/1.21" />
+				<IMPORT
+					NAME="univocity-parsers-2.9.1"
+					MODULE="univocity-parsers-2.9.1.jar" MVN="mvn:com.univocity/univocity-parsers/2.9.1" />
+				<IMPORT
+					NAME="reactive-streams-1.0.3"
+					MODULE="reactive-streams-1.0.3.jar" MVN="mvn:org.reactivestreams/reactive-streams/1.0.3" />
+				<IMPORT
+					NAME="jansi-1.18"
+					MODULE="jansi-1.18.jar" MVN="mvn:org.fusesource.jansi/jansi/1.18" />
+				<IMPORT
+					NAME="typesafe-config-1.4.1"
+					MODULE="typesafe-config-1.4.1.jar" MVN="mvn:com.typesafe/config/1.4.1" />
+			</IMPORTS>
+		</IMPORTS>
+	</CODEGENERATION>
+	<RETURNS/>
+</COMPONENT>

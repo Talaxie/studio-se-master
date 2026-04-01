@@ -1,0 +1,90 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+    	org.talend.core.model.process.ElementParameterParser		
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+IMetadataTable metadata = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if((metadatas!=null) && (metadatas.size()>0)){
+    metadata = metadatas.get(0);
+}
+
+String inConnName = null;
+List<? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null){
+	if(conns.size()>0){
+	    IConnection conn = conns.get(0);
+		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+    		inConnName = conn.getName();
+    	}
+    }
+}
+List<IMetadataColumn> columns = null;
+int sizeColumns = 0;
+if(metadata != null){
+	columns = metadata.getListColumns();
+	sizeColumns = columns.size();
+}
+if(sizeColumns == 0 || inConnName == null){
+	return "";
+}
+String version = ElementParameterParser.getValue(node,"__DB_VERSION__");
+if("CASSANDRA_4_0".equals(version)) {
+	%>
+	String[] row<%=cid%> = new String[<%=sizeColumns%>];
+	<%
+	for(int i = 0; i < sizeColumns; i++){
+		IMetadataColumn column = columns.get(i);
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+		String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+		String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+		boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable());
+		String thousandsSeparator = "";
+		String decimalSeparator = ".";
+		%>
+			row<%=cid%>[<%=i%>]=<%=isPrimitive? "":inConnName+"."+column.getLabel()+ " == null ? null : "%>
+		<%
+		if(javaType == JavaTypesManager.STRING ){
+		%>
+			<%=inConnName %>.<%=column.getLabel() %>;
+		<%
+		}else if(javaType == JavaTypesManager.DATE && pattern != null){
+		%>
+			FormatterUtils.format_Date(<%=inConnName %>.<%=column.getLabel() %>, <%= pattern %>);
+		<%
+		}else if(javaType == JavaTypesManager.BYTE_ARRAY){
+		%>
+			new String(java.util.Base64.getEncoder().encode(java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=inConnName %>.<%=column.getLabel() %>)).toString().getBytes()));
+		<%
+		} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+		%>
+			<%=column.getPrecision() == null? inConnName + "." + column.getLabel() : inConnName + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString();
+		<%
+		} else{
+		%>
+			String.valueOf(<%=inConnName %>.<%=column.getLabel() %>);
+		<%
+		}
+	}
+	%>
+	csvWriter_<%=cid %>.writeNext(row<%=cid%>);
+	<%
+}
+%>
+

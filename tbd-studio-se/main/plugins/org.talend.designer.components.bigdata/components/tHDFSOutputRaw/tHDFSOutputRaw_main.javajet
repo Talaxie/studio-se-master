@@ -1,0 +1,149 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	boolean customEncoding = "true".equals(ElementParameterParser.getValue(node, "__CUSTOM_ENCODING__"));
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+
+	String fileAction = ElementParameterParser.getValue(node, "__FILE_ACTION__");
+
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	boolean compress = "true".equals(ElementParameterParser.getValue(node, "__COMPRESS__"));
+	String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+
+	java.util.List<IMetadataColumn> columnList = null;
+	java.util.List<IMetadataTable> metadatas = node.getMetadataList();
+	if(metadatas != null && metadatas.size() > 0) {
+		IMetadataTable metadata = metadatas.get(0);
+		if(metadata != null) {
+		    columnList = metadata.getListColumns();
+		}
+	}
+	java.util.List< ? extends IConnection> incomingConns = node.getIncomingConnections();
+	if(columnList!=null && incomingConns!=null && incomingConns.size()>0) {
+		for(IConnection incomingConn : incomingConns) {
+			if(incomingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+				org.apache.hadoop.fs.FSDataOutputStream fsDataOutputStream_<%=cid%> = null;
+<%
+				if(compress) {
+%>
+					org.apache.hadoop.io.compress.CompressionOutputStream out_<%=cid%> = null;
+<%
+				}
+%>
+				try {
+					Object content_<%=cid%> = <%=incomingConn.getName()%>.<%=columnList.get(0).getLabel()%>;
+					fsDataOutputStream_<%=cid%> = fs_<%=cid%>.create(path_<%=cid%>, <%="CREATE".equals(fileAction)?false:true%>);
+<%
+					if(compress) {
+						if("GZIP".equals(compression)) {
+%>
+							org.apache.hadoop.io.compress.GzipCodec codec_<%=cid%> = new org.apache.hadoop.io.compress.GzipCodec();
+							codec_<%=cid%>.setConf(conf_<%=cid%>);
+<%
+						} else if("BZIP2".equals(compression)) {
+%>
+							org.apache.hadoop.io.compress.CompressionCodec codec_<%=cid%> = org.apache.hadoop.util.ReflectionUtils.newInstance(org.apache.hadoop.io.compress.BZip2Codec.class, conf_<%=cid%>);
+<%
+						}
+%>
+						out_<%=cid%> = codec_<%=cid%>.createOutputStream(fsDataOutputStream_<%=cid%>);
+<%
+					}
+%>
+					if(content_<%=cid%> != null) {
+						if (content_<%=cid%> instanceof String) {
+							<%if(compress) { %> out_<%=cid%>.write(content_<%=cid%>.toString().getBytes(<%=customEncoding?encoding:""%>));
+							<% } else { %> fsDataOutputStream_<%=cid%>.write(content_<%=cid%>.toString().getBytes(<%=customEncoding?encoding:""%>));
+							<% } %>
+						} else if(content_<%=cid%> instanceof byte[]) {
+							<%if(compress) { %> out_<%=cid%>.write((byte[])content_<%=cid%>);
+							<% } else { %> fsDataOutputStream_<%=cid%>.write((byte[])content_<%=cid%>);
+							<% } %>
+						} else if(content_<%=cid%> instanceof java.io.InputStream) {
+							java.io.InputStream fis_<%=cid%> = (java.io.InputStream) content_<%=cid%>;
+							byte[] buffer_<%=cid%> = new byte[65536];
+							int nb_<%=cid%> = 0;
+							while (true) {
+								nb_<%=cid%> = fis_<%=cid%>.read(buffer_<%=cid%>);
+								if (nb_<%=cid%> == -1) {
+									break;
+								}
+								<% if (compress) { %> out_<%=cid%>.write(buffer_<%=cid%>, 0, nb_<%=cid%>);
+								<% } else { %> fsDataOutputStream_<%=cid%>.write(buffer_<%=cid%>, 0, nb_<%=cid%>);
+								<% } %>
+							}
+							fis_<%=cid%>.close();
+						} else if (content_<%=cid%> instanceof routines.system.Document) {
+							org.dom4j.io.OutputFormat format_<%=cid%> = new org.dom4j.io.OutputFormat();
+							<% if(customEncoding) { %>format_<%=cid%>.setEncoding(<%=encoding%>);<% } %>
+							org.dom4j.io.XMLWriter writer_<%=cid%> = new org.dom4j.io.XMLWriter(<% if(compress) { %>out_<%=cid%><% } else { %> fsDataOutputStream_<%=cid%><% } %>, format_<%=cid%>);
+							writer_<%=cid%>.write(((routines.system.Document) content_<%=cid%>).getDocument());
+							writer_<%=cid%>.close();
+						} else if (content_<%=cid%> != null) {
+							<%if(compress) { %> out_<%=cid%>.write(content_<%=cid%>.toString().getBytes(<%=customEncoding?encoding:""%>));
+							<% } else { %> fsDataOutputStream_<%=cid%>.write(content_<%=cid%>.toString().getBytes(<%=customEncoding?encoding:""%>));
+							<% } %>
+						}
+					}
+				} catch (java.lang.Exception e_<%=cid%>) {
+<%
+					if(dieOnError) {
+%>
+						throw e_<%=cid%>;
+<%
+					} else {
+%>
+						System.err.println(e_<%=cid%>);
+<%
+						if(isLog4jEnabled) {
+%>
+						log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+<%
+						}
+					}
+%>
+				} finally {
+<%
+					if(compress) {
+%>
+						try {
+							if(out_<%=cid%> != null) {
+								out_<%=cid%>.close();
+							}
+						} catch(java.nio.channels.ClosedChannelException e_<%=cid%>) {
+							// The stream is closed, continue.
+						}
+<%
+					}
+%>
+					try {
+						if(fsDataOutputStream_<%=cid%> != null) {
+							fsDataOutputStream_<%=cid%>.close();
+						}
+					} catch(java.nio.channels.ClosedChannelException e_<%=cid%>) {
+						// The stream is closed, continue.
+					}
+				}
+<%
+			}
+		}
+	}
+%>

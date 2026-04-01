@@ -1,0 +1,233 @@
+<%@jet%>
+<%
+	String distribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+	String version = ElementParameterParser.getValue(node, "__DB_VERSION__");
+
+	org.talend.hadoop.distribution.component.SqoopComponent sqoopDistrib = null;
+	try {
+		sqoopDistrib = (org.talend.hadoop.distribution.component.SqoopComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, version);
+	} catch (java.lang.Exception e) {
+		e.printStackTrace();
+		return "";
+	}
+
+	boolean isCustom = sqoopDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+
+	List<Map<String, String>> hadoopProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HADOOP_ADVANCED_PROPERTIES__");
+
+	String namenode = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+	String jobtracker = ElementParameterParser.getValue(node, "__MAPRED_JOB_TRACKER__");
+	boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	List<Map<String,String>> additionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__ADDITIONAL_JAVA__");
+	List<Map<String,String>> generateJarAdditionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__GENERATE_JAR_ADDITIONAL_JAVA__");
+	boolean printLog = "true".equals(ElementParameterParser.getValue(node,"__PRINT_LOG__"));
+	boolean verbose = "true".equals(ElementParameterParser.getValue(node,"__VERBOSE__"));
+	String newDataDir = ElementParameterParser.getValue(node,"__NEWDATA__");
+	String oldDataDir = ElementParameterParser.getValue(node,"__ONTO__");
+	String targetDir = ElementParameterParser.getValue(node,"__TARGETDIR__");
+	String jarFile = ElementParameterParser.getValue(node,"__JARFILE__");
+	boolean customClassName = "true".equals(ElementParameterParser.getValue(node,"__CUSTOMCLASSNAME__"));
+	String className = ElementParameterParser.getValue(node,"__CLASSNAME__");
+	String key = ElementParameterParser.getValue(node,"__MERGEKEY__");
+	boolean needGenerateJar = "true".equals(ElementParameterParser.getValue(node,"__GENERATE__"));
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String table = ElementParameterParser.getValue(node,"__TABLE__");
+	String username = ElementParameterParser.getValue(node,"__USERNAME__");
+    boolean useDatanodeHostname = "true".equals(ElementParameterParser.getValue(node, "__USE_DATANODE_HOSTNAME__"));
+
+    boolean useMapRTicket = ElementParameterParser.getBooleanValue(node, "__USE_MAPRTICKET__");
+    String mapRTicketUsername = ElementParameterParser.getValue(node, "__MAPRTICKET_USERNAME__");
+    String mapRTicketCluster = ElementParameterParser.getValue(node, "__MAPRTICKET_CLUSTER__");
+    String mapRTicketDuration = ElementParameterParser.getValue(node, "__MAPRTICKET_DURATION__");
+
+    boolean setMapRHomeDir = ElementParameterParser.getBooleanValue(node, "__SET_MAPR_HOME_DIR__");
+    String mapRHomeDir = ElementParameterParser.getValue(node, "__MAPR_HOME_DIR__");
+
+    boolean setMapRHadoopLogin = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_LOGIN__");
+    String mapRHadoopLogin = ElementParameterParser.getValue(node, "__HADOOP_LOGIN__");
+
+    String fsDefalutName = "fs.default.name";
+    String driverClass = ElementParameterParser.getValue(node, "__DRIVER_CLASS__");
+
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+
+
+    String passwordFieldName = "";
+
+%>
+	<%@ include file="../templates/Sqoop/GetConfig.javajet"%>
+	String jarFileName_<%=cid%> = <%=jarFile%>;
+<%
+	String sqoopPackageName = ((org.talend.hadoop.distribution.AbstractDistribution) sqoopDistrib).getSqoopPackageName();
+%>
+<%
+    if(needGenerateJar){
+%>
+        <%=sqoopPackageName%>.SqoopOptions needGenereateJarSqoopOptions_<%=cid%> = new <%=sqoopPackageName%>.SqoopOptions(configuration_<%=cid%>);
+        needGenereateJarSqoopOptions_<%=cid%>.setConnectString(<%=connection%>); // __CONNECTION__
+        needGenereateJarSqoopOptions_<%=cid%>.setUsername(<%=username%>);
+        if((<%=driverClass%> != null) && !"".equals(<%=driverClass%>)) {
+        	<%=sqoopPackageName%>.metastore.JobData jobData_<%=cid%> = new <%=sqoopPackageName%>.metastore.JobData(needGenereateJarSqoopOptions_<%=cid%>, null);
+        	org.apache.sqoop.manager.DefaultManagerFactory defaultManagerFactory_<%=cid%> = new org.apache.sqoop.manager.DefaultManagerFactory();
+        	if(null == defaultManagerFactory_<%=cid%>.accept(jobData_<%=cid%>)) {
+        		needGenereateJarSqoopOptions_<%=cid%>.setDriverClassName(<%=driverClass%>);//driver class name
+        	}
+        }
+        <%
+        passwordFieldName = "__PASSWORD__";
+        %>
+
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+        needGenereateJarSqoopOptions_<%=cid%>.setPassword(decryptedPassword_<%=cid%>);
+        needGenereateJarSqoopOptions_<%=cid%>.setTableName(<%=table%>);
+needGenereateJarSqoopOptions_<%=cid%>.setClassName("SqoopMerge_<%=cid%>");
+
+	java.util.Properties generateJarAdditionalProperties_<%=cid%> = new java.util.Properties();
+	<%
+	if(sqoopDistrib.isImpactedBySqoop2995()){
+	//TODO, relate with https://issues.apache.org/jira/browse/SQOOP-2995, have to set a init value to the new map type key "customtool.options.jsonmap". But the key hasn't been used
+	%>
+		generateJarAdditionalProperties_<%=cid%>.put("customtool.options.jsonmap", "{\"\":\"\"}");
+
+	<%
+		}
+        if(generateJarAdditionalList != null){
+            for(Map<String,String> generateJarAdditionalMap : generateJarAdditionalList){
+                if(generateJarAdditionalMap.get("GENERATE_JAR_ADDITIONAL_VALUE")==null || "".equals(generateJarAdditionalMap.get("GENERATE_JAR_ADDITIONAL_VALUE"))) {
+                    break;
+                }
+                String currentArgument = generateJarAdditionalMap.get("GENERATE_JAR_ADDITIONAL_ARGUMENT");
+                if(currentArgument.contains("delimiters") && !currentArgument.contains("required")) {
+%>
+                    generateJarAdditionalProperties_<%=cid%>.put(<%=currentArgument%>, ""+<%=generateJarAdditionalMap.get("GENERATE_JAR_ADDITIONAL_VALUE")%>.codePointAt(0));
+<%
+                } else {
+%>
+                    generateJarAdditionalProperties_<%=cid%>.put(<%=currentArgument%>, <%=generateJarAdditionalMap.get("GENERATE_JAR_ADDITIONAL_VALUE")%>);
+<%
+                }
+            }
+        }
+%>
+        needGenereateJarSqoopOptions_<%=cid%>.loadProperties(generateJarAdditionalProperties_<%=cid%>);
+
+        <%=sqoopPackageName%>.tool.CodeGenTool codeGen_<%=cid%> = new <%=sqoopPackageName%>.tool.CodeGenTool();
+        <%=sqoopPackageName%>.Sqoop codeGenerator_<%=cid%> = new <%=sqoopPackageName%>.Sqoop(codeGen_<%=cid%>,configuration_<%=cid%>, needGenereateJarSqoopOptions_<%=cid%>);
+
+		try {
+			int ret_<%=cid%> = <%=sqoopPackageName%>.Sqoop.runSqoop(codeGenerator_<%=cid%>, new String[0]);
+       	if (0 != ret_<%=cid%>) {
+<%
+				if(dieOnError) {
+%>
+					throw new Exception("The Sqoop jar generation has failed with the following code:" + ret_<%=cid%>);
+<%
+				} else {
+%>
+					System.err.println("The Sqoop jar generation has failed with the following code:" + ret_<%=cid%>);
+					<%if(isLog4jEnabled) {%>
+					log.error("<%=cid%> - The Sqoop jar generation has failed with the following code:" + ret_<%=cid%>);
+					<%}
+				}
+%>
+        	}
+
+        List<String> jars_<%=cid%> = codeGen_<%=cid%>.getGeneratedJarFiles();
+        jarFileName_<%=cid%> = jars_<%=cid%>.get(0);
+		} catch (Exception e) {
+<%
+			if(dieOnError) {
+%>
+				throw e;
+<%
+			} else {
+%>
+				System.err.println(e.getMessage());
+				<%if(isLog4jEnabled) {%>
+				log.error("<%=cid%> - " + e.getMessage());
+				<%}
+			}
+%>
+		}
+<%
+    }
+%>
+
+	java.net.URL[] jars_<%=cid%> = new java.net.URL[] { new java.io.File(jarFileName_<%=cid%>).toURI().toURL() };
+	ClassLoader threadClassLoader_<%=cid%> = Thread.currentThread().getContextClassLoader();
+	java.net.URLClassLoader newthreadClassLoader_<%=cid%> = new java.net.URLClassLoader(jars_<%=cid%>, threadClassLoader_<%=cid%>);
+
+    try {
+		Thread.currentThread().setContextClassLoader(newthreadClassLoader_<%=cid%>);
+    } catch (Exception e) {
+<%
+		if(dieOnError) {
+%>
+			throw e;
+<%
+		} else {
+%>
+			System.err.println(e.getMessage());
+			<%if(isLog4jEnabled) {%>
+			log.error("<%=cid%> - " + e.getMessage());
+			<%}
+		}
+%>
+    }
+
+    <%=sqoopPackageName%>.tool.SqoopTool sqoopTool_<%=cid%> = <%=sqoopPackageName%>.tool.SqoopTool.getTool("merge");
+
+    <%=sqoopPackageName%>.SqoopOptions sqoopOptions_<%=cid%> = new <%=sqoopPackageName%>.SqoopOptions(configuration_<%=cid%>);
+
+	sqoopOptions_<%=cid%>.setMergeOldPath(<%=oldDataDir%>);
+	sqoopOptions_<%=cid%>.setMergeNewPath(<%=newDataDir%>);
+	sqoopOptions_<%=cid%>.setMergeKeyCol(<%=key%>);
+	sqoopOptions_<%=cid%>.setTargetDir(<%=targetDir%>);
+	sqoopOptions_<%=cid%>.setExistingJarName(jarFileName_<%=cid%>);
+<% if(needGenerateJar){ %>
+	sqoopOptions_<%=cid%>.setClassName("SqoopMerge_<%=cid%>");
+<% } else {
+	if(customClassName){
+%>
+	sqoopOptions_<%=cid%>.setClassName(<%=className%>);
+<%	}
+   }
+%>
+
+	org.apache.sqoop.Sqoop sqoop_<%=cid%> = new org.apache.sqoop.Sqoop(sqoopTool_<%=cid%>, configuration_<%=cid%>, sqoopOptions_<%=cid%>);
+	try {
+		int result_<%=cid%> = sqoop_<%=cid%>.run(null);
+		globalMap.put("<%=cid%>_EXIT_CODE", result_<%=cid%>);
+		if(result_<%=cid%> != 0) {
+<%
+			if(dieOnError) {
+%>
+				throw new Exception("The Sqoop merge job has failed. Please check the logs.");
+<%
+			} else {
+%>
+				System.err.println("The Sqoop merge job has failed. Please check the logs.");
+				<%if(isLog4jEnabled) {%>
+				log.error("<%=cid%> - The Sqoop merge job has failed. Please check the logs.");
+				<%}
+			}
+%>
+		}
+	} catch (Exception e) {
+<%
+		if(dieOnError) {
+%>
+			throw e;
+<%
+		} else {
+%>
+			System.err.println(e.getMessage());
+			<%if(isLog4jEnabled) {%>
+			log.error("<%=cid%> - " + e.getMessage());
+			<%}
+		}
+%>
+	}
+
+	<%@ include file="../templates/Sqoop/ResetEnv.javajet"%>

@@ -1,0 +1,594 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.IConnectionCategory
+		java.util.List 
+    	java.util.Map		
+	" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+  	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+  	INode node = (INode)codeGenArgument.getArgument();
+  	String cid = node.getUniqueName();
+
+	String region = ElementParameterParser.getValue(node, "__REGION__");
+
+	boolean useEndPoint = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_ENDPOINT__"));
+	boolean useFilterExpression = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_FILTER_EXPRESSION__"));
+	boolean useAdvancedKeyConditionExpression = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_ADVANCED_KEY_CONDITION_EXPRESSION__"));
+	boolean useAdvancedFilterExpression = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_ADVANCED_FILTER_EXPRESSION__"));
+	final String AWSTracker = org.talend.core.utils.TrackerUtil.getAWSTracker();
+	
+    String endPoint   = ElementParameterParser.getValue(node, "__ENDPOINT__");
+    String table   = ElementParameterParser.getValue(node, "__TABLE__");
+	boolean useIndex = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_INDEX__"));
+	String index   = ElementParameterParser.getValue(node, "__INDEX__");
+	String action = ElementParameterParser.getValue(node, "__ACTION__");
+	
+	String advancedKeyConditionExpression = ElementParameterParser.getValue(node, "__ADVANCED_KEY_CONDITION_EXPRESSION__");
+	String advancedFilterExpression = ElementParameterParser.getValue(node, "__ADVANCED_FILTER_EXPRESSION__");
+	
+	List<Map<String, String>> keyConditionExpression = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__KEY_CONDITION_EXPRESSION__");
+	List<Map<String, String>> filterExpression = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FILTER_EXPRESSION__");
+	
+	List<Map<String, String>> nameMap = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__NAME_MAPPING__");
+	List<Map<String, String>> valueMap = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__VALUE_MAPPING__");
+	
+  	List<IMetadataTable> metadatas = node.getMetadataList();
+  	List<IMetadataColumn> columnList = null;
+  	List<? extends IConnection> outputs = node.getOutgoingSortedConnections();
+  	String firstConnName = "";
+  	if (outputs.size() > 0){
+		IConnection out = outputs.get(0);
+		if(out!=null && out.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+			firstConnName = out.getName();
+		}
+    }
+	%>
+	int nb_line_<%=cid %> = 0;
+	
+	<%
+  	if(metadatas != null && metadatas.size() > 0){
+      	IMetadataTable metadata = metadatas.get(0);
+      	if(metadata != null){		
+			columnList = metadata.getListColumns();
+			int sizeColumns = columnList.size();
+		%>
+
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Amazon/CredentialsProvider.javajet"%>
+
+			com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient dynamoDBClient_<%=cid%> = new com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient(
+				credentialsProvider_<%=cid%>,
+				com.amazonaws.PredefinedClientConfigurations.dynamoDefault().withUserAgent("<%=AWSTracker%>")
+			);
+   
+			if(<%=useEndPoint%>)
+			{
+				dynamoDBClient_<%=cid%> = dynamoDBClient_<%=cid%>.withEndpoint(<%=endPoint%>);
+			}
+			
+		<%
+			if(!useEndPoint && region!=null && !region.isEmpty() && !"DEFAULT".equalsIgnoreCase(region)){
+			%>
+				dynamoDBClient_<%=cid%>.setRegion(com.amazonaws.regions.RegionUtils.getRegion(<%=region%>));
+			<%
+			}
+		%>
+							
+			com.amazonaws.services.dynamodbv2.document.DynamoDB dynamoDB_<%=cid%> = new com.amazonaws.services.dynamodbv2.document.DynamoDB(dynamoDBClient_<%=cid%>);
+			com.amazonaws.services.dynamodbv2.document.Table table_<%=cid%> = dynamoDB_<%=cid%>.getTable(<%=table%>);
+			<%if(useIndex){%>
+			com.amazonaws.services.dynamodbv2.document.Index index_<%=cid%> = table_<%=cid%>.getIndex(<%=index%>);
+			<%}%>
+		
+
+		<%
+		if(action.equalsIgnoreCase("Query")){
+		%>
+			
+			java.util.HashMap<String,Object> valueMap_<%=cid%> = new java.util.HashMap<String,Object>();			
+			java.util.HashMap<String,String> nameMap_<%=cid%> = new java.util.HashMap<String,String>();
+			
+			String keyConditionExpression_<%=cid%> = null;
+			String filterExpression_<%=cid%> = null;
+				
+			
+			<%
+			for(Map<String,String> subNameMap : nameMap)
+			{
+				String placeholder = subNameMap.get("PLACEHOLDER");
+				String name = subNameMap.get("NAME");
+				%>
+					nameMap_<%=cid%>.put("<%=placeholder%>", "<%=name%>");
+				<%
+			}
+			
+			
+			if(useAdvancedKeyConditionExpression || useAdvancedFilterExpression)
+			{			
+				for(Map<String,String> subValueMap : valueMap)
+				{
+					String placeholder = subValueMap.get("PLACEHOLDER");
+					String value = subValueMap.get("VALUE");
+					%>
+						valueMap_<%=cid%>.put("<%=placeholder%>", <%=value%>);
+					<%
+				}
+			}
+					
+			StringBuffer sb = new StringBuffer();	
+			
+			if(!useAdvancedKeyConditionExpression){			
+				for(Map<String,String> subExpression : keyConditionExpression)
+				{
+					String reservedKeyPlaceHolder = null;
+					String valuePlaceHolder1 = null;
+					String valuePlaceHolder2 = null;
+					String keyColumn = subExpression.get("KEY_COLUMN");
+					
+					String validKeyColumnStrForValuePlaceHolder = keyColumn;
+					if(keyColumn!=null && keyColumn.contains("#")) {
+						validKeyColumnStrForValuePlaceHolder = keyColumn.replace("#", "_");
+					}
+
+					valuePlaceHolder1 = ":keyCondition_" + validKeyColumnStrForValuePlaceHolder +"_1";
+					valuePlaceHolder2 = ":keyCondition_" + validKeyColumnStrForValuePlaceHolder +"_2";
+				
+					for(Map<String,String> subNameMap : nameMap){
+						String placeholder = subNameMap.get("PLACEHOLDER");
+						String name = subNameMap.get("NAME");
+						if(name.equals(keyColumn))
+						{
+							reservedKeyPlaceHolder = placeholder;							
+							break;
+						}
+					}
+				
+					String functionStr = subExpression.get("FUNCTION");
+					String value1 = subExpression.get("VALUE_1");
+					String value2 = subExpression.get("VALUE_2");
+					
+
+					
+					if(functionStr.equalsIgnoreCase("Begins_With"))
+					{
+						if(sb.length()>0){
+							sb.append(" and ");	
+						}
+						sb.append(functionStr);
+
+						if(reservedKeyPlaceHolder!=null){
+							sb.append("("+ reservedKeyPlaceHolder + "," + valuePlaceHolder1 + ")");
+						}
+						else{
+							sb.append("("+ keyColumn + "," + valuePlaceHolder1 + ")");
+						}
+					}
+					else{
+						if(sb.length()>0){
+							sb.append(" and ");	
+						}
+			
+						if(reservedKeyPlaceHolder!=null){
+							sb.append(reservedKeyPlaceHolder);
+						}
+						else{
+							sb.append(keyColumn);
+						}
+						sb.append(" ");
+						sb.append(functionStr);
+						sb.append(" ");
+						sb.append(valuePlaceHolder1);	
+						sb.append(" ");
+						
+						if(functionStr.equalsIgnoreCase("Between"))
+						{
+							sb.append("AND");	
+							sb.append(" ");
+							sb.append(valuePlaceHolder2);	
+							sb.append(" ");
+						%>
+							valueMap_<%=cid%>.put("<%=valuePlaceHolder2%>",  <%=value2%>);												
+						<%
+						}							
+					}			
+					%>
+					valueMap_<%=cid%>.put("<%=valuePlaceHolder1%>",  <%=value1%>);					
+					
+				<%
+					
+				}
+				%>
+				
+				keyConditionExpression_<%=cid%> = "<%=sb%>";
+				<%
+			}
+			else{
+				%>
+				keyConditionExpression_<%=cid%> = <%=advancedKeyConditionExpression%>;								
+				<%
+			}
+			%>
+			com.amazonaws.services.dynamodbv2.document.spec.QuerySpec querySpec_<%=cid%> = new com.amazonaws.services.dynamodbv2.document.spec.QuerySpec()
+				.withKeyConditionExpression(keyConditionExpression_<%=cid%>);
+			
+			<%
+			if(useFilterExpression)
+			{
+				sb = new StringBuffer();
+				
+				if(!useAdvancedFilterExpression){	
+			
+				
+					for(Map<String,String> subExpression : filterExpression)
+					{
+						String reservedKeyPlaceHolder = null;
+						String valuePlaceHolder1 = null;
+						String valuePlaceHolder2 = null;
+						String columnName = subExpression.get("COLUMN_NAME");
+						
+						String validColumnNameStrForValuePlaceHolder = columnName;
+						if(columnName!=null && columnName.contains("#")) {
+							validColumnNameStrForValuePlaceHolder = columnName.replace("#", "_");
+						}
+					
+						valuePlaceHolder1 = ":filter_" + validColumnNameStrForValuePlaceHolder +"_1";
+						valuePlaceHolder2 = ":filter_" + validColumnNameStrForValuePlaceHolder +"_2";					
+						
+						for(Map<String,String> subNameMap : nameMap){
+							String placeholder = subNameMap.get("PLACEHOLDER");
+							String name = subNameMap.get("NAME");
+							if(name.equals(columnName))
+							{
+								reservedKeyPlaceHolder = placeholder;							
+								break;
+							}
+						}
+	
+						String functionStr = subExpression.get("FUNCTION");
+						String value1 = subExpression.get("VALUE_1");
+						String value2 = subExpression.get("VALUE_2");
+						
+						if(functionStr.equalsIgnoreCase("Begins_With"))
+						{
+							if(sb.length()>0){
+								sb.append(" and ");	
+							}
+							sb.append(functionStr);
+							
+							if(reservedKeyPlaceHolder!=null){
+								sb.append("("+ reservedKeyPlaceHolder + "," + valuePlaceHolder1 + ")");
+							}
+							else{
+								sb.append("("+ columnName + "," + valuePlaceHolder1 + ")");
+							}
+						}
+						else{
+							if(sb.length()>0){
+								sb.append(" and ");	
+							}
+							
+							if(reservedKeyPlaceHolder!=null){
+								sb.append(reservedKeyPlaceHolder);
+							}
+							else{
+								sb.append(columnName);
+							}
+							sb.append(" ");
+							sb.append(functionStr);
+							sb.append(" ");
+							sb.append(valuePlaceHolder1);	
+							sb.append(" ");
+							
+							if(functionStr.equalsIgnoreCase("Between"))
+							{
+								sb.append("AND");	
+								sb.append(" ");
+								sb.append(valuePlaceHolder2);	
+								sb.append(" ");
+							%>	
+								valueMap_<%=cid%>.put("<%=valuePlaceHolder2%>",  <%=value2%>);													
+							<%
+							}							
+						}	
+						%>						
+						valueMap_<%=cid%>.put("<%=valuePlaceHolder1%>",  <%=value1%>);					
+						
+					<%
+						
+					}
+					%>
+				
+					filterExpression_<%=cid%> = "<%=sb%>";
+				<%					
+				}	
+				else{
+					%>
+					filterExpression_<%=cid%> = <%=advancedFilterExpression%>;
+					<%
+				}
+				%>				
+				if(!filterExpression_<%=cid%>.isEmpty()){			
+					querySpec_<%=cid%> = querySpec_<%=cid%>.withFilterExpression(filterExpression_<%=cid%>);	
+				}
+				
+			<%	
+			}
+			%>
+			
+			if(valueMap_<%=cid%>.size() > 0)
+			{
+				querySpec_<%=cid%> = querySpec_<%=cid%>.withValueMap(valueMap_<%=cid%>);	
+			}
+			
+			if(nameMap_<%=cid%>.size() > 0)
+			{
+				querySpec_<%=cid%> = querySpec_<%=cid%>.withNameMap(nameMap_<%=cid%>);	
+			}
+			
+			com.amazonaws.services.dynamodbv2.document.ItemCollection<com.amazonaws.services.dynamodbv2.document.QueryOutcome> items_<%=cid%> = null;
+			<%if(useIndex){%>
+			    items_<%=cid%> = index_<%=cid%>.query(querySpec_<%=cid%>);
+			<%} else {%>
+			    items_<%=cid%> = table_<%=cid%>.query(querySpec_<%=cid%>);
+			<%}%>
+		<%
+		}
+		else {
+			%>
+			com.amazonaws.services.dynamodbv2.document.spec.ScanSpec scanSpec_<%=cid%> = new com.amazonaws.services.dynamodbv2.document.spec.ScanSpec();	
+			<%
+			if(useFilterExpression){
+			%>
+				java.util.HashMap<String,Object> valueMap_<%=cid%> = new java.util.HashMap<String,Object>();			
+				java.util.HashMap<String,String> nameMap_<%=cid%> = new java.util.HashMap<String,String>();				
+			<%	
+				for(Map<String,String> subNameMap : nameMap)
+				{
+					String placeholder = subNameMap.get("PLACEHOLDER");
+					String name = subNameMap.get("NAME");
+					%>
+						nameMap_<%=cid%>.put("<%=placeholder%>", "<%=name%>");
+					<%
+				}
+				
+				if(useAdvancedFilterExpression)
+				{
+				
+					for(Map<String,String> subValueMap : valueMap)
+					{
+						String placeholder = subValueMap.get("PLACEHOLDER");
+						String value = subValueMap.get("VALUE");
+						%>
+
+							valueMap_<%=cid%>.put("<%=placeholder%>", <%=value%>);
+						
+						<%
+					}
+				}
+				%>
+				String filterExpression_<%=cid%> = null;
+				<%
+				
+				StringBuffer sb = new StringBuffer();	
+				if(!useAdvancedFilterExpression){	
+				
+					for(Map<String,String> subExpression : filterExpression)
+					{
+						String reservedKeyPlaceHolder = null;
+						String valuePlaceHolder1 = null;
+						String valuePlaceHolder2 = null;
+						String columnName = subExpression.get("COLUMN_NAME");
+						
+						String validColumnNameStrForValuePlaceHolder = columnName;
+						if(columnName!=null && columnName.contains("#")) {
+							validColumnNameStrForValuePlaceHolder = columnName.replace("#", "_");
+						}
+						
+						valuePlaceHolder1 = ":filter_" + validColumnNameStrForValuePlaceHolder +"_1";
+						valuePlaceHolder2 = ":filter_" + validColumnNameStrForValuePlaceHolder +"_2";
+						
+						for(Map<String,String> subNameMap : nameMap){
+							String placeholder = subNameMap.get("PLACEHOLDER");
+							String name = subNameMap.get("NAME");
+							if(name.equals(columnName))
+							{
+								reservedKeyPlaceHolder = placeholder;							
+								break;
+							}
+						}
+					
+						String functionStr = subExpression.get("FUNCTION");
+						String value1 = subExpression.get("VALUE_1");
+						String value2 = subExpression.get("VALUE_2");			
+								
+						if(functionStr.equalsIgnoreCase("Begins_With"))
+						{
+							if(sb.length()>0){
+								sb.append(" and ");	
+							}
+							sb.append(functionStr);
+
+							if(reservedKeyPlaceHolder!=null){
+								sb.append("("+ reservedKeyPlaceHolder + "," + valuePlaceHolder1 + ")");
+							}
+							else{
+								sb.append("("+ columnName + "," + valuePlaceHolder1 + ")");
+							}
+						}
+						else{
+							if(sb.length()>0){
+								sb.append(" and ");	
+							}
+							if(reservedKeyPlaceHolder!=null){
+								sb.append(reservedKeyPlaceHolder);
+							}
+							else{
+								sb.append(columnName);
+							}
+							sb.append(" ");
+							sb.append(functionStr);
+							sb.append(" ");
+							sb.append(valuePlaceHolder1);	
+							sb.append(" ");
+							
+							if(functionStr.equalsIgnoreCase("Between"))
+							{
+								sb.append("AND");	
+								sb.append(" ");
+								sb.append(valuePlaceHolder2);	
+								sb.append(" ");
+								%>
+								valueMap_<%=cid%>.put("<%=valuePlaceHolder2%>",  <%=value2%>);					
+								
+							<%
+							}	
+							
+							
+						}
+						%>	
+						valueMap_<%=cid%>.put("<%=valuePlaceHolder1%>",  <%=value1%>);
+						
+					<%
+						
+					}
+					%>
+				
+					filterExpression_<%=cid%> = "<%=sb%>";			
+				<%
+				}
+				else{				
+				%>
+					filterExpression_<%=cid%> = <%=advancedFilterExpression%>;
+				<%	
+				}
+				%>
+				if(!filterExpression_<%=cid%>.isEmpty()){			
+					scanSpec_<%=cid%> = scanSpec_<%=cid%>.withFilterExpression(filterExpression_<%=cid%>);	
+				}
+				
+				if(valueMap_<%=cid%>.size() > 0)
+				{
+					scanSpec_<%=cid%> = scanSpec_<%=cid%>.withValueMap(valueMap_<%=cid%>);	
+				}
+				
+				if(nameMap_<%=cid%>.size() > 0)
+				{
+					scanSpec_<%=cid%> = scanSpec_<%=cid%>.withNameMap(nameMap_<%=cid%>);	
+				}
+			<%
+			}
+			%>
+			com.amazonaws.services.dynamodbv2.document.ItemCollection<com.amazonaws.services.dynamodbv2.document.ScanOutcome> items_<%=cid%> = null;
+			<%if(useIndex){%>
+			    items_<%=cid%> = index_<%=cid%>.scan(scanSpec_<%=cid%>);
+			<%} else {%>
+			    items_<%=cid%> = table_<%=cid%>.scan(scanSpec_<%=cid%>);
+			<%}%>
+			
+		<%
+		}
+		%>
+		com.amazonaws.services.dynamodbv2.document.Item item_<%=cid%> = null;
+		java.util.Iterator<com.amazonaws.services.dynamodbv2.document.Item> iterator_<%=cid%> = null;
+		iterator_<%=cid%> = items_<%=cid%>.iterator();
+		while (iterator_<%=cid%>.hasNext()) {
+  
+<%  
+          columnList = metadata.getListColumns();
+          sizeColumns = columnList.size();
+%>
+          nb_line_<%=cid %>++;
+          item_<%=cid%> = iterator_<%=cid%>.next();
+          
+<%
+			if(firstConnName.length()>0){	
+%>
+				Object valueObj_<%=cid%>=null;
+<%
+				for (int i = 0; i < sizeColumns; i++) {
+					IMetadataColumn column = columnList.get(i);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+					if("JSON".equalsIgnoreCase(column.getType()) && javaType == JavaTypesManager.STRING) {
+%>
+						valueObj_<%=cid%>=item_<%=cid%>.getJSON("<%=column.getOriginalDbColumnName() %>");
+<%
+					} else {
+%>
+						valueObj_<%=cid%>=item_<%=cid%>.get("<%=column.getOriginalDbColumnName() %>");
+<%
+					}
+          			if(javaType == JavaTypesManager.OBJECT) {
+%>
+						<%=firstConnName %>.<%=column.getLabel() %> = valueObj_<%=cid%>;
+<%
+          			}else{
+%>
+						if(valueObj_<%=cid%>!=null && valueObj_<%=cid%>.toString().length() > 0) {
+<%
+							if(javaType == JavaTypesManager.DATE) {
+%>
+								<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date((String)valueObj_<%=cid%>, <%= patternValue %>);
+<%
+							}else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+								<%=firstConnName %>.<%=column.getLabel() %> = java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap((byte[])valueObj_<%=cid%>)).toString().getBytes(utf8Charset);
+<%
+							} else if(javaType == JavaTypesManager.STRING){
+%>
+								<%=firstConnName %>.<%=column.getLabel() %> = valueObj_<%=cid%>.toString();
+<%
+							} else if (javaType == JavaTypesManager.INTEGER){
+%>
+								if (valueObj_<%=cid%>.getClass().equals(Double.class)) {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Double(valueObj_<%=cid%>.toString()).intValue();
+								} else {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(valueObj_<%=cid%>.toString());
+								}
+<%
+							} else if (javaType == JavaTypesManager.LONG){
+%>	
+								if (valueObj_<%=cid%>.getClass().equals(Double.class)) {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Double(valueObj_<%=cid%>.toString()).longValue();
+								} else {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(valueObj_<%=cid%>.toString());
+								}
+<%
+							} else if (javaType == JavaTypesManager.SHORT){
+%>
+								if (valueObj_<%=cid%>.getClass().equals(Double.class)) {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Double(valueObj_<%=cid%>.toString()).shortValue();
+								} else {
+									<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(valueObj_<%=cid%>.toString());
+								}
+<%
+							} else {
+%>
+								<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(valueObj_<%=cid%>.toString());
+<%
+							}
+%>
+						}else{
+							<%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+						}
+          
+<%
+					}
+				}
+			}
+
+	}
+
+} 
+%>
+

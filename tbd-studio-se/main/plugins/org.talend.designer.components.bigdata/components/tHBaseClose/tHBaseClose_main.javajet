@@ -1,0 +1,67 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+	
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+	log4jFileUtil.componentStartInfo(node);
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+
+    String conn = "conn_" + connection;
+    String hbase_connection = "connection_" + connection;
+    
+    String distribution = null;
+    String hbaseVersion = null;
+    org.talend.hadoop.distribution.component.HBaseComponent hbaseDistrib = null;
+    boolean isCustom = false;
+    boolean isHadoop2 = false;
+    boolean isHBase2x = false;
+	List<? extends INode> nodes = node.getProcess().getGeneratingNodes();
+    for(INode targetNode : nodes){
+		if (targetNode.getUniqueName().equals(connection)) {
+            distribution = ElementParameterParser.getValue(targetNode, "__DISTRIBUTION__");
+        	hbaseVersion = ElementParameterParser.getValue(targetNode, "__HBASE_VERSION__");
+            isHadoop2 = "HADOOP_2".equals(ElementParameterParser.getValue(targetNode, "__HADOOP_CUSTOM_VERSION__"));
+            try {
+                isHBase2x = "HBASE_2".equals(ElementParameterParser.getValue(targetNode, "__HBASE_API_VERSION__"));
+            } finally {
+                //NPE if not spark
+            }
+            try {
+                hbaseDistrib = (org.talend.hadoop.distribution.component.HBaseComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, hbaseVersion);
+                boolean isSparkDistrib = "SPARK".equals(distribution);
+                isHBase2x = isSparkDistrib ? isHBase2x : hbaseDistrib.doSupportHBase2x();
+            } catch (java.lang.Exception e) {
+                e.printStackTrace();
+                return "";
+            }
+            isCustom = hbaseDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+            break;
+	    }
+    }
+%>
+//new connection close
+	org.apache.hadoop.hbase.client.Connection connection_<%=cid%> = (org.apache.hadoop.hbase.client.Connection)globalMap.get("<%=hbase_connection%>");
+    	if(connection_<%=cid%> != null )
+    	{
+    		connection_<%=cid%>.close();
+    		globalMap.remove("<%=hbase_connection%>");
+    	}
+
+	org.apache.hadoop.conf.Configuration conn_<%=cid%> = (org.apache.hadoop.conf.Configuration)globalMap.get("<%=conn%>");
+	if(conn_<%=cid%> != null )
+	{
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HBase/CloseHBaseConnection.javajet"%>
+		globalMap.remove("<%=conn%>");
+	}

@@ -1,0 +1,89 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String localdir = ElementParameterParser.getValue(node, "__LOCALDIR__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	
+	String fileAction = ElementParameterParser.getValue(node, "__FILE_ACTION__");
+	boolean append = ("APPEND").equals(fileAction);
+	boolean overwrite = append || ("OVERWRITE").equals(fileAction);
+	
+	String remotedir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+	boolean includeSubDir = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDSUBDIR__"));
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+	java.util.Set<String> keySet_<%=cid %> = map_<%=cid %>.keySet();
+    for (String key_<%=cid %> : keySet_<%=cid %>){     
+		String tempdir_<%=cid %> =  <%=remotedir%>;
+		String filemask_<%=cid %> = key_<%=cid %>; 
+		String dir_<%=cid %> = null;	
+		String mask_<%=cid %> = filemask_<%=cid %>.replaceAll("\\\\", "/") ;	
+		int i_<%=cid %> = mask_<%=cid %>.lastIndexOf('/');
+  		if (i_<%=cid %>!=-1){
+			dir_<%=cid %> = mask_<%=cid %>.substring(0, i_<%=cid %>); 
+			mask_<%=cid %> = mask_<%=cid %>.substring(i_<%=cid %>+1);	 
+    	}
+    	if (dir_<%=cid %>!=null && !"".equals(dir_<%=cid %>)) tempdir_<%=cid %> = tempdir_<%=cid %> + "/" + dir_<%=cid %>;  
+    	mask_<%=cid %> = mask_<%=cid %>.replaceAll("\\.", "\\\\.").replaceAll("\\*", ".*");
+    	final String finalMask_<%=cid %> = mask_<%=cid %>;
+		
+		org.apache.hadoop.fs.FileStatus[] fileStatusList_<%=cid%> = fs_<%=cid%>.listStatus(new org.apache.hadoop.fs.Path(tempdir_<%=cid%>));
+		org.apache.hadoop.fs.Path[] filePathList_<%=cid%> = org.apache.hadoop.fs.FileUtil.stat2Paths(fileStatusList_<%=cid%>);
+		if(filePathList_<%=cid%>==null){
+			System.err.println("No match file("+key_<%=cid %>+") exists!");
+			
+			<%if(isLog4jEnabled) {%>
+       		log.error("<%=cid%> - No match file("+key_<%=cid %>+") exists.");
+        	<%}%>
+		}else{
+			String localFilePath_<%=cid%> = "";
+	    	for(org.apache.hadoop.fs.Path path_<%=cid%>:filePathList_<%=cid%>){
+				if(path_<%=cid%>.getName().matches(finalMask_<%=cid%>)){
+					if("".equals(map_<%=cid %>.get(key_<%=cid %>))){
+						localFilePath_<%=cid%> = <%=localdir%>+"/"+path_<%=cid%>.getName();
+					}else{
+						localFilePath_<%=cid%> = <%=localdir%>+"/"+map_<%=cid %>.get(key_<%=cid %>);
+					}
+					try{
+						FileUtil_<%=cid%> fileutil_<%=cid%> = new FileUtil_<%=cid%>();
+						boolean success_<%=cid%> = fileutil_<%=cid%>.copyToLocal(fs_<%=cid%>, path_<%=cid%>, new java.io.File(localFilePath_<%=cid%>),
+    						<%=overwrite%>, <%=append%>, <%=includeSubDir%>);
+						if(success_<%=cid%>) {
+							msg_<%=cid%>.add("file: " + path_<%=cid%>.toString() + ", size: "
+		                    	+ fileutil_<%=cid%>.getSize() + " bytes download successfully");
+		                    nb_success_<%=cid%>++;
+		                }
+					}catch(java.io.IOException e){
+						<%
+  							if(("true").equals(dieOnError)){
+						%>
+            			throw(e);
+						<%
+							}else{
+						%>
+						System.err.print(e.getMessage());
+						<%	
+								if(isLog4jEnabled) {
+								%>
+						log.error("<%=cid%> - " +e.getMessage());
+								<%	
+								}
+							} 
+						%>
+					}
+					nb_file_<%=cid%>++;
+				}
+			}
+		}
+	}

@@ -1,0 +1,48 @@
+<%@ jet
+    imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    java.util.HashMap
+"
+%>
+
+<%@ include file="@{org.talend.designer.components.bigdata}/components/tKafkaConnection/tSetKeystore_util.javajet"%>
+<%@ include file="@{org.talend.designer.components.bigdata}/components/tKafkaInput/tKafkaInput_util.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+INode kiNode = ElementParameterParser.getLinkedNodeValue(node, "__KAFKA_INPUT_COMPONENT__");
+String kiCid = kiNode.getUniqueName();
+
+TKafkaInputUtil tKafkaInputUtil = new TKafkaInputUtil(kiNode);
+
+if(tKafkaInputUtil.isKafkaVersion("KAFKA_0_8_2_0")) {
+%>
+	if (globalMap.containsKey("<%=kiCid%>_consumerConnector")) {
+	    ((kafka.javaapi.consumer.ConsumerConnector) globalMap.get("<%=kiCid%>_consumerConnector")).commitOffsets();
+	} else {
+	    throw new RuntimeException("Could not commit offsets : no consumer has been found from <%=kiCid%>");
+	}
+<%
+} else if(tKafkaInputUtil.isKafkaVersion("KAFKA_0_9_0_1","KAFKA_0_10_0_1","KAFKA_1_1_0","KAFKA_2_2_1","KAFKA_2_4_0","KAFKA_3_2_3")) {
+%>
+	if (globalMap.containsKey("<%=kiCid%>_kafkaConsumer")) {
+	    ((org.apache.kafka.clients.consumer.KafkaConsumer) globalMap.get("<%=kiCid%>_kafkaConsumer")).commitSync();
+	} else {
+	    throw new RuntimeException("Could not commit offsets : no consumer has been found from <%=kiCid%>");
+	}
+<%
+}
+%>
+
+

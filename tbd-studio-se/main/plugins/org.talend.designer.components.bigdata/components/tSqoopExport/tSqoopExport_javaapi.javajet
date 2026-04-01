@@ -1,0 +1,236 @@
+<%@jet
+%>
+<%
+	String distribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+	String version = ElementParameterParser.getValue(node, "__DB_VERSION__");
+
+	org.talend.hadoop.distribution.component.SqoopComponent sqoopDistrib = null;
+	try {
+		sqoopDistrib = (org.talend.hadoop.distribution.component.SqoopComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, version);
+	} catch (java.lang.Exception e) {
+		e.printStackTrace();
+		return "";
+	}
+
+	boolean isCustom = sqoopDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+	
+	List<Map<String, String>> hadoopProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HADOOP_ADVANCED_PROPERTIES__");
+	
+	String namenode = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+	String jobtracker = ElementParameterParser.getValue(node, "__MAPRED_JOB_TRACKER__");
+	boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String table = ElementParameterParser.getValue(node,"__TABLE__");
+	String username = ElementParameterParser.getValue(node,"__USERNAME__");
+	String exportDir = ElementParameterParser.getValue(node,"__EXPORT_DIR__");
+	boolean printLog = "true".equals(ElementParameterParser.getValue(node,"__PRINT_LOG__"));
+	boolean verbose = "true".equals(ElementParameterParser.getValue(node,"__VERBOSE__"));
+	boolean direct = "true".equals(ElementParameterParser.getValue(node,"__DIRECT__"));
+	boolean useMappers = "true".equals(ElementParameterParser.getValue(node,"__USE_MAPPERS__"));
+	String mappers = ElementParameterParser.getValue(node,"__MAPPERS__");
+	List<Map<String,String>> additionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__ADDITIONAL_JAVA__");
+
+	String fsDefalutName = "fs.default.name";
+	String driverClass = ElementParameterParser.getValue(node, "__DRIVER_CLASS__");
+
+	boolean useBatchMode = "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_MODE__"));
+	boolean clearStagingTable = "true".equals(ElementParameterParser.getValue(node, "__CLEAR_STAGING_TABLE__"));
+	boolean defineStagingTable = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_STAGING_TABLE__"));
+	String stagingTable = ElementParameterParser.getValue(node, "__STAGING_TABLE__");
+    boolean useDatanodeHostname = "true".equals(ElementParameterParser.getValue(node, "__USE_DATANODE_HOSTNAME__"));
+	boolean callProcStock = "true".equals(ElementParameterParser.getValue(node, "__CALL_PROC_STOC__"));
+	String procStock = ElementParameterParser.getValue(node, "__PROC_STOC__");
+	boolean defineUpdateMode = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_UPDATE_MODE__"));
+	String updateMode = ElementParameterParser.getValue(node, "__UPDATE_MODE__");
+	boolean overrideJavaMapping = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_JAVA_MAPPING__"));
+	boolean useColumnForUpdate = "true".equals(ElementParameterParser.getValue(node, "__USE_COLUMN_FOR_UPDATE__"));
+	boolean passwordStoredInFile = "true".equals(ElementParameterParser.getValue(node, "__PASSWORD_STORED_IN_FILE__"));
+
+    boolean useMapRTicket = ElementParameterParser.getBooleanValue(node, "__USE_MAPRTICKET__");
+    String mapRTicketUsername = ElementParameterParser.getValue(node, "__MAPRTICKET_USERNAME__");
+    String mapRTicketCluster = ElementParameterParser.getValue(node, "__MAPRTICKET_CLUSTER__");
+    String mapRTicketDuration = ElementParameterParser.getValue(node, "__MAPRTICKET_DURATION__");
+
+    boolean setMapRHomeDir = ElementParameterParser.getBooleanValue(node, "__SET_MAPR_HOME_DIR__");
+    String mapRHomeDir = ElementParameterParser.getValue(node, "__MAPR_HOME_DIR__");
+
+    boolean setMapRHadoopLogin = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_LOGIN__");
+    String mapRHadoopLogin = ElementParameterParser.getValue(node, "__HADOOP_LOGIN__");
+
+    String passwordFieldName = "";
+
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+%>
+	<%@ include file="../templates/Sqoop/GetConfig.javajet"%>
+	configuration_<%=cid%>.set("mapreduce.job.user.classpath.first","true");
+	
+<%
+	String sqoopPackageName = ((org.talend.hadoop.distribution.AbstractDistribution) sqoopDistrib).getSqoopPackageName();
+%>
+	
+	<%=sqoopPackageName%>.tool.SqoopTool sqoopTool_<%=cid%> = <%=sqoopPackageName%>.tool.SqoopTool.getTool("export");
+
+	<%=sqoopPackageName%>.SqoopOptions sqoopOptions_<%=cid%> = new <%=sqoopPackageName%>.SqoopOptions(configuration_<%=cid%>);
+	
+	sqoopOptions_<%=cid%>.setConnectString(<%=connection%>); // __CONNECTION__
+<%	
+	if (!callProcStock) {
+		if (!table.replaceAll("\"","").isEmpty()) {
+%>
+	sqoopOptions_<%=cid%>.setTableName(<%=table%>);
+<%		}
+	}
+    if (verbose) {
+%>
+	sqoopOptions_<%=cid%>.setVerbose(true);  // __VERBOSE__
+<%
+	}
+%>
+	sqoopOptions_<%=cid%>.setExportDir(<%=exportDir%>);
+<% if (!username.replaceAll("\"","").isEmpty()) {%>		
+	sqoopOptions_<%=cid%>.setUsername(<%=username%>); // __USERNAME__
+<%}%>
+	if((<%=driverClass%> != null) && !"".equals(<%=driverClass%>)) {
+    	<%=sqoopPackageName%>.metastore.JobData jobData_<%=cid%> = new <%=sqoopPackageName%>.metastore.JobData(sqoopOptions_<%=cid%>, null);
+    	org.apache.sqoop.manager.DefaultManagerFactory defaultManagerFactory_<%=cid%> = new org.apache.sqoop.manager.DefaultManagerFactory();
+    	if(null == defaultManagerFactory_<%=cid%>.accept(jobData_<%=cid%>)) {
+    		sqoopOptions_<%=cid%>.setDriverClassName(<%=driverClass%>);//driver class name
+    	}
+    }
+	
+	<%if (!passwordStoredInFile || !sqoopDistrib.doJavaAPISupportStorePasswordInFile()) {%>
+		<%
+		passwordFieldName = "__PASSWORD__";
+    	if (!ElementParameterParser.getValue(node, "__PASSWORD__").replaceAll("\"","").isEmpty()) {%>
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+			sqoopOptions_<%=cid%>.setPassword(decryptedPassword_<%=cid%>); // __PASSWORD__
+	<%	}
+	  } else {%>
+		sqoopOptions_<%=cid%>.setPasswordFilePath(<%=(String)ElementParameterParser.getValue(node, "__PASSWORD_FILE__")%>);
+		sqoopOptions_<%=cid%>.setPassword(org.apache.sqoop.util.CredentialsUtil.fetchPassword<%=sqoopDistrib.doSupportFetchPasswordFromFile()?"FromFile":""%>(sqoopOptions_<%=cid%>));
+	<%}%>
+
+	<%if(direct && (!defineUpdateMode || "updateonly".equals(updateMode))){%>sqoopOptions_<%=cid%>.setDirectMode(true);<%}%>
+	<%if(useMappers){%>sqoopOptions_<%=cid%>.setNumMappers(Integer.valueOf(<%=mappers%>));<%}%>
+	<%if(useBatchMode){%>sqoopOptions_<%=cid%>.setBatchMode(true);<%}%>
+	<%if(clearStagingTable && !useColumnForUpdate && !callProcStock){%>sqoopOptions_<%=cid%>.setClearStagingTable(true);<%}%>
+	<%if(callProcStock){%>sqoopOptions_<%=cid%>.setCall(<%=procStock%>);<%}%>
+	<%if(defineStagingTable && !useColumnForUpdate && !callProcStock){%>sqoopOptions_<%=cid%>.setStagingTableName(<%=stagingTable%>);<%}%>
+	<%if(!useColumnForUpdate && defineUpdateMode){%>sqoopOptions_<%=cid%>.setUpdateMode(<%=sqoopPackageName%>.SqoopOptions.<%="updateonly".equals(updateMode)?"UpdateMode.UpdateOnly":"UpdateMode.AllowInsert"%>);<%}%>
+	<%
+		if(useColumnForUpdate && !defineUpdateMode && !callProcStock) {
+			List<Map<String,String>> columnsForUpdate = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__COLUMN_FOR_UPDATE__");
+			if(columnsForUpdate!=null && columnsForUpdate.size()>0) {
+	%>
+				StringBuilder sb_update_<%=cid%> = new StringBuilder();
+	<%
+				boolean first = true;	
+				for(Map<String,String> columnForUpdate : columnsForUpdate) {
+					if(first) {
+						first = false;
+	%>
+						sb_update_<%=cid%>.append(<%=columnForUpdate.get("COLUMN_NAME")%>);
+	<%
+					} else {
+	%>
+						sb_update_<%=cid%>.append("," + <%=columnForUpdate.get("COLUMN_NAME")%>);
+	<%
+					}	
+				}
+	%>
+				sqoopOptions_<%=cid%>.setUpdateKeyCol(sb_update_<%=cid%>.toString());
+	<%
+			}
+		}
+		if(overrideJavaMapping) {
+			List<Map<String,String>> javaMappings = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__JAVA_TYPE_MAPPING__");
+			if(javaMappings!=null && javaMappings.size()>0) {
+	%>
+				StringBuilder sb_java_<%=cid%> = new StringBuilder();
+	<%
+				boolean first = true;	
+				for(Map<String,String> javaMapping : javaMappings) {
+					if(first) {
+						first = false;
+	%>
+						sb_java_<%=cid%>.append(<%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>);
+	<%
+					} else {
+	%>
+						sb_java_<%=cid%>.append("," + <%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>);
+	<%
+					}	
+				}
+	%>
+				sqoopOptions_<%=cid%>.setMapColumnJava(sb_java_<%=cid%>.toString());
+	<%
+			}
+		}
+	%>
+	java.util.Properties additionalProperties_<%=cid%> = new java.util.Properties();
+	<%
+	if(sqoopDistrib.isImpactedBySqoop2995()){
+	//TODO, relate with https://issues.apache.org/jira/browse/SQOOP-2995, have to set a init value to the new map type key "customtool.options.jsonmap". But the key hasn't been used
+	%>
+		additionalProperties_<%=cid%>.put("customtool.options.jsonmap", "{\"\":\"\"}");
+	<%
+	}
+	if(passwordStoredInFile) {
+		
+	}
+	if(additionalList != null){ 
+		for(Map<String,String> additionalMap : additionalList){
+			if(additionalMap.get("ADDITIONAL_VALUE")==null || "".equals(additionalMap.get("ADDITIONAL_VALUE"))) { 
+				break; 
+			}
+			String currentArgument = additionalMap.get("ADDITIONAL_ARGUMENT");
+	                if(currentArgument.contains("delimiters") && !currentArgument.contains("required")) {
+%> 
+				additionalProperties_<%=cid%>.put(<%=currentArgument%>, ""+<%=additionalMap.get("ADDITIONAL_VALUE")%>.codePointAt(0)); 
+<%
+			} else {
+%> 
+				additionalProperties_<%=cid%>.put(<%=currentArgument%>, <%=additionalMap.get("ADDITIONAL_VALUE")%>); 
+<%
+			}
+		} 
+	} 
+%>
+	sqoopOptions_<%=cid%>.loadProperties(additionalProperties_<%=cid%>);
+	org.apache.sqoop.Sqoop sqoop_<%=cid%> = new org.apache.sqoop.Sqoop(sqoopTool_<%=cid%>, configuration_<%=cid%>, sqoopOptions_<%=cid%>);
+
+	try {
+		int result_<%=cid%> = sqoop_<%=cid%>.run(null);
+		globalMap.put("<%=cid%>_EXIT_CODE", result_<%=cid%>);
+		if(result_<%=cid%> != 0) {
+<%
+			if(dieOnError) {
+%>
+				throw new Exception("The Sqoop export job has failed. Please check the logs.");
+<%
+			} else {
+%>
+				System.err.println("The Sqoop export job has failed. Please check the logs.");
+				<%if(isLog4jEnabled) {%>
+				log.error("<%=cid%> - The Sqoop export job has failed. Please check the logs.");
+				<%}
+			}
+%>
+		}
+	} catch (Exception e) {
+<%
+		if(dieOnError) {
+%>
+			throw e;
+<%
+		} else {
+%>
+			System.err.println(e.getMessage());
+			<%if(isLog4jEnabled) {%>
+			log.error("<%=cid%> - " + e.getMessage());
+			<%}
+		}
+%>
+	}
+	
+	<%@ include file="../templates/Sqoop/ResetEnv.javajet"%>

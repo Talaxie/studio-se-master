@@ -1,0 +1,43 @@
+<%@ jet
+	imports="
+	java.util.List
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+	if(node.isVirtualGenerateNode()){
+		List<IMetadataTable> mestadataTableListOut = node.getMetadataList();
+		if (mestadataTableListOut!=null && mestadataTableListOut.size()>0) {
+		    IMetadataTable metadataTableOutput = mestadataTableListOut.get(0);
+		    if (metadataTableOutput!=null) { 
+				IConnection outputConn = null;
+				List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+				if (outConns!=null) {
+					if (outConns.size()>0) {
+						IConnection conn = outConns.get(0);
+						if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+							outputConn = conn;
+							String conn_name = outputConn.getName();
+							List<IMetadataColumn> outputColumns = metadataTableOutput.getListColumns();
+							String cid = ElementParameterParser.getValue(node, "__DESTINATION__");
+							for(IMetadataColumn column :outputColumns){
+								String columnName = column.getLabel();
+%>
+							<%=conn_name%>.<%=columnName%> =row_<%=cid%>.<%=columnName%>;
+<%
+							}
+						}
+					}
+				}
+		    }
+		}
+	}
+%>

@@ -1,0 +1,82 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.process.IConnectionCategory
+	
+    java.util.List 
+  " 
+%>
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean customEncoding="true".equals( ElementParameterParser.getValue(node,"__CUSTOM_ENCODING__"));
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+String firstConnName = "";
+if (conns!=null) {
+	if (conns.size()>0) {
+		IConnection conn = conns.get(0);
+		if(conn!=null && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+			firstConnName = conn.getName();
+%>
+<%=firstConnName %> = new <%=conn.getName() %>Struct();
+<%
+		}
+	}
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)&& firstConnName.length()>0) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		List<IMetadataColumn> listColumns = metadata.getListColumns();
+		for (int valueN = 0; valueN < listColumns.size(); valueN++) {
+			IMetadataColumn column = listColumns.get(valueN);
+			String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+			if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+<%=firstConnName %>.<%=column.getLabel() %> = fid_<%=cid %>.get(<%=valueN %>);
+<%
+			} else {
+%>
+if(fid_<%=cid %>.get(<%=valueN %>)!=null && fid_<%=cid %>.get(<%=valueN %>).length() > 0) {
+<%
+					if(javaType == JavaTypesManager.DATE) {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(fid_<%=cid %>.get(<%=valueN %>), <%= patternValue %>);
+<%
+					}else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = fid_<%=cid %>.get(<%=valueN %>).getBytes(<%=(customEncoding?encoding:"utf8Charset")%>);
+<%
+					} else {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(fid_<%=cid %>.get(<%=valueN %>));
+<%
+					}
+%>
+}else{
+	<%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+}
+<%
+			}
+%>
+<%
+		} // for
+		
+		
+	}
+}
+%>

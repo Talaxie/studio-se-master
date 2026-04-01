@@ -1,0 +1,230 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.utils.NodeUtil
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+    	java.util.Map 
+    	java.util.HashSet 
+    	java.util.Set 
+	" 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();	
+    
+    String query = ElementParameterParser.getValue(node, "__QUERY__");
+    query = query.replaceAll("\n"," ");
+    query = query.replaceAll("\r"," ");
+    List<Map<String, String>> listParameters = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__PARAMETERS__");
+    boolean dieOnError = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));   
+    String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__"); 
+
+    boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"));
+    String dbVersion = ElementParameterParser.getValue(node,"__DB_VERSION__");
+	if(useExistingConnection){
+	    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+        INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+        dbVersion = ElementParameterParser.getValue(connectionNode, "__DB_VERSION__");
+    }
+
+    List<IMetadataColumn> columnList = null;
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    
+    if (metadatas != null && metadatas.size() > 0) {
+    	IMetadataTable metadata = metadatas.get(0);
+    	if (metadata != null) {
+    		columnList = metadata.getListColumns();
+    	}
+    }	
+    
+    List<? extends IConnection> inputs = node.getIncomingConnections();
+    List<? extends IConnection> outputs = node.getOutgoingSortedConnections();
+    String incomingConnName = null;
+    String outgoingConnName = null;
+    
+    if (inputs.size() > 0) {
+    	IConnection in = inputs.get(0);
+    	incomingConnName = in.getName();
+    }
+    
+    if (outputs.size() > 0) {
+    	IConnection out = outputs.get(0);
+    	outgoingConnName = out.getName();
+    }
+    
+    String rejectConnName = null;
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if (rejectConns != null && rejectConns.size() > 0) {
+    	IConnection rejectConn = rejectConns.get(0);
+    	rejectConnName = rejectConn.getName();
+    }
+    
+    List<IMetadataColumn> rejectColumnList = null;
+    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    if (metadataTable != null) {
+    	rejectColumnList = metadataTable.getListColumns();
+    }
+    
+    Set<String> inputCols = new HashSet();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			List< ? extends IConnection> conns = node.getIncomingConnections();
+			columnList = metadata.getListColumns();
+			if(conns != null && conns.size()>0){
+				IConnection conn = conns.get(0);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					incomingConnName = conn.getName();
+					IMetadataTable inputMetadataTable = conn.getMetadataTable();
+					for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+						inputCols.add(inputCol.getLabel());
+					}
+				}
+			}
+		}
+	}
+    %>
+    java.util.Map<String, Object> parameters_<%=cid%> = new java.util.HashMap<String, Object>();
+    <%
+    for (Map<String, String> parameter : listParameters) {
+    	%>
+    	parameters_<%=cid%>.put(<%=parameter.get("PARAMETER_NAME")%>, <%=incomingConnName%>.<%=parameter.get("PARAMETER_VALUE")%>);
+    	<%
+    }   
+    if("NEO4J_3_2_X".equals(dbVersion)){
+    %>
+    org.neo4j.driver.v1.StatementResult result_<%=cid%> = null;
+    try{
+        result_<%=cid%> = transaction_<%=cid%>.run(<%=query%>, parameters_<%=cid%>);
+    
+    <%} else {%>
+	org.neo4j.cypher.ExecutionResult result_<%=cid%> = null;
+    try {
+    	if(engine_<%=cid%>!=null){
+    		result_<%=cid%> = engine_<%=cid%>.execute(<%=query%>, parameters_<%=cid%>);
+    	}
+    	if(queryEngine_<%=cid%>!=null){
+    		queryEngine_<%=cid%>.query(<%=query%>, parameters_<%=cid%>);
+    	}
+    <%}%>
+    } catch (Exception e_<%=cid%>) {
+    	<%
+    	if (dieOnError) {
+    		%>
+    		throw(e_<%=cid%>);
+    		<%
+    	} else {
+    		if (rejectConnName != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+    			%>
+    			<%=rejectConnName%> = new <%=rejectConnName%>Struct();
+    			<%
+    			if (incomingConnName != null) {
+    				for (IMetadataColumn column : columnList) {
+    					if (inputCols.contains(column.getLabel())) {
+    					%>
+    					<%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+    					<%
+    					}
+    				}
+    			}
+    			%>
+    			<%=rejectConnName%>.errorMessage = e_<%=cid%>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName()%>;
+    			<%
+    		} else {
+    			%>
+    			System.err.print(e_<%=cid%>.getMessage());
+    			<%
+    		}
+    	}
+    	%>
+    }
+    <%
+        if("NEO4J_3_2_X".equals(dbVersion)){
+    %>
+    if(result_<%=cid%>!=null) {
+        globalMap.put("<%=cid %>_StatementResult", result_<%=cid%>);
+    	org.neo4j.driver.v1.summary.SummaryCounters sc_<%=cid%> = result_<%=cid%>.consume().counters();
+        nbNodeInserted_<%=cid%> += sc_<%=cid%>.nodesCreated();
+        nbRelationshipInserted_<%=cid%> += sc_<%=cid%>.relationshipsCreated();
+        nbPropertiesUpdated_<%=cid%> += sc_<%=cid%>.propertiesSet();
+        nbNodeDeleted_<%=cid%> += sc_<%=cid%>.nodesDeleted();
+        nbRelationshipDeleted_<%=cid%> += sc_<%=cid%>.relationshipsDeleted();
+        
+    }
+    <%} else {%>
+
+	if(result_<%=cid%>!=null) {
+		nbNodeInserted_<%=cid%> += result_<%=cid%>.queryStatistics().nodesCreated();
+		nbRelationshipInserted_<%=cid%> += result_<%=cid%>.queryStatistics().relationshipsCreated();
+		nbPropertiesUpdated_<%=cid%> += result_<%=cid%>.queryStatistics().propertiesSet();
+		<%
+	    if ("NEO4J_1_X_X".equals(dbVersion)) {
+	        %>
+            nbNodeDeleted_<%=cid%> += result_<%=cid%>.queryStatistics().deletedNodes();
+            nbRelationshipDeleted_<%=cid%> += result_<%=cid%>.queryStatistics().deletedRelationships();
+	        <%
+	    } else { // NEO4J_2_1_X or NEO4J_2_2_X
+	        %>
+            nbNodeDeleted_<%=cid%> += result_<%=cid%>.queryStatistics().nodesDeleted();
+            nbRelationshipDeleted_<%=cid%> += result_<%=cid%>.queryStatistics().relationshipsDeleted();
+	        <%
+	    }
+	    %>
+	}
+		
+	<%}%>
+	
+	counter_<%=cid%>++;
+
+	if (counter_<%=cid%> % Long.parseLong(<%=commitEvery%>) == 0) {
+	    <%
+	    if ("NEO4J_3_2_X".equals(dbVersion)) {%>
+	    	transaction_<%=cid%>.success();
+	    	transaction_<%=cid%>.close();
+	    	transaction_<%=cid%> = session_<%=cid%>.beginTransaction();
+	    	
+	    <%}else {
+	    	if ("NEO4J_1_X_X".equals(dbVersion)) {
+            %>
+            tx_<%=cid%>.success();
+            tx_<%=cid%>.finish();
+            <%
+        	} else if ("NEO4J_2_1_X".equals(dbVersion)) { // NEO4J_2_1_X
+            %>
+            try {
+                tx_<%=cid%>.success();
+            } finally {
+                tx_<%=cid%>.close();
+            }
+
+            if (databaseService_<%=cid%>.getClass().equals(org.neo4j.kernel.EmbeddedGraphDatabase.class)) {
+                while (((org.neo4j.kernel.EmbeddedGraphDatabase)databaseService_<%=cid%>).transactionRunning()){
+                    // wait the end of the previous transaction
+                }
+            }
+            <%
+        	} else { // NEO4J_2_2_X : usage of Spring rest
+            %>
+            try {
+                tx_<%=cid%>.success();
+            } finally {
+                tx_<%=cid%>.close();
+            }
+
+            if (databaseService_<%=cid%>.getClass().equals(org.neo4j.kernel.EmbeddedGraphDatabase.class)) {
+                ((org.neo4j.kernel.EmbeddedGraphDatabase)databaseService_<%=cid%>).isAvailable(10000l);
+            }
+            <%
+        	}
+        %>
+
+		 tx_<%=cid%> = databaseService_<%=cid%>.beginTx();
+		 <%}%>
+	}

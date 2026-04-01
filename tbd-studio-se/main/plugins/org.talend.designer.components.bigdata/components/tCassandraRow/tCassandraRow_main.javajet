@@ -1,0 +1,65 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.utils.NodeUtil
+		java.util.List 
+		java.util.Map
+	" 
+%>
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    %>
+    <%@ include file="../tCassandraConnection/tCassandraConnection_checker.javajet"%>
+
+    <% 
+    boolean useExistConn = ElementParameterParser.getBooleanValue(node, "__USE_EXISTING_CONNECTION__");
+	INode nodeWithVersion = useExistConn ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__") : node;
+	String dbVersion = ElementParameterParser.getValue(nodeWithVersion, "__DB_VERSION__");
+    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+    if(useExistConn){
+		if("CASSANDRA_4_0".equals(dbVersion)) {
+		%>
+			com.datastax.oss.driver.api.core.CqlSession connection_<%=cid%> = (com.datastax.oss.driver.api.core.CqlSession)globalMap.get("connection_<%=connection%>");
+		<%
+		}
+    }else{  
+    %>
+        <%@ include file="@{org.talend.designer.components.bigdata}/components/tCassandraConnection/tCassandraConnection_datastax_connect.javajet"%>
+		resourceMap.put("connection_<%=cid%>", connection_<%=cid%>);
+	<%
+    }
+    Boolean dieOnError = ElementParameterParser.getBooleanValue(node, "__DIE_ON_ERROR__");
+    String query = ElementParameterParser.getValue(node, "__QUERY__").replaceAll("[\r\n]", " ");
+    %>
+    try{
+    	connection_<%=cid%>.execute(<%=query%>);
+    }catch(java.lang.Exception e){
+    	<%
+    	if(dieOnError){
+    	%>
+    		throw(e);
+    	<%
+    	}else{
+    	%>
+    		System.err.println(e.getMessage());
+    	<%
+    	}
+    	%>
+    }
+    <% 
+    if(!useExistConn){
+    %>
+        connection_<%=cid%>.close();
+	<%
+    }
+    %>

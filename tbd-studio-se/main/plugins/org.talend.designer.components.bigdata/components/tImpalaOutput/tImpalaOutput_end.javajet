@@ -1,0 +1,90 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.MappingTypeRetriever
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.designer.runprocess.ProcessorException
+		org.talend.designer.runprocess.ProcessorUtilities
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List	
+		java.util.ArrayList	
+		java.util.Map
+		java.util.HashMap
+		java.util.Set
+		java.util.HashSet
+		" 
+		skeleton="@{org.talend.designer.components.localprovider}/components/templates/db_output_bulk.skeleton"
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+	CodeGeneratorArgument outputCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)outputCodeGenArgument.getArgument();
+	final String cid = node.getUniqueName();
+	dbLog = new DBLogUtil(node);
+	
+	List<IMetadataColumn> columnList = getColumnList(node);
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	List<Column> stmtStructure =  getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+		
+	boolean extendedInsert = false;
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+	
+	Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+	StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);   
+	StringBuilder insertValueStmt = actionSQLMap.get(INSERT_VALUE_STMT);    
+	
+	extendedInsert = "true".equals(ElementParameterParser.getValue(node, "__EXTENDINSERT__"));
+	String numPerInsert = ElementParameterParser.getValue(node, "__NB_ROWS_PER_INSERT__");
+	String tableName = ElementParameterParser.getValue(node,"__TABLE__");
+	
+	if(extendedInsert) {
+%>
+        if(rowCount<%=cid%> != 0) {
+            try {
+                stmt_<%=cid %>.executeUpdate(sbValue_<%=cid%>.toString().substring(0, sbValue_<%=cid%>.toString().length()-1));
+                <%dbLog.data().inserting(dbLog.var("nb_line"));%>
+            } catch(java.lang.Exception e) {
+<%
+                if (dieOnError) {
+%>
+                    throw e;
+<%
+                } else {
+                    dbLog.logPrintedException("e.getMessage()");
+%>
+                    System.err.print("Exception in the component <%=cid%>:" + e.getMessage());
+<%
+                } 
+%>
+            }
+        }
+<%
+	}
+%>
+
+	try {
+		if (stmt_<%=cid %> != null) {
+			stmt_<%=cid %>.close();
+		}
+	}
+	catch (java.lang.Exception e) {
+<%
+		if (dieOnError) {
+%>
+			throw e;
+<%
+		} else {
+			dbLog.logPrintedException("e.getMessage()");
+%>
+			System.err.print("Exception in the component <%=cid%>:" + e.getMessage());
+<%
+	} 
+%>
+}
+	

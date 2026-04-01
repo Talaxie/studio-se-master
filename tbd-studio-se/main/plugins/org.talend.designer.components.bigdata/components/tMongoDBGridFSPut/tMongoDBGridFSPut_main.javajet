@@ -1,0 +1,138 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.utils.NodeUtil
+		java.util.List 
+    	java.util.Map
+	" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+  	INode node = (INode)codeGenArgument.getArgument();
+  	String cid = node.getUniqueName();
+  	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String localdir = ElementParameterParser.getValue(node, "__LOCALDIR__");
+	boolean useGlob = ("true").equals(ElementParameterParser.getValue(node, "__PERL5_REGEX__"));
+	boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	String dbversion;
+	if(useExistingConnection){
+	    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+        INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+        dbversion = ElementParameterParser.getValue(connectionNode, "__DB_VERSION__");
+    }else{
+        dbversion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+    }
+    boolean version_3_5_X = "MONGODB_3_5_X".equals(dbversion);
+    boolean version_4_4_X = "MONGODB_4_4_X".equals(dbversion);
+%>
+		java.util.Set<String> keySet_<%=cid %> = map_<%=cid %>.keySet();
+		for (String key_<%=cid %> : keySet_<%=cid %>){
+			String tempdir_<%=cid %> =  localdir_<%=cid %>;
+			String filemask_<%=cid %> = key_<%=cid %>; 
+			String dir_<%=cid %> = null;
+			<%
+			// Clean the filemasks and prepare it for listing
+			if(!useGlob) { //perl5 mode does not support windows (\) path separator in the mask string
+%>
+				String mask_<%=cid %> = filemask_<%=cid %>.replaceAll("\\\\", "/") ;
+<%
+			} else {
+%>
+				String mask_<%=cid %> = filemask_<%=cid %>;
+<%
+			}
+%>
+			int i_<%=cid %> = mask_<%=cid %>.lastIndexOf('/');
+
+			if (i_<%=cid %>!=-1){
+				dir_<%=cid %> = mask_<%=cid %>.substring(0, i_<%=cid %>);
+				mask_<%=cid %> = mask_<%=cid %>.substring(i_<%=cid %>+1);
+			}
+
+			if (dir_<%=cid %>!=null && !"".equals(dir_<%=cid %>)){
+				tempdir_<%=cid %> = tempdir_<%=cid %> + "/" + dir_<%=cid %>;
+			}
+
+<%
+			if(!useGlob) {
+%>
+				mask_<%=cid %> = mask_<%=cid %>.replaceAll("\\.", "\\\\.").replaceAll("\\*", ".*");
+<%
+			}
+%>
+			final String finalMask_<%=cid %> = mask_<%=cid %>;
+
+			java.io.File[] listings_<%=cid %> = null;
+			java.io.File file_<%=cid %> = new java.io.File(tempdir_<%=cid %>);
+
+			if (file_<%=cid %>.isDirectory()) {
+				listings_<%=cid %> = file_<%=cid %>.listFiles(new java.io.FileFilter() {
+					public boolean accept(java.io.File pathname) {
+						boolean result = false;
+						if (pathname != null && pathname.isFile()) {                      
+							result = java.util.regex.Pattern.compile(finalMask_<%=cid %>).matcher(pathname.getName()).find(); 
+						}
+						return result;
+					}
+				});
+			}
+
+			if(listings_<%=cid %> == null || listings_<%=cid %>.length <= 0){
+	    		System.err.println("No match file("+key_<%=cid %>+") exists!");
+<%				if(isLog4jEnabled) {
+%>
+					log.error("<%=cid%> - No match file("+key_<%=cid %>+") exists!");
+<%
+				}
+%>
+			}else{
+				String localFilePath_<%=cid%> = "";
+				FileInfo_<%=cid%> info_<%=cid%> = map_<%=cid %>.get(key_<%=cid %>);
+				for (int m_<%=cid %> = 0; m_<%=cid %> < listings_<%=cid %>.length; m_<%=cid %>++){
+					String gridfsFilename_<%=cid%> = info_<%=cid%>.newName;
+					if(("").equals(gridfsFilename_<%=cid%>)){
+						gridfsFilename_<%=cid%> = listings_<%=cid %>[m_<%=cid %>].getName();
+					}
+				<%if(version_3_5_X || version_4_4_X) {%>
+					try (java.io.InputStream streamToUploadFrom_<%=cid%> = new java.io.FileInputStream(listings_<%=cid %>[m_<%=cid %>])){
+		    				// Create some custom options
+		    			com.mongodb.client.gridfs.model.GridFSUploadOptions options_<%=cid%> = new com.mongodb.client.gridfs.model.GridFSUploadOptions()
+		    				.chunkSizeBytes(358400);
+		    			if(info_<%=cid%>.setMetadata) {
+							options_<%=cid%>.metadata(org.bson.Document.parse(info_<%=cid%>.metadataJson));
+					}
+		    		    gridfs_<%=cid%>.uploadFromStream(gridfsFilename_<%=cid%>, streamToUploadFrom_<%=cid%>, options_<%=cid%>);
+					}
+				<%} else {%>
+					com.mongodb.gridfs.GridFSInputFile gridfsFile_<%=cid%> = gridfs_<%=cid%>.createFile(listings_<%=cid %>[m_<%=cid %>]);
+					gridfsFile_<%=cid%>.setFilename(gridfsFilename_<%=cid%>);
+					
+					if(info_<%=cid%>.setMetadata) {
+						com.mongodb.DBObject metadata_<%=cid%> = com.mongodb.BasicDBObject.parse(info_<%=cid%>.metadataJson);
+						gridfsFile_<%=cid%>.setMetaData(metadata_<%=cid%>);
+					}
+					
+					gridfsFile_<%=cid%>.save();
+				<%}%>
+
+					nb_line_<%=cid %>++;
+<%					if(isLog4jEnabled) {
+%>
+						log.info("<%=cid%> " + "file: " + listings_<%=cid %>[m_<%=cid %>].getAbsolutePath() + ", size: " + listings_<%=cid %>[m_<%=cid %>].length() + " bytes upload successfully");
+<%
+					}
+%>
+				}
+			}
+		}
+<%
+%>

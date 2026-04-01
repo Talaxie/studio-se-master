@@ -1,0 +1,48 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talend Inc. - www.talend.com
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talend SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.hadoop.distribution.test.hive;
+
+import org.junit.Test;
+import org.talend.hadoop.distribution.constants.emr.IAmazonEMRDistribution;
+
+/**
+ * DOC ggu class global comment. Detailled comment
+ */
+public class HiveMetadataHelper4AmazonEMRTest extends AbstractDistributionTest4HiveMetadataHelper {
+
+    private static final String[] VERSIONS_NON_DYNAMIC = new String[] {
+    	"EMR 6.2.0 (Hive 3.1.2)",
+        "EMR 5.29.0 (Hive 2.3.6)"};
+
+    @Override
+    protected String getDistribution() {
+        return IAmazonEMRDistribution.DISTRIBUTION_NAME;
+    }
+
+    @Override
+    protected String getDistributionDisplay() {
+        return IAmazonEMRDistribution.DISTRIBUTION_DISPLAY_NAME;
+    }
+
+    @Override
+    protected String[] getDistributionVersionsDisplay() {
+        return VERSIONS_NON_DYNAMIC;
+    }
+
+    //this empty test is here to make tycho runner not failed on initialization
+    //because it does not found any test in the final class
+    @Test
+    public void emptyTest() {
+    }
+
+}

@@ -1,0 +1,95 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.Map
+		java.util.HashMap
+		java.util.List
+		java.util.ArrayList
+		org.talend.core.model.metadata.MappingTypeRetriever
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.core.model.utils.NodeUtil
+	"
+%>
+	<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    %>
+    <%@ include file="../tCassandraConnection/tCassandraConnection_checker.javajet"%>
+
+    <%
+    IMetadataTable metadata = null;
+    IConnection conn = null;
+    List<IMetadataColumn> columns = null;
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if((metadatas!=null) && (metadatas.size() > 0)){
+        metadata = metadatas.get(0);
+        if(metadata != null){
+    		columns = metadata.getListColumns();		
+    	}
+    }
+    List<? extends IConnection> conns = node.getIncomingConnections();
+    if(conns != null && conns.size() > 0 && conns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+        conn = conns.get(0);
+    }
+    
+    if(columns == null || columns.isEmpty() || conn == null){
+    	return "";
+    }
+    %>
+    <%@ include file="@{org.talend.designer.components.bigdata}/components/tCassandraOutput/CQL_Helper.javajet"%> 
+    <%
+	boolean useExistConn = ElementParameterParser.getBooleanValue(node, "__USE_EXISTING_CONNECTION__");
+	INode nodeWithVersion = useExistConn ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__") : node;
+	String dbVersion = ElementParameterParser.getValue(nodeWithVersion, "__DB_VERSION__");
+    Boolean dieOnError = ElementParameterParser.getBooleanValue(node, "__DIE_ON_ERROR__");
+    CQLManager cqlManager = null;
+    //Only CASSANDRA_4_0
+	if("CASSANDRA_4_0".equals(dbVersion)) {
+		cqlManager = new CQLManagerV4Driver(node, columns);
+	}
+    boolean useBatch = ElementParameterParser.getBooleanValue(node, "__USE_UNLOGGED_BATCH__");
+    if(useBatch){
+		if("CASSANDRA_4_0".equals(dbVersion)) {
+		%>
+			boundStmt_<%=cid%> = prepareStmt_<%=cid%>.bind();
+		<%
+		}
+    }
+    %>
+    
+    <%=cqlManager.generateStmt("boundStmt_" + cid, conn.getName())%>
+    <%
+    if(useBatch){
+	%>
+		cassandraBatchExec_<%=cid%>.addOrExecBatch(boundStmt_<%=cid%>);
+	<%
+    }else{
+    %>
+        try{
+        	connection_<%=cid%>.execute(boundStmt_<%=cid%>);
+        }catch(java.lang.Exception e){
+        	<%
+        	if(dieOnError){
+        	%>
+        		throw(e);
+        	<%
+        	}else{
+        	%>
+        		System.err.println(e.getMessage());
+        	<%
+        	}
+        	%>
+        }
+    <%
+    }
+    %>
+    nb_line_<%=cid%>++;

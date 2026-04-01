@@ -1,0 +1,287 @@
+<%@ jet
+    imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        java.util.List
+        java.util.Map
+    "
+%>
+
+<%
+   String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+   String table = ElementParameterParser.getValue(node,"__TABLE__");
+   String username = ElementParameterParser.getValue(node,"__USERNAME__");
+   String inputSource = ElementParameterParser.getValue(node,"__SOURCE__");
+   String exportDir = ElementParameterParser.getValue(node,"__EXPORT_DIR__");
+   String hcatDatabase = ElementParameterParser.getValue(node,"__HCAT_DATABASE__");
+   String hcatTable = ElementParameterParser.getValue(node,"__HCAT_TABLE__");
+   boolean printLog = "true".equals(ElementParameterParser.getValue(node,"__PRINT_LOG__"));
+   boolean verbose = "true".equals(ElementParameterParser.getValue(node,"__VERBOSE__"));
+   boolean direct = "true".equals(ElementParameterParser.getValue(node,"__DIRECT__"));
+   boolean mysqlDelimiters = "true".equals(ElementParameterParser.getValue(node,"__MYSQL_DELIMITERS__"));
+   boolean useMappers = "true".equals(ElementParameterParser.getValue(node,"__USE_MAPPERS__"));
+   String mappers = ElementParameterParser.getValue(node,"__MAPPERS__");
+   String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+   List<Map<String,String>> additionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__ADDITIONAL_ARGUMENTS__");
+   boolean isUseSpeedParallel = "true".equals(ElementParameterParser.getValue(node,"__USE_SPEED_PARALLEL__"));
+	List<Map<String,String>> specificParams= (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__SPECIFIC_PARAMS__");
+	boolean isUseAdditionParams = "true".equals(ElementParameterParser.getValue(node,"__USE_ADDITION_PARAM__"));
+	String specificAdditionParams=ElementParameterParser.getValue(node,"__SPECIFIC_ADDITION_PARAM__");
+
+	boolean callProcStock = "true".equals(ElementParameterParser.getValue(node, "__CALL_PROC_STOC__"));
+	String procStock = ElementParameterParser.getValue(node, "__PROC_STOC__");
+	boolean useBatchMode = "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_MODE__"));
+	boolean clearStagingTable = "true".equals(ElementParameterParser.getValue(node, "__CLEAR_STAGING_TABLE__"));
+	boolean defineStagingTable = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_STAGING_TABLE__"));
+	String stagingTable = ElementParameterParser.getValue(node, "__STAGING_TABLE__");
+	boolean useColumnForUpdate = "true".equals(ElementParameterParser.getValue(node, "__USE_COLUMN_FOR_UPDATE__"));
+	boolean defineUpdateMode = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_UPDATE_MODE__"));
+	String updateMode = ElementParameterParser.getValue(node, "__UPDATE_MODE__");
+	String additionalCommandLineArguments = ElementParameterParser.getValue(node,"__ADDITIONAL_COMMANDLINE_ARGUMENTS__");
+	boolean overrideJavaMapping = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_JAVA_MAPPING__"));
+	boolean passwordStoredInFile = "true".equals(ElementParameterParser.getValue(node, "__PASSWORD_STORED_IN_FILE__"));
+
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+	List<Map<String,String>> genericArgs = new java.util.ArrayList<Map<String,String>>();
+	List<Map<String,String>> toolSpecificArgs = new java.util.ArrayList<Map<String,String>>();
+	if (additionalList != null) { 
+		for (Map<String,String> additionalMap : additionalList) { 
+			String additionalArg = additionalMap.get("ADDITIONAL_ARGUMENT").replaceAll("\"","");
+			if (additionalArg.startsWith("--")) {
+				toolSpecificArgs.add(additionalMap);
+			} else if (additionalArg.startsWith("-")) {
+				genericArgs.add(additionalMap);
+			}
+		}
+	}
+%>
+
+<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/Sqoop/SqoopAdditionalArgumentParser.javajet"%>
+
+//call the cmd part
+Runtime runtime_<%=cid %> = Runtime.getRuntime();
+
+<%
+String passwordFieldName = "__PASSWORD__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>	
+
+String[] cmd_<%=cid %> = new String[] {"sqoop", "export"
+<%
+for (Map<String,String> genericArg : genericArgs) {
+	String value = genericArg.get("ADDITIONAL_VALUE");
+		if (!"\"\"".equals(value)) {
+			String param = genericArg.get("ADDITIONAL_ARGUMENT");
+			param = param.substring(1, param.length()-1);
+			value = value.substring(1, value.length()-1);
+			if(!param.startsWith("-D")){
+%>
+		,"<%=param%>", "<%=value%>"
+<%
+			} else {
+%>
+		,"<%=param%>=<%=value%>"
+<%			}
+		}
+}
+if (isUseSpeedParallel && specificParams != null) {
+	for (Map<String,String> specificArg : specificParams) { 
+	 	if (!"".equals(specificArg.get("SPECIFIC_PARAM_VALUE"))) { 
+%> 
+			,"-D<%=specificArg.get("SPECIFIC_PARAM")%>="+<%=specificArg.get("SPECIFIC_PARAM_VALUE")%>
+<% 
+		} 
+	} 
+} 
+if(isUseSpeedParallel && isUseAdditionParams){
+%>
+,<%=specificAdditionParams%>
+<%
+}
+%>
+
+, "--connect", <%=connection%>
+<%if (!callProcStock) {
+	if (!table.replaceAll("\"","").isEmpty()) {
+%>, "--table", <%=table%>
+<%	}
+}
+if (!username.replaceAll("\"","").isEmpty()) {%>
+ , "--username", <%=username%>
+<%}
+if (passwordStoredInFile) {%>
+	, "--password-file", <%=(String)ElementParameterParser.getValue(node, "__PASSWORD_FILE__")%>
+<%} else if (!ElementParameterParser.getValue(node, "__PASSWORD__").replaceAll("\"","").isEmpty()) {%>
+	, "--password", decryptedPassword_<%=cid%>
+<%}%>
+<%if(inputSource.equals("HDFS")) {%>
+, "--export-dir", <%=exportDir%>
+<%} else if(inputSource.equals("HCAT")) {%>
+, "--hcatalog-database", <%=hcatDatabase%>, "--hcatalog-table", <%=hcatTable%>
+<%} else {
+	throw new IllegalArgumentException("input source should be either \"HDFS\" or \"HCAT\", but it is " + inputSource);
+}%>
+<%if(isUseSpeedParallel){%>,"--connection-manager","org.apache.sqoop.teradata.TeradataConnManager"<%}%>
+<%if(printLog && verbose){%>, "--verbose"<%}%>
+<%if(direct && (!defineUpdateMode || "updateonly".equals(updateMode))){%>, "--direct"<%}%>
+<%if(fileFormat.equals("sequencefile")){%>, "--as-sequencefile"<%}%>
+<%if(mysqlDelimiters){%>, "--mysql-delimiters"<%}%>
+<%if(useMappers){%>, "--num-mappers", <%=mappers%><%}%>
+<%if(useBatchMode){%>, "--batch"<%}%>
+<%if(clearStagingTable && !useColumnForUpdate && !callProcStock){%>, "--clear-staging-table"<%}%>
+<%if(callProcStock){%>, "--call", <%=procStock%><%}%>
+<%if(defineStagingTable && !useColumnForUpdate && !callProcStock){%>, "--staging-table", <%=stagingTable%><%}%>
+<%if(defineUpdateMode){%>, "--update-mode", "<%=updateMode%>"<%}%>
+<%
+if(useColumnForUpdate && !callProcStock) {
+	List<Map<String,String>> columnsForUpdate = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__COLUMN_FOR_UPDATE__");
+	if(columnsForUpdate != null && columnsForUpdate.size() > 0) {
+%>
+		,"--update-key"
+<%
+		boolean first = true;	
+		for(Map<String,String> columnForUpdate : columnsForUpdate) {
+			if(first) {
+				first = false;
+%>
+				,<%=columnForUpdate.get("COLUMN_NAME")%>
+<%
+			} else {
+%>
+				+ "," + <%=columnForUpdate.get("COLUMN_NAME")%>
+<%
+			}	
+		}
+	}
+}
+
+for (Map<String,String> toolSpecificArg : toolSpecificArgs) { 
+    if (!"\"\"".equals(toolSpecificArg.get("ADDITIONAL_VALUE"))) { 
+%> 
+        ,<%=toolSpecificArg.get("ADDITIONAL_ARGUMENT")%>, <%=toolSpecificArg.get("ADDITIONAL_VALUE")%> 
+<% 
+    } else { 
+%> 
+        ,<%=toolSpecificArg.get("ADDITIONAL_ARGUMENT")%>
+<% 
+    } 
+} 
+
+if(overrideJavaMapping) {
+	List<Map<String,String>> javaMappings = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__JAVA_TYPE_MAPPING__");
+	if(javaMappings != null && javaMappings.size()>0) {
+%>
+		,"--map-column-java"
+<%
+		boolean first = true;	
+		for(Map<String,String> javaMapping : javaMappings) {
+			if(first) {
+				first = false;
+%>
+				,<%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>
+<%
+			} else {
+%>
+				+"," + <%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>
+<%
+			}	
+		}
+	}
+}
+%>
+};
+
+<%if(isLog4jEnabled) {%>
+java.lang.StringBuilder stringBuilder_<%=cid%> = new java.lang.StringBuilder();
+for (int i = 0; i < cmd_<%=cid %>.length; i++) {
+	if (cmd_<%=cid %>[i].startsWith("--password")) {
+		stringBuilder_<%=cid%>.append("--password <hidden> ");
+		i++;//skipping password arg
+	}
+	else {
+		stringBuilder_<%=cid%>.append(cmd_<%=cid %>[i]);
+		stringBuilder_<%=cid%>.append(" ");
+	}
+}
+log.info("<%=cid%> - execute sqoop command: " + stringBuilder_<%=cid%>.toString());
+<%}%>
+
+Process ps_<%=cid %> = null;
+java.lang.StringBuilder sb_<%=cid%> = null;
+
+try {
+	ps_<%=cid %> = runtime_<%=cid %>.exec(cmd_<%=cid %>);
+	byte[] byteArray_<%=cid%> = new byte[1024];
+	int len_<%=cid%> = 0;
+	
+	java.io.InputStream errorStream_<%=cid%> = new java.io.BufferedInputStream(ps_<%=cid%>.getErrorStream());
+	sb_<%=cid%> = new java.lang.StringBuilder();
+	while ((len_<%=cid%> = errorStream_<%=cid%>.read(byteArray_<%=cid%>)) != -1) {
+	    String line_<%=cid%> = new String(byteArray_<%=cid%>, 0, len_<%=cid%>, "ISO-8859-1");
+<%
+	    if(printLog){
+%>
+	        System.err.println(line_<%=cid%>);
+<%
+	    }
+%>
+	    sb_<%=cid%>.append(line_<%=cid%>);
+	}
+	globalMap.put("<%=cid%>_ERROR_MESSAGE", sb_<%=cid%>.toString());
+	<%if(isLog4jEnabled) {%>
+		log.error("<%=cid%> - " + sb_<%=cid%>.toString());
+	<%}%>
+	
+	byteArray_<%=cid%> = new byte[1024];
+	len_<%=cid%> = 0;
+	java.io.InputStream inputStream_<%=cid%> = new java.io.BufferedInputStream(ps_<%=cid%>.getInputStream());
+	sb_<%=cid%> = new java.lang.StringBuilder();
+	while ((len_<%=cid%> = inputStream_<%=cid%>.read(byteArray_<%=cid%>)) != -1) {
+	    String line_<%=cid%> = new String(byteArray_<%=cid%>, 0, len_<%=cid%>, "ISO-8859-1");
+<%
+	    if(printLog){
+%>
+	        System.out.println(line_<%=cid%>);
+<%
+	    }
+%>
+	    sb_<%=cid%>.append(line_<%=cid%>);
+	}
+} catch (Exception e) {
+<%
+	if(dieOnError) {
+%>
+		throw e;
+<%		
+	} else {
+%>
+		System.err.println(e.getMessage());
+		<%if(isLog4jEnabled) {%>
+		log.error("<%=cid%> - " + e.getMessage());
+		<%}
+	}
+%>	
+}
+
+
+	int result_<%=cid%> = ps_<%=cid%>.waitFor();
+	globalMap.put("<%=cid%>_EXIT_CODE", result_<%=cid%>);
+<%
+	if(dieOnError) {
+%>
+		if(ps_<%=cid%>.exitValue()>0) {
+			throw new Exception("The Sqoop export has failed. Please check the logs.");
+		}
+<%		
+	}
+%>
+
+if(sb_<%=cid%> != null) {
+	globalMap.put("<%=cid%>_OUTPUT_MESSAGE", sb_<%=cid%>.toString());
+	<%if(isLog4jEnabled) {%>
+		log.info("<%=cid%> - " + sb_<%=cid%>.toString());
+	<%}%>
+}

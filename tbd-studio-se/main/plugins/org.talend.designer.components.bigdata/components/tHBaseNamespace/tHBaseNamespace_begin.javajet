@@ -1,0 +1,51 @@
+<%@ jet
+imports="
+        java.util.Map
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.bigdata.di.components.thbase.THbaseNamespace
+        "
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+    final THbaseNamespace thbaseNamespace = new THbaseNamespace((CodeGeneratorArgument) argument);
+    final THbaseNamespace thbase = thbaseNamespace;
+    final String cid = thbase.getCid();
+    final INode node = thbase.getNode();
+
+    log4jFileUtil.componentStartInfo(thbase.getNode());
+
+    if(!thbaseNamespace.useExistingConnection()){
+%>
+    <%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HBase/CreateHBaseConnection.javajet"%>
+<% } else { %>
+org.apache.hadoop.hbase.client.Connection connection_<%=cid%> = (org.apache.hadoop.hbase.client.Connection) globalMap.get("connection_<%=thbase.getExistingConnection()%>");
+<% } %>
+
+resourceMap.put("connection_<%=cid%>", connection_<%=cid%>);
+
+int nb_line_<%=cid%> = 0;
+
+// create hbase namespace
+org.talend.bigdata.core.di.components.hbase.ImmutableTHbaseNamespace
+.builder()
+.connection(connection_<%=cid%>)
+.namespaceAction("<%=thbaseNamespace.getNamespaceAction()%>")
+.namespaceName(<%=thbaseNamespace.getNamespace()%>)
+.build()
+.doNamespaceAction();
+
+// close hbase connection and configuration
+<%
+if(!thbaseNamespace.useExistingConnection()){
+%>
+    connection_<%=cid%>.close();
+    resourceMap.put("finish_<%=cid%>", true);
+<%
+}
+%>
+globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);
+<%
+log4jFileUtil.writeDataFinishInfo(thbase.getNode());
+%>

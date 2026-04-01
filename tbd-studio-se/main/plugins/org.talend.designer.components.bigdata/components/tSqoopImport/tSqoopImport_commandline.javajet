@@ -1,0 +1,377 @@
+<%@ jet
+%>
+<%
+	boolean useColumns = "true".equals(ElementParameterParser.getValue(node,"__USE_COLUMNS__"));
+	List<Map<String, String>> columns = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__COLUMNS__");
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String table = ElementParameterParser.getValue(node,"__TABLE__");
+	String username = ElementParameterParser.getValue(node,"__USERNAME__");
+	boolean passwordStoredInFile = "true".equals(ElementParameterParser.getValue(node, "__PASSWORD_STORED_IN_FILE__"));
+	boolean printLog = "true".equals(ElementParameterParser.getValue(node,"__PRINT_LOG__"));
+	boolean verbose = "true".equals(ElementParameterParser.getValue(node,"__VERBOSE__"));
+	boolean append = "true".equals(ElementParameterParser.getValue(node,"__APPEND__"));
+	boolean direct = "true".equals(ElementParameterParser.getValue(node,"__DIRECT__"));
+	
+	boolean compress = "true".equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+	boolean useHadoopCodec = "true".equals(ElementParameterParser.getValue(node,"__DEFINE_HADOOP_CODEC__"));
+	String hadoopCodec = ElementParameterParser.getValue(node,"__HADOOP_CODEC__");
+	
+	boolean deleteTargetDirectory = "true".equals(ElementParameterParser.getValue(node, "__DELETE_TARGET_DIR__"));
+	boolean splitInputStreamDirect = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_DIRECT_SPLIT_SIZE__"));
+	String directSplitSize = ElementParameterParser.getValue(node, "__DIRECT_SPLIT_SIZE__");
+	boolean mysqlDelimiters = "true".equals(ElementParameterParser.getValue(node,"__MYSQL_DELIMITERS__"));
+	String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+	boolean useTarget = "true".equals(ElementParameterParser.getValue(node,"__USE_TARGET__"));
+	String target = ElementParameterParser.getValue(node,"__TARGET__");
+	boolean useMappers = "true".equals(ElementParameterParser.getValue(node,"__USE_MAPPERS__"));
+	String mappers = ElementParameterParser.getValue(node,"__MAPPERS__");
+	List<Map<String,String>> additionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__ADDITIONAL_ARGUMENTS__");
+	boolean isUseSpeedParallel = "true".equals(ElementParameterParser.getValue(node,"__USE_SPEED_PARALLEL__"));
+	List<Map<String,String>> specificParams= (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__SPECIFIC_PARAMS__");
+	boolean overrideJavaMapping = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_JAVA_MAPPING__"));
+	boolean overrideHiveMapping = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_HIVE_MAPPING__"));
+	boolean isUseAdditionParams = "true".equals(ElementParameterParser.getValue(node,"__USE_ADDITION_PARAM__"));
+	String specificAdditionParams=ElementParameterParser.getValue(node,"__SPECIFIC_ADDITION_PARAM__");
+	
+	boolean useWhere = "true".equals(ElementParameterParser.getValue(node,"__USE_WHERE__"));
+	String where = ElementParameterParser.getValue(node,"__WHERE__");
+	where = where.substring(1, where.length()-1);
+	where = "\"\\\""+where+"\\\"\"";
+	
+	boolean useQuery = "true".equals(ElementParameterParser.getValue(node,"__USE_QUERY__"));
+	String query = ElementParameterParser.getValue(node,"__QUERY__");
+	query = query.replaceAll("\n"," ");
+	query = query.replaceAll("\r"," ");
+	
+	boolean useSplit = "true".equals(ElementParameterParser.getValue(node,"__USE_SPLIT__"));
+	String split = ElementParameterParser.getValue(node,"__SPLIT__");
+	
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+	List<Map<String,String>> genericArgs = new java.util.ArrayList<Map<String,String>>();
+	List<Map<String,String>> toolSpecificArgs = new java.util.ArrayList<Map<String,String>>();
+	if (additionalList != null) { 
+		for (Map<String,String> additionalMap : additionalList) {
+			String additionalArg = additionalMap.get("ADDITIONAL_ARGUMENT").replaceAll("\"","");
+			if (additionalArg.startsWith("--")) {
+				toolSpecificArgs.add(additionalMap);
+			} else if (additionalArg.startsWith("-")) {
+				genericArgs.add(additionalMap);
+			}
+		}
+	}
+%>
+
+<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/Sqoop/SqoopAdditionalArgumentParser.javajet"%>
+
+<%
+String sColumns = "\\\"";
+int size = columns.size();
+int current = 0;
+for (Map<String, String> row : columns) {
+    String column = row.get("COLUMN");
+    column = column.substring(1, column.length()-1);
+    if (size-1 == current) {
+        sColumns += column;
+    } else {
+        sColumns += column + ",";
+    }
+    current++;
+}
+sColumns += "\\\"";
+%> 
+
+
+//call the cmd part
+Runtime runtime_<%=cid %> = Runtime.getRuntime();
+
+<%
+String passwordFieldName = "__PASSWORD__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>	
+
+String[] cmd_<%=cid %> = new String[] {"sqoop", "import", "-Dmapreduce.job.user.classpath.first=true" 
+<%
+for (Map<String,String> genericArg : genericArgs) {
+	String value = genericArg.get("ADDITIONAL_VALUE");
+		if (!"\"\"".equals(value)) {
+			String param = genericArg.get("ADDITIONAL_ARGUMENT");
+			param = param.substring(1, param.length()-1);
+			value = value.substring(1, value.length()-1);
+			if(!param.startsWith("-D")){
+%>
+		,"<%=param%>", "<%=value%>"
+<%
+			} else {
+%>
+		,"<%=param%>=<%=value%>"
+<%
+			}
+		}
+}
+if (isUseSpeedParallel && specificParams != null) {
+	for (Map<String,String> specificArg : specificParams) { 
+	 	if (!"".equals(specificArg.get("SPECIFIC_PARAM_VALUE"))) { 
+%> 
+			,"-D<%=specificArg.get("SPECIFIC_PARAM")%>="+<%=specificArg.get("SPECIFIC_PARAM_VALUE")%>
+<% 
+	 	}
+	} 
+} 
+if(isUseSpeedParallel && isUseAdditionParams){
+%>
+,<%=specificAdditionParams%>
+<%
+}
+%>
+
+, "--connect", <%=connection%>
+<%if (!username.replaceAll("\"","").isEmpty()){%>
+	, "--username", <%=username%>
+<%}
+if(passwordStoredInFile) {%>
+	, "--password-file", <%=(String)ElementParameterParser.getValue(node, "__PASSWORD_FILE__")%>
+<%} else if (!ElementParameterParser.getValue(node, "__PASSWORD__").replaceAll("\"","").isEmpty()) {%>
+	, "--password", decryptedPassword_<%=cid%>
+<%}
+if(isUseSpeedParallel){%>
+	,"--connection-manager","org.apache.sqoop.teradata.TeradataConnManager"
+<%}
+if(useQuery){%>
+	, "--query", <%=query%>
+<%} else if (!table.replaceAll("\"","").isEmpty()) {%>
+	, "--table", <%=table%>
+	<%if(useColumns){%>
+	, "--columns", "<%=sColumns%>"
+	<%}
+	if(useWhere){%>
+	, "--where", <%=where%>
+<%	}
+}
+if(printLog && verbose){%>
+	, "--verbose"
+<%}
+if(append){%>
+, "--append"
+<%}
+if(deleteTargetDirectory){%>
+, "--delete-target-dir"
+<%}
+if(direct){
+%>
+	, "--direct"
+<%
+	if(splitInputStreamDirect) {
+%>
+	, "--direct-split-size", <%=directSplitSize%>
+<%
+	}
+}%>
+<%if(compress){%>
+	, "--compress"
+<%
+	if(useHadoopCodec) {
+%>
+	, "--compression-codec", <%=hadoopCodec%>
+<%
+	}
+}%>
+<%if(useTarget || useQuery){%>, "--target-dir", <%=target%><%}%>
+<%if(fileFormat.equals("sequencefile")){%>, "--as-sequencefile"<%}%>
+<%if(fileFormat.equals("avrofile")){%>, "--as-avrodatafile"<%}%>
+<%if(fileFormat.equals("parquetfile")){%>, "--as-parquetfile"<%}%>
+<%if(mysqlDelimiters){%>, "--mysql-delimiters"<%}%>
+<%if(useMappers){%>, "--num-mappers", <%=mappers%><%}%>
+<%if(useSplit){%>, "--split-by", <%=split%><%}%>
+<%
+for(Map<String,String> toolArg : toolSpecificArgs){ 
+	 if(!"\"\"".equals(toolArg.get("ADDITIONAL_VALUE"))) { 
+%> 
+		,<%=toolArg.get("ADDITIONAL_ARGUMENT")%>, <%=toolArg.get("ADDITIONAL_VALUE")%> 
+<% 
+	 } else {
+%> 
+		,<%=toolArg.get("ADDITIONAL_ARGUMENT")%> 
+<% 	 }	 	
+} 
+
+if(overrideJavaMapping) {
+	List<Map<String,String>> javaMappings = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__JAVA_TYPE_MAPPING__");
+	if(javaMappings != null && javaMappings.size() > 0) {
+%>
+		,"--map-column-java"
+<%
+		boolean first = true;	
+		for(Map<String,String> javaMapping : javaMappings) {
+			if(first) {
+				first = false;
+%>
+				,<%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>
+<%
+			} else {
+%>
+				+"," + <%=javaMapping.get("COLUMN_NAME")%> + "=" + <%=javaMapping.get("JAVA_TYPE")%>
+<%
+			}	
+		}
+	}
+}
+
+if(overrideHiveMapping) {
+	List<Map<String,String>> hiveMappings = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__HIVE_TYPE_MAPPING__");
+	if(hiveMappings != null && hiveMappings.size() > 0) {
+%>
+		,"--map-column-hive"
+<%	
+		boolean first = true;	
+		for(Map<String,String> hiveMapping : hiveMappings) {
+			if(first) {
+				first = false;
+%>
+				,<%=hiveMapping.get("COLUMN_NAME")%> + "=" + <%=hiveMapping.get("HIVE_TYPE")%>
+<%
+			} else {
+%>
+				+"," + <%=hiveMapping.get("COLUMN_NAME")%> + "=" + <%=hiveMapping.get("HIVE_TYPE")%>
+<%
+			}	
+		}
+	}
+}
+%>
+};
+
+<%if(isLog4jEnabled) {%>
+java.lang.StringBuilder stringBuilder_<%=cid%> = new java.lang.StringBuilder();
+
+for (int i = 0; i < cmd_<%=cid %>.length; i++) {
+	if (cmd_<%=cid %>[i].startsWith("--password")) {
+		stringBuilder_<%=cid%>.append("--password <hidden> ");
+		i++;//skipping password arg
+	}
+	else {
+		stringBuilder_<%=cid%>.append(cmd_<%=cid %>[i]);
+		stringBuilder_<%=cid%>.append(" ");
+	}
+}
+log.info("<%=cid%> - execute sqoop command: " + stringBuilder_<%=cid%>.toString());
+<%}%>
+Thread normal_<%=cid %> = null;
+Thread error_<%=cid %> = null;
+try {
+	final Process ps_<%=cid%> = runtime_<%=cid%>.exec(cmd_<%=cid%>);
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - The command has been executed successfully.");
+	<%}%>
+
+	normal_<%=cid %> = new Thread() {
+		public void run() {
+			try {
+				java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+				String line = "";
+				java.lang.StringBuilder sb = new StringBuilder();
+				try {
+					while((line = reader.readLine()) != null) {
+						<%if(isLog4jEnabled){%>
+						if (line.contains("WARN")) {
+							log.warn(line);
+						} else if (line.contains("DEBUG")) {
+							log.debug(line);
+						} else {
+							log.info(line);
+						}
+						<%} else {%>
+							System.out.println(line);
+						<%}%>
+						sb.append(line);
+					}
+					globalMap.put("<%=cid%>_OUTPUT_MESSAGE", sb.toString());
+				} finally {
+					reader.close();
+				}
+			} catch(java.io.IOException ioe) {
+				<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - "  + ioe.getMessage());
+				<%} else {%>
+				ioe.printStackTrace();
+				<%}%>
+			}
+		}
+	};
+
+
+	error_<%=cid %> = new Thread() {
+		public void run() {
+			try {
+				java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+				String line = "";
+				java.lang.StringBuilder sb = new StringBuilder();
+				try {
+					while((line = reader.readLine()) != null) {
+						<%if(isLog4jEnabled){%>
+							if (line.contains("WARN")) {
+								log.warn(line);
+							} else if (line.contains("DEBUG")) {
+								log.debug(line);
+							} else if (line.contains("ERROR")) {
+								log.error(line);
+							} else {
+								log.info(line);
+							}
+						<%} else {%>
+							System.err.println(line);
+						<%}%>
+						sb.append(line);
+					}
+					globalMap.put("<%=cid%>_ERROR_MESSAGE", sb.toString());
+				} finally {
+					reader.close();
+				}
+			} catch(java.io.IOException ioe) {
+				<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - "  + ioe.getMessage());
+				<%}%>
+				ioe.printStackTrace();
+			}
+		}
+	};
+	error_<%=cid %>.start();
+	normal_<%=cid %>.start();
+
+	int result_<%=cid%> = ps_<%=cid%>.waitFor();
+	normal_<%=cid %>.join(10000);
+	error_<%=cid %>.join(10000);
+	globalMap.put("<%=cid%>_EXIT_CODE", result_<%=cid%>);
+
+<%
+	if(dieOnError) {
+%>
+		if(ps_<%=cid%>.exitValue()>0) {
+			throw new Exception("The Sqoop import has failed. Please check the logs.");
+		}
+<%
+	}
+%>
+
+} catch (Exception e) {
+<%
+	if(dieOnError) {
+%>
+		if (normal_<%=cid %> != null) {
+			normal_<%=cid %>.join(10000);
+		}
+		if (error_<%=cid %> != null) {
+			error_<%=cid %>.join(10000);
+		}
+		throw e;
+<%		
+	} else {
+%>
+		System.err.println(e.getMessage());
+		<%if(isLog4jEnabled) {%>
+		log.error("<%=cid%> - " + e.getMessage());
+		<%}
+	}
+%>	
+}

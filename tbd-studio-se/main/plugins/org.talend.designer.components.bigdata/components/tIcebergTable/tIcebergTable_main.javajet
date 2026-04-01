@@ -1,0 +1,45 @@
+<%@ jet 
+imports="
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.designer.bigdata.di.components.iceberg.TIcebergTable
+" 
+%>
+
+<%
+      final TIcebergTable tIcebergTable = new TIcebergTable((CodeGeneratorArgument) argument);
+%>
+
+java.sql.Connection connection_<%=tIcebergTable.getCid()%> = (java.sql.Connection) globalMap.get("connection_<%=tIcebergTable.connectionComponentName()%>");
+
+org.talend.bigdata.core.di.components.iceberg.ImmutableTIcebergTable.builder()
+			.connection(connection_<%=tIcebergTable.getCid()%>)
+			.table(<%=tIcebergTable.table()%>)
+		<% for (org.talend.designer.bigdata.di.components.Schema.Field field : tIcebergTable.getFields()) {%>
+    		.addFields(org.talend.bigdata.core.di.components.ImmutableField.builder().name("<%=field.getName()%>").type("<%=field.getType()%>").build())
+		<%}%>
+		<% if (tIcebergTable.externalTable()) { %>
+			.external(true)
+		<% }%>
+		<% if (tIcebergTable.setFormat()) { %>
+			.format(org.talend.bigdata.core.di.components.iceberg.TIcebergTable.Format.<%=tIcebergTable.format()%>)
+		<% }%>
+		<% if (tIcebergTable.createLike()) { %>
+			.createLikeSourceTable(<%=tIcebergTable.createLikeSourceTable()%>)
+		<% }%>
+		<% if (tIcebergTable.createAsSelect()) { %>
+			.createAsSelectQuery(<%=tIcebergTable.createAsSelectQuery()%>)
+		<% }%>
+		<% if (tIcebergTable.purge()) { %>
+			.purge(true)
+		<% }%>
+		<% if (tIcebergTable.setLocation()) { %>
+			.location(<%=tIcebergTable.location()%>)
+		<% }%>
+		<% for (org.talend.designer.bigdata.di.components.Schema.Field field : tIcebergTable.partitions()) {%>
+    		.addPartitions(org.talend.bigdata.core.di.components.ImmutableField.builder().name("<%=field.getName()%>").type("<%=field.getType()%>").build())
+		<%}%>
+		<% for (java.util.Map.Entry<String, String> entry : tIcebergTable.tableProperties().entrySet()) {%>
+    		.putTableProperties(<%=entry.getKey()%>, <%=entry.getValue()%>)
+        <% } %>
+			.build()
+			.<%=tIcebergTable.actionMethod()%>;

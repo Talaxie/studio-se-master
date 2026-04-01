@@ -1,0 +1,429 @@
+<COMPONENT>
+	<HEADER
+		AUTHOR="Talend"
+		COMPATIBILITY="ALL"
+		DATA_AUTO_PROPAGATE="true"
+		PLATEFORM="ALL"
+		RELEASE_DATE="20080229A"
+		SERIAL=""
+		STARTABLE="false"
+		STATUS="ALPHA"
+		VERSION="0.102"
+		PARTITIONING="AUTO"
+        LOG4J_ENABLED="true"
+	>
+		<SIGNATURE />
+	</HEADER>
+	<FAMILIES>
+		<FAMILY>Databases NoSQL/Cassandra</FAMILY>
+		<FAMILY>Big Data/Cassandra</FAMILY>
+	</FAMILIES>
+	<DOCUMENTATION>
+		<URL />
+	</DOCUMENTATION>
+	<CONNECTORS>
+		<CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1"/>
+	    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0"/>
+	    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+	    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+	    <CONNECTOR CTYPE="COMPONENT_OK"/>
+	    <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+	    <CONNECTOR CTYPE="RUN_IF"/>
+	</CONNECTORS>
+	<PARAMETERS>
+	    <PARAMETER NAME="PROPERTY" FIELD="PROPERTY_TYPE" NUM_ROW="1" REPOSITORY_VALUE="NOSQL:CASSANDRA" SHOW_IF="USE_EXISTING_CONNECTION == 'false'"/>
+        <PARAMETER
+            NAME="MAPPING"
+            FIELD="MAPPING_TYPE"
+            NUM_ROW="2"
+            SHOW="false"
+        >
+			<DEFAULT IF="((USE_EXISTING_CONNECTION == 'false') AND (DB_VERSION == 'CASSANDRA_4_0')) OR ((USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION == 'CASSANDRA_4_0'))">cassandra40_datastax_id</DEFAULT>
+        </PARAMETER>
+		<PARAMETER
+			NAME="USE_EXISTING_CONNECTION"
+			FIELD="CHECK"
+			NUM_ROW="3"
+		>
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER
+			NAME="CONNECTION"
+			FIELD="COMPONENT_LIST"
+			REQUIRED="true" FILTER="tCassandraConnection"
+			NUM_ROW="3"
+			SHOW_IF="USE_EXISTING_CONNECTION == 'true'"
+		/>
+		<PARAMETER
+            NAME="DB_VERSION"
+            FIELD="CLOSED_LIST"
+            REPOSITORY_VALUE="DB_VERSION"
+            NUM_ROW="4"
+            SHOW_IF="USE_EXISTING_CONNECTION == 'false'">
+            <ITEMS DEFAULT="CASSANDRA_4_0">
+                <ITEM NAME="CASSANDRA_4_0" VALUE="CASSANDRA_4_0"/>
+            </ITEMS>
+        </PARAMETER>
+        
+		<PARAMETER
+			NAME="HOST"
+			FIELD="TEXT"
+			REPOSITORY_VALUE="HOST"
+			REQUIRED="true"
+			NUM_ROW="5"
+			SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+		>
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		<PARAMETER
+			NAME="PORT"
+			FIELD="TEXT"
+			REPOSITORY_VALUE="PORT"
+			REQUIRED="true"
+			NUM_ROW="5"
+			SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+		>
+		    <DEFAULT>"9042"</DEFAULT>
+		</PARAMETER>
+		<PARAMETER FIELD="TEXT" NAME="DATACENTER" REPOSITORY_VALUE="DATACENTER" NUM_ROW="8" SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (DB_VERSION == 'CASSANDRA_4_0')">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER
+            NAME="REQUIRED_AUTHENTICATION"
+            FIELD="CHECK"
+            REPOSITORY_VALUE="REQUIRED_AUTHENTICATION"
+            NUM_ROW="9"
+            SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="USERNAME"
+            FIELD="TEXT"
+            REPOSITORY_VALUE="USERNAME"
+            REQUIRED="true"
+            NUM_ROW="10"
+            SHOW_IF="(REQUIRED_AUTHENTICATION == 'true') AND (USE_EXISTING_CONNECTION == 'false')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="PASSWORD"
+            FIELD="PASSWORD"
+            REPOSITORY_VALUE="PASSWORD"
+            REQUIRED="true"
+            NUM_ROW="10"
+            SHOW_IF="(REQUIRED_AUTHENTICATION == 'true') AND (USE_EXISTING_CONNECTION == 'false')"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="USE_HTTPS" FIELD="CHECK" NUM_ROW="11" 
+        SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (DB_VERSION == 'CASSANDRA_4_0')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="HTTPS_SETTING" FIELD="COMPONENT_LIST" FILTER="tSetKeystore"
+            NUM_ROW="11" SHOW_IF="(isShow[USE_HTTPS]) AND (USE_HTTPS == 'true')"
+            DYNAMIC_SETTINGS="true" />
+		<PARAMETER
+			NAME="KEY_SPACE"
+			FIELD="TEXT"
+			REPOSITORY_VALUE="KEY_SPACE"
+			REQUIRED="true"
+			NUM_ROW="12"
+			GROUP="KEYSPACE_CONFIGURATION"
+		>
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		<PARAMETER
+			NAME="ACTION_ON_KEYSPACE"
+	     	FIELD="CLOSED_LIST"
+	      	NUM_ROW="12"
+	      	GROUP="KEYSPACE_CONFIGURATION"
+    	>
+		   	<ITEMS DEFAULT="NONE">
+		    	<ITEM NAME="NONE" VALUE="NONE" />
+		        <ITEM NAME="DROP_CREATE" VALUE="DROP_CREATE"/>
+		        <ITEM NAME="CREATE" VALUE="CREATE"/>
+		        <ITEM NAME="CREATE_IF_NOT_EXISTS" VALUE="CREATE_IF_NOT_EXISTS"/>
+		        <ITEM NAME="DROP_IF_EXISTS_AND_CREATE" VALUE="DROP_IF_EXISTS_AND_CREATE" />
+		    </ITEMS>
+    	</PARAMETER>
+    	<PARAMETER
+            NAME="REPLICA_STRATEGY"
+            FIELD="CLOSED_LIST"
+            NUM_ROW="13"
+            GROUP="KEYSPACE_CONFIGURATION"
+            SHOW_IF="(isShow[ACTION_ON_KEYSPACE]) AND (ACTION_ON_KEYSPACE != 'NONE') AND (((USE_EXISTING_CONNECTION == 'false') AND (DB_VERSION == 'CASSANDRA_4_0')) OR ((USE_EXISTING_CONNECTION == 'true') AND (#LINK@NODE.CONNECTION.DB_VERSION == 'CASSANDRA_4_0')))"
+    	>
+    	   <ITEMS DEFAULT="NetworkTopologyStrategy">
+    	       <ITEM NAME="NetworkTopologyStrategy" VALUE="NetworkTopologyStrategy"/>
+    	       <ITEM NAME="SimpleStrategy" VALUE="SimpleStrategy"/>
+    	   </ITEMS>
+    	</PARAMETER>
+    	<PARAMETER
+	    	NAME="SIMEPLE_REPLICA_NUMBER"
+	    	FIELD="TEXT"
+	    	NUM_ROW="14"
+	    	GROUP="KEYSPACE_CONFIGURATION"
+	    	SHOW_IF="(isShow[REPLICA_STRATEGY]) AND (REPLICA_STRATEGY == 'SimpleStrategy')"
+    	>
+    	   <DEFAULT>3</DEFAULT>
+    	</PARAMETER>
+    	<PARAMETER
+            NAME="NETWORK_REPLICA_TABLE"
+            FIELD="TABLE"
+            NUM_ROW="14"
+            GROUP="KEYSPACE_CONFIGURATION"
+            SHOW_IF="(isShow[REPLICA_STRATEGY]) AND (REPLICA_STRATEGY == 'NetworkTopologyStrategy')"
+    	>
+    	    <ITEMS>
+                <ITEM NAME="DATACENTER_NAME"/>
+                <ITEM NAME="REPLICA_NUMBER" VALUE="3"/>
+            </ITEMS>
+    	</PARAMETER>
+        <!--parameter only for hector-->
+		<PARAMETER
+			NAME="COLUMN_FAMILY"
+			FIELD="TEXT"
+			REQUIRED="true"
+			NUM_ROW="15"
+			GROUP="COLUMN_FAMILY_CONFIGURATION"
+		>
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER
+			NAME="ACTION_ON_COLUMN_FAMILY"
+	     	FIELD="CLOSED_LIST"
+	      	NUM_ROW="15"
+	      	GROUP="COLUMN_FAMILY_CONFIGURATION"
+    	>
+		   	<ITEMS DEFAULT="NONE">
+		    	<ITEM NAME="NONE" VALUE="NONE" />
+		        <ITEM NAME="DROP_CREATE" VALUE="DROP_CREATE"/>
+		        <ITEM NAME="CREATE" VALUE="CREATE"/>
+		        <ITEM NAME="CREATE_IF_NOT_EXISTS" VALUE="CREATE_IF_NOT_EXISTS"/>
+		        <ITEM NAME="DROP_IF_EXISTS_AND_CREATE" VALUE="DROP_IF_EXISTS_AND_CREATE" />
+		        <ITEM NAME="TRUNCATE" VALUE="TRUNCATE" />
+		    </ITEMS>
+    	</PARAMETER>
+        <!--parameter only for datastax-->
+        <PARAMETER
+            NAME="DATA_ACTION"
+            FIELD="CLOSED_LIST"
+            NUM_ROW="16"
+        >
+            <ITEMS DEFAULT="INSERT">
+                <ITEM NAME="INSERT" VALUE="INSERT" />
+                <ITEM NAME="UPDATE" VALUE="UPDATE"/>
+                <ITEM NAME="DELETE" VALUE="DELETE"/>
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            NAME="SCHEMA_FLOW"
+            FIELD="SCHEMA_TYPE"
+            NUM_ROW="19"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+		<PARAMETER
+			NAME="DIE_ON_ERROR"
+			FIELD="CHECK"
+			NUM_ROW="90"
+            NOT_SHOW_IF="(isShow[USE_UNLOGGED_BATCH]) AND (USE_UNLOGGED_BATCH == 'true')"
+		>
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+	</PARAMETERS>
+	<ADVANCED_PARAMETERS>
+        <PARAMETER
+            NAME="USE_UNLOGGED_BATCH"
+            FIELD="CHECK"
+            NUM_ROW="1"
+        >
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+        <PARAMETER FIELD="TEXT" NAME="BATCH_SIZE" REQUIRED="true" NUM_ROW="1" 
+            SHOW_IF="((isShow[USE_UNLOGGED_BATCH]) AND (USE_UNLOGGED_BATCH == 'true'))">
+			<DEFAULT>1000</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="GROUP_METHOD" FIELD="CLOSED_LIST" REQUIRED="true" NUM_ROW="3" SHOW_IF="(isShow[USE_UNLOGGED_BATCH]) AND (USE_UNLOGGED_BATCH == 'true')">
+            <ITEMS DEFAULT="PARTITION">
+                <ITEM NAME="PARTITION" VALUE="PARTITION"/>
+                <ITEM NAME="REPLICA" VALUE="REPLICA"/>
+                <ITEM NAME="NONE" VALUE="NONE"/>
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER NAME="GROUP_CACHE" FIELD="CHECK" REQUIRED="true" NUM_ROW="3" SHOW_IF="(isShow[USE_UNLOGGED_BATCH]) AND (USE_UNLOGGED_BATCH == 'true')">
+        	<DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="ASYNC" FIELD="CHECK" REQUIRED="true" NUM_ROW="5" SHOW_IF="(isShow[USE_UNLOGGED_BATCH]) AND (USE_UNLOGGED_BATCH == 'true')">
+        	<DEFAULT>true</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="CONCURRENT_TASKS" FIELD="TEXT" REQUIRED="true" NUM_ROW="5" SHOW_IF="(isShow[ASYNC]) AND (ASYNC == 'true')">
+        	<DEFAULT>5</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="INSERT_IF_NOT_EXISTS"
+            FIELD="CHECK"
+            NUM_ROW="10"
+			SHOW_IF="(isShow[DATA_ACTION]) AND (DATA_ACTION == 'INSERT') AND (USING_TIMESTAMP == 'false')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="DELETE_IF_EXISTS"
+            FIELD="CHECK"
+            NUM_ROW="10"
+            SHOW_IF="(isShow[DATA_ACTION]) AND (DATA_ACTION == 'DELETE')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+            NAME="USING_TTL"
+            FIELD="CHECK"
+            NUM_ROW="15"
+            SHOW_IF="(isShow[DATA_ACTION]) AND ((DATA_ACTION == 'INSERT') OR (DATA_ACTION == 'UPDATE'))"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="TTL"
+            FIELD="COLUMN_LIST"
+            NUM_ROW="15"
+            SHOW_IF="(isShow[USING_TTL]) AND (USING_TTL == 'true')"
+        />
+
+        <PARAMETER
+            NAME="USING_TIMESTAMP"
+            FIELD="CHECK"
+            NUM_ROW="15"
+            SHOW_IF="(isShow[DATA_ACTION]) AND (((DATA_ACTION == 'INSERT') AND (INSERT_IF_NOT_EXISTS == 'false')) OR (DATA_ACTION != 'INSERT')))"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+            NAME="TIMESTAMP"
+            FIELD="COLUMN_LIST"
+            NUM_ROW="15"
+            SHOW_IF="(isShow[USING_TIMESTAMP]) AND (USING_TIMESTAMP == 'true')"
+        />
+        <PARAMETER
+            NAME="IF_CONDITION"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="20"
+            NB_LINES="5"
+            SHOW_IF="(isShow[DATA_ACTION]) AND ((DATA_ACTION == 'UPDATE') OR ((DATA_ACTION == 'DELETE') AND (DELETE_IF_EXISTS == 'false')))"
+        >
+            <ITEMS>
+                <ITEM NAME="COLUMN_NAME" FIELD="COLUMN_LIST" />
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            NAME="ASSIGNMENT_OPERATION"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="25"
+            NB_LINES="5"
+            SHOW_IF="(isShow[DATA_ACTION]) AND (DATA_ACTION == 'UPDATE')"
+        >
+            <ITEMS>
+                <ITEM NAME="COLUMN_NAME" FIELD="COLUMN_LIST" />
+                <ITEM NAME="OPERATION" FIELD="CLOSED_LIST">
+                    <ITEMS DEFAULT="+v">
+                        <ITEM NAME="+v" VALUE="+v" /><!--append-->
+                        <ITEM NAME="v+" VALUE="v+" /><!--prepend-->
+                        <ITEM NAME="-" VALUE="-" />
+                        <ITEM NAME="p/k" VALUE="p/k" /><!--select one column as position/key-->
+                    </ITEMS>
+                </ITEM>
+                <ITEM NAME="KEY_COLUMN" FIELD="COLUMN_LIST" NOT_READONLY_IF="ASSIGNMENT_OPERATION.OPERATION == 'p/k'"/>
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            NAME="DELETE_COLUMN_BY_POSITION_KEY"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="30"
+            NB_LINES="5"
+            SHOW_IF="(isShow[DATA_ACTION]) AND (DATA_ACTION == 'DELETE')"
+        >
+            <ITEMS>
+                <ITEM NAME="COLUMN_NAME" FIELD="COLUMN_LIST" />
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+            NAME="ROW_KEY_IN_LIST"
+            FIELD="TABLE"
+            REQUIRED="false"
+            NUM_ROW="35"
+            NB_LINES="5"
+            SHOW_IF="(isShow[DATA_ACTION]) AND ((DATA_ACTION == 'UPDATE') OR (DATA_ACTION == 'DELETE'))"
+        >
+            <ITEMS>
+                <ITEM NAME="COLUMN_NAME" FIELD="COLUMN_LIST" />
+            </ITEMS>
+        </PARAMETER>
+	</ADVANCED_PARAMETERS>
+	<CODEGENERATION>
+        <IMPORTS>
+            <IMPORT NAME="reload4j-1.2.22" MODULE="reload4j-1.2.22.jar"
+                    MVN="mvn:ch.qos.reload4j/reload4j/1.2.22"/>
+            <IMPORTS REQUIRED_IF="(USE_EXISTING_CONNECTION == 'false')">
+				<IMPORTS REQUIRED_IF="(DB_VERSION == 'CASSANDRA_4_0')">
+					<IMPORT MODULE="netty-common-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-common/4.1.97.Final"
+	                    NAME="netty-common-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-buffer-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-buffer/4.1.97.Final"
+	                    NAME="netty-buffer-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-transport-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-transport/4.1.97.Final"
+	                    NAME="netty-transport-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-resolver-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-resolver/4.1.97.Final"
+	                    NAME="netty-resolver-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-handler-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-handler/4.1.97.Final"
+	                    NAME="netty-handler-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-transport-native-unix-common-4.1.97.Final.jar"
+						MVN="mvn:io.netty/netty-transport-native-unix-common/4.1.97.Final"
+						NAME="netty-transport-native-unix-common-4.1.97.Final.jar" />
+					<IMPORT MODULE="netty-codec-4.1.97.Final.jar"
+	                    MVN="mvn:io.netty/netty-codec/4.1.97.Final"
+	                    NAME="netty-codec-4.1.97.Final.jar" />
+                    <IMPORT MODULE="slf4j-api-1.7.29.jar"
+		                MVN="mvn:org.slf4j/slf4j-api/1.7.29"
+		                NAME="slf4j-api-1.7.29.jar" />
+	                <IMPORT MODULE="java-driver-core-4.13.0.jar"
+	                    MVN="mvn:com.datastax.oss/java-driver-core/4.13.0"
+	                    NAME="java-driver-core-4.13.0.jar" />
+	                <IMPORT MODULE="java-driver-shaded-guava-25.1-jre-graal-sub-1.jar"
+	                    MVN="mvn:com.datastax.oss/java-driver-shaded-guava/25.1-jre-graal-sub-1"
+	                    NAME="java-driver-shaded-guava-25.1-jre-graal-sub-1.jar" />
+	                <IMPORT
+                        NAME="jnr-posix-3.1.5.jar"
+                        MODULE="jnr-posix-3.1.5.jar" MVN="mvn:com.github.jnr/jnr-posix/3.1.5" />
+	                <IMPORT MODULE="talend-cassandra-2.0.jar"
+	                     MVN="mvn:org.talend.components/talend-cassandra/2.0"
+	                     NAME="talend-cassandra-2.0.jar" /><!-- for output only -->   
+					<IMPORT MODULE="config-1.4.1.jar"
+	                    MVN="mvn:com.typesafe/config/1.4.1"
+	                    NAME="config-1.4.1.jar" />
+					<IMPORT MODULE="native-protocol-1.5.0.jar"
+	                    MVN="mvn:com.datastax.oss/native-protocol/1.5.0"
+	                    NAME="native-protocol-1.5.0.jar" />
+                </IMPORTS>
+            </IMPORTS>
+        </IMPORTS>
+	</CODEGENERATION>
+	<RETURNS>
+		<RETURN AVAILABILITY="AFTER" NAME="NB_LINE" TYPE="id_Integer" />
+	</RETURNS>
+</COMPONENT>

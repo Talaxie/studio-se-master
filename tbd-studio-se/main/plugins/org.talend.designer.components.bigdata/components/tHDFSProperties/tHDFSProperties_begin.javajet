@@ -1,0 +1,83 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.ElementParameterParser
+	java.util.Map 
+    java.util.List 
+	"
+%>
+
+	<%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HDFS/GetFileSystem.javajet"%>
+	
+	<%
+	String path = ElementParameterParser.getValue(node, "__FILENAME__");
+	boolean MD5 = new Boolean(ElementParameterParser.getValue(node, "__MD5__"));
+	
+	String outputConnName = null;
+	IConnection outputConn = null;
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if (conns!=null) {
+		if (conns.size()>0) {
+			for (int i=0;i<conns.size();i++) {
+				IConnection connTemp = conns.get(i);
+				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					outputConn = connTemp;
+					outputConnName = connTemp.getName();
+					break;
+				}
+			}
+		}
+	}
+	
+	if (outputConnName != null){
+	%>
+	
+	<%=outputConnName %> = new <%=outputConnName %>Struct();
+	org.apache.hadoop.fs.Path path_<%=cid %> = new org.apache.hadoop.fs.Path(<%=path%>);
+	
+	if(fs_<%=cid%>.exists(path_<%=cid %>)) {
+	    <%=outputConnName %>.abs_path = path_<%=cid %>.toString();
+	    <%=outputConnName %>.dirname = path_<%=cid %>.getParent().toString();
+	    <%=outputConnName %>.basename = path_<%=cid %>.getName();
+	    
+	    org.apache.hadoop.fs.FileStatus statu_<%=cid%> = fs_<%=cid%>.getFileStatus(path_<%=cid %>);
+	    
+	    StringBuffer stringBuffer_<%=cid%> = new StringBuffer();
+	    stringBuffer_<%=cid%>.append(statu_<%=cid%>.getPermission());
+	    stringBuffer_<%=cid%>.append("(owner=");
+	    stringBuffer_<%=cid%>.append(statu_<%=cid%>.getOwner());
+	    stringBuffer_<%=cid%>.append(",");
+	    stringBuffer_<%=cid%>.append("group=");
+	    stringBuffer_<%=cid%>.append(statu_<%=cid%>.getGroup());
+	    stringBuffer_<%=cid%>.append(")");
+	    <%=outputConnName %>.mode_string = stringBuffer_<%=cid%>.toString();
+	    
+	    <%=outputConnName %>.size = statu_<%=cid%>.getLen();
+	    <%=outputConnName %>.mtime = statu_<%=cid%>.getModificationTime();
+	    <%=outputConnName %>.mtime_string =(new java.util.Date(statu_<%=cid%>.getModificationTime())).toString();
+		
+		<%if(MD5){%>
+			if(!statu_<%=cid%>.isDir()) {
+				org.apache.hadoop.fs.FileChecksum checksum_<%=cid%> = fs_<%=cid%>.getFileChecksum(path_<%=cid %>);
+				if(checksum_<%=cid%>!=null) {
+					<%=outputConnName %>.md5 = checksum_<%=cid%>.toString();
+				}
+			}
+		<%}%>
+		
+		
+	}
+	<%
+		if(isLog4jEnabled) {
+	%>
+	else {
+		log.warn("<%=cid%> - file or directory : " + path_<%=cid %> + " does not exist.");
+	}
+	<%
+    	}
+	}
+	
+	%>

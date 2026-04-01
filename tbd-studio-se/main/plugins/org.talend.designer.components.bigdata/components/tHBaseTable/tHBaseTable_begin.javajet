@@ -1,0 +1,94 @@
+<%@ jet
+imports="
+        java.util.Map
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.bigdata.di.components.thbase.THbaseTable
+        "
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+    final THbaseTable thbaseTable = new THbaseTable((CodeGeneratorArgument) argument);
+    final THbaseTable thbase = thbaseTable;
+    final String cid = thbase.getCid();
+    final INode node = thbase.getNode();
+
+    log4jFileUtil.componentStartInfo(thbase.getNode());
+
+   if(!thbaseTable.useExistingConnection()){
+ %>
+     <%@ include file="@{org.talend.designer.components.bigdata}/components/templates/HBase/CreateHBaseConnection.javajet"%>
+ <% } else { %>
+ org.apache.hadoop.hbase.client.Connection connection_<%=cid%> = (org.apache.hadoop.hbase.client.Connection) globalMap.get("connection_<%=thbase.getExistingConnection()%>");
+ <% } %>
+
+ resourceMap.put("connection_<%=cid%>", connection_<%=cid%>);
+
+int nb_line_<%=cid%> = 0;
+
+//set familyParametersList
+java.util.List<java.util.Map<String, String>> familyParameters = new java.util.ArrayList();
+java.util.Map map2 = null;
+<%
+for (Map map: thbaseTable.getFamilyParameters()){
+%>
+    map2 = new java.util.HashMap();
+<%
+    for (Map.Entry<String, String> entry : (Iterable<Map.Entry<String, String>>) map.entrySet()) {
+%>
+        map2.put("<%=entry.getKey()%>",<%=entry.getValue()%>);
+<%
+     } %>
+     familyParameters.add(map2);
+<% }
+%>
+
+// table action
+org.talend.bigdata.core.di.components.hbase.ImmutableTHbaseTable
+.builder()
+.connection(connection_<%=cid%>)
+.isSpecifyNamespace(<%=thbaseTable.isSpecifyNamespace()%>)
+.namespaceName(<%=thbaseTable.getNamespace()%>)
+.tableName(<%=thbaseTable.getTableName()%>)
+.tableAction("<%=thbaseTable.getTableAction()%>")
+.addAllFamilyParameters(familyParameters)
+.regionSplitKeys(<%=thbaseTable.getRegionSplitKeys()%>)
+                    .createTableFunction(((tableName, admin, families, regionSplitKeysByteArr)->{
+                        <% if (thbaseTable.isHBase2x()){ %>
+                            org.apache.hadoop.hbase.client.TableDescriptorBuilder tableDesBuilder =
+                                       org.apache.hadoop.hbase.client.TableDescriptorBuilder.newBuilder(tableName);
+                            for(org.apache.hadoop.hbase.HColumnDescriptor family: families){
+                                tableDesBuilder.setColumnFamily(family);
+                            }
+                            org.apache.hadoop.hbase.client.TableDescriptor tableDes = tableDesBuilder.build();
+                       <% } else { %>
+                            org.apache.hadoop.hbase.HTableDescriptor tableDes =
+                                        new org.apache.hadoop.hbase.HTableDescriptor(tableName);
+                            for(org.apache.hadoop.hbase.HColumnDescriptor family: families){
+                                tableDes.addFamily(family);
+                            }
+                       <% } %>
+                       if (regionSplitKeysByteArr != null){
+                            admin.createTable(tableDes, regionSplitKeysByteArr);
+                       } else {
+                            admin.createTable(tableDes);
+                       }
+                    }))
+.build()
+.doTableAction();
+
+// close hbase connection
+<%
+if(!thbaseTable.useExistingConnection()){
+%>
+    connection_<%=cid%>.close();
+    resourceMap.put("finish_<%=cid%>", true);
+<%
+}
+%>
+globalMap.put("<%=cid%>_NB_LINE",nb_line_<%=cid%>);
+
+<%
+log4jFileUtil.writeDataFinishInfo(thbase.getNode());
+%>

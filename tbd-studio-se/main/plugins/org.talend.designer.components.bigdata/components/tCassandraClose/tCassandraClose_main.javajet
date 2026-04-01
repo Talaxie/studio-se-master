@@ -1,0 +1,33 @@
+<%@ jet 
+	imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+    	org.talend.designer.codegen.config.CodeGeneratorArgument
+    	org.talend.core.model.utils.NodeUtil
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    %>
+    <%@ include file="../tCassandraConnection/tCassandraConnection_checker.javajet"%>
+    <%
+    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+    INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+    %>
+
+	<%
+	String dbVersion = ElementParameterParser.getValue(connectionNode, "__DB_VERSION__");
+	if("CASSANDRA_4_0".equals(dbVersion)) {
+	%>
+		com.datastax.oss.driver.api.core.CqlSession connection_<%=cid%> = (com.datastax.oss.driver.api.core.CqlSession)globalMap.get("connection_<%=connection%>");
+		if(connection_<%=cid%> != null){
+			connection_<%=cid%>.close();
+		}
+	<%
+	}
+	%>
+	
+	

@@ -1,0 +1,40 @@
+<%@ jet 
+	imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser
+	"
+%>
+	
+
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String hdfsDir = ElementParameterParser.getValue(node, "__HDFSDIR__");
+	String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	%>
+	
+	String hdfsDir_<%=cid %> = <%=hdfsDir %>.replaceAll("\\\\","/");
+	org.apache.hadoop.fs.Path path_<%=cid%> = new org.apache.hadoop.fs.Path(<%=hdfsDir %> + "/" + <%=filename%>);
+	if(fs_<%=cid%>.exists(path_<%=cid%>)){
+		globalMap.put("<%=cid %>_EXISTS", true);
+		
+		<%if(isLog4jEnabled) {%>
+       	log.info("<%=cid%> - directory or file : " + path_<%=cid%> + " exists.");
+        <%}%>
+	}else{
+		globalMap.put("<%=cid %>_EXISTS", false);
+		
+		<%if(isLog4jEnabled) {%>
+       	log.info("<%=cid%> - directory or file : " + path_<%=cid%> + " does not exist.");
+        <%}%>
+	}
+	globalMap.put("<%=cid %>_FILENAME",<%=filename%>);
+	
+	
+
+	

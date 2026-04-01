@@ -1,0 +1,194 @@
+<%@ jet
+%>
+<%
+	boolean useYarn = "true".equals(ElementParameterParser.getValue(node, "__USE_YARN__"));
+	String resourceManager = ElementParameterParser.getValue(node, "__RESOURCE_MANAGER__");
+
+	String yarnClasspathSeparator = ElementParameterParser.getValue(node, "__CLASSPATH_SEPARATOR__");
+%>
+	globalMap.put("current_client_path_separator", System.getProperty("path.separator"));
+	System.setProperty("path.separator", <%=yarnClasspathSeparator%>);
+
+	globalMap.put("HADOOP_USER_NAME_<%=cid%>", System.getProperty("HADOOP_USER_NAME"));
+<%
+	if(isCustom || (!isCustom && sqoopDistrib.doSupportImpersonation())) {
+		String hadoopUser = ElementParameterParser.getValue(node, "__HADOOP_USER__");
+%>
+		String username_<%=cid %> = <%=hadoopUser%>;
+		if(username_<%=cid %>!=null && !"".equals(username_<%=cid %>.trim())) {
+			System.setProperty("HADOOP_USER_NAME",username_<%=cid %>);
+		}
+<%
+	}
+%>
+
+	org.apache.hadoop.conf.Configuration configuration_<%=cid%> = new org.apache.hadoop.conf.Configuration();
+	configuration_<%=cid%>.set("<%=fsDefalutName%>", <%=namenode%>);
+<%
+
+	boolean isKerberosAvailableHadoop2 = !isCustom && ( sqoopDistrib.isHadoop2() )  && sqoopDistrib.doSupportKerberos();
+	boolean isHadoop2 = sqoopDistrib.isHadoop2();
+	boolean isKerberosAvailableHadoop1 = !isCustom && sqoopDistrib.isHadoop1() && sqoopDistrib.doSupportKerberos();
+
+	if((isCustom && useYarn) || (!isCustom && isHadoop2)) {
+%>
+    	configuration_<%=cid%>.set("mapreduce.framework.name", "yarn");
+    	configuration_<%=cid%>.set("yarn.resourcemanager.address", <%=resourceManager%>);
+<%
+		boolean setJobHistoryAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_JOBHISTORY_ADDRESS__"));
+		if(setJobHistoryAddress) {
+			String jobHistoryAddress = ElementParameterParser.getValue(node,"__JOBHISTORY_ADDRESS__");
+			%>
+			configuration_<%=cid%>.set("mapreduce.jobhistory.address", <%=jobHistoryAddress%>);
+			<%
+		}
+
+		boolean setSchedulerAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_SCHEDULER_ADDRESS__"));
+		if(setSchedulerAddress) {
+			String schedulerAddress = ElementParameterParser.getValue(node,"__RESOURCEMANAGER_SCHEDULER_ADDRESS__");
+%>
+			configuration_<%=cid%>.set("yarn.resourcemanager.scheduler.address", <%=schedulerAddress%>);
+<%
+		}
+		boolean setStagingDirectory = "true".equals(ElementParameterParser.getValue(node, "__SET_STAGING_DIRECTORY__"));
+		if(setStagingDirectory) {
+			String stagingDirectory = ElementParameterParser.getValue(node, "__STAGING_DIRECTORY__");
+%>
+			configuration_<%=cid%>.set("yarn.app.mapreduce.am.staging-dir", <%=stagingDirectory%>);
+<%
+		}
+
+		boolean crossPlatformSubmission = "true".equals(ElementParameterParser.getValue(node, "__CROSS_PLATFORM_SUBMISSION__"));
+		if((!isCustom && sqoopDistrib.doSupportCrossPlatformSubmission()) || (isCustom && useYarn && crossPlatformSubmission)) {
+%>
+			configuration_<%=cid%>.set("mapreduce.app-submission.cross-platform","true");
+<%
+		}
+
+		if(sqoopDistrib.doSupportCustomMRApplicationCP()){
+%>
+			configuration_<%=cid%>.set("mapreduce.application.classpath", "<%=sqoopDistrib.getCustomMRApplicationCP()%>");
+<%
+		}
+		if(!"SPARK".equals(sqoopDistrib.getDistribution())) {
+%>
+		configuration_<%=cid%>.set("yarn.application.classpath", "<%=sqoopDistrib.getYarnApplicationClasspath()%>");
+<%
+		} else {
+			%>
+			configuration_<%=cid%>.set("yarn.application.classpath", "<%=((org.talend.hadoop.distribution.AbstractDistribution) sqoopDistrib).getSparkClasspath(node.getProcess().getGeneratingNodes())%>");
+			<%
+		}
+
+		boolean setMemory = "true".equals(ElementParameterParser.getValue(node, "__SET_MEMORY__"));
+		if(setMemory) {
+			String mapMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_MAP_MEMORY_MB__");
+			String reduceMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_REDUCE_MEMORY_MB__");
+			String amMemory = ElementParameterParser.getValue(node,"__YARN_APP_MAPREDUCE_AM_RESOURCE_MB__");
+%>
+			configuration_<%=cid%>.set("mapreduce.map.memory.mb", <%=mapMemory%>);
+			configuration_<%=cid%>.set("mapreduce.reduce.memory.mb", <%=reduceMemory%>);
+			configuration_<%=cid%>.set("yarn.app.mapreduce.am.resource.mb", <%=amMemory%>);
+<%
+		}
+	} else {
+%>
+		configuration_<%=cid%>.set("mapred.job.tracker", <%=jobtracker%>);
+<%
+	}
+
+	if(hadoopProps!=null && hadoopProps.size() > 0){
+		for(Map<String, String> item : hadoopProps){
+%>
+			configuration_<%=cid%>.set(<%=item.get("PROPERTY") %> ,<%=item.get("VALUE") %>);
+<%
+		}
+	}
+	if(useKrb) {
+		String namenodePrincipal = ElementParameterParser.getValue(node, "__NAMENODE_PRINCIPAL__");
+		boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+		String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+		String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+%>
+		configuration_<%=cid%>.set("dfs.namenode.kerberos.principal", <%=namenodePrincipal%>);
+<%
+		if(isKerberosAvailableHadoop1 || (isCustom && !useYarn)) {
+			String jobTrackerPrincipal = ElementParameterParser.getValue(node, "__JOBTRACKER_PRINCIPAL__");
+%>
+			configuration_<%=cid%>.set("mapreduce.jobtracker.kerberos.principal", <%=jobTrackerPrincipal%>);
+<%
+		}
+
+		if(isKerberosAvailableHadoop2 || (isCustom && useYarn)) {
+			String resourceManagerPrincipal = ElementParameterParser.getValue(node, "__RESOURCEMANAGER_PRINCIPAL__");
+			String jobHistoryPrincipal = ElementParameterParser.getValue(node, "__JOBHISTORY_PRINCIPAL__");
+%>
+			configuration_<%=cid%>.set("yarn.resourcemanager.principal", <%=resourceManagerPrincipal%>);
+			configuration_<%=cid%>.set("mapreduce.jobhistory.principal", <%=jobHistoryPrincipal%>);
+<%
+		}
+        if ((isCustom || sqoopDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            %>
+            System.setProperty("pname", "MapRLogin");
+            System.setProperty("https.protocols", "TLSv1.2");
+            System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+            System.setProperty("hadoop.login", <%=setMapRHadoopLogin ? mapRHadoopLogin : "\"kerberos\""%>);
+            <%
+        }
+		if(useKeytab) {
+%>
+			org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+<%
+		}
+		if ((isCustom || sqoopDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            %>
+            com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+            maprLogin_<%=cid%>.getMapRCredentialsViaKerberos(<%=mapRTicketCluster%>, <%=mapRTicketDuration%>);
+            <%
+        }
+	} else {
+	    // MapR Ticket
+	    if ((isCustom || sqoopDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            passwordFieldName = "__MAPRTICKET_PASSWORD__";
+            %>
+            System.setProperty("pname", "MapRLogin");
+            System.setProperty("https.protocols", "TLSv1.2");
+            System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+            com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+            <%
+            if (setMapRHadoopLogin) {
+                %>
+                System.setProperty("hadoop.login", <%=mapRHadoopLogin%>);
+                <%
+            } else {
+                %>
+                maprLogin_<%=cid%>.setCheckUGI(false);
+                <%
+            }
+            if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+                final String decryptedMapRPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+            <%} else {%>
+                final String decryptedMapRPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+            <%}%>
+
+            <%
+            if(sqoopDistrib.doSupportMaprTicketV52API()){
+				%>
+            	maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=mapRTicketUsername%>, decryptedMapRPassword_<%=cid%>, <%=mapRTicketDuration%>, "");
+            	<%
+            } else {
+				%>
+            	maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=mapRTicketUsername%>, decryptedMapRPassword_<%=cid%>, <%=mapRTicketDuration%>);
+            	<%
+            }
+        }
+	}
+
+    if (useDatanodeHostname) {
+        %>
+        configuration_<%=cid%>.set("dfs.client.use.datanode.hostname", "true");
+        <%
+    }
+%>
+	//check whether we can connect to the fs?
+	org.apache.hadoop.fs.FileSystem fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(configuration_<%=cid%>);

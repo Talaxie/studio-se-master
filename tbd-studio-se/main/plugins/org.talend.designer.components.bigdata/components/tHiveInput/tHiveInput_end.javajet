@@ -1,0 +1,60 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+		" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String cid = node.getUniqueName();
+	String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+%>
+	<%if(isLog4jEnabled){%>
+		log.debug("<%=cid%> - Retrieving the record " + nb_line_<%=cid%> + ".");
+	<%}%>
+	}
+}finally{
+	stmt_<%=cid %>.close();
+<%
+	if(!("true").equals(useExistingConn))
+	{
+		%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Closing the connection to the database.");
+		<%}%>
+		conn_<%=cid %>.close();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to the database closed.");
+		<%}%>
+		<%
+	}
+%>
+}
+globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Retrieved records count: "+ nb_line_<%=cid%> +".");
+<%}%>
+
+String currentClientPathSeparator_<%=cid%> = (String)globalMap.get("current_client_path_separator");
+if(currentClientPathSeparator_<%=cid%>!=null) {
+	System.setProperty("path.separator", currentClientPathSeparator_<%=cid%>);
+	globalMap.put("current_client_path_separator", null);
+}
+
+String currentClientUsername_<%=cid%> = (String)globalMap.get("current_client_user_name");
+if(currentClientUsername_<%=cid%>!=null) {
+	System.setProperty("user.name", currentClientUsername_<%=cid%>);
+	globalMap.put("current_client_user_name", null);
+}
+
+String originalHadoopUsername_<%=cid%> = (String)globalMap.get("HADOOP_USER_NAME_<%=cid%>");
+if(originalHadoopUsername_<%=cid%>!=null) {
+	System.setProperty("HADOOP_USER_NAME", originalHadoopUsername_<%=cid%>);
+	globalMap.put("HADOOP_USER_NAME_<%=cid%>", null);
+} else {
+	System.clearProperty("HADOOP_USER_NAME");
+}

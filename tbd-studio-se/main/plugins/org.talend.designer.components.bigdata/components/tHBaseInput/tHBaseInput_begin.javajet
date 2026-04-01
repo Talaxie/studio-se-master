@@ -1,0 +1,492 @@
+<%@ jet 
+imports="
+        java.util.List
+        java.util.Map
+        org.talend.core.model.process.ElementParameterParser	
+        org.talend.core.model.process.INode
+        org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.IMetadataColumn 
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.designer.bigdata.di.components.thbase.THbaseInput
+        "
+%>
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+    
+<%
+    final THbaseInput thbaseInput = new THbaseInput((CodeGeneratorArgument) argument);
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+    String zookeeper_quorum = ElementParameterParser.getValue(node, "__ZOOKEEPER_QUORUM__");
+    String zookeeper_client_port = ElementParameterParser.getValue(node, "__ZOOKEEPER_CLIENT_PORT__");
+    String table_name = ElementParameterParser.getValue(node, "__TABLE__");
+    boolean isByFilter = ("true").equals(ElementParameterParser.getValue(node, "__IS_BY_FILTER__"));
+    boolean defineSelection = "true".equals(ElementParameterParser.getValue(node, "__DEFINE_ROW_SELECTION__"));
+
+    boolean setTableNsMapping = "true".equals(ElementParameterParser.getValue(node, "__SET_TABLE_NS_MAPPING__"));
+    String tableNsMapping = ElementParameterParser.getValue(node, "__TABLE_NS_MAPPING__");
+    boolean useTableNsMapping = setTableNsMapping && ((tableNsMapping != null)&&(!tableNsMapping.equals("")));
+
+    log4jFileUtil.componentStartInfo(node);
+%>
+int nb_line_<%=cid%> = 0;
+org.apache.hadoop.conf.Configuration conn_<%=cid%>=null;
+<%
+INode connNode = "true".equals(useExistingConn) ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__") : node;
+String distribution = ElementParameterParser.getValue(connNode, "__DISTRIBUTION__");
+String hbaseVersion = ElementParameterParser.getValue(connNode, "__HBASE_VERSION__");
+boolean isSparkDistrib = "SPARK".equals(distribution);
+boolean isHBase2x = false;
+org.talend.hadoop.distribution.component.HBaseComponent hbaseDistrib = null;
+try {
+    hbaseDistrib = (org.talend.hadoop.distribution.component.HBaseComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, hbaseVersion);
+} catch (java.lang.Exception e) {
+    e.printStackTrace();
+    return "";
+}
+// not use existing connection
+if(!"true".equals(useExistingConn)){
+    boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+    boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+    String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+    String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+    String hbaseMasterPrincipal = ElementParameterParser.getValue(node, "__HBASE_MASTER_PRINCIPAL__");
+    String hbaseRegionServerPrincipal = ElementParameterParser.getValue(node, "__HBASE_REGIONSERVER_PRINCIPAL__");
+
+    boolean useMapRTicket = ElementParameterParser.getBooleanValue(node, "__USE_MAPRTICKET__");
+    String username = ElementParameterParser.getValue(node, "__USERNAME__");
+    String mapRTicketCluster = ElementParameterParser.getValue(node, "__MAPRTICKET_CLUSTER__");
+    String mapRTicketDuration = ElementParameterParser.getValue(node, "__MAPRTICKET_DURATION__");
+
+    boolean setMapRHomeDir = ElementParameterParser.getBooleanValue(node, "__SET_MAPR_HOME_DIR__");
+    String mapRHomeDir = ElementParameterParser.getValue(node, "__MAPR_HOME_DIR__");
+
+    boolean setMapRHadoopLogin = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_LOGIN__");
+    String mapRHadoopLogin = ElementParameterParser.getValue(node, "__HADOOP_LOGIN__");
+    boolean isCustom = hbaseDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+    try {
+        isHBase2x = "HBASE_2".equals(ElementParameterParser.getValue(node, "__HBASE_API_VERSION__"));
+    } finally {
+        //NPE if not spark
+    }
+    %>
+try{
+    conn_<%=cid%> = org.apache.hadoop.hbase.HBaseConfiguration.create();
+    conn_<%=cid%>.clear();
+    conn_<%=cid%>.set("hbase.zookeeper.quorum", <%=zookeeper_quorum%>); 
+    conn_<%=cid%>.set("hbase.zookeeper.property.clientPort",<%=zookeeper_client_port%>); 
+    conn_<%=cid%>.set("hbase.cluster.distributed","true"); 
+<%
+    boolean setZNodeParent = "true".equals(ElementParameterParser.getValue(node, "__SET_ZNODE_PARENT__"));
+    String zNodeParent = ElementParameterParser.getValue(node, "__ZNODE_PARENT__");		
+    if(setZNodeParent) {
+%>
+    conn_<%=cid%>.set("zookeeper.znode.parent",<%=zNodeParent%>); 
+<%
+    }
+    if(hbaseDistrib.doSupportKerberos() && useKrb){
+        if ((isCustom || hbaseDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            %>
+            System.setProperty("pname", "MapRLogin");
+            System.setProperty("https.protocols", "TLSv1.2");
+            System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+            System.setProperty("hadoop.login", <%=setMapRHadoopLogin ? mapRHadoopLogin : "\"kerberos\""%>);
+            <%
+        }
+%>
+        conn_<%=cid%>.set("hbase.master.kerberos.principal",<%=hbaseMasterPrincipal%>);
+        conn_<%=cid%>.set("hbase.regionserver.kerberos.principal",<%=hbaseRegionServerPrincipal%>);
+        conn_<%=cid%>.set("hbase.security.authorization","true");
+        conn_<%=cid%>.set("hbase.security.authentication","kerberos");
+<%
+        if(useKeytab){
+%>
+            org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+<%
+        }
+        if ((isCustom || hbaseDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            %>
+            com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+            maprLogin_<%=cid%>.getMapRCredentialsViaKerberos(<%=mapRTicketCluster%>, <%=mapRTicketDuration%>);
+            <%
+        }
+    } else {
+        // MapR ticket
+        if ((isCustom || hbaseDistrib.doSupportMapRTicket()) && useMapRTicket) {
+            String passwordFieldName = "__MAPRTICKET_PASSWORD__";
+            %>
+            System.setProperty("pname", "MapRLogin");
+            System.setProperty("https.protocols", "TLSv1.2");
+            System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+            com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+            <%
+            if (setMapRHadoopLogin) {
+                %>
+                System.setProperty("hadoop.login", <%=mapRHadoopLogin%>);
+                <%
+            } else {
+                %>
+                maprLogin_<%=cid%>.setCheckUGI(false);
+                <%
+            }
+            %>
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+            <%
+            if(hbaseDistrib.doSupportMaprTicketV52API()){
+                %>
+                maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=username%>, decryptedPassword_<%=cid%>, <%=mapRTicketDuration%>, "");
+                <%
+            } else {
+                %>
+                maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=username%>, decryptedPassword_<%=cid%>, <%=mapRTicketDuration%>);
+                <%
+            }
+        }
+    }
+
+    List<Map<String, String>> properties =
+        (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__HBASE_PARAMETERS__");
+       for(int i = 0 ; i < properties.size() ; i++){
+           Map<String, String> map = properties.get(i);
+           String property = map.get("PROPERTY");
+           String value= map.get("VALUE");
+%>
+        conn_<%=cid%>.set(<%=property%>,<%=value%>);
+<%
+   }
+}else{// use existing connection
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    List<? extends INode> nodes = node.getProcess().getGeneratingNodes();
+    for(INode targetNode : nodes){
+        if (targetNode.getUniqueName().equals(connection)) {
+            try {
+                isHBase2x = "HBASE_2".equals(ElementParameterParser.getValue(targetNode, "__HBASE_API_VERSION__"));
+            } finally {
+                //NPE if not spark
+            }
+            break;
+        }
+    }
+    String conn = "conn_" + connection;
+%>
+    conn_<%=cid%> = (org.apache.hadoop.conf.Configuration)globalMap.get("<%=conn%>");
+    if(conn_<%=cid%> == null){
+        throw new RuntimeException("<%=cid%>'s connection is null!");
+    }
+<%
+}
+isHBase2x = isSparkDistrib ? isHBase2x : hbaseDistrib.doSupportHBase2x();
+if(hbaseDistrib.doSupportMapRDB() && useTableNsMapping){
+%>
+    conn_<%=cid%>.set("hbase.table.namespace.mappings", <%=tableNsMapping%>);
+<%
+}
+
+if(defineSelection) {
+    String startRow = ElementParameterParser.getValue(node, "__START_ROW__");
+    String endRow = ElementParameterParser.getValue(node, "__END_ROW__");
+%>
+    org.apache.hadoop.hbase.client.Scan scan_<%=cid%> = new org.apache.hadoop.hbase.client.Scan(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=startRow %>), org.apache.hadoop.hbase.util.Bytes.toBytes(<%=endRow %>));
+<%
+} else {
+%>
+    org.apache.hadoop.hbase.client.Scan scan_<%=cid%> = new org.apache.hadoop.hbase.client.Scan();
+<%
+}
+List<IMetadataTable> metadatas = node.getMetadataList();
+%>
+String tableNameString = <%=thbaseInput.getTableName()%>;
+if (<%=thbaseInput.isSpecifyNamespace()%> && !"".equals(<%=thbaseInput.getNamespace()%>)) {
+    tableNameString = <%=thbaseInput.getNamespace()%> + ":" + tableNameString;
+}
+<%
+if ((metadatas!=null) && (metadatas.size() > 0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    boolean retrieveTimestamp = ElementParameterParser.getBooleanValue(node, "__RETRIEVE_TIMESTAMP__");
+    String sourceTimestampColumn = ElementParameterParser.getValue(node, "__TIMESTAMP_SOURCE_COLUMN__");
+    String timestampColumn = ElementParameterParser.getValue(node, "__TIMESTAMP_COLUMN__");
+    if (metadata != null) {
+        List<IMetadataColumn> columns = metadata.getListColumns();
+        List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__MAPPING__");
+        for(int i = 0 ; i < mapping.size() ; i++){
+            Map<String, String> map = mapping.get(i);
+            IMetadataColumn column = columns.get(i);
+            String schema_column = map.get("SCHEMA_COLUMN");
+            String family_column= map.get("FAMILY_COLUMN");
+            if(!(retrieveTimestamp && schema_column.equals(timestampColumn))){
+%>
+                scan_<%=cid%>.addColumn(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=family_column%>), org.apache.hadoop.hbase.util.Bytes.toBytes("<%=column.getOriginalDbColumnName()%>"));
+<%
+            }
+        }
+        if(isByFilter){
+            List<Map<String, String>> filterMapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__FILTER__");
+            String logical = ElementParameterParser.getValue(node,"__LOGICAL_OP__");
+            boolean hasMultipleColumnPrefixFilterType = false;
+            for(int i = 0 ; i < filterMapping.size() ; i++){
+                Map<String, String> filterMap = filterMapping.get(i);
+                String filterType = filterMap.get("FILTER_TYPE");
+                if("MultipleColumnPrefixFilter".equals(filterType)){
+                    hasMultipleColumnPrefixFilterType = true;
+                    break;
+                } 
+            }
+            if(hasMultipleColumnPrefixFilterType){
+%>
+                String [] multipleValues_<%=cid%> = null;
+                byte [][] multipleBytesValues_<%=cid%> = null;
+<%
+            }
+%>			
+            org.apache.hadoop.hbase.filter.FilterList filterList_<%=cid%> = new org.apache.hadoop.hbase.filter.FilterList(org.apache.hadoop.hbase.filter.FilterList.Operator.<%=logical%>);
+            org.apache.hadoop.hbase.filter.Filter filter_<%=cid%> = null;
+<%		
+            for(int j = 0 ; j < filterMapping.size() ; j++){
+                Map<String, String> filterMap = filterMapping.get(j);
+                String filterType = filterMap.get("FILTER_TYPE");//"SingleColumnValueFilter","FamilyFilter","QualifierFilter","ColumnPrefixFilter","MultipleColumnPrefixFilter","MultipleColumnPrefixFilter","RowFilter"
+                String filterColumn = filterMap.get("FILTER_COLUMN");
+                String filterFamily = filterMap.get("FILTER_FAMILY");
+                String filterOperation = filterMap.get("FILTER_OPERATOR");//"EQUAL","GREATER","GREATER_OR_EQUAL","LESS","LESS_OR_EQUAL","NO_OP","NOT_EQUAL",
+                String filterValue = filterMap.get("FILTER_VALUE");
+                String filterComparatorType = filterMap.get("FILTER_COMPARATOR_TYPE");//"BinaryComparator" ,"RegexStringComparator" ,"SubstringComparator"
+                if("SingleColumnValueFilter".equals(filterType)){//"filterValue" is column value,like: "1" ,"2" ... ，return whole row (all columns) value 
+                    if("BinaryComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.SingleColumnValueFilter(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>), org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>), org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>, org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterValue%>));
+<%
+                    }else if ("RegexStringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.SingleColumnValueFilter(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>), org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>), org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>, new org.apache.hadoop.hbase.filter.RegexStringComparator(<%=filterValue%>));
+<%
+                    }else if("SubstringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.SingleColumnValueFilter(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>), org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>), org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>, new org.apache.hadoop.hbase.filter.SubstringComparator(<%=filterValue%>));
+<%
+                    }
+                }else if("FamilyFilter".equals(filterType)){//"Filter Family" is family name ,like: "id_family","name_family"....， return columns which mapping in "Filter Family",filter other columns
+                    if("BinaryComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.FamilyFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.BinaryComparator(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>)));
+<%
+                    }else if ("RegexStringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.FamilyFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.RegexStringComparator(<%=filterColumn%>));
+<%
+                    }else if("SubstringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.FamilyFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.SubstringComparator(<%=filterColumn%>));
+<%
+                    }
+                }else if("QualifierFilter".equals(filterType)){ //"Filter Column" is column name,like:"id" or "name" .... then you will get meet codition column value ,filter other columns
+                    if("BinaryComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.QualifierFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.BinaryComparator(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>)));
+<%
+                    }else if ("RegexStringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.QualifierFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.RegexStringComparator(<%=filterColumn%>));
+<%
+                    }else if("SubstringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.QualifierFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.SubstringComparator(<%=filterColumn%>));
+<%
+                    }
+                }else if("ColumnPrefixFilter".equals(filterType)){//"Filter Column" value is column name,like:"id" or "name" ....,return column value,filter other columns
+                    if(filterFamily!=null && !"".equals(filterFamily)){ 
+%>
+                        scan_<%=cid%>.addFamily(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>));
+<%
+                    }
+%>
+                    filter_<%=cid%> = new org.apache.hadoop.hbase.filter.ColumnPrefixFilter(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>));
+<%
+                }else if("MultipleColumnPrefixFilter".equals(filterType)){ //"Filter Column" value is for column name ,like:"id,name" ,"id,name,sex".... , return column value,filter other columns
+                    if(filterFamily!=null && !"".equals(filterFamily)){ 
+%>
+                        scan_<%=cid%>.addFamily(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>));
+<%
+                    }
+%>
+                    if(<%=filterColumn%>!=null && !"".equals(<%=filterColumn%>)){
+                        multipleValues_<%=cid%> = <%=filterColumn%>.split(",");
+                        multipleBytesValues_<%=cid%> = new byte [multipleValues_<%=cid%>.length] [];
+                        for(int i = 0 ; i < multipleValues_<%=cid%>.length ; i++){
+                            multipleBytesValues_<%=cid%>[i] = org.apache.hadoop.hbase.util.Bytes.toBytes(multipleValues_<%=cid%>[i]);
+                        }
+                        filter_<%=cid%> =  new org.apache.hadoop.hbase.filter.MultipleColumnPrefixFilter(multipleBytesValues_<%=cid%>);
+                    }
+<%
+                }else if("ColumnRangeFilter".equals(filterType)){//"Filter Column" value is tow columns name,like: "id,name" ,"id,sex" ....,return columns value ,filter other columns
+                    if(filterFamily!=null && !"".equals(filterFamily)){ 
+%>
+                        scan_<%=cid%>.addFamily(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterFamily%>));
+<%
+                    }
+%>
+                    filter_<%=cid%> = new org.apache.hadoop.hbase.filter.ColumnRangeFilter(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>.split(",")[0]),true,org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterColumn%>.split(",")[1]),true);
+<%
+                }else if("RowFilter".equals(filterType)){//"Filter Value" is rowkey value,like "1" ,"car"....,return whole row (all columns)
+                    if("BinaryComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.RowFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.BinaryComparator(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterValue%>)));
+<%
+                    }else if ("RegexStringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.RowFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.RegexStringComparator(<%=filterValue%>));
+<%
+                    }else if("SubstringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.RowFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.SubstringComparator(<%=filterValue%>));
+<%
+                    }
+                }else if("ValueFilter".equals(filterType)){//"Filter Value" is any columns value,like "1" ,"car" .... ,return only the meet codition value,filter other columns
+                    if("BinaryComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.ValueFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.BinaryComparator(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=filterValue%>)));
+<%
+                    }else if ("RegexStringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.ValueFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.RegexStringComparator(<%=filterValue%>));
+<%
+                    }else if("SubstringComparator".equals(filterComparatorType)){
+%>
+                        filter_<%=cid%> = new org.apache.hadoop.hbase.filter.ValueFilter(org.apache.hadoop.hbase.filter.CompareFilter.CompareOp.<%=filterOperation%>,new org.apache.hadoop.hbase.filter.SubstringComparator(<%=filterValue%>));
+<%
+                    }
+                }
+%>
+                    filterList_<%=cid%>.addFilter(filter_<%=cid%>);
+<%
+            }
+%>
+            scan_<%=cid%>.setFilter(filterList_<%=cid%>);
+<%
+        }
+        
+        if (!isHBase2x) {
+%>		
+            org.apache.hadoop.hbase.client.HTable table_<%=cid%> = new org.apache.hadoop.hbase.client.HTable(conn_<%=cid%>, tableNameString);
+<% 
+        } else { 
+%>
+                    org.apache.hadoop.hbase.client.Table table_<%=cid%> =
+                                    org.apache.hadoop.hbase.client.ConnectionFactory.createConnection(conn_<%=cid%>)
+                                    .getTable(org.apache.hadoop.hbase.TableName.valueOf(tableNameString));
+<% 
+        }
+%>
+        String temp_<%=cid%>=null;
+        byte[] rowResult_<%=cid%> = null;
+        org.apache.hadoop.hbase.client.ResultScanner scanner_<%=cid%> = table_<%=cid%>.getScanner(scan_<%=cid%>);
+<%
+
+        List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+        if (conns != null){
+            if (conns.size()>0){
+                log4jFileUtil.startRetriveDataInfo();
+%>
+                for (org.apache.hadoop.hbase.client.Result rr_<%=cid%> = scanner_<%=cid%>.next(); rr_<%=cid%> != null; rr_<%=cid%> = scanner_<%=cid%>.next()) {
+<%
+                    IConnection conn = conns.get(0);
+                    String connName = conn.getName();
+                    if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                        for(int i = 0 ; i < mapping.size() ; i++){
+                            Map<String, String> map = mapping.get(i);
+                            String schema_column = map.get("SCHEMA_COLUMN");
+                            String family_column= map.get("FAMILY_COLUMN");
+                            IMetadataColumn column = columns.get(i);
+                            String columnName = column.getLabel();
+                            String defaultValue = column.getDefault();
+                            if(columnName.equals(schema_column) && !(retrieveTimestamp && schema_column.equals(timestampColumn))) {//
+                                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                                JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                                String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                                boolean isPrimitiveType = JavaTypesManager.isJavaPrimitiveType(javaType, column.isNullable());
+%>
+                                rowResult_<%=cid%> = rr_<%=cid%>.getValue(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=family_column%>),org.apache.hadoop.hbase.util.Bytes.toBytes("<%=column.getOriginalDbColumnName()%>"));
+                                temp_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toString(rowResult_<%=cid%>);
+                                if(temp_<%=cid%>!=null && temp_<%=cid%>.length() > 0) {
+<%									if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+                                        <%=connName %>.<%=columnName %>=temp_<%=cid%>.toString();
+<%									}else if(javaType == JavaTypesManager.BYTE_ARRAY){
+%> 
+                                        <%=connName%>.<%=columnName%>=rowResult_<%=cid%>;
+<%									}else if(javaType == JavaTypesManager.DATE){
+%> 
+                                        <%=connName%>.<%=columnName%>=ParserUtils.parseTo_Date(temp_<%=cid%>, <%= patternValue %>);
+<%									}else if(isPrimitiveType && javaType == JavaTypesManager.INTEGER){  
+%>
+                                        <%=connName%>.<%=columnName%>=org.apache.hadoop.hbase.util.Bytes.toInt(rowResult_<%=cid%>);  
+<%									}else if(isPrimitiveType && javaType == JavaTypesManager.CHARACTER){  
+%>
+                                        <%=connName%>.<%=columnName%>=(char)org.apache.hadoop.hbase.util.Bytes.toInt(rowResult_<%=cid%>);  
+<%									}else if(isPrimitiveType && (javaType == JavaTypesManager.SHORT || javaType == JavaTypesManager.LONG || javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.DOUBLE)) {  
+%>
+                                        <%=connName%>.<%=columnName%>=org.apache.hadoop.hbase.util.Bytes.to<%=javaType.getNullableClass().getSimpleName()%>(rowResult_<%=cid%>);  
+<%									}else{
+%>
+                                        <%=connName%>.<%=columnName%>=ParserUtils.parseTo_<%= typeToGenerate %>(temp_<%=cid%>);
+<%									}
+
+                                    if(retrieveTimestamp && sourceTimestampColumn.equals(schema_column)){ // TODO separate use of getColumnLatest by distribution as it is deprecated since HBase 1.0, replaced by getColumnLatestCell up to latest (HBase 3.0)
+                                        IMetadataColumn localTimestampColumn = null;
+                                        for(int familyNum = 0 ; familyNum < mapping.size() ; familyNum++){
+                                            IMetadataColumn localColumn = columns.get(familyNum);
+                                            if(localColumn.getLabel().equals(timestampColumn)){
+                                                localTimestampColumn = localColumn;
+                                                break;
+                                            }
+                                        }
+                                        if(localTimestampColumn != null && JavaTypesManager.getJavaTypeFromId(localTimestampColumn.getTalendType()) == JavaTypesManager.LONG){
+                                        %>
+                                            <%=connName %>.<%=timestampColumn %> = rr_<%=cid%>.getColumnLatest(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=family_column%>),org.apache.hadoop.hbase.util.Bytes.toBytes("<%=column.getOriginalDbColumnName()%>")).getTimestamp();
+                                        <%
+                                        }else{
+                                        %>
+                                            throw new RuntimeException("Output Timestamp Column should be long-typed");
+                                        <%
+                                        }
+                                    }
+%>
+                                }else{
+<%
+                                    String default_Value = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, defaultValue);
+                                    if(default_Value != null && !"null".equals(default_Value)) {
+%>
+                                        <%=connName %>.<%=columnName %> = <%=default_Value %>;
+<%
+                                    } else if(!JavaTypesManager.isJavaPrimitiveType(javaType,column.isNullable())) {
+%>
+                                        <%=connName %>.<%=columnName %> = null;
+<%
+                                    } else {
+%>
+                                        throw new RuntimeException("Value is empty for column : '<%=columnName %>' in '<%=connName %>' connection, value is invalid or this column should be nullable or have a default value.");									
+<%
+                                    }
+                                    if(retrieveTimestamp && sourceTimestampColumn.equals(schema_column)){
+%>										
+                                        <%=connName %>.<%=timestampColumn %> = null;
+<%									}
+%>
+                                }
+<%
+                            } //if(columnName.equals(schema_column))
+                        } //for(int i=0;i<mapping.size();i++)
+                        
+                        log4jFileUtil.debugRetriveData(node,false);
+                        
+                    }//if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+            }//if (conns.size()>0)
+        }//if (conns != null)
+    }//if (metadata != null)
+}//if ((metadatas!=null) && (metadatas.size() > 0))
+%>

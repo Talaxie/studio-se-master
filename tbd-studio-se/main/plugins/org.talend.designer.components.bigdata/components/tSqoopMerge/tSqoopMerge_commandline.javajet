@@ -1,0 +1,276 @@
+<%@ jet
+    imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        java.util.List
+        java.util.Map
+    "
+%>
+
+<%
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    String table = ElementParameterParser.getValue(node,"__TABLE__");
+    String username = ElementParameterParser.getValue(node,"__USERNAME__");
+    boolean useMappers = "true".equals(ElementParameterParser.getValue(node,"__USE_MAPPERS__"));
+    String mappers = ElementParameterParser.getValue(node,"__MAPPERS__");
+    List<Map<String,String>> additionalList = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__ADDITIONAL__");
+    boolean printLog = "true".equals(ElementParameterParser.getValue(node,"__PRINT_LOG__"));
+    boolean verbose = "true".equals(ElementParameterParser.getValue(node,"__VERBOSE__"));
+    String newDataDir = ElementParameterParser.getValue(node,"__NEWDATA__");
+    String oldDataDir = ElementParameterParser.getValue(node,"__ONTO__");
+    String targetDir = ElementParameterParser.getValue(node,"__TARGETDIR__");
+    String jarFile = ElementParameterParser.getValue(node,"__JARFILE__");
+    String className = ElementParameterParser.getValue(node,"__CLASSNAME__");
+    String key = ElementParameterParser.getValue(node,"__MERGEKEY__");
+    boolean needGenerateJar = "true".equals(ElementParameterParser.getValue(node,"__GENERATE__"));
+	 boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+    
+%>
+
+<%if(needGenerateJar){%>
+	Runtime runtime_generateJar_<%=cid %> = Runtime.getRuntime();
+
+<%
+	String passwordFieldName = "__PASSWORD__";
+%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>		
+
+	String[] generateJar_cmd_<%=cid %> = new String[] {"sqoop", "codegen", "--connect", <%=connection%>, "--table", <%=table%>, "--username", <%=username%>, "--password", decryptedPassword_<%=cid%>
+	<%if(printLog && verbose){%>, "--verbose"<%}%>
+<%
+	boolean isNull=false; 
+	if(additionalList != null){ 
+    for(Map<String,String> additionalMap : additionalList){ 
+        isNull=false; 
+        if(additionalMap.get("ADDITIONAL_VALUE")==null || "".equals(additionalMap.get("ADDITIONAL_VALUE"))) { 
+            isNull=true; 
+        } 
+        if(!isNull) { 
+%> 
+            ,"<%=additionalMap.get("ADDITIONAL_ARGUMENT")%>", <%=additionalMap.get("ADDITIONAL_VALUE")%> 
+<% 
+        } else { 
+%> 
+            ,"<%=additionalMap.get("ADDITIONAL_ARGUMENT")%>" 
+<% 
+        } 
+    } 
+	} 
+%>
+	};
+
+
+<%
+	if(isLog4jEnabled) {
+%>
+		java.lang.StringBuilder sb_generateJar_<%=cid%> = new java.lang.StringBuilder();
+		for (int i = 0; i < generateJar_cmd_<%=cid %>.length; i++) {
+			if (generateJar_cmd_<%=cid %>[i].startsWith("--password")) {
+				sb_generateJar_<%=cid%>.append("--password <hidden> ");
+				i++;//skipping password arg
+			}
+			else {
+				sb_generateJar_<%=cid%>.append(generateJar_cmd_<%=cid %>[i]);
+				sb_generateJar_<%=cid%>.append(" ");
+			}
+		}
+		log.info("<%=cid%> - execute sqoop command: " + sb_generateJar_<%=cid%>.toString());
+<%
+	}
+%>
+
+	Process generateJar_ps_<%=cid %>  = null;
+	java.lang.StringBuilder generateJar_sb_<%=cid%> = null;
+	
+	try {
+		generateJar_ps_<%=cid %> = runtime_generateJar_<%=cid %>.exec(generateJar_cmd_<%=cid %>);
+		byte[] generateJar_byteArray_<%=cid%> = new byte[1024];
+		int generateJar_len_<%=cid%> = 0;
+		
+		java.io.InputStream generateJar_errorStream_<%=cid%> = new java.io.BufferedInputStream(generateJar_ps_<%=cid%>.getErrorStream());
+		generateJar_sb_<%=cid%> = new java.lang.StringBuilder();
+		while ((generateJar_len_<%=cid%> = generateJar_errorStream_<%=cid%>.read(generateJar_byteArray_<%=cid%>)) != -1) {
+		    String generateJar_line_<%=cid%> = new String(generateJar_byteArray_<%=cid%>, 0, generateJar_len_<%=cid%>, "ISO-8859-1");
+	    	<%
+	    	if(printLog){
+%>
+        		System.err.println(generateJar_line_<%=cid%>);
+<%
+	    	}
+%>
+
+	    	generateJar_sb_<%=cid%>.append(generateJar_line_<%=cid%>);
+		}
+		globalMap.put("<%=cid%>_ERROR_MESSAGE", generateJar_sb_<%=cid%>.toString());
+		<%if(isLog4jEnabled) {%>
+			log.error("<%=cid%> - " + generateJar_sb_<%=cid%>.toString());
+		<%}%>
+		generateJar_byteArray_<%=cid%> = new byte[1024];
+		generateJar_len_<%=cid%> = 0;
+		java.io.InputStream generateJar_inputStream_<%=cid%> = new java.io.BufferedInputStream(generateJar_ps_<%=cid%>.getInputStream());
+		generateJar_sb_<%=cid%> = new java.lang.StringBuilder();
+		while ((generateJar_len_<%=cid%> = generateJar_inputStream_<%=cid%>.read(generateJar_byteArray_<%=cid%>)) != -1) {
+		    String generateJar_line_<%=cid%> = new String(generateJar_byteArray_<%=cid%>, 0, generateJar_len_<%=cid%>, "ISO-8859-1");
+<%
+	    	if(printLog){
+%>
+	       	 System.out.println(generateJar_line_<%=cid%>);
+<%
+	    	}
+%>
+	    	generateJar_sb_<%=cid%>.append(generateJar_line_<%=cid%>);
+		}
+	} catch (Exception e) {
+<%
+		if(dieOnError) {
+%>
+			throw e;
+<%		
+		} else {
+%>
+			System.err.println(e.getMessage());
+			<%if(isLog4jEnabled) {%>
+			log.error("<%=cid%> - " + e.getMessage());
+			<%}
+		}
+%>	
+	}
+
+<%
+	if(dieOnError) {
+%>
+		generateJar_ps_<%=cid %>.waitFor();
+		if(generateJar_ps_<%=cid %>.exitValue()>0) {
+			throw new Exception("The Sqoop merge has failed. Please check the logs.");
+		}
+<%		
+	}
+%>
+
+	if(generateJar_sb_<%=cid%>!=null) {
+		globalMap.put("<%=cid%>_OUTPUT_MESSAGE", generateJar_sb_<%=cid%>.toString());
+		<%if(isLog4jEnabled) {%>
+			log.info("<%=cid%> - " + generateJar_sb_<%=cid%>.toString());
+		<%}
+%>	
+	}
+<%
+}
+%>
+
+//call the cmd part
+Runtime runtime_<%=cid %> = Runtime.getRuntime();
+String jar_file_<%=cid%> = <%=jarFile%>;
+<%if(needGenerateJar){
+String bin_Dir = null;
+String class_Name = null;
+	for(Map<String,String> additionalMap : additionalList){
+		if("--bindir".equals(additionalMap.get("ADDITIONAL_ARGUMENT"))){
+ 			bin_Dir = additionalMap.get("ADDITIONAL_VALUE");
+ 			break;
+ 		}
+ 	}
+ 	for(Map<String,String> additionalMap : additionalList){
+ 		if("--class-name".equals(additionalMap.get("ADDITIONAL_ARGUMENT"))){
+ 			class_Name = additionalMap.get("ADDITIONAL_VALUE");
+ 			break;
+ 		}
+	}
+	if(class_Name==null){
+		class_Name = table;
+	}
+%>
+	jar_file_<%=cid%> = <%=bin_Dir %>+ "/" + <%=class_Name%>  + ".jar";
+<%
+}
+%>
+String[] cmd_<%=cid %> = new String[] {"sqoop", "merge", "--new-data", <%=newDataDir%>, "--onto", <%=oldDataDir%>, "--target-dir", <%=targetDir%>, "--jar-file", jar_file_<%=cid%>, "--class-name", <%=className%>, "--merge-key", <%=key%>};
+
+<%if(isLog4jEnabled) {%>
+java.lang.StringBuilder stringBuilder_<%=cid%> = new java.lang.StringBuilder();
+for(String parameter_<%=cid%> : cmd_<%=cid %>) {
+	stringBuilder_<%=cid%>.append(parameter_<%=cid%>);
+	stringBuilder_<%=cid%>.append(" ");
+}
+log.info("<%=cid%> - execute sqoop command: " + stringBuilder_<%=cid%>.toString());
+<%}%>
+
+Process ps_<%=cid %> = null;
+java.lang.StringBuilder sb_<%=cid%> = null;
+
+try {
+	ps_<%=cid %> = runtime_<%=cid %>.exec(cmd_<%=cid %>);
+	byte[] byteArray_<%=cid%> = new byte[1024];
+	int len_<%=cid%> = 0;
+	
+	java.io.InputStream errorStream_<%=cid%> = new java.io.BufferedInputStream(ps_<%=cid%>.getErrorStream());
+	sb_<%=cid%> = new java.lang.StringBuilder();
+	while ((len_<%=cid%> = errorStream_<%=cid%>.read(byteArray_<%=cid%>)) != -1) {
+	    String line_<%=cid%> = new String(byteArray_<%=cid%>, 0, len_<%=cid%>, "ISO-8859-1");
+	    <%
+	    if(printLog){
+%>
+	        System.err.println(line_<%=cid%>);
+<%
+	    }
+%>
+	    sb_<%=cid%>.append(line_<%=cid%>);
+	}
+	globalMap.put("<%=cid%>_ERROR_MESSAGE", sb_<%=cid%>.toString());
+	<%if(isLog4jEnabled) {%>
+		log.error("<%=cid%> - " + sb_<%=cid%>.toString());
+	<%}%>
+	byteArray_<%=cid%> = new byte[1024];
+	len_<%=cid%> = 0;
+	java.io.InputStream inputStream_<%=cid%> = new java.io.BufferedInputStream(ps_<%=cid%>.getInputStream());
+	sb_<%=cid%> = new java.lang.StringBuilder();
+	while ((len_<%=cid%> = inputStream_<%=cid%>.read(byteArray_<%=cid%>)) != -1) {
+	    String line_<%=cid%> = new String(byteArray_<%=cid%>, 0, len_<%=cid%>, "ISO-8859-1");
+	    sb_<%=cid%>.append(line_<%=cid%>);
+	}
+<%
+    if(printLog){
+%>
+		if (sb_<%=cid%>.length() > 0 ) {
+			System.out.println(sb_<%=cid%>);
+		}
+<%
+	}
+%>
+} catch (Exception e) {
+<%
+	if(dieOnError) {
+%>
+		throw e;
+<%		
+	} else {
+%>
+		System.err.println(e.getMessage());
+		<%if(isLog4jEnabled) {%>
+		log.error("<%=cid%> - " + e.getMessage());
+		<%}
+	}
+%>	
+}
+
+	int result_<%=cid%> = ps_<%=cid%>.waitFor();
+	globalMap.put("<%=cid%>_EXIT_CODE", result_<%=cid%>);
+
+<%
+	if(dieOnError) {
+%>
+		if(ps_<%=cid%>.exitValue()>0) {
+			throw new Exception("The Sqoop import has failed. Please check the logs.");
+		}
+<%		
+	}
+%>
+
+if(sb_<%=cid%>!=null) {
+	globalMap.put("<%=cid%>_OUTPUT_MESSAGE", sb_<%=cid%>.toString());
+	<%if(isLog4jEnabled) {%>
+		log.info("<%=cid%> - " + sb_<%=cid%>.toString());
+	<%}%>
+}

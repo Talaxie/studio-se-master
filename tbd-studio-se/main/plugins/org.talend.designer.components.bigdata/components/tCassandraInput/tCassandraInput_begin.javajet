@@ -1,0 +1,186 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.utils.NodeUtil
+		java.util.List 
+		java.util.Map
+	" 
+%>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+	<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    %>
+    <%@ include file="../tCassandraConnection/tCassandraConnection_checker.javajet"%>
+
+    <%
+	IMetadataTable metadata = null;
+	IConnection conn = null;
+	List<IMetadataColumn> columns = null;
+	List<IMetadataTable> metadatas = node.getMetadataList();	
+	if((metadatas != null) && (metadatas.size() > 0)){
+    	metadata = metadatas.get(0);
+    	if(metadata != null){
+    		columns = metadata.getListColumns();		
+    	}
+    }
+    
+    List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if(conns != null && conns.size() > 0 && conns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+		conn = conns.get(0);
+    }	
+    
+    if(columns == null || columns.isEmpty() || conn == null){
+    	return "";
+    }
+	%>
+	<% 
+	boolean useExistConn = ElementParameterParser.getBooleanValue(node, "__USE_EXISTING_CONNECTION__");
+	INode nodeWithVersion = useExistConn ? ElementParameterParser.getLinkedNodeValue(node, "__CONNECTION__") : node;
+	String dbVersion = ElementParameterParser.getValue(nodeWithVersion, "__DB_VERSION__");
+    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	if(useExistConn){
+		if("CASSANDRA_4_0".equals(dbVersion)) {
+		%>
+			com.datastax.oss.driver.api.core.CqlSession connection_<%=cid%> = (com.datastax.oss.driver.api.core.CqlSession)globalMap.get("connection_<%=connection%>");
+		<%
+        }
+    }else{  
+    %>
+        <%@ include file="@{org.talend.designer.components.bigdata}/components/tCassandraConnection/tCassandraConnection_datastax_connect.javajet"%>
+    <%
+	}
+	String query = ElementParameterParser.getValue(node, "__QUERY__").replaceAll("[\r\n]", " ");	
+	if("CASSANDRA_4_0".equals(dbVersion)) {
+	%>
+		com.datastax.oss.driver.api.core.cql.ResultSet rs_<%=cid%> = connection_<%=cid%>.execute(<%=query%>);
+		int nb_line_<%=cid%> = 0;
+		for(com.datastax.oss.driver.api.core.cql.Row row_<%=cid%> : rs_<%=cid%>){
+			<%
+			String connName = conn.getName();
+			for(IMetadataColumn column : columns){
+				String dbType = column.getType();
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				String columnName = column.getLabel();	
+				String dbColumnName = column.getOriginalDbColumnName();
+				dbColumnName = "\\\"" + dbColumnName + "\\\"";
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				%>
+				if(row_<%=cid%>.isNull("<%=dbColumnName%>")){
+					<%=connName%>.<%=columnName%> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+				}else{
+					<%
+					if(javaType == JavaTypesManager.STRING){
+						if("ascii".equals(dbType) || "text".equals(dbType) || "varchar".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getString("<%=dbColumnName%>");
+						<%
+						}else if("timeuuid".equals(dbType) || "uuid".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getUuid("<%=dbColumnName%>").toString();
+						<%
+						}
+					}else if(javaType == JavaTypesManager.OBJECT){
+						if("varint".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getBigInteger("<%=dbColumnName%>");
+						<%
+						}else if("inet".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getInetAddress("<%=dbColumnName%>");
+						<%
+						}else if("map".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getObject("<%=dbColumnName%>");
+						<%
+						}else if("set".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getObject("<%=dbColumnName%>");
+						<%
+						}
+					}else if(javaType == JavaTypesManager.LIST){
+					%>
+						<%=connName%>.<%=columnName%> = (java.util.List)row_<%=cid%>.getObject("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.BOOLEAN){
+					%>
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getBoolean("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.BYTE_ARRAY){
+					%>
+						java.nio.ByteBuffer bytebuffer_<%=columnName%>_<%=cid%> = row_<%=cid%>.getByteBuffer("<%=dbColumnName%>");
+						byte[] bytes_<%=columnName%>_<%=cid%> = new byte[bytebuffer_<%=columnName%>_<%=cid%>.remaining()];
+						bytebuffer_<%=columnName%>_<%=cid%>.get(bytes_<%=columnName%>_<%=cid%>, 0, bytes_<%=columnName%>_<%=cid%>.length);
+						<%=connName%>.<%=columnName%> = bytes_<%=columnName%>_<%=cid%>;	
+					<%	
+					}else if(javaType == JavaTypesManager.BYTE){
+					%>
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getByte("<%=dbColumnName%>");
+					<%        	
+					}else if(javaType == JavaTypesManager.DATE){
+						if("timestamp".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = java.util.Date.from(row_<%=cid%>.getInstant("<%=dbColumnName%>"));
+						<%
+						}else if("date".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = java.util.Date.from(row_<%=cid%>.getLocalDate("<%=dbColumnName%>").atStartOfDay().atZone(java.time.ZoneId.systemDefault()).toInstant());	
+						<%
+						} else if("time".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = java.util.Date.from(row_<%=cid%>.getLocalTime("<%=dbColumnName%>").atDate(java.time.LocalDate.ofEpochDay(0)).atZone(java.time.ZoneId.systemDefault()).toInstant());	
+						<%
+						}
+					}else if(javaType == JavaTypesManager.BIGDECIMAL){
+					%> 
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getBigDecimal("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.DOUBLE){
+					%> 
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getDouble("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.FLOAT){
+					%> 
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getFloat("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.INTEGER){
+					%> 
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getInt("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.LONG){
+						if("time".equals(dbType)){
+						%>
+							<%=connName%>.<%=columnName%> = (long)row_<%=cid%>.getLocalTime("<%=dbColumnName%>").toSecondOfDay();	
+						<%
+						}else{
+						%> 
+							<%=connName%>.<%=columnName%> = row_<%=cid%>.getLong("<%=dbColumnName%>");	
+						<%
+						}
+					}else if(javaType == JavaTypesManager.SHORT){
+					%>
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getShort("<%=dbColumnName%>");	
+					<%
+					}else if(javaType == JavaTypesManager.CHARACTER){
+						if("ascii".equals(dbType) || "text".equals(dbType) || "varchar".equals(dbType)){
+						%>
+						<%=connName%>.<%=columnName%> = row_<%=cid%>.getString("<%=dbColumnName%>").charAt(0);
+						<%
+						}
+					}
+					%>
+				}		
+			<%
+			}
+	}
+        %>
+        nb_line_<%=cid%>++;

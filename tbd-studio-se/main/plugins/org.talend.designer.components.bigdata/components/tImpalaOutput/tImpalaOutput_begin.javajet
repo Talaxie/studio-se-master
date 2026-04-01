@@ -1,0 +1,86 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.MappingTypeRetriever
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.designer.runprocess.ProcessorException
+		org.talend.designer.runprocess.ProcessorUtilities
+		org.talend.core.model.metadata.types.JavaTypesManager  
+		java.util.List
+		java.util.ArrayList		
+		java.util.Map
+		java.util.HashMap
+		java.util.Set
+		java.util.HashSet
+		"
+		skeleton="@{org.talend.designer.components.localprovider}/components/templates/db_output_bulk.skeleton" 
+%>
+<%
+	CodeGeneratorArgument outputCodeGenArgument = (CodeGeneratorArgument) argument;
+	INode outputNode = (INode)outputCodeGenArgument.getArgument();
+	final String outputCid = outputNode.getUniqueName();
+	
+	boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(outputNode,"__USE_EXISTING_CONNECTION__"));
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(outputNode.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	if(useExistingConnection) { // We re-use a connection. Get the connection from the global map.
+		String connection = ElementParameterParser.getValue(outputNode, "__CONNECTION__");
+		String db = "db_" + connection;
+%>
+		java.sql.Connection conn_<%=outputCid%> = (java.sql.Connection)globalMap.get("conn_<%=connection%>");
+		String dbname_<%=outputCid%> = (String)globalMap.get("<%=db%>");
+<%
+	} else { //We do not use an existing connection. Create it.
+%>
+		<%@ include file="@{org.talend.designer.components.bigdata}/components/tImpalaConnection/tImpalaConnection_begin.javajet"%>
+		String dbname_<%=outputCid%> = <%=dbname%>;
+<%
+		// The connection object is created in the tImpalaConnection_begin.javajet.
+	}
+	
+	final String cid = outputCid;
+	INode node = outputNode;
+%>
+	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+		java.sql.Statement goToDatabase_<%=cid%> = conn_<%=cid%>.createStatement();
+		goToDatabase_<%=cid%>.execute("use " + dbname_<%=cid%>);
+		goToDatabase_<%=cid%>.close();
+    }
+<%
+	
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	String tableName = ElementParameterParser.getValue(node,"__TABLE__");
+	String action = ElementParameterParser.getValue(node, "__ACTION__");
+	
+	boolean extendedInsert = false;
+	
+	extendedInsert = "true".equals(ElementParameterParser.getValue(node, "__EXTENDINSERT__"));	
+	String numPerInsert = ElementParameterParser.getValue(node, "__NB_ROWS_PER_INSERT__");
+	
+	getManager(dbmsId, cid, node);
+	
+	List<IMetadataColumn> columnList = getColumnList(node);
+	List<Column> stmtStructure = null;
+	if(columnList != null && columnList.size() > 0) {
+	    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+%>
+	String tableName_<%=cid%> = <%=tableName%>;
+	int nb_line_<%=cid%> = 0;
+<%
+    Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+    StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);   
+    StringBuilder insertValueStmt = actionSQLMap.get(INSERT_VALUE_STMT);    
+%>
+    String insertPrefix_<%=cid%> = "INSERT <%=action%> " + tableName_<%=cid%> + " (<%=insertColName.toString()%>) VALUES ";		
+	java.lang.StringBuilder sbValue_<%=cid%> = null;
+    java.sql.Statement stmt_<%=cid %> = conn_<%=cid%>.createStatement();
+    int rowCount<%=cid%> = 0;
+    boolean needInitialization_<%=cid%> = true;
+	 

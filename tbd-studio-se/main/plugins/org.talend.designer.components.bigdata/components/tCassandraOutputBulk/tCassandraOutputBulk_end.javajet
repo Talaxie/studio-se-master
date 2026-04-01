@@ -1,0 +1,55 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+    	org.talend.core.model.process.ElementParameterParser		
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		java.util.Map
+	"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+IMetadataTable metadata = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if((metadatas!=null) && (metadatas.size()>0)){
+    metadata = metadatas.get(0);
+}
+
+String inConnName = null;
+List<? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null){
+	if(conns.size()>0){
+	    IConnection conn = conns.get(0);
+		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+    		inConnName = conn.getName();
+    	}
+    }
+}
+List<IMetadataColumn> columns = null;
+int sizeColumns = 0;
+if(metadata != null){
+	columns = metadata.getListColumns();
+	sizeColumns = columns.size();
+}
+if(sizeColumns == 0 || inConnName == null){
+	return "";
+}
+String version = ElementParameterParser.getValue(node,"__DB_VERSION__");
+if("CASSANDRA_4_0".equals(version)) {
+	%>
+		if(csvWriter_<%=cid %> != null) {
+			csvWriter_<%=cid %>.flush();
+			csvWriter_<%=cid %>.close();
+		}
+	<%
+}
+log4jFileUtil.writeDataFinishInfo(node);
+%>

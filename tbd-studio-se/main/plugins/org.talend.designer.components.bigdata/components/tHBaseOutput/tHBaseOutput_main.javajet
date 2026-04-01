@@ -1,0 +1,171 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.Map
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.INode
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.designer.bigdata.di.components.thbase.THbaseOutput
+        "
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+final THbaseOutput thbaseOutput = new THbaseOutput((CodeGeneratorArgument) argument);
+final INode node = thbaseOutput.getNode();
+final String cid = thbaseOutput.getCid();
+List<IMetadataTable> metadatas = node.getMetadataList();
+List<Map<String,String>> families = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__FAMILIES__");
+
+if ((metadatas!=null) && (metadatas.size() > 0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata != null) {
+        List< ? extends IConnection> conns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+        if (conns != null){
+            if (conns.size()>0){
+                IConnection conn = conns.get(0);
+                String connName = conn.getName();
+                List<IMetadataColumn> columns = metadata.getListColumns();
+                %>
+                org.apache.hadoop.hbase.client.Put p_<%=cid%> = null;
+                try{
+                    <%
+                    if(thbaseOutput.isCustomRowKey()){
+                    String rowKey = ElementParameterParser.getValue(node, "__ROW_KEY__");
+                    %>
+                        byte[] rowKey_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes(<%=rowKey%>);
+                    <%
+                    }else{
+                    %>
+                        byte[] rowKey_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes("myRow_"+<%=connName %>.toString());
+                    <%
+                    }
+                    if(thbaseOutput.isUseCustomTimestampColumn()){
+                        IMetadataColumn localTimestampColumn = null;
+                        for(int familyNum = 0 ; familyNum < families.size() ; familyNum++){
+                            IMetadataColumn localColumn = columns.get(familyNum);
+                            if(localColumn.getLabel().equals(thbaseOutput.getCustomTimestampColumn())){
+                                localTimestampColumn = localColumn;
+                                break;
+                            }
+                        }
+                        if(localTimestampColumn != null && JavaTypesManager.getJavaTypeFromId(localTimestampColumn.getTalendType()) == JavaTypesManager.LONG){
+                        %>
+                            p_<%=cid%> = new org.apache.hadoop.hbase.client.Put(rowKey_<%=cid%>, <%=connName%>.<%=thbaseOutput.getCustomTimestampColumn()%>);
+                        <%
+                        }else{
+                        %>
+                            throw new RuntimeException("Custom Timestamp Column should be long-typed");
+                        <%
+                        }
+                    }else{
+                    %>
+                        p_<%=cid%> = new org.apache.hadoop.hbase.client.Put(rowKey_<%=cid%>);
+                    <%
+                    }
+                    for(int familyNum = 0 ; familyNum < families.size() ; familyNum++){
+                        IMetadataColumn column = columns.get(familyNum);
+                        if(thbaseOutput.isUseCustomTimestampColumn() && column.getLabel().equals(thbaseOutput.getCustomTimestampColumn())){
+                            continue;
+                        }
+                        JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                        String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                        Map<String,String> mapLine = families.get(familyNum);
+                        String schema_column = mapLine.get("SCHEMA_COLUMN");
+                        String family_column = mapLine.get("FAMILY_COLUMN");
+                        if(family_column==null||family_column.trim().length()==0){
+                            continue;
+                        }
+                        boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+                        if(!isPrimitive){
+                        %>
+                            temp_<%=cid%> = null;
+                            if(<%=connName %>.<%=column.getLabel() %>!=null){
+                        <%
+                        }
+                        if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+                        %>
+                            temp_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes(FormatterUtils.format_Date(<%=connName %>.<%=column.getLabel() %>, <%= pattern %>));
+                        <%
+                        }else if (javaType == JavaTypesManager.BYTE_ARRAY) {
+                        %>
+                            temp_<%=cid%> = <%=connName %>.<%=column.getLabel() %>;
+                        <%
+                        }else if (javaType == JavaTypesManager.BYTE) {
+                        %>
+                            temp_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes(<%=connName %>.<%=column.getLabel() %>+"");
+                        <%
+                        }else if(JavaTypesManager.isJavaPrimitiveType(javaType,column.isNullable())) {
+                        %>
+                            temp_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes(<%=connName %>.<%=column.getLabel() %>);
+                        <%
+                        }else{
+                        %>
+                            temp_<%=cid%> = org.apache.hadoop.hbase.util.Bytes.toBytes(<%=connName%>.<%=column.getLabel()%>.toString());
+                        <%
+                        }
+                        if(!isPrimitive){
+                        %>
+                            }
+                        <%
+                        }
+                        if (!thbaseOutput.isHBase2x()) {
+                        %>
+                            p_<%=cid%>.add(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=family_column%>), org.apache.hadoop.hbase.util.Bytes.toBytes("<%=column.getOriginalDbColumnName()%>"), temp_<%=cid%>);
+                        <%
+                        } else {
+                        %>
+                            p_<%=cid%>.addColumn(org.apache.hadoop.hbase.util.Bytes.toBytes(<%=family_column%>), org.apache.hadoop.hbase.util.Bytes.toBytes("<%=column.getOriginalDbColumnName()%>"), temp_<%=cid%>);
+                        <%
+                        }
+                        %>
+                    <%
+                    }
+                    if (thbaseOutput.isUseBatchMode()) {
+                        %>
+                        batchPuts_<%=cid%>.add(p_<%=cid%>);
+                        if (batchPuts_<%=cid%>.size() >= <%=thbaseOutput.getBatchSize()%>) {
+                            table_<%=cid%>.put(batchPuts_<%=cid%>);
+                            nb_line_<%=cid%> += batchPuts_<%=cid%>.size();
+                            batchPuts_<%=cid%>.clear();
+                        }
+                        <%
+                    } else {
+                        %>
+                        table_<%=cid%>.put(p_<%=cid%>);
+                        nb_line_<%=cid%>++;
+                        <%
+                    }
+                    log4jFileUtil.debugWriteData(node);
+                    %>
+                }catch(java.lang.Exception e){
+                    <%
+                    if(thbaseOutput.dieOnError()){
+                    %>
+                        throw(e);
+                    <%
+                       }else {
+                    %>
+                        System.out.println(e.getMessage());
+                    <%
+                        if(thbaseOutput.isLog4jEnabled()) {
+                    %>
+                        log.error("<%=cid%> - " + e.getMessage());
+                    <%
+                        }
+                    }
+                    %>
+                }
+            <%
+            }//if (conns.size()>0)
+        }//if (conns != null)
+    }//if (metadata != null)
+}//if ((metadatas!=null) && (metadatas.size() > 0))
+%>
