@@ -1,0 +1,92 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%
+	class DefaultConnectionUtil {
+	
+		protected String cid ;
+		protected String dbproperties ;
+		protected String dbhost;
+	    protected String dbport;
+	    protected String dbname;
+	    protected boolean isLog4jEnabled;
+	    
+	    public void beforeComponentProcess(INode node){
+	    }
+	    
+		public void createURL(INode node) {
+			cid = node.getUniqueName();
+			dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	    	dbport = ElementParameterParser.getValue(node, "__PORT__");
+	    	dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	    	isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		}
+		
+		public String getDirverClassName(INode node){
+			return "";
+		}
+		
+		public void classForName(INode node){
+%>
+			String driverClass_<%=cid%> = "<%=this.getDirverClassName(node)%>";
+			java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+			globalMap.put("driverClass_<%=cid%>", driverClass_<%=cid%>);
+<%
+			newInstance(node);
+		}
+		
+		protected void newInstance(INode node) {
+			//do nothing as default
+			//for sybase jdbc in java 11, we have to call jdbcclazz.newInstance method
+		}
+		
+		//for example, postgresql jdbc and redshift jdbc both can process the url : jdbc:postgresql://, 
+		//we need to adjust the register order to make sure to use postgresql jdbc to process it
+		public void adjustDriverRegisterOrderForConflcit() {
+		
+		}
+		
+		public void useShareConnection(INode node) {
+			String sharedConnectionName = ElementParameterParser.getValue(node, "__SHARED_CONNECTION_NAME__");
+			String shareDBClass = "SharedDBConnection";
+			if(isLog4jEnabled){
+				shareDBClass = "SharedDBConnectionLog4j";
+%>
+			SharedDBConnectionLog4j.initLogger(log.getName(),"<%=cid%>");
+<%
+			}
+%>
+			String sharedConnectionName_<%=cid%> = <%=sharedConnectionName%>;
+			conn_<%=cid%> = <%=shareDBClass%>.getDBConnection("<%=this.getDirverClassName(node)%>",url_<%=cid%>,dbUser_<%=cid%> , dbPwd_<%=cid%> , sharedConnectionName_<%=cid%>);
+			globalMap.put("conn_<%=cid%>", conn_<%=cid%>);
+<%	
+		}
+		
+		public void createConnection(INode node) {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+		}
+		public void setAutoCommit(INode node) {
+			boolean setAutoCommit = "true".equals(ElementParameterParser.getValue(node, "__AUTO_COMMIT__"));
+			if(isLog4jEnabled){
+%>
+			log.debug("<%=cid%> - Connection is set auto commit to '<%=setAutoCommit%>'.");
+<%
+			}
+%>
+			conn_<%=cid%>.setAutoCommit(<%=setAutoCommit%>);
+<%
+		}
+		
+		public void afterComponentProcess(INode node){
+	    }
+	}//end DefaultUtil class
+	
+	DefaultConnectionUtil connUtil = new DefaultConnectionUtil();
+%>

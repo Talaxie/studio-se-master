@@ -1,0 +1,872 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+  	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.utils.NodeUtil
+"
+skeleton="tAdvancedFileOutputXML_java.skeleton"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+%>
+
+<%@ include file="tAdvancedFileOutputXML_begin.inc.javajet"%>
+
+<%
+// ------------------- *** Common code start *** ------------------- //
+String cid = node.getUniqueName();
+String cid_original = cid;
+cid = cid_original.replace("tAdvancedFileOutputXML","tAFOX");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){ 
+    		
+            	List<Map<String, String>> rootTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+                List<Map<String, String>> groupTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+                List<Map<String, String>> loopTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+                
+                String allowEmpty = ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__");
+                boolean bAddEmptyAttr = "true".equals(ElementParameterParser.getValue(node, "__ADD_EMPTY_ATTRIBUTE__"));
+                boolean bAddUnmappedAttr = "true".equals(ElementParameterParser.getValue(node, "__ADD_UNMAPPED_ATTRIBUTE__"));
+                boolean isSaveDocAsNode = ("true").equals(ElementParameterParser.getValue(node,"__ADD_DOCUMENT_AS_NODE__"));
+                
+                String outputAsXSD = ElementParameterParser.getValue(node, "__OUTPUT_AS_XSD__");
+                String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+                
+                String split = ElementParameterParser.getValue(node, "__SPLIT__");
+                String splitEvery = ElementParameterParser.getValue(node, "__SPLIT_EVERY__");
+                
+                String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+        		boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+        		String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+        		String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER); 
+        		
+        		String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+				
+        		boolean isMerge= ("true").equals(ElementParameterParser.getValue(node, "__MERGE__"));        		
+        		boolean isCompact = ("true").equals(ElementParameterParser.getValue(node, "__PRETTY_COMPACT__"));
+        		
+        		//*****************add for the feature:8873 to support output steam *****************
+        		boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+				String outStream = ElementParameterParser.getValue(node,"__STREAMNAME__");
+				//*******************add for feature:8873 end ****************
+				
+				boolean needFileValid = ("true").equals(ElementParameterParser.getValue(node, "__FILE_VALID__"));
+				
+				boolean needDTDValid = ("true").equals(ElementParameterParser.getValue(node, "__DTD_VALID__"));
+				String dtdRootName = ElementParameterParser.getValue(node, "__DTD_NAME__");
+        		String dtdFileName = ElementParameterParser.getValue(node, "__DTD_SYSTEMID__");
+        		
+        		boolean needXSLValid = ("true").equals(ElementParameterParser.getValue(node, "__XSL_VALID__"));
+        		String xslType = ElementParameterParser.getValue(node, "__XSL_TYPE__");
+				String xslHref = ElementParameterParser.getValue(node, "__XSL_HREF__");
+				
+				final boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+				
+				if(isMerge){
+		            mode = "Dom4j";
+		        }
+				
+				int schemaOptNum=100;
+				boolean isOptimizeCode=false;
+				String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+				if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+					schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+				} 
+				if(metadata.getListColumns().size()> schemaOptNum){
+					isOptimizeCode=true;
+				}
+        		
+        		// init tool
+                XMLTool tool = new XMLTool();
+                tool.connName = NodeUtil.getPrivateConnClassName(conn);
+                tool.advancedSeparator=advancedSeparator;
+                tool.thousandsSeparator=thousandsSeparator;
+                tool.decimalSeparator=decimalSeparator;
+                tool.cid=cid;
+                boolean isAppend = !useStream && isMerge;
+                tool.isAppend = isAppend;
+                
+                // change tables to a tree 
+				Object[] treeObjs = getTree(rootTable, groupTable, loopTable, metadata.getListColumns());
+				
+				if(treeObjs == null || treeObjs.length == 0){
+					return "";
+				}
+				
+            	List<XMLNode> mainList = (ArrayList<XMLNode>)treeObjs[0];
+                List<XMLNode> groupList = (ArrayList<XMLNode>)treeObjs[1];
+                XMLNode root = mainList.get(0);                
+            	XMLNode loop = (XMLNode)treeObjs[2];
+                
+                if(!"true".equals(allowEmpty) && !(groupTable.size()>0 && isAppend)){
+                	removeEmptyElement(root);
+                }
+                
+                List<List<XMLNode>> groupbyNodeList = new ArrayList<List<XMLNode>>();
+                for(XMLNode group:groupList){
+                	groupbyNodeList.add(getGroupByNodeList(group));
+                }
+%>
+	nb_line_<%=cid%>++;
+	valueMap_<%=cid%>.clear();
+<%
+				log4jFileUtil.setCid(cid);
+				int colNum=0;
+				for(IMetadataColumn column :metadata.getListColumns()){
+					if(isOptimizeCode){
+						if(colNum%schemaOptNum==0){
+%>
+	advancedXMLUtil_<%=cid%>.putValue_<%=colNum/schemaOptNum%>(<%=tool.connName%>,valueMap_<%=cid%><%if(tool.isAppend){%>,compactFormat_<%=cid%><%}%>);
+<%
+						}
+					}else{
+%>
+	valueMap_<%=cid%>.put("<%=column.getLabel()%>", <% tool.getValue(column); %>);
+<%
+					}
+					colNum++;
+				}
+				
+				log4jFileUtil.debugWriteData(node);
+				
+// ------------------- *** Common code end *** ------------------- //
+
+// ------------------- *** Dom4j generation mode start *** ------------------- //
+if(("Dom4j").equals(mode)){
+
+	//init the generate tool.
+	GenerateToolByDom4j generateToolByDom4j = new GenerateToolByDom4j();
+    if(!useStream && ("true").equals(outputAsXSD)){ // add a new prerequisite:useStream to ignore generating the xsd file
+    	generateToolByDom4j.outputAsXSD = true;
+    }
+    if(("true").equals(allowEmpty)){
+    	generateToolByDom4j.allowEmpty = true;
+    }
+    generateToolByDom4j.bAddEmptyAttr = bAddEmptyAttr;
+    generateToolByDom4j.bAddUnmappedAttr = bAddUnmappedAttr;
+    generateToolByDom4j.isSaveDocAsNode = isSaveDocAsNode;
+    generateToolByDom4j.cid = cid;
+    generateToolByDom4j.touchXMLNode.cid = cid;
+    generateToolByDom4j.bigMethodHelper.cid = cid;
+    generateToolByDom4j.tool = tool;
+    
+    //start generate code
+%>
+	<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByNull();%>
+	
+	// build root xml tree 
+	if (needRoot_<%=cid%>) {
+		needRoot_<%=cid%>=false;
+		if(orders_<%=cid %>.length>0){
+			orders_<%=cid %>[0] = 0;
+		}
+<% 
+	generateToolByDom4j.touchXMLNode.putDocument();
+	generateToolByDom4j.generateCode(root,"root","doc");
+	if(!isMerge || useStream){ // add a prerequisite useStream to ignore the append mode
+%>
+		root4Group_<%=cid%> =  <%generateToolByDom4j.touchXMLNode.getXMLElement("subTreeRootParent");%>;
+	}else{
+		<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByRootGroup();%>
+	}
+	// build group xml tree 
+<%
+	}else{
+%>
+	}
+<%
+	}
+	
+if(groupTable.size()>0){					//init the generate tool.
+	if(!useStream && isMerge){//merge into the file and add a prerequisite:useStream to ignore the append mode
+		generateToolByDom4j.isAppend= true;
+	    String firstGroupPath = groupList.get(0).path;
+%>
+		if(firstGroupPathElement_<%=cid%> == null){
+			firstGroupPathElement_<%=cid%> = (org.dom4j.Element)doc_<%=cid %>.selectSingleNode("<%=firstGroupPath %>");
+			if(firstGroupPathElement_<%=cid%> == null){
+				firstGroupPathElement_<%=cid%> = (org.dom4j.Element)doc_<%=cid %>.selectSingleNode("<%=firstGroupPath.substring(0,firstGroupPath.lastIndexOf("/")) %>");
+				if(firstGroupPathElement_<%=cid%> == null) {
+					System.err.println("WARN : the root tag is not same when appending");
+					<%if(isLog4jEnabled) {%>
+					log.error("<%=cid%> - the root tag is not same when appending");
+					<%}%>
+				} else { 
+					String subRootPath = firstGroupPathElement_<%=cid%>.getPath().replace("*[name()='","").replace("']", "");
+					if(!"<%=firstGroupPath.substring(0,firstGroupPath.lastIndexOf("/")) %>".equals(subRootPath)) {
+						System.err.println("WARN : the root tag is not same on namespace prefix when appending");
+						<%if(isLog4jEnabled) {%>
+						log.error("<%=cid%> - the root tag is not same on namespace prefix when appending");
+						<%}%>
+					}
+				}
+			}else{
+				firstGroupPathElement_<%=cid%> = firstGroupPathElement_<%=cid%>.getParent();
+			}
+		}
+		<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByFirstGroup();%>
+		
+		boolean bl_<%=cid %>= false;//true:find the insert node;false:not
+<%
+		for( int i=0; i<groupList.size();i++){
+			XMLNode groupNode= groupList.get(i);
+			GenerateExprCmpByDom4j generateExprCmpByDom4j = new GenerateExprCmpByDom4j();
+			generateExprCmpByDom4j.tool = tool;
+			generateExprCmpByDom4j.groupNode = groupNode;
+			generateExprCmpByDom4j.isSaveDocAsNode = isSaveDocAsNode;
+			generateExprCmpByDom4j.needEmptyNode = ("true").equals(allowEmpty);
+			generateExprCmpByDom4j.cid=cid;
+%>
+		if(bl_<%=cid %>==false){
+			java.util.List<org.dom4j.Element> listNodes= <%generateToolByDom4j.touchXMLNode.getXMLElement("subTreeRootParent");%>.elements();
+			if(listNodes!=null && listNodes.size()>0){
+				int j=0;
+				for(j=0;j<listNodes.size();j++){
+					org.dom4j.Element tempElem =listNodes.get(j);
+					if(("<%=groupNode.path%>").equals(tempElem.getPath()!=null ? tempElem.getPath().replace("*[name()='","").replace("']", "") : "")){
+<%
+					if(isOptimizeCode){
+%>
+						if(advancedXMLUtil_<%=cid%>.generateCodeDom4j_FindInsertNode<%=i%>(tempElem,valueMap_<%=cid%>)){
+<%
+					}else{
+%>
+						if(<%generateExprCmpByDom4j.generateCode(groupNode, "tempElem"); %>){
+<%
+					}
+%>
+							<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByTempElem();%>
+							break;
+						}
+					}
+				}
+				if(j>=listNodes.size()){
+					bl_<%=cid %>=true;
+				}
+			}else{
+				bl_<%=cid %>=true;
+			}
+		}
+		if(bl_<%=cid %>==true){
+<%
+					if(isOptimizeCode){
+%>
+						org.dom4j.Element group<%=i%>__<%=cid%> = advancedXMLUtil_<%=cid%>.generateCodeDom4j_UnFindInsertNode<%=i%>(nestXMLTool_<%=cid%>,valueMap_<%=cid%>,<%generateToolByDom4j.touchXMLNode.getXMLElement("subTreeRootParent");%>,orders_<%=cid %>,bl_<%=cid %>);
+<%
+						if(("ELEMENT").equals(groupList.get(i).type) && (0!=(groupList.get(i).special & 2))){
+%>
+						<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByGroup(i);%>
+<%
+						}
+					}else{
+						generateToolByDom4j.generateCode(groupList.get(i),"group"+i+"_","subTreeRootParent");
+					}
+%>
+		}
+<%
+ 		}//for
+ 	}else{//last group code
+%>
+	boolean isNewElememt_<%=cid %> = false;
+<% 
+		for(int i=0;i<groupList.size();i++){
+			XMLNode groupRootNode = groupList.get(i);
+			int nodeNum=0;
+%>
+	if(isNewElememt_<%=cid %> || groupbyList_<%=cid%>.size()<=<%=i%> || groupbyList_<%=cid%>.get(<%=i%>)==null
+<% 
+			for(int j=0;j<groupbyNodeList.get(i).size();j++){
+				XMLNode attr = groupbyNodeList.get(i).get(j);
+				if(attr.relatedColumn!=null){
+					if(isOptimizeCode){
+						if(nodeNum%schemaOptNum==0){
+%>
+	|| advancedXMLUtil_<%=cid%>.getValue_<%=i%>_<%=nodeNum/schemaOptNum%>(groupbyList_<%=cid%>,valueMap_<%=cid%>)
+<%
+						}
+						nodeNum++;
+					}else{
+%>
+	|| ( groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>)!=null 
+		? !groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>).equals(<%tool.getValue(attr);%>) 
+		: <%tool.getValue(attr);%>!=null )
+<% 
+					}
+				}
+			}
+%>
+	){
+<% 
+			if(isOptimizeCode){
+%>
+				org.dom4j.Element group<%=i%>__<%=cid%>=advancedXMLUtil_<%=cid%>.generateCodeDom4j_group<%=i%>(nestXMLTool_<%=cid%>,valueMap_<%=cid%>,<%generateToolByDom4j.touchXMLNode.getXMLElement("subTreeRootParent");%>,orders_<%=cid%>);
+<%
+				if(("ELEMENT").equals(groupRootNode.type) && (0!=(groupRootNode.special & 2))){
+%>
+				<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByGroup(i);%>
+<%
+				}
+			}else{
+				generateToolByDom4j.generateCode(groupList.get(i),"group"+i+"_","subTreeRootParent");
+			}
+%>
+		if(groupbyList_<%=cid%>.size()<=<%=i%>){
+        	groupbyList_<%=cid%>.add(new java.util.ArrayList<String>());
+        }else{
+        	groupbyList_<%=cid%>.get(<%=i%>).clear();
+        }
+<% 
+			for(int j=0;j<groupbyNodeList.get(i).size();j++){
+				XMLNode attr = groupbyNodeList.get(i).get(j);
+				if(isOptimizeCode){
+					if(j%schemaOptNum==0){
+%>
+		advancedXMLUtil_<%=cid%>.setValue_<%=i%>_<%=j/schemaOptNum%>(groupbyList_<%=cid%>,valueMap_<%=cid%>);
+<%
+					}
+				}else{
+%>
+		groupbyList_<%=cid%>.get(<%=i%>).add(<%tool.getValue(attr);%>);
+<% 
+				}
+			}
+%>
+        isNewElememt_<%=cid %>=true;
+        if(groupElementList_<%=cid%>.size()<=<%=i%>){
+			groupElementList_<%=cid%>.add(<%generateToolByDom4j.touchXMLNode.getXMLElement("group"+i+"_");%>);
+        }else{
+        	groupElementList_<%=cid%>.set(<%=i%>,<%generateToolByDom4j.touchXMLNode.getXMLElement("group"+i+"_");%>);
+        }
+        
+	}else{
+		<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByGroupList(i);%>
+	}
+
+<%
+		}//for
+ 	}//if merge=true 	
+}
+
+%>
+	// build loop xml tree
+<%
+	if(loopTable!=null && loopTable.size()>0){
+		if(isOptimizeCode){
+%>
+			org.dom4j.Element loop_<%=cid%>=advancedXMLUtil_<%=cid%>.generateCodeDom4j_Loop(nestXMLTool_<%=cid%>,valueMap_<%=cid%>,<%generateToolByDom4j.touchXMLNode.getXMLElement("subTreeRootParent");%>,orders_<%=cid%><%if(!useStream && isMerge && groupTable.size()>0){%>, bl_<%=cid %><%}%>);
+<%
+				if(("ELEMENT").equals(loop.type) && (0!=(loop.special & 2))){
+%>
+				<%generateToolByDom4j.touchXMLNode.putSubTreeRootParentByLoop();%>
+<%
+				}
+		}else{
+		 	generateToolByDom4j.generateCode(loop,"loop","subTreeRootParent");
+		}
+	}
+	//file split
+	if(!useStream && ("true").equals(split)){ //add a prerequisite:useStream to ignore the append mode
+%>
+    currentRowCount_<%=cid %>++;
+    if(currentRowCount_<%=cid %> == <%= splitEvery%>){
+    	needRoot_<%=cid%>  = true;
+    	fileName_<%=cid%> = file_<%=cid%> + currentFileCount_<%=cid %> + suffix_<%=cid %>;
+        currentRowCount_<%=cid %> = 0;
+        currentFileCount_<%=cid %>++;
+    	groupbyList_<%=cid%>.clear();
+
+    	java.io.FileOutputStream stream_<%=cid%> = new java.io.FileOutputStream(fileName_<%=cid%>);
+        org.dom4j.io.XMLWriter output_<%=cid%> = new org.dom4j.io.XMLWriter(stream_<%=cid%>, format_<%=cid%>);
+<%
+		if(("true").equals(outputAsXSD)){
+%>
+		doc_<%=cid%>.getRootElement().addAttribute("xsi:noNamespaceSchemaLocation", file_<%=cid%>.substring(file_<%=cid%>.lastIndexOf("/")+1)+".xsd");
+        doc_<%=cid%>.getRootElement().addNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+<%
+		}
+%>        
+        nestXMLTool_<%=cid%>.replaceDefaultNameSpace(doc_<%=cid%>.getRootElement());
+<%
+		if(!("true").equals(allowEmpty)){
+%>
+		nestXMLTool_<%=cid%>.removeEmptyElement(doc_<%=cid%>.getRootElement());
+<%
+		}
+%>
+        output_<%=cid%>.write(doc_<%=cid%>);
+        output_<%=cid%>.close();
+        doc_<%=cid%>  = org.dom4j.DocumentHelper.createDocument();
+<%
+		if (!isMerge && needFileValid) {
+			if(needDTDValid) {
+%>
+			doc_<%=cid %>.addDocType(<%=dtdRootName %>, null, <%=dtdFileName %>);
+<%
+			} else if(needXSLValid) {
+%>
+			doc_<%=cid %>.addProcessingInstruction("xml-stylesheet", inMap_<%=cid %>);
+<%			
+			}
+		}
+%>
+    	groupElementList_<%=cid%>.clear();
+    }
+<%
+	}
+}
+// ------------------- *** Dom4j generation mode end *** ------------------- //
+
+// ------------------- *** Null generation mode start *** ------------------- //
+else if(("Null").equals(mode)){
+
+	//init the generate tool.
+	GenerateToolByNull generateToolByNull = new GenerateToolByNull();
+    if(!useStream && ("true").equals(outputAsXSD)){ // add a new prerequisite:useStream to ignore generating the xsd file
+    	generateToolByNull.outputAsXSD = true;
+    }
+    if(("true").equals(allowEmpty)){
+    	generateToolByNull.allowEmpty = true;
+    }
+    generateToolByNull.bAddEmptyAttr = bAddEmptyAttr;
+    generateToolByNull.bAddUnmappedAttr = bAddUnmappedAttr;
+    generateToolByNull.cid = cid;
+    generateToolByNull.tool = tool;
+    generateToolByNull.isCompact = isCompact;
+%>
+	StringBuffer buf_<%=cid%> = new StringBuffer();
+	//init value is 0 not -1, because it will output the root tab when all the row value is null.
+	int unNullMaxIndex_<%=cid%> = 0;
+
+	// build root xml tree 
+	if (needRoot_<%=cid%>) {
+		needRoot_<%=cid%>=false;
+<%
+	String rootEmptySpace = "";
+	for(int i=0;i < mainList.size();i++){
+		if(isOptimizeCode){
+%>
+			buf_<%=cid%>=advancedXMLUtil_<%=cid%>.generateCodeNull_rootEmptySpace<%=i%>(buf_<%=cid%>,out_<%=cid%>,startTabs_<%=cid%>,endTabs_<%=cid%>,valueMap_<%=cid%>);
+<%
+		}else{
+			generateToolByNull.generateCode(mainList.get(i),rootEmptySpace);
+		}
+		if(isCompact==false){//generate pretty file
+			rootEmptySpace+="  ";
+		}
+		
+		if(!generateToolByNull.outputAsXSD && !generateToolByNull.allowEmpty){
+			if(mainList.get(i).relatedColumn != null || mainList.get(i).childrenColumnList.size()>0){
+%>
+		if( false
+<%
+					int columnNum=0;
+                	for(IMetadataColumn column : mainList.get(i).childrenColumnList){
+                		if(isOptimizeCode){
+                			if(columnNum%schemaOptNum==0){
+%>
+					|| advancedXMLUtil_<%=cid%>.generateCodeNull_conditMain<%=i%>_<%=columnNum/schemaOptNum%>(valueMap_<%=cid%>)
+<%
+                			}
+                			columnNum++;
+                		}else{
+                		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+                		}
+                	}
+%>
+		){
+			unNullMaxIndex_<%=cid%> = <%=i%>;
+		}
+<%
+			}
+		}
+%>
+		endTabs_<%=cid %>[<%=i%>] = buf_<%=cid%>.toString();
+		buf_<%=cid%> = new StringBuffer();
+<%
+	}
+%>
+	}
+	
+	// build group xml tree 
+<%
+	if(groupTable.size()>0){
+%>
+	boolean isNewElememt_<%=cid %> = false;
+	//The index of group element which is the first new group in groups.
+	int newTabIndex_<%=cid%> = -1;
+	//Buffer all group tab XML, then set to startTabBuffer.
+    String[] groupBuffer_<%=cid%> = new String[<%=groupList.size()%>];
+    String[] groupEndBuffer_<%=cid%> = new String[<%=groupList.size()%>];
+<%
+	}
+	for(int i=0;i<groupList.size();i++){
+		XMLNode groupRootNode = groupList.get(i);
+		int nodeNum=0;
+%>
+
+	// need a new group element <%=groupRootNode.name%> or not
+	if(isNewElememt_<%=cid %> || groupbyList_<%=cid%>.size()<=<%=i%> || groupbyList_<%=cid%>.get(<%=i%>)==null
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+			if(attr.relatedColumn!=null){
+				if(isOptimizeCode){
+					if(nodeNum%schemaOptNum==0){
+%>
+	|| advancedXMLUtil_<%=cid%>.getValue_<%=i%>_<%=nodeNum/schemaOptNum%>(groupbyList_<%=cid%>,valueMap_<%=cid%>)
+<%
+					}
+					nodeNum++;
+				}else{
+%>
+	|| ( groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>)!=null 
+		? !groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>).equals(<%tool.getValue(attr);%>) 
+		: <%tool.getValue(attr);%>!=null )
+<%
+				}
+			}
+		}
+%>
+	){
+		// Is the first new element in groups.
+		if(isNewElememt_<%=cid %> == false && groupbyList_<%=cid%>.size()><%=i%>){
+			newTabIndex_<%=cid%> = <%=i%>;
+		}
+
+		// count the groupby element
+		if(groupbyList_<%=cid%>.size()<=<%=i%>){
+        	groupbyList_<%=cid%>.add(new java.util.ArrayList<String>());
+        }else{
+        	groupbyList_<%=cid%>.get(<%=i%>).clear();
+        }
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+				if(isOptimizeCode){
+					if(j%schemaOptNum==0){
+%>
+		advancedXMLUtil_<%=cid%>.setValue_<%=i%>_<%=j/schemaOptNum%>(groupbyList_<%=cid%>,valueMap_<%=cid%>);
+<%
+					}
+				}else{
+%>
+		groupbyList_<%=cid%>.get(<%=i%>).add(<%tool.getValue(attr);%>);
+<%
+				}
+		}
+%>
+        isNewElememt_<%=cid %>=true;
+	}
+	
+	// subtree XML string generate
+<%
+		String emptySpace = "";
+		
+		if(isCompact==false){//generate pretty file
+			for(int len = groupList.get(i).path.split("/").length-1;len>1;len--){
+				emptySpace +="  ";
+			}
+		}
+		if(isOptimizeCode){
+%>
+		buf_<%=cid%>=advancedXMLUtil_<%=cid%>.generateCodeNull_emptySpace<%=i%>(buf_<%=cid%>,valueMap_<%=cid%>,groupBuffer_<%=cid%>);
+<%
+		}else{
+			generateToolByNull.generateCode(groupList.get(i),emptySpace);
+		}
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+			if((groupList.get(i).relatedColumn != null || groupList.get(i).childrenColumnList.size()>0)){
+%>
+	if( false
+<%
+				int columnNum=0;
+            	for(IMetadataColumn column : groupList.get(i).childrenColumnList){
+					if(isOptimizeCode){
+            			if(columnNum%schemaOptNum==0){
+%>
+					|| advancedXMLUtil_<%=cid%>.generateCodeNull_conditGroup<%=i%>_<%=columnNum/schemaOptNum%>(valueMap_<%=cid%>)
+<%
+            			}
+                		columnNum++;
+        			}else{
+                		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+        			}
+            	}
+%>
+	){
+		unNullMaxIndex_<%=cid%> = <%=i+mainList.size()%>;
+	}
+<%
+			}
+		}
+%>
+	// buffer the end tabs to groupEnd buffer
+	groupEndBuffer_<%=cid%>[<%=i%>] = buf_<%=cid%>.toString();
+    buf_<%=cid%> = new StringBuffer();
+<%
+	}//End of groupList loop
+	
+	if(groupTable.size()>0){
+%>
+	//output the previous groups as there's a new group
+    if (newTabIndex_<%=cid%> >= 0) {
+        //out_<%=cid%>.newLine();//Track code
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+		// output unNull tabs in start tabs buffer
+        if (preUnNullMaxIndex_<%=cid %> >= 0) {
+            for (int i_<%=cid%> = 0; i_<%=cid %> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+                if (i_<%=cid%> <= preUnNullMaxIndex_<%=cid%>) {
+                    if (startTabs_<%=cid %>[i_<%=cid %>] != null) {
+                        out_<%=cid %>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+                    }
+                    startTabs_<%=cid%>[i_<%=cid%>] = null;
+                }
+            }
+        }
+<%
+		}else{
+%>
+		//output all start tabs buffer
+		for (int i_<%=cid%> = 0; i_<%=cid%> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+            if (startTabs_<%=cid%>[i_<%=cid%>] != null) {
+                out_<%=cid%>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+            }
+            startTabs_<%=cid%>[i_<%=cid%>] = null;
+        }
+<%
+		}
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+        // output endtabs
+        if (preUnNullMaxIndex_<%=cid%> >= preNewTabIndex_<%=cid%>
+            && preUnNullMaxIndex_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>) {
+            for (int i_<%=cid%> = preUnNullMaxIndex_<%=cid%>; i_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	endTabs_<%=cid %>[i_<%=cid%>] = null;
+            <%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>
+                        .get(i_<%=cid%>));
+            }
+        } else {
+<%
+		}
+%>
+            for (int i_<%=cid%> = preNewTabIndex_<%=cid%> - 1; i_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	endTabs_<%=cid %>[i_<%=cid%>] = null;
+            	<%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>
+                        .get(i_<%=cid%>));
+            }
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+        }
+<%
+		}
+%>
+        preNewTabIndex_<%=cid%> = newTabIndex_<%=cid%> + <%=mainList.size()%>;
+    }
+
+    // set new element groupbuffer to startbuffer
+    for (int i_<%=cid%> = 0; i_<%=cid%> < groupBuffer_<%=cid%>.length; i_<%=cid%>++) {
+        // when newTabIndex is null, must use the perNewTabIndex
+        if (i_<%=cid%> >= preNewTabIndex_<%=cid%> - <%=mainList.size()%>) {
+            startTabs_<%=cid%>[i_<%=cid%> + <%=mainList.size()%>] = groupBuffer_<%=cid%>[i_<%=cid%>];
+            endTabs_<%=cid%>[i_<%=cid%> + <%=mainList.size()%>] = groupEndBuffer_<%=cid%>[i_<%=cid%>];
+        }
+    }
+<%
+	}
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+	//reset the preUnNullMaxIndex
+	if(unNullMaxIndex_<%=cid%>>=0){
+    	preUnNullMaxIndex_<%=cid%>=unNullMaxIndex_<%=cid%>;
+	}else{
+		if(preUnNullMaxIndex_<%=cid%>><%=mainList.size()-1%>){
+			preUnNullMaxIndex_<%=cid%>=<%=mainList.size()-1%>;
+		}
+	}
+<%
+	}
+%>
+	// build loop xml tree
+<%
+	String emptySpace = "";
+	if(isCompact==false){//generate pretty file
+		for(int len =loop.path.split("/").length-1;len>1;len--){
+			emptySpace +="  ";
+		}
+	}
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+		if( false
+<%
+		int columnNum=0;
+    	for(IMetadataColumn column : loop.childrenColumnList){
+			if(isOptimizeCode){
+            	if(columnNum%schemaOptNum==0){
+%>
+					|| advancedXMLUtil_<%=cid%>.generateCodeNull_conditLoop_<%=columnNum/schemaOptNum%>(valueMap_<%=cid%>)
+<%
+            	}
+                columnNum++;
+        	}else{
+                	%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+        	}
+    	}
+    	if(loop.hasDefaultValue == true){%> || true 
+    	<%}%>
+		){
+<%
+	}
+	if(isOptimizeCode){
+%>
+		advancedXMLUtil_<%=cid%>.generateCodeNull_loopEmptySpace(buf_<%=cid%>,out_<%=cid%>,endTabs_<%=cid%>,valueMap_<%=cid%>);
+<%
+	}else{
+		generateToolByNull.generateCode(loop,emptySpace);
+		generateToolByNull.endElement(loop,emptySpace);
+	}
+%>
+		// output all buffer
+		for (int i_<%=cid%> = 0; i_<%=cid%> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+            if (startTabs_<%=cid%>[i_<%=cid%>] != null && startTabs_<%=cid%>[i_<%=cid%>].length() > 0) {
+                out_<%=cid%>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+                startTabs_<%=cid%>[i_<%=cid%>] = null;
+            }
+        }
+		out_<%=cid%>.write(buf_<%=cid%>.toString());
+		preNewTabIndex_<%=cid%> = <%=groupList.size()+mainList.size()%>;
+<%
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+            preUnNullMaxIndex_<%=cid%> = <%=groupList.size()+mainList.size()-1%>;
+		}
+<%
+	}
+	
+	//file split 
+	if(!useStream && ("true").equals(split)){ // add a new prerequisite:useStream to ignore the split condition
+%>
+    currentRowCount_<%=cid %>++;
+    if(currentRowCount_<%=cid %> == <%= splitEvery%>){
+    	needRoot_<%=cid%>  = true;
+    	fileName_<%=cid%> = file_<%=cid%> + currentFileCount_<%=cid %> + suffix_<%=cid %>;
+        currentRowCount_<%=cid %> = 0;
+        currentFileCount_<%=cid %>++;
+    	groupbyList_<%=cid%>.clear();
+ 
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>   	
+	if (preUnNullMaxIndex_<%=cid%> >= 0) {
+        // output all buffer
+        for (int j_<%=cid%> = 0; j_<%=cid%> <= preUnNullMaxIndex_<%=cid%>; j_<%=cid%>++) {
+            if (startTabs_<%=cid%>[j_<%=cid%>] != null)
+                out_<%=cid%>.write(startTabs_<%=cid%>[j_<%=cid%>]);
+        }
+
+        if (preUnNullMaxIndex_<%=cid%> < preNewTabIndex_<%=cid%> ) {
+			for (int i_<%=cid%> = preNewTabIndex_<%=cid%> - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+                <%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+            }
+        } else {
+            for (int i_<%=cid%> = preUnNullMaxIndex_<%=cid%>; i_<%=cid%> >= 0; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+                <%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+            }
+        }
+    }
+<%
+		}else{
+			if(loopTable.size()>0){
+%>
+	for (int i_<%=cid%> = endTabStrs_<%=cid%>.size() - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+    	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+    		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+    	}
+        <%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+        out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+    }
+<%
+			}
+		}
+%>
+	    preUnNullMaxIndex_<%=cid%> = -1;
+        preNewTabIndex_<%=cid%> = -1;
+    	startTabs_<%=cid%> = new String[endTabStrs_<%=cid%>.size()];
+    	endTabs_<%=cid %> = new String[endTabStrs_<%=cid%>.size()];
+    	
+		out_<%=cid%>.close();
+		out_<%=cid%> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(file_<%=cid%> + currentFileCount_<%=cid %> + suffix_<%=cid %>), <%=encoding%>));
+        out_<%=cid%>.write("<?xml version=\"1.0\" encoding=\""+<%=encoding%>+"\"?>");
+        out_<%=cid%>.newLine();
+        
+<%
+		if (needFileValid) {
+			if (needDTDValid) {
+%>
+    		out_<%=cid%>.write("<!DOCTYPE "+<%=dtdRootName %>+" SYSTEM \"" + <%=dtdFileName %> + "\">");
+    		out_<%=cid%>.newLine();
+<%
+			} else if (needXSLValid) {
+%>
+			out_<%=cid%>.write("<?xml-stylesheet type=\""+<%=xslType %>+"\" href=\""+<%=xslHref%>+"\">");
+			out_<%=cid%>.newLine();
+<%			
+			}
+		}
+%>
+	}
+<%
+	}
+}
+// ------------------- *** Null generation mode end *** ------------------- //
+
+// ------------------- *** Common code start *** ------------------- //
+			}
+		}
+	}
+}
+// ------------------- *** Common code end *** ------------------- //
+%>

@@ -1,0 +1,690 @@
+	<%@ jet 
+	imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.core.model.process.AbstractExternalNode
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.talend.designer.xmlmap.model.emf.xmlmap.FilterConnection
+			org.eclipse.emf.common.util.EList
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.EConnectionType
+			org.talend.core.model.metadata.IMetadataTable
+			org.talend.core.model.metadata.IMetadataColumn
+            java.util.Map
+            java.util.HashMap
+            java.util.List
+            java.util.ArrayList
+            org.talend.core.model.metadata.types.JavaTypesManager
+        	org.talend.core.model.metadata.types.JavaType
+        
+"
+skeleton="tXMLMap_java.skeleton"
+%>
+<%
+	EConnectionType connectionType = null;
+	if (nextInputTable != null && nextInputTable.isLookup()) {//TD132 
+		IConnection connection =  hNameToConnection.get(nextInputTable.getName());
+
+		if(connection == null){
+			continue;
+		}else{//TD131
+			connectionType = connection.getLineStyle();
+			
+			if(connectionType == EConnectionType.FLOW_REF) {//TD130
+				IMetadataTable metadataTable = connection.getMetadataTable();
+				String tableName = nextInputTable.getName();
+				String lookupMode = nextInputTable.getLookupMode();
+				boolean isCacheOrReloadLookupMode = org.talend.designer.xmlmap.model.tree.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(lookupMode);
+				boolean isOneOfReloadLookupMode = isCacheOrReloadLookupMode ||
+					   org.talend.designer.xmlmap.model.tree.LOOKUP_MODE.RELOAD.name().equals(lookupMode);
+				INode lookupSubProcessStartNode = searchSubProcessStartNode(connection);
+			  	String lookupSubProcessStartNodeName = lookupSubProcessStartNode.getUniqueName();
+				boolean isInnerJoin = false;
+				if (nextInputTable.isInnerJoin()) {
+					isInnerJoin = true;
+			    	inputTablesWithInnerJoin.add(nextInputTable);
+			 	}
+				%>
+				///////////////////////////////////////////////
+				//Starting Lookup Table "<%= nextInputTable %>" 
+				///////////////////////////////////////////////
+				//tHash_Lookup_<%= tableName %>.initGet();
+				<%
+				String filtersConditions = nextInputTable.getExpressionFilter();
+				String filtersConditionsFormatted = "";
+				boolean hasExpressionFilter = nextInputTable.isActivateExpressionFilter() && filtersConditions != null && !("").equals(filtersConditions.trim());
+				if(hasExpressionFilter && matchXmlTreeExpr != null) {
+					filtersConditionsFormatted = matchXmlTreeExpr.generateExprCode(filtersConditions);
+				}
+
+				String expressionKey = "";
+				List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+				ArrayList<String> keysNames = new ArrayList<String>();
+				ArrayList<String> keysValues = new ArrayList<String>();
+				ArrayList<String> keysTypes = new ArrayList<String>();
+				EList<TreeNode> externalTreeNodes = nextInputTable.getNodes();
+				
+				boolean findFromBasicType = false;
+				boolean findFromDocumentType = false;
+				String documentColumn = null;
+				boolean hasOutputFromLookupDoc = false;//to output or another lookup from Document
+				Map<String,String> outNodesXPath = new HashMap<String,String>();//output contain(1.lookup table to output table 2.lookup table to lookup table)
+				Map<String,String> lookupInputNodesXPath = new HashMap<String,String>();
+				String loopXPath = "";
+				boolean isLoopOptional = false;
+				boolean isMultipleResult = false;
+				boolean existXpathKeyFromCurrentLookup = false;
+				boolean hasExpressionKey = false;
+				//cache the type and pattern information for sub columns in Document column
+				Map<String,String> xpathToPatternMap = null;
+				Map<String,String> xpathToTypeMap = null;
+				
+				boolean unvalidLookupKeyExistForHash = false;
+				List<IMetadataColumn> validLookupKeyFlatColumns = new ArrayList<IMetadataColumn>();
+				
+				for(int j = 0; j < listColumns.size(); j++){
+					IMetadataColumn column = listColumns.get(j);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				    String columnName = column.getLabel();
+				    TreeNode  externalInputTableEntry = externalTreeNodes.get(j);
+				    XPathHelper xpathHelper;
+				    if("Document".equals(typeToGenerate)) {
+				    	xpathHelper = new XPathHelper(externalInputTableEntry);
+						loopXPath = xpathHelper.getLoopNodeXPath();
+						isLoopOptional = xpathHelper.isLoopOptional();
+						outNodesXPath = xpathHelper.getOutNodesXPath();
+						lookupInputNodesXPath = xpathHelper.getLookupInputNodesXPath();
+						xpathToPatternMap = xpathHelper.getXpathToPatternMap();
+						xpathToTypeMap = xpathHelper.getXpathToTypeMap();
+						%>
+						java.util.HashMap<String,String> xmlNameSpaceMap_<%=tableName%> = new java.util.HashMap<String,String>();
+						<%=xpathHelper.buildNSMapping("xmlNameSpaceMap"+"_"+tableName)%>
+						
+						<%= tableName %>HashKey.documentLookupResult.clear();
+						java.util.Map<String,String> xpathToPatternMap_<%=tableName%> = new java.util.HashMap<String,String>();
+						java.util.Map<String,String> xpathToTypeMap_<%=tableName%> = new java.util.HashMap<String,String>();
+				    <%
+				    }
+				    List<TreeNode> allLeaf = new ArrayList<TreeNode>();
+				    treeUtil.getAllLeaf(externalInputTableEntry,allLeaf); 
+				    
+				    for(TreeNode leaf : allLeaf) { 
+					    if (leaf != null) {
+				    		if("Document".equals(typeToGenerate)) {
+				    			documentColumn = columnName;
+				    			EList<Connection> outputs = leaf.getOutgoingConnections();
+				    			EList<LookupConnection> lookupOutputs = leaf.getLookupOutgoingConnections();
+				    			EList<FilterConnection> filterOutputs = leaf.getFilterOutGoingConnections();
+					    		if((outputs!=null && outputs.size()!=0) || (lookupOutputs!=null && lookupOutputs.size()!=0) || (filterOutputs!=null && filterOutputs.size()!=0)) {
+					    			hasOutputFromLookupDoc = true;
+					    			hasOutgoingConnection = true;
+					    		}
+				    		}
+				    	  	if(leaf.getOutgoingConnections().size() > 0 || leaf.getLookupOutgoingConnections().size() > 0 || leaf.getFilterOutGoingConnections().size() > 0){
+						    	hasOutgoingConnection = true;
+						    }
+						    
+				    	  	expressionKey = leaf.getExpression();
+							if (expressionKey != null && !"".equals(expressionKey.trim())) {
+							
+								//filter for valid lookup key
+								if(hasDocumentInMainInputTable && (parallelLoopExistInCurrentOutputTable || parallelRelationExistBetweenAllOutputTables)) {
+									if(!loopHelper.validLookupKey(leaf)) {
+										continue;
+									} else {
+										if(!"Document".equals(typeToGenerate)) {
+											validLookupKeyFlatColumns.add(column);
+										}
+									}
+								}
+								
+								hasExpressionKey = true;
+							    String resultExpression = null;
+							    if("Document".equals(typeToGenerate)) {
+							    	findFromDocumentType = true;
+							    	keysNames.add(leaf.getXpath());
+							    } else {
+							    	keysNames.add(columnName);
+							    	findFromBasicType = true;
+							    }
+							    if(matchXmlTreeExpr != null){
+							    	resultExpression = matchXmlTreeExpr.generateExprCode(expressionKey);
+							    }
+							    if(resultExpression != null && !("").equals(resultExpression)){
+							    	keysValues.add(resultExpression);
+							    	if(resultExpression.indexOf("/") != -1) {
+							    		existXpathKeyFromCurrentLookup = true;
+							    	}
+							    } else {
+							    	keysValues.add(expressionKey);
+							    }
+							    keysTypes.add(typeToGenerate);
+							    boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+							}
+					    }
+					}
+				}
+				
+				/////////////////////////////////////////////////////
+				//set unvalidLookupKeyExistForHash
+				if(hasDocumentInMainInputTable && (parallelLoopExistInCurrentOutputTable || parallelRelationExistBetweenAllOutputTables)) {
+					LoopHelper nestLoopHelper = new LoopHelper(documentNodeInMainInputTable,outputTablesSortedByReject,inputTables);
+					for(int ii=0;ii<allInputLoopNodesTables.size();ii++) {
+						InputLoopNodesTable oneInputLoopNodesTable = allInputLoopNodesTables.get(ii);
+						List<TreeNode> oneInputLoopNodes = oneInputLoopNodesTable.getInputloopnodes();
+						nestLoopHelper.initForOneOutputTableLoop(oneInputLoopNodes);
+						if(nextInputTable!=null && nextInputTable.isLookup()) {
+							EList<TreeNode> treeNodes = nextInputTable.getNodes();
+							for(TreeNode treeNode : treeNodes) {
+								//only check the flat column,because hash only ready for flat column
+								if(!nestLoopHelper.validLookupKey(treeNode)) {
+									unvalidLookupKeyExistForHash = true;
+								}
+								
+							}
+							
+						}
+					}
+				}
+				/////////////////////////////////////////////////////
+				
+				isXpathFromLookup = existXpathKeyFromCurrentLookup;
+				String[] aKeysNames = keysNames.toArray(new String[0]);
+				String[] aKeysValues = keysValues.toArray(new String[0]);
+				String className = tableName + "Struct";
+				
+				hasValidLookupTables = true;
+				
+				String matchingMode = nextInputTable.getMatchingMode();
+				if(matchingMode == null) {
+					if(aKeysValues.length > 0) {
+						matchingMode = "UNIQUE_MATCH";
+					} else {
+						matchingMode = "ALL_ROWS";
+					}
+				} else {
+					if(aKeysValues.length == 0) {
+						matchingMode = "ALL_ROWS";
+					}
+				}
+				
+				boolean isAllRows = "ALL_ROWS".equals(matchingMode);
+				boolean isDocumentAllRows = isAllRows && documentColumn!=null;
+				
+				if("ALL_ROWS".equals(matchingMode) || "ALL_MATCHES".equals(matchingMode)) {
+					isMultipleResult = true;
+				}
+				%>
+				
+				<%if(hasOutgoingConnection || hasExpressionKey || isAllRows){ %>
+					boolean forceLoop<%= tableName %> = false;
+					<%= className %> <%= tableName %>ObjectFromLookup = null;
+					boolean hasResultFromLookupCache<%= tableName %> = false;
+					java.util.Map<String,Object> cacheResult<%=tableName%> = new java.util.HashMap<String,Object>();
+				<%} %>
+				
+				<%
+				if(aKeysValues!=null){//TD129
+				////////////////////////////////////////////////////////////////////////
+					if(unvalidLookupKeyExistForHash) {
+					%>
+						<%= tableName %>HashKey = new <%= tableName %>Struct() {
+							{
+								this.loopKey = "<%=loopKey%>";
+							}
+							
+							public int hashCode() {
+								if(this.hashCodeDirty){
+									final int prime = PRIME;
+									int result = DEFAULT_HASHCODE;
+					<%
+						for(IMetadataColumn column : validLookupKeyFlatColumns) {
+							String columnName = column.getLabel();
+    						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+
+							if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+							
+							 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+							 	if(javaType == JavaTypesManager.BOOLEAN) {
+								%>
+				        			result = prime * result + (this.<%=column.getLabel() %> ? 1231 : 1237);
+								<%
+								} else {	
+								%>
+									result = prime * result + (int) this.<%=column.getLabel() %>;
+								<%
+								}
+								
+							} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+		
+								%>
+								result = prime * result + java.util.Arrays.hashCode(this.<%=column.getLabel() %>);
+								<%
+							
+							} else {
+							%>
+								result = prime * result + ((this.<%=column.getLabel() %> == null) ? 0 : this.<%=column.getLabel() %>.hashCode());
+							<%
+							}
+						}
+					%>
+									result = prime * result + ((this.loopKey == null) ? 0 : this.loopKey.hashCode());
+									
+									this.hashCode = result;
+    								this.hashCodeDirty = false;	
+								}
+								return this.hashCode;
+							}
+							
+							public boolean equals(Object obj) {
+								if (this == obj) return true;
+								if (obj == null) return false;
+								if(!(obj instanceof <%=tableName%>Struct)) return false;
+								final <%=tableName%>Struct other = (<%=tableName%>Struct) obj;
+								if(!this.loopKey.equals(other.loopKey)) return false;
+<%	
+								for(IMetadataColumn column : validLookupKeyFlatColumns) {
+									String columnName = column.getLabel();
+									JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				
+									if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+									%>
+										if (this.<%=columnName %> != other.<%=columnName %>) 
+											return false;
+									<%
+									} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+									%>
+										if(!java.util.Arrays.equals(this.<%=columnName %>, other.<%=columnName %>)) {
+											return false;
+										}
+									<%
+									} else {
+									%>
+										if (this.<%=columnName %> == null) {
+											if (other.<%=columnName %> != null) 
+												return false;
+										} else if (!this.<%=columnName %>.equals(other.<%=columnName %>)) 
+											return false;
+									<%
+									}
+				
+								}
+%>
+								return true;
+							} 
+							
+						};
+					<%
+					}
+					///////////////////////////////////////////////////////////////////////
+				 	if(isCacheOrReloadLookupMode) {
+		   			%>
+		   				List<Object> lookupCacheKey<%=tableName%> = new java.util.ArrayList<Object>();
+		   			<%	
+		  			} 
+					for (int iKeyName = 0; iKeyName < aKeysNames.length; iKeyName++) {
+						String typeToGenerate = keysTypes.get(iKeyName);
+						boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+			   			if("Document".equals(typeToGenerate)) {
+			   				String xpath = aKeysNames[iKeyName];
+			   				String relativeXPath = lookupInputNodesXPath.get(xpath);
+						%>
+							<%= tableName %>HashKey.documentLookupResult.put("<%=relativeXPath%>",<%=aKeysValues[iKeyName] %>);
+							xpathToPatternMap_<%=tableName%>.put("<%=relativeXPath%>",<%=xpathToPatternMap.get(xpath)%>);
+							xpathToTypeMap_<%=tableName%>.put("<%=relativeXPath%>","<%=xpathToTypeMap.get(xpath)%>");
+							<%					
+							if(isCacheOrReloadLookupMode) {
+							%>
+								lookupCacheKey<%=tableName%>.add(<%=aKeysValues[iKeyName] %>);
+							<%
+							}
+			   			} else {
+						%>
+					   	<%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = <%=aKeysValues[iKeyName] %>;
+						<%= tableName %>HashKey.hashCodeDirty = true;
+						<%		
+				   		}
+					}// end for aKeysNames
+					
+					if(findFromBasicType && isCacheOrReloadLookupMode) {
+					%>
+						lookupCacheKey<%=tableName%>.add(<%= tableName %>HashKey);
+					<%	
+					} 
+					%>
+					
+					<%
+					if(hasOutgoingConnection || hasExpressionKey || isAllRows){
+					%>
+						if(!<%= rejectedInnerJoin %>){//TD120
+							<%if(isOneOfReloadLookupMode) {//TD110
+								if(isCacheOrReloadLookupMode) {
+							%>
+									tHash_Lookup_Cache_<%= tableName %>.lookup(lookupCacheKey<%=tableName%>);
+		  							if(tHash_Lookup_Cache_<%= tableName %>.hasNext()) {
+	  									hasResultFromLookupCache<%= tableName %> = true;
+		  							} else {
+								<%
+								}
+								List<GlobalMapNode> globalMapEntries = nextInputTable.getGlobalMapKeysValues();
+								if(globalMapEntries != null) {
+									for(GlobalMapNode entry : globalMapEntries) {
+									%>
+										globalMap.put(<%= entry.getName()%>, <%= matchXmlTreeExpr.generateExprCode(entry.getExpression()) %>);
+									<%
+									}
+								}
+								%>
+									<%= lookupSubProcessStartNodeName %>Process(globalMap);
+								<%
+					            if(nextInputTable.isPersistent()) {%>
+									tHash_Lookup_<%=tableName%> = 
+										(org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+											((org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+												 globalMap.get( "tHash_Lookup_<%=tableName%>" ));
+								<%
+							    } else {
+							    %>
+									tHash_Lookup_<%=tableName%> = 
+									(org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+										((org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+											globalMap.get( "tHash_Lookup_<%=tableName%>" ));
+								<%
+							    }
+							    %>
+					    			tHash_Lookup_<%= tableName %>.initGet();
+					    		<% if(findFromBasicType || isAllRows) { %>
+					    			tHash_Lookup_<%= tableName %>.lookup( <%= tableName %>HashKey );
+					    		<% } else if(findFromDocumentType) { %>
+					    			tHash_Lookup_<%= tableName %>.lookup();
+					    		<% } 
+						    	if(isCacheOrReloadLookupMode) {
+						    	%>
+						    		}
+							    <%	
+							    }
+							}//TD110
+							%>
+					
+							<% if(!isOneOfReloadLookupMode) {%>
+								<%if(findFromBasicType || isAllRows) {%>
+									tHash_Lookup_<%= tableName %>.lookup( <%= tableName %>HashKey );
+								<% } else if(findFromDocumentType) { %>
+									tHash_Lookup_<%= tableName %>.lookup();
+								<% } %>
+							<% } %>
+							if(hasResultFromLookupCache<%=tableName %>  || tHash_Lookup_<%= tableName %>.hasNext()){
+							
+							} else {
+								<% if(isInnerJoin) {//inner join,not find and should reject data(not Document)%>
+									<%= rejectedInnerJoin %> = true;
+									<%= rejectedDocInnerJoin %> = true;
+								<% } else {//left outter join should keep main table data,not reject anytime.%>
+									<%=tableName%> = <%=tableName%>Default;
+								<% } %>
+								
+								<%if(isMultipleResult) {%>
+								forceLoop<%= tableName %> = true;
+								<%}%>
+							}
+						}//TD120
+				   
+				   		<%if(isMultipleResult) {%>
+				   			if(<%= rejectedInnerJoin %>) {
+				   				forceLoop<%= tableName %> = true;
+				   			}
+				   		<% } %>
+				   
+				   		<%=tableName%>Struct fromLookup_<%=tableName%> = null;
+						<%=tableName%> = <%=tableName%>Default;
+				   
+				   		<% if(!isMultipleResult) {%>
+					    if(hasResultFromLookupCache<%= tableName %>) {//TD10086
+					    	<%if(isCacheOrReloadLookupMode) {%>
+					    	java.util.Map<String,Object> cacheResult_<%=cid%> = tHash_Lookup_Cache_<%= tableName %>.next();
+					    		<% for (Object key : outNodesXPath.keySet()) { %>
+					    			treeNodeAPI_<%=cid %>.put("<%=key%>",StringUtils.valueOf(cacheResult_<%=cid%>.get("<%=key%>")));
+					    		<% } %>
+				    			<%=tableName%> = (<%=className%>)cacheResult_<%=cid%>.get("<%=tableName%>");
+					    	<% } %>
+					    } else if(!<%= rejectedInnerJoin %>) {
+						  	<% if(findFromDocumentType) {%>
+						   	isMatchDocRow<%=cid%> = false;
+						  	<% } %>
+							while (tHash_Lookup_<%=tableName%>.hasNext()) {//TD119
+								fromLookup_<%=tableName%> = null;
+								<%=tableName%> = <%=tableName%>Default;
+								fromLookup_<%=tableName%> = tHash_Lookup_<%=tableName%>.next();
+								if (fromLookup_<%=tableName%> != null) {
+								<% if(findFromDocumentType || hasOutputFromLookupDoc) {%>
+									//begin to lookup Document Object (case 1:lookup doc key exists),(case 2:lookup doc key not exists but lookup line doc output exist)
+									routines.system.Document lookupDoc_<%=cid%> = fromLookup_<%=tableName%>.<%=documentColumn%>;
+									<% if("FIRST_MATCH".equals(matchingMode)) {%>
+									boolean quit<%=tableName%> = false;
+									<% } %>
+									java.util.Map<String,String> xPathAsOutput_<%=cid%> = new java.util.HashMap<String,String>();
+								<%
+								for (Object key : outNodesXPath.keySet()) { 
+									Object val = outNodesXPath.get(key);
+								%>
+									xPathAsOutput_<%=cid%>.put("<%=key%>","<%=val%>");
+								<%
+								}
+								%>
+									if(lookupDoc_<%=cid%> == null) {
+										throw new RuntimeException("<%=tableName%>.<%=documentColumn%> can't be empty");
+									}
+									List<java.util.Map<String,Object>> result_<%=cid%> = lookupDoc_<%=cid%>.LookupDocument("<%=loopXPath%>",<%=isLoopOptional %>,<%= tableName %>HashKey.documentLookupResult,
+										xPathAsOutput_<%=cid%>,xmlNameSpaceMap_<%=tableName%>,xpathToTypeMap_<%=tableName%>,xpathToPatternMap_<%=tableName%>,"<%=matchingMode%>");
+									if(result_<%=cid%> == null || result_<%=cid%>.size() == 0) {
+										// not find
+									} else {
+										//find and cache it,now only memory,inner join and unique match mode
+										//once find,not reject.
+										<% if(findFromDocumentType) { %>
+										isMatchDocRow<%=cid%> = true;
+										<% } %>
+										for(java.util.Map<String,Object> docRow_<%=cid%> : result_<%=cid%>) {
+											for(String path_<%=cid%> : docRow_<%=cid%>.keySet()) {
+												treeNodeAPI_<%=cid %>.put(path_<%=cid%>, StringUtils.valueOf(docRow_<%=cid%>.get(path_<%=cid%>)));
+												<%if(isCacheOrReloadLookupMode) {%>
+												cacheResult<%=tableName%>.put(path_<%=cid%>,StringUtils.valueOf(docRow_<%=cid%>.get(path_<%=cid%>)));
+												<% } %>
+											}
+										}
+										<% if("FIRST_MATCH".equals(matchingMode)) {%>
+										quit<%=tableName%> = true;
+										<% } %>
+									}
+								<% } %>
+									<%=tableName%> = fromLookup_<%=tableName%>;
+									
+									<%if(isCacheOrReloadLookupMode) {%>
+										<%if(findFromDocumentType) {%>
+										if(isMatchDocRow<%=cid%>) {
+											cacheResult<%=tableName%>.put("<%=tableName%>",<%=tableName%>);
+											tHash_Lookup_Cache_<%= tableName %>.put(lookupCacheKey<%=tableName%>,cacheResult<%=tableName%>); 
+										}
+										<% } else { %>
+										cacheResult<%=tableName%>.put("<%=tableName%>",<%=tableName%>); 
+										tHash_Lookup_Cache_<%= tableName %>.put(lookupCacheKey<%=tableName%>,cacheResult<%=tableName%>); 
+										<% } %>
+									<% } %>
+									
+									<% if("FIRST_MATCH".equals(matchingMode) && (findFromDocumentType || hasOutputFromLookupDoc)) {%>
+										if(quit<%=tableName%>) {//for first match,once find in document,no need to continue to lookup.
+											break;
+										}
+									<% } %>
+								}
+							}//TD119
+							<% if(isInnerJoin && findFromDocumentType) {%>
+						   	<%= rejectedDocInnerJoin %> = !isMatchDocRow<%=cid%> && !hasResultFromLookupCache<%= tableName %>;
+						    <%= rejectedInnerJoin %> = <%= rejectedDocInnerJoin %>;
+						  	<% } %>
+						  	<% if(!isInnerJoin && findFromDocumentType) { %>
+						  	if(!isMatchDocRow<%=cid%> && !hasResultFromLookupCache<%= tableName %>) {
+						  		<%=tableName%> = <%=tableName%>Default;
+						  	}
+						  	<% } %>
+						  	<% if(hasOutputFromLookupDoc && !findFromDocumentType) {//for the case : not lookup doc,but doc output exists%>
+						  		//do nothing
+						  	<% } %>
+				  		}//TD10086
+				  		
+				  		<% if(hasExpressionFilter) {%>
+				  			if(!<%= rejectedInnerJoin %> &&
+				  				!(<%=filtersConditionsFormatted %>)
+				  			) {
+				  				<%=tableName%> = <%=tableName%>Default;
+				  				
+				  				<%for (String key : outNodesXPath.keySet()) {%> 
+				  				treeNodeAPI_<%=cid %>.put("<%=key%>",null);
+								<%}%>
+				  				
+				  				<% if(isInnerJoin) {%>
+								<%= rejectedInnerJoin %> = true;			  				
+				  				<% } %>
+				  			}
+				  		<%
+				  			}
+				  		} 
+				  		%>
+				  		
+				  		//////////////////////////////////////////////////////////////////////////////////////////////
+				  		<%if(isMultipleResult) {//TD114%>
+				  		boolean fromCache<%=tableName%> = hasResultFromLookupCache<%= tableName %>;
+				  		List<java.util.Map<String,Object>> multipleResultSet<%=tableName%> = new java.util.ArrayList<java.util.Map<String,Object>>();
+				  		//the var for cache the <%=tableName%>Struct
+				  		java.util.Map<String,Object> oneRow_<%=tableName%> = null;
+						if(hasResultFromLookupCache<%= tableName %>) {
+					    	<%if(isCacheOrReloadLookupMode) {%>
+					    	java.util.Map<String,Object> cacheResult_<%=cid%> = tHash_Lookup_Cache_<%= tableName %>.next();
+					    	multipleResultSet<%=tableName%>.add(cacheResult_<%=cid%>);
+					    	<% } %>
+					    } else if(!<%= rejectedInnerJoin %>) {
+					    	<% if(findFromDocumentType) {%>
+						   	isMatchDocRow<%=cid%> = false;
+						  	<% } %>
+					    	while (tHash_Lookup_<%=tableName%>.hasNext()) {
+					    		fromLookup_<%=tableName%> = null;
+								<%=tableName%> = <%=tableName%>Default;
+								fromLookup_<%=tableName%> = tHash_Lookup_<%=tableName%>.next();
+								if(fromLookup_<%=tableName%> != null) {
+								<% if(findFromDocumentType || hasOutputFromLookupDoc || isDocumentAllRows) {//TA110%>
+									routines.system.Document lookupDoc_<%=cid%> = fromLookup_<%=tableName%>.<%=documentColumn%>;
+									java.util.Map<String,String> xPathAsOutput_<%=cid%> = new java.util.HashMap<String,String>();
+									<%
+									for (Object key : outNodesXPath.keySet()) { 
+										Object val = outNodesXPath.get(key);
+									%>
+										xPathAsOutput_<%=cid%>.put("<%=key%>","<%=val%>");
+									<%
+									}
+									%>
+									if(lookupDoc_<%=cid%> == null) {
+										throw new RuntimeException("<%=tableName%>.<%=documentColumn%> can't be empty");
+									}
+									List<java.util.Map<String,Object>> result_<%=cid%> = lookupDoc_<%=cid%>.LookupDocument("<%=loopXPath%>",<%=isLoopOptional %>,<%= tableName %>HashKey.documentLookupResult,
+										xPathAsOutput_<%=cid%>,xmlNameSpaceMap_<%=tableName%>,xpathToTypeMap_<%=tableName%>,xpathToPatternMap_<%=tableName%>,"<%=matchingMode%>");
+									if(result_<%=cid%> == null || result_<%=cid%>.size() == 0) {
+										//do nothing
+									} else {
+										<% if(findFromDocumentType) { %>
+										isMatchDocRow<%=cid%> = true;
+										<% } %>
+										for(java.util.Map<String,Object> docRow_<%=cid%> : result_<%=cid%>) {
+											docRow_<%=cid%>.put("<%=tableName%>",fromLookup_<%=tableName%>);
+											multipleResultSet<%=tableName%>.add(docRow_<%=cid%>);
+											<%if(isCacheOrReloadLookupMode) {%>
+											for(String path_<%=cid%> : docRow_<%=cid%>.keySet()) {
+												cacheResult<%=tableName%>.put(path_<%=cid%>,StringUtils.valueOf(docRow_<%=cid%>.get(path_<%=cid%>)));
+											}
+											cacheResult<%=tableName%>.put("<%=tableName%>",fromLookup_<%=tableName%>);
+											tHash_Lookup_Cache_<%= tableName %>.put(lookupCacheKey<%=tableName%>,cacheResult<%=tableName%>);
+											<% } %>
+										}
+									}
+								<% }//TA110 %>
+									<%if(!findFromDocumentType && !isDocumentAllRows){%>	
+									<%=tableName%> = fromLookup_<%=tableName%>;
+									//construct the resultset for mutiple lookup when no document lookup.
+									oneRow_<%=tableName%> = new java.util.HashMap<String, Object>();
+									oneRow_<%=tableName%>.put("<%=tableName%>",<%=tableName%>);
+									multipleResultSet<%=tableName%>.add(oneRow_<%=tableName%>);
+									<%}%>
+								}
+					    	}//end while
+					    	
+					    }//end else if
+					    //now not support cache all_matches lookup
+					    <% if(findFromDocumentType && !isInnerJoin) {%>
+					    	forceLoop<%= tableName %> = !isMatchDocRow<%=cid%> && !hasResultFromLookupCache<%= tableName %>;
+					    <% } %>
+					    
+					    <% if(findFromDocumentType && isInnerJoin) {%>
+					   	<%= rejectedDocInnerJoin %> = !isMatchDocRow<%=cid%> && !hasResultFromLookupCache<%= tableName %>;
+					    <%= rejectedInnerJoin %> = <%= rejectedDocInnerJoin %>;
+					    forceLoop<%= tableName %> = <%= rejectedInnerJoin %>;
+					  	<% } %>
+					    
+					    java.util.Iterator<java.util.Map<String,Object>> iter<%=tableName%> = multipleResultSet<%=tableName%>.iterator();
+					    while(iter<%=tableName%>.hasNext() || forceLoop<%= tableName %>) { // G_TM_M_002
+					    	<%=tableName%> = <%=tableName%>Default;
+					    	<%=tableName%>Struct tempLookup<%=tableName%> = null; 
+					    	if(!forceLoop<%= tableName %>) {
+						    	java.util.Map<String,Object> oneRow<%=tableName%> = iter<%=tableName%>.next();
+						   		<% for (Object key : outNodesXPath.keySet()) { %>
+						    			treeNodeAPI_<%=cid %>.put("<%=key%>",StringUtils.valueOf(oneRow<%=tableName%>.get("<%=key%>")));
+						    	<% } %>
+					    		tempLookup<%=tableName%> = (<%=className%>)oneRow<%=tableName%>.get("<%=tableName%>");
+					    		if(tempLookup<%=tableName%>!=null) {
+					    			<%=tableName%> = tempLookup<%=tableName%>;
+					    		}
+					    		
+					    		<% if(hasExpressionFilter) {%>
+					    		if(!<%= rejectedInnerJoin %> &&
+				  					!(<%=filtersConditionsFormatted %>)
+				  				) {
+				  					<%=tableName%> = <%=tableName%>Default;
+				  				
+				  					<%for (String key : outNodesXPath.keySet()) {%> 
+				  					treeNodeAPI_<%=cid %>.put("<%=key%>",null);
+									<%}%>
+				  				
+				  					<% if(isInnerJoin) {%>
+									<%= rejectedInnerJoin %> = true;			  				
+				  					<% } %>
+				  				}
+					    		<% } %>
+				    		}
+				    		forceLoop<%= tableName %> = false;
+				  		<% 
+				  			if(isVirtual) {
+				  				closeWhileCountForMultiResult++;
+				  			} else {
+				  				gm.addBlocksCodeToClose(new BlockCode("close loop of lookup '" + tableName +"' // G_TM_M_002"));
+				  			}
+				  		}//TD114 
+				  		%>
+				  		/////////////////////////////////////////////////////////////////////////////////////////////////
+				  		
+					<%				
+					}
+					%>
+				<%
+				} //TD129 end of expression key checking
+			}//TD130
+		}//TD131
+	} else {
+		isXpathFromLookup = false;
+	}//TD132
+	%>

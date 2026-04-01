@@ -1,0 +1,583 @@
+<%@ jet
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.metadata.MappingTypeRetriever
+	org.talend.core.model.utils.NodeUtil
+	java.util.List
+	java.util.ArrayList
+	java.util.Map
+	java.util.HashMap
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String host = ElementParameterParser.getValue(node, "__HOST__");
+	String port = ElementParameterParser.getValue(node, "__PORT__");
+	String dbName = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String table = ElementParameterParser.getValue(node, "__TABLE__");
+	String userName = ElementParameterParser.getValue(node, "__USER__");
+	String dbschema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+	String jdbcUrl = ElementParameterParser.getValue(node, "__JDBC_URL__");
+	
+	boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	
+	boolean useExistingS3Connection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION_S3__"));
+	String s3ConnectionCid = ElementParameterParser.getValue(node,"__CONNECTION_S3__");
+	int driveVersion = ("DRIVER_V2".equals(ElementParameterParser.getValue(node, "__DRIVER_VERSION__")) || "DRIVER_VERSION".equals(ElementParameterParser.getValue(node, "__DRIVER_VERSION__")))
+     ? 2 : 1;
+    boolean useStringProperties = "true".equals(ElementParameterParser.getValue(node, "__USE_STRING_PROPERTIES__"));
+
+	INode current_node = node;
+	if(useExistingS3Connection){
+		current_node = NodeUtil.getNodeByUniqueName(node.getProcess(),s3ConnectionCid,true);
+	}
+	String credentialProvider = ElementParameterParser.getValue(current_node, "__CREDENTIAL_PROVIDER__");
+	List<IMetadataColumn> columnList = getColumnList(node);
+	
+	if(!"STATIC_CREDENTIALS".equalsIgnoreCase(credentialProvider)) {
+%>
+    if(true) {
+        throw new IllegalArgumentException("Not supported S3 connection credential type: <%=credentialProvider%>. Please use \"Static Credentials.\"");
+    }
+<%}%>
+
+
+	String dbschema_<%=cid%> = null;
+	<%
+	if(useExistingConnection) {
+		%>
+		dbschema_<%=cid%> = (String)globalMap.get("schema_" + "<%=ElementParameterParser.getValue(node,"__CONNECTION__")%>");
+		<%
+	} else {
+		%>
+		dbschema_<%=cid%> = <%=dbschema%>;
+		<%
+	}
+	%>
+	String tableName_<%=cid%> = <%=table%>;
+	String tableName2_<%=cid%> = tableName_<%=cid%>;
+	boolean isTempTable_<%=cid%> = tableName_<%=cid%>!=null && tableName_<%=cid%>.trim().startsWith("#");
+	if(isTempTable_<%=cid%>) {
+		tableName2_<%=cid%> = "\"" + tableName2_<%=cid%> + "\"";
+	} else if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+		//do nothing
+	} else {
+		tableName_<%=cid%> = dbschema_<%=cid%> + "\".\"" + tableName_<%=cid%>;
+		tableName2_<%=cid%> = dbschema_<%=cid%> + "." + tableName2_<%=cid%>;
+	}
+
+	java.sql.Connection conn_<%=cid%> = null;
+<%
+	if(useExistingConnection) {
+		String conn = "conn_" + ElementParameterParser.getValue(node,"__CONNECTION__");
+%>
+		conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	} else {
+%>
+		String driverClass_<%=cid%> = "com.amazon.redshift.jdbc42.Driver";
+		Class.forName(driverClass_<%=cid%>).newInstance();
+        StringBuilder sbuilder_<%=cid%> = new StringBuilder();
+        sbuilder_<%=cid%>.append("jdbc:redshift:");
+<%
+        if ("SSO".equals(jdbcUrl)){
+
+%>
+            sbuilder_<%=cid%>.append("iam:");
+<%
+}
+%>
+        sbuilder_<%=cid%>.append("//")
+                         .append(<%=host%>)
+                         .append(":")
+                         .append(<%=port%>)
+                         .append("/")
+                         .append(<%=dbName%>);
+<%
+        if(( useStringProperties || driveVersion == 1) && dbproperties != null && !"\"\"".equals(dbproperties) && !"".equals(dbproperties)) {
+%>
+        sbuilder_<%=cid%>.append("?").append(<%=dbproperties%>);
+<%
+        }
+%>
+        String url_<%=cid%> = sbuilder_<%=cid%>.toString();
+<%      
+		String passwordFieldName = "__PASS__";
+		
+		if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+		final String decryptedPass_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+		<%} else {%>
+		final String decryptedPass_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+		<%}%>
+		String dbUser_<%=cid %> = <%=userName%>;
+		String dbPwd_<%=cid %> = decryptedPass_<%=cid%>;
+
+<%
+        if(driveVersion == 2 && !useStringProperties){
+
+		        log4jCodeGenerateUtil.connectWithProperties(node);
+		    } else {
+		        log4jCodeGenerateUtil.connect(node);
+		}
+	}
+
+	String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	List<Column> stmtStructure = null;
+	Manager manager = null;
+	if(columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+	
+	if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction)){
+%>
+		<%@ include file="../templates/_tableActionForBulk.javajet"%>
+<%
+	}
+	
+	boolean	log4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+	String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+	
+	String data_source_type = ElementParameterParser.getValue(node,"__DATA_SOURCE_TYPE__");
+	
+	String importType = ElementParameterParser.getValue(node, "__IMPORT_TYPE__");
+	
+	boolean s3Mode = "S3".equals(data_source_type);
+	boolean emrMode = "EMR".equals(data_source_type);
+	boolean dynamoDBMode = "DYNAMODB".equals(data_source_type);
+	boolean sshMode = "SSH".equals(data_source_type);
+	
+	boolean delimitedOrCsvMode = !dynamoDBMode && "DELIMITED_OR_CSV".equals(importType);
+	boolean jsonMode = !dynamoDBMode && "JSON".equals(importType);
+	boolean avroMode = !dynamoDBMode && "AVRO".equals(importType);
+	boolean fixedwidthMode = !dynamoDBMode && "FIXEDWIDTH".equals(importType);
+	boolean parquetMode = !dynamoDBMode && "PARQUET".equals(importType);
+	
+	String redshiftTracker = org.talend.core.utils.TrackerUtil.getRedshiftTracker();
+%>
+	StringBuilder command_<%=cid%> = new StringBuilder();
+	command_<%=cid%>.append("<%=redshiftTracker%> ").append('\n');
+<%
+	if(delimitedOrCsvMode) {
+%>
+		char fieldSeparator_<%=cid %> = 
+<%
+		if(fieldSeparator.trim().isEmpty()) {
+%>
+		',';
+<%
+		} else {
+%>
+		String.valueOf(<%=fieldSeparator.trim()%>).charAt(0);
+<%
+		}
+%>
+		char textEnclosure_<%=cid %> = 
+<%
+		if("EMPTY".equals(textEnclosure)) {
+%>
+		'\0';
+	
+<%
+		} else if("DOUBLE_QUOTE".equals(textEnclosure)) {
+%>
+		'"';
+<%
+		} else {
+%>
+		String.valueOf(<%=textEnclosure%>).charAt(0);
+<%
+		}
+	}
+%>
+	command_<%=cid%>.append("COPY ").append("\"")
+		.append(tableName_<%=cid%>)
+		.append("\"")
+	
+<%
+	if(!parquetMode && columnList != null && columnList.size() > 0) {
+%>
+		.append(" (")
+<%
+		int sizeColumns = columnList.size();
+		for (int i = 0; i < sizeColumns; i++) {
+			IMetadataColumn column = columnList.get(i);
+%>
+			.append("<%=column.getOriginalDbColumnName()%>")
+<%
+			if(i != sizeColumns - 1) {
+%>
+			.append(",")
+<%
+			}
+		}
+%>
+		.append(")")
+<%
+	}
+%>
+	.append(" FROM '");
+<%	
+	boolean assumeRole = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__ASSUME_ROLE__"));
+	String access_key = ElementParameterParser.getValue(node, "__ACCESS_KEY__");
+    String passwordFieldKey = "__SECRET_KEY__";
+    if(emrMode) {
+    	access_key = ElementParameterParser.getValue(node, "__ACCESS_KEY_EMR__");
+    	passwordFieldKey = "__SECRET_KEY_EMR__";
+    } else if(dynamoDBMode) {
+    	access_key = ElementParameterParser.getValue(node, "__ACCESS_KEY_DYNAMODB__");
+    	passwordFieldKey = "__SECRET_KEY_DYNAMODB__";
+    } else if(sshMode) {
+    	access_key = ElementParameterParser.getValue(node, "__ACCESS_KEY_SSH__");
+    	passwordFieldKey = "__SECRET_KEY_SSH__";
+    }
+    
+
+    
+    if(!assumeRole){
+%>
+
+<%
+
+    		access_key = ElementParameterParser.getValue(current_node, "__ACCESS_KEY__");
+    		if (ElementParameterParser.canEncrypt(current_node, passwordFieldKey)) {
+%> 
+				final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(current_node, passwordFieldKey)%>);
+<%
+			} else {
+%>
+				final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(current_node, passwordFieldKey)%>; 
+<%
+			}
+    } else {
+    	access_key = "\"\"";
+%>
+		final String decryptedPwd_<%=cid%> = "";
+<%
+	}
+	if(avroMode) {
+		String avro_mapping = ElementParameterParser.getValue(node, "__JSON_MAPPING__");
+%>
+		StringBuilder avro_builder_<%=cid%> = new StringBuilder();
+		if("auto".equals(<%=avro_mapping%>)) {
+			avro_builder_<%=cid%>.append("FORMAT AS AVRO '").append("auto").append("' ");
+		} else {
+			avro_builder_<%=cid%>.append("FORMAT AVRO '").append(<%=avro_mapping%>).append("' ");
+		}
+<%
+	}
+	
+	if(s3Mode) {
+		String bucket = ElementParameterParser.getValue(node,"__BUCKET__");
+    	String key = ElementParameterParser.getValue(node,"__KEY__");
+%>
+		command_<%=cid%>.append("s3://").append(<%=bucket%>).append("/").append(<%=key%>)
+<%
+    } else if(emrMode) {
+    	String emr_cluster_id = ElementParameterParser.getValue(node,"__EMR_CLUSTER_ID__");
+    	String hdfs_filepath = ElementParameterParser.getValue(node,"__HDFS_FILEPATH__");
+%>
+		String hdfspath_<%=cid%> = <%=hdfs_filepath%>;
+		if(hdfspath_<%=cid%>!=null && hdfspath_<%=cid%>.startsWith("/")) {
+			hdfspath_<%=cid%> = hdfspath_<%=cid%>.substring(1);
+		}
+		command_<%=cid%>.append("emr://").append(<%=emr_cluster_id%>).append("/").append(hdfspath_<%=cid%>)
+<%
+    } else if(dynamoDBMode) {
+    	String tablename = ElementParameterParser.getValue(node,"__TABLENAME__");
+%>
+		command_<%=cid%>.append("dynamodb://").append(<%=tablename%>)
+<%
+    } else if(sshMode) {
+    	String bucket = ElementParameterParser.getValue(node,"__BUCKET_SSH__");
+    	String key = ElementParameterParser.getValue(node,"__KEY_SSH__");
+%>
+		command_<%=cid%>.append("s3://").append(<%=bucket%>).append("/").append(<%=key%>)
+<%
+    }
+%>
+	.append("' credentials '")
+<%
+	if(assumeRole){
+		List<Map<String,String>> roles = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROLE_TABLE__");
+		int roleListSize=roles.size();
+		if(roleListSize > 0){
+%>
+			.append("aws_iam_role=")
+<%
+			for(int roleIndex = 0;roleIndex<roleListSize;roleIndex++){
+				Map<String, String> role = roles.get(roleIndex);
+				String roleARN = role.get("ROLE_ARN");
+				if(roleIndex != 0){
+%>
+				    .append(",")	
+<%					
+				}
+%>
+			.append(<%=roleARN%>)
+<%		
+			}
+		}
+	} else if(!assumeRole) {
+%>
+	    .append("aws_access_key_id=").append(<%=access_key%>).append(";aws_secret_access_key=").append(decryptedPwd_<%=cid%>)
+<%
+	}
+	boolean encrypt = "true".equals(ElementParameterParser.getValue(node, "__ENCRYPT__"));
+	String encryptionKeyPropertyName = "__ENCRYPTED_KEY__";
+	if(useExistingS3Connection){
+		encrypt = "true".equals(ElementParameterParser.getValue(current_node, "__ENCRYPT__"));
+		encryptionKeyPropertyName = "__ENCRYPTED_KEY_BASE64__";
+	}else{
+		encrypt = encrypt && s3Mode;
+	}
+	if(encrypt && !parquetMode) {
+%>
+		.append(";master_symmetric_key=")
+<%
+		if (ElementParameterParser.canEncrypt(current_node, encryptionKeyPropertyName)) {
+%>
+			.append(routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(current_node, encryptionKeyPropertyName)%>))
+<%
+		} else {
+%>
+			.append(<%=ElementParameterParser.getValue(current_node, encryptionKeyPropertyName)%>)
+<%
+		}
+	}
+%>
+	.append("' ")
+<%
+	if(dynamoDBMode) {
+		String readratio = ElementParameterParser.getValue(node,"__READRATIO__");
+%>
+	.append("READRATIO ").append(<%=readratio%>).append(" ");
+<%
+	}
+	
+	if(sshMode) {
+%>
+	.append("SSH ")
+<%
+	}
+	
+	if(delimitedOrCsvMode) {
+%>
+	.append("DELIMITER '").append(fieldSeparator_<%=cid%>).append("' ")
+<%
+	} else if(jsonMode) {
+		String mapping = ElementParameterParser.getValue(node, "__JSON_MAPPING__");
+%>
+	.append("JSON '").append(<%=mapping%>).append("' ")
+<%
+	} else if(avroMode) {
+%>
+	.append(avro_builder_<%=cid%>)
+<%
+	} else if(fixedwidthMode) {
+		String mapping = ElementParameterParser.getValue(node, "__FIXEDWIDTH_MAPPING__");
+%>
+	.append("FIXEDWIDTH '").append(<%=mapping%>).append("' ")
+<%
+	}else if(parquetMode){
+%>
+    .append("FORMAT AS PARQUET ")
+
+<%}%>
+	;
+	
+	<%if(parquetMode){
+	String encoding = ElementParameterParser.getValue(node, "__PARQUE_STATUPDATE__");
+	%>
+	command_<%=cid%>.append("STATUPDATE <%=encoding%> ");
+	<%}%>
+	
+	
+<%
+	if(delimitedOrCsvMode) {
+%>
+	if(textEnclosure_<%=cid %>!='\0') {
+		command_<%=cid%>.append("CSV QUOTE '").append(textEnclosure_<%=cid %>).append("' ");
+	}
+<%
+	}
+	
+	if(!dynamoDBMode && !parquetMode) {
+		String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+%>
+		command_<%=cid%>.append("ENCODING ").append(<%=encoding%>).append(" ");
+<%
+	}
+	
+	boolean regionAdded = false;
+	if(useExistingS3Connection && !parquetMode) {
+		String regionS3 = ElementParameterParser.getValue(current_node, "__REGION__");
+		boolean set_regionS3 = (regionS3!=null && !regionS3.isEmpty() && !"DEFAULT".equalsIgnoreCase(regionS3));
+		if(set_regionS3) {
+			regionAdded = true;
+%>
+			command_<%=cid%>.append("REGION '").append(<%=regionS3%>).append("' ");
+<%
+		}
+	}
+	
+	boolean isSetMaxError = false;
+	final List<Map<String, String>> settings = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OTHER_CONFIGURATION__");
+	if(settings!=null && !settings.isEmpty() && !parquetMode) {
+		for(Map<String, String> parameter : settings) {
+			String parameterKey = parameter.get("OTHER_PARAMETER");
+			String value = parameter.get("DATA_VALUE");
+			if("REGION".equals(parameterKey) && !regionAdded || "NULL".equals(parameterKey)) {
+				if(useExistingS3Connection) {
+					String regionS3 = ElementParameterParser.getValue(current_node, "__REGION__");
+					boolean set_regionS3 = (regionS3!=null && !regionS3.isEmpty() && !"DEFAULT".equalsIgnoreCase(regionS3));
+					if(set_regionS3) {
+						parameterKey = "REGION";
+						value = regionS3;
+					}
+				}
+%>
+			command_<%=cid%>.append("<%=parameterKey%> '").append(<%=value%>).append("' ");
+<%
+			} else if("ESCAPE,EXPLICIT_IDS,IGNOREBLANKLINES,TRIMBLANKS,EMPTYASNULL,BLANKSASNULL,SSH,REMOVEQUOTES,ACCEPTANYDATE,TRUNCATECOLUMNS,FILLRECORD,NOLOAD,ROUNDEC".contains(parameterKey)) {
+%>
+			command_<%=cid%>.append("<%=parameterKey%> ");
+<%
+			} else if("IGNOREHEADER,COMPROWS".contains(parameterKey)) {
+%>
+			command_<%=cid%>.append("<%=parameterKey%> ").append(<%=value%>).append(" ");
+<%
+			} else if("MAXERROR".equals(parameterKey)) {
+				isSetMaxError = true;
+%>
+			command_<%=cid%>.append("MAXERROR ").append(<%=value%>).append(" ");
+<%
+			} else if("ACCEPTINVCHARS".equals(parameterKey)) {
+				if(value == null || "".equals(value.trim()) || "\"\"".equals(value.trim())) {
+%>
+				command_<%=cid%>.append("ACCEPTINVCHARS ");
+<%
+				} else {
+%>
+				command_<%=cid%>.append("ACCEPTINVCHARS '").append(<%=value%>).append("' ");
+<%
+				}
+			} else if("COMPUPDATE,STATUPDATE".contains(parameterKey)) {
+				if("true,TRUE,\"TRUE\",\"ON\"".contains(value)) {
+%>
+				command_<%=cid%>.append("<%=parameterKey%> ON ");
+<%
+				} else if("false,FALSE,\"FALSE\",\"OFF\"".contains(value)) {
+%>
+				command_<%=cid%>.append("<%=parameterKey%> OFF ");
+<%
+				}
+			}
+ 		}
+	}
+	
+	if(!parquetMode && encrypt) {
+%>
+		command_<%=cid%>.append("ENCRYPTED ");
+<%
+	}
+	
+	boolean compressed = "true".equals(ElementParameterParser.getValue(node, "__COMPRESS__"));
+	if(compressed && !dynamoDBMode && !parquetMode) {
+		String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+%>
+		command_<%=cid%>.append("<%=compression%> ");
+<%
+	}
+	
+	String dateFormat = ElementParameterParser.getValue(node, "__DATEFORMAT__");
+	if(!parquetMode){
+	    if("NONE".equals(dateFormat)) {
+		//do nothing
+	} else if("PATTERN".equals(dateFormat)) {
+		String pattern = ElementParameterParser.getValue(node, "__DATE_PATTERN__");
+%>
+		command_<%=cid%>.append("DATEFORMAT '").append(<%=pattern%>).append("' ");
+<%
+	} else if("AUTO".equals(dateFormat)) {
+%>
+		command_<%=cid%>.append("DATEFORMAT 'auto' ");
+<%
+	    }
+	
+	String timeFormat = ElementParameterParser.getValue(node, "__TIMEFORMAT__");
+	
+	if("NONE".equals(timeFormat)) {
+		//do nothing
+	} else if("PATTERN".equals(timeFormat)) {
+		String pattern = ElementParameterParser.getValue(node, "__TIME_PATTERN__");
+%>
+		command_<%=cid%>.append("TIMEFORMAT '").append(<%=pattern%>).append("' ");
+<%
+	} else if("AUTO".equals(timeFormat)) {
+%>
+		command_<%=cid%>.append("TIMEFORMAT 'auto' ");
+<%
+	} else if("EPOCHSECS".equals(timeFormat)) {
+%>
+		command_<%=cid%>.append("TIMEFORMAT 'epochsecs' ");
+<%
+	} else if("EPOCHMILLISECS".equals(timeFormat)) {
+%>
+		command_<%=cid%>.append("TIMEFORMAT 'epochmillisecs' ");
+<%
+	}
+	}//!parquetMode
+%>
+	java.sql.Statement stmt_<%=cid %>=conn_<%=cid %>.createStatement();
+<%
+	if (isLog4jEnabled) {
+%>
+		String log_command_<%=cid%> = decryptedPwd_<%=cid %>.isEmpty()
+			? command_<%=cid%>.toString()
+			: command_<%=cid%>.toString().replace(decryptedPwd_<%=cid %>, "****");
+		log.debug("Executing COPY command: " + log_command_<%=cid%>);
+<%
+	}
+%>
+	stmt_<%=cid %>.execute(command_<%=cid%>.toString());
+<%
+	if(isSetMaxError) {
+%>
+		if(stmt_<%=cid %>.getWarnings()!=null) {
+<%
+		if(log4jEnabled) {
+%>
+			log.warn("<%=cid%> - " + stmt_<%=cid %>.getWarnings().getMessage());
+<%
+		} else {
+%>
+			System.err.println(stmt_<%=cid %>.getWarnings().getMessage());
+<%
+		}
+%>
+		}
+<%
+	}
+%>
+	<%if(log4jEnabled){%>
+		log.info("<%=cid%> - Finish loading data to table : " + tableName2_<%=cid%> + ".");
+	<%}%>
+<%
+	if(!useExistingConnection) {
+		log4jCodeGenerateUtil.close(node);
+	}
+%>

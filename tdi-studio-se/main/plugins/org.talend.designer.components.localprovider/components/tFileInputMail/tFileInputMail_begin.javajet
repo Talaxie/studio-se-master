@@ -1,0 +1,66 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+		java.util.Map
+	" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        // component id
+        String cid = node.getUniqueName();
+		boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__")) && node.getComponent().isLog4JEnabled();
+        String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+        String directory = ElementParameterParser.getValue(node,"__ATTACHMENT_PATH__");
+        String mailType = ElementParameterParser.getValue(node,"__MAIL_TYPE__");
+        
+    	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+		boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+		%> 
+		if(!(<%=directory%>).endsWith("/")){
+			globalMap.put("<%=cid %>_EXPORTED_FILE_PATH",<%=directory%> + "/");
+		}else{
+			globalMap.put("<%=cid %>_EXPORTED_FILE_PATH",<%=directory%>);
+		}
+
+		// create output directory if not exists
+		String path = <%=directory%>;
+		if(!path.endsWith("/")){
+			path = path + "/";
+		}
+		java.io.File outputDir = new java.io.File(path);
+		if (!outputDir.exists()) {
+			outputDir.mkdirs();
+		}
+
+		boolean hasData_<%=cid%> = false;
+		<%
+		if("MIME".equals(mailType)) {
+		%>
+        	<%@ include file="./tFileInputMail_MIME.javajet"%>
+		<%
+    	} else {
+		%>
+        	<%@ include file="./tFileInputMail_MSG.javajet"%>
+		<%
+    	}
+		%>
+		<%
+	}
+}  
+ %>

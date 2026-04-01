@@ -1,0 +1,259 @@
+public class CLASS {
+
+
+	public boolean hasConcurrencyContext(List<IConnection> inputConnections, List<? extends INode> graphicalNodes) {
+
+		for(IConnection connection : inputConnections) {
+            EConnectionType connectionType = connection.getLineStyle();
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+	            INode node = connection.getSource();
+				return recursiveSearchIterateForConcurrency(node, graphicalNodes);
+			}
+		}
+		return false;
+	
+	}
+
+	public boolean hasIterateConnectionBefore(List<IConnection> inputConnections, List<? extends INode> graphicalNodes) {
+
+		for(IConnection connection : inputConnections) {
+            EConnectionType connectionType = connection.getLineStyle();
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+	            INode node = connection.getSource();
+				return recursiveSearchIterate(node, graphicalNodes);
+			}
+		}
+		return false;
+	
+	}
+	
+	public boolean recursiveSearchIterate(INode node, List<? extends INode> graphicalNodes) {
+	
+		//System.out.println(node);
+	
+		List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+
+		for(IConnection connection : connections) {
+            EConnectionType connectionType = connection.getLineStyle();
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+	            node = connection.getSource();
+				//System.out.println(connection.getName() + " connectionType=" + connectionType + " connection=" + String.valueOf(connection));
+    	        return recursiveSearchIterate(node, graphicalNodes);
+            } else if(connectionType == EConnectionType.ITERATE) {
+				//System.out.println("ITERATE return true");
+    	        return true;
+            }else{
+            	//for virtual component
+            	boolean find = false;
+				for(INode loopNode : graphicalNodes) {
+					if(loopNode.getUniqueName().equals(node.getUniqueName())){
+						find = true;
+					}
+				}
+				if(!find){
+					List<IConnection> vConnections = (List<IConnection>) node.getIncomingConnections();
+					for(IConnection vConnection : vConnections) {
+						node = vConnection.getSource();
+						break;
+					}
+					return recursiveSearchIterate(node, graphicalNodes);
+				}
+            }
+		}
+		
+		//System.out.println("return false");
+		return false;
+	
+	}
+
+	private boolean recursiveSearchIterateForConcurrency(INode node, List<? extends INode> graphicalNodes) {
+		List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+
+		for(IConnection connection : connections) {
+            EConnectionType connectionType = connection.getLineStyle();
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+	            node = connection.getSource();
+    	        return recursiveSearchIterateForConcurrency(node, graphicalNodes);
+            } else if(connectionType == EConnectionType.ITERATE) {
+				boolean parallelIterate = "true".equals(ElementParameterParser.getValue(connection, "__ENABLE_PARALLEL__"));
+    	        if(parallelIterate) {
+    	        	return true;
+    	        } else {
+    	        	node = connection.getSource();
+        			return recursiveSearchIterateForConcurrency(node, graphicalNodes);
+    	        }
+            }else{
+            	//for virtual component
+            	boolean find = false;
+				for(INode loopNode : graphicalNodes) {
+					if(loopNode.getUniqueName().equals(node.getUniqueName())){
+						find = true;
+					}
+				}
+				if(!find){
+					List<IConnection> vConnections = (List<IConnection>) node.getIncomingConnections();
+					for(IConnection vConnection : vConnections) {
+						node = vConnection.getSource();
+						break;
+					}
+					return recursiveSearchIterateForConcurrency(node, graphicalNodes);
+				}
+            }
+		}
+		
+		return false;
+	
+	}
+
+	public INode searchSubProcessStartNode(IConnection connection) {
+       	INode source = connection.getSource();
+    	//System.out.println(" source=" +  source);
+    	INode subprocessStartNode = null;
+    	if(source != null) {
+			String searchedComponentName = source.getUniqueName();
+        	//System.out.println(" searchedComponentName=" +  searchedComponentName);
+			List<? extends INode> generatedNodes = source.getProcess().getGeneratingNodes();
+			for(INode loopNode : generatedNodes) {
+				if(loopNode.getUniqueName().equals(searchedComponentName)) {
+					subprocessStartNode = loopNode.getSubProcessStartNode(false);
+		        	//System.out.println(" subprocessStartNode=" +  subprocessStartNode.getUniqueName());
+				}
+			}
+		}
+	
+		return subprocessStartNode;
+	}
+    public boolean hasJoinedTable(String tableNameToTest, ExternalMapperData data) {
+        for (ExternalMapperTable table : data.getOutputTables()) {
+            if (table.getIsJoinTableOf() != null && table.getIsJoinTableOf().equals(tableNameToTest)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    
+  public boolean isErrorReject(ExternalMapperTable table){
+        String errorMessage = null;
+        String errorStackTrace = null; 
+        if(table!=null&&table.getName()!=null&&table.getName().endsWith("ErrorReject")){
+            for(ExternalMapperTableEntry entry:table.getMetadataTableEntries()){
+                if("errorMessage".equals(entry.getName())){
+                    errorMessage = entry.getName();
+                }else if("errorStackTrace".equals(entry.getName())){
+                    errorStackTrace = entry.getName();
+                }
+            }
+            if(errorMessage!=null&&errorStackTrace!=null){
+                return true;
+            }
+        }
+        return false;
+    }
+
+	public String getExpressionWithAutoConvertFunction(
+		String expression, 
+		ExternalMapperTableEntry targetTableEntry, 
+		IMetadataColumn targetColumn,
+		DataMapExpressionParser expressionParser, 
+		Map<TableEntryLocation, ExternalMapperTableEntry> locationMap4Entry,
+		Map<TableEntryLocation, IMetadataColumn> locationMap4Column, 
+		Map<String,String> autoConverterMap, 
+		boolean enable_auto_convert_type) {
+		
+		if(!enable_auto_convert_type) {
+			return expression;
+		}
+		
+		if(expression == null || expression.isEmpty()) {
+			return expression;
+		}
+	
+		TableEntryLocation uniqueLocation = getUniqueEntryLocation(expression);
+		
+        if(uniqueLocation == null) {
+        	return expression;
+        }
+        
+    	ExternalMapperTableEntry uniqueSourceEntry = locationMap4Entry.get(uniqueLocation);
+    	
+    	if(uniqueSourceEntry == null) {
+    		return expression;
+    	}
+    	
+    	String source_talend_type = uniqueSourceEntry.getType();
+        String target_talend_type = targetTableEntry.getType();
+        
+        String convertFunction = autoConverterMap.get(contact(source_talend_type, ":", target_talend_type));
+        
+        if(convertFunction!=null && !convertFunction.isEmpty()) {
+        	StringBuilder strbuilder = new StringBuilder();
+        	
+	        if(uniqueSourceEntry.isNullable()) {
+	      		strbuilder.append("(((").append(expression).append(") == null) ? null : (");
+	        }
+        
+        	expression = convertFunction.replace("${0}", expression);
+        	
+        	String pattern = null;
+        	if((JavaTypesManager.STRING.getId().equals(source_talend_type)||JavaTypesManager.OBJECT.getId().equals(source_talend_type)) && JavaTypesManager.DATE.getId().equals(target_talend_type)) {
+        		if(targetColumn!=null) {
+        			pattern = targetColumn.getPattern();
+        		}
+        		
+        		if(pattern == null || pattern.isEmpty()) {
+        			pattern = "\"dd-MM-yyyy\"";
+        		}
+        		
+        	} else if(JavaTypesManager.DATE.getId().equals(source_talend_type) && JavaTypesManager.STRING.getId().equals(target_talend_type)) {
+        		IMetadataColumn sourceColumn = locationMap4Column.get(uniqueLocation);
+        		
+        		if(sourceColumn!=null) {
+        			pattern = sourceColumn.getPattern();
+        		}
+        		
+        		if(pattern == null || pattern.isEmpty()) {
+        			pattern = "\"dd-MM-yyyy\"";
+        		}
+        	}
+        	
+        	if(pattern != null) {
+        		expression = expression.replace("${1}", pattern);
+        	}
+        	
+        	strbuilder.append(expression);
+        	
+        	if(uniqueSourceEntry.isNullable()) {
+      			strbuilder.append("))");
+        	}
+        	
+        	return strbuilder.toString();
+        }
+        
+        return expression;
+	}
+	
+	java.util.regex.Pattern locationPattern = java.util.regex.Pattern.compile(LanguageProvider.getJavaLanguage().getLocationPattern());
+	
+	private TableEntryLocation getUniqueEntryLocation(String expression) {
+		java.util.regex.Matcher matcher = locationPattern.matcher(expression);
+		if(matcher.matches()) {
+			return new TableEntryLocation(matcher.group(1), matcher.group(2));
+		}
+		return null;
+	}
+	
+	StringBuilder strbuilder = new StringBuilder(20);
+	
+	private String contact(String... content) {
+		strbuilder.setLength(0);
+		for(String each : content) {
+			strbuilder.append(each);
+		}
+		return strbuilder.toString();
+	}
+
+    public String generate(Object argument) {
+
+    }    
+}

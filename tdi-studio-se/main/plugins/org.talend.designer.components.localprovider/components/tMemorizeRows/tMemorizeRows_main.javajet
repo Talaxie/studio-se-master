@@ -1,0 +1,67 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+	org.talend.core.model.process.IConnectionCategory
+  " 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+
+if ((metadatas != null) && (metadatas.size() > 0)) {
+  IMetadataTable metadata = metadatas.get(0);
+  List<? extends IConnection> connsIn = node.getIncomingConnections();
+    	for(IConnection conn:connsIn){//-----111
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//-----222
+  IConnection connIn = conn;
+  String sFlowName = connIn.getName();
+  List<IMetadataColumn> preColumns = connIn.getMetadataTable().getListColumns();
+  List<Map<String, String>> listTableCols = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__SPECIFY_COLS__");
+  List<String> listCheckedColsName = null;
+  
+  for (IMetadataColumn column : preColumns){
+    String sColumnName = column.getLabel();
+    int iInColIndex = preColumns.indexOf(column);
+    Map<String, String> checkedColumn = listTableCols.get(iInColIndex);
+    boolean bMemorize = "true".equals(checkedColumn.get("MEMORIZE_IT")); 
+    
+    if (bMemorize){
+      if (listCheckedColsName == null){
+        listCheckedColsName = new java.util.ArrayList();
+      }
+      listCheckedColsName.add(sColumnName);
+    }
+  }
+  
+  if (listCheckedColsName != null){
+  %>
+    for (int i_<%=cid%> = iRows_<%=cid%> - 1 ; i_<%=cid%> > 0; i_<%=cid%>--) {
+      <%
+      for (String columnName : listCheckedColsName){
+      %>
+        <%=columnName%>_<%=cid%>[i_<%=cid%>] = <%=columnName%>_<%=cid%>[i_<%=cid%> - 1];  
+      <%
+      }
+      %>
+    }
+    <%
+    for (String columnName : listCheckedColsName){
+    %>
+      <%=columnName%>_<%=cid%>[0] = <%=sFlowName%>.<%=columnName%>;    
+    <%
+    }
+  }
+  		}//-----222
+	}//-----111
+}
+%>

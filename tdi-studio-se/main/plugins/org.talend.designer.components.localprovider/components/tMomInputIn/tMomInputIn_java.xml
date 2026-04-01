@@ -1,0 +1,287 @@
+<COMPONENT>
+
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20050320A"
+    STARTABLE="true"
+    TECHNICAL="true"
+    LOG4J_ENABLED="true"
+    >
+    <SIGNATURE />
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Technical</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL />
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="1" />
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" MAX_OUTPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK" />
+    <CONNECTOR CTYPE="COMPONENT_ERROR" />
+    <CONNECTOR CTYPE="RUN_IF" />
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+    <PARAMETER NAME="USE_CONNECTION" FIELD="CHECK" NUM_ROW="1">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="CONNECTION" FIELD="COMPONENT_LIST" REQUIRED="true" FILTER="tMomConnection" NUM_ROW="1"
+        SHOW_IF="USE_CONNECTION == 'true'" DYNAMIC_SETTINGS="true" />
+
+    <PARAMETER NAME="SERVER" FIELD="CLOSED_LIST" NUM_ROW="25">
+      <ITEMS DEFAULT="WEBSPHERE">
+        <ITEM NAME="WEBSPHERE" VALUE="WebSphere" />
+        <ITEM NAME="JBOSS" VALUE="JBoss" />
+        <ITEM NAME="ACTIVEMQ" VALUE="ActiveMQ" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="FROM" FIELD="TEXT" SHOW="true" NUM_ROW="35"
+        SHOW_IF="(SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MESSAGE_BODY_TYPE" FIELD="CLOSED_LIST" NUM_ROW="40">
+      <ITEMS DEFAULT="TEXT">
+        <ITEM NAME="TEXT" VALUE="Text" />
+        <ITEM NAME="BYTES" VALUE="Bytes" />
+        <ITEM NAME="MAP" VALUE="Map" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="45">
+      <TABLE IF="((SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ')) AND (IS_USE_MESSAGE_ID == 'false')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="((SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ')) AND (IS_USE_MESSAGE_ID == 'true')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="messageid" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(SERVER == 'WEBSPHERE') and (IS_USE_MESSAGE_ID == 'true')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="messageid" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(SERVER == 'WEBSPHERE') and (IS_USE_MESSAGE_ID == 'false')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(MESSAGE_BODY_TYPE == 'MAP')" READONLY="false">
+      </TABLE>
+    </PARAMETER>
+
+    <PARAMETER NAME="QUEUE" FIELD="TEXT" NUM_ROW="50"
+        SHOW_IF="(SERVER == 'WEBSPHERE')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="IS_USE_MESSAGE_ID" FIELD="CHECK" REQUIRED="true" NUM_ROW="60"
+        SHOW_IF="(SERVER == 'WEBSPHERE') AND (MESSAGE_BODY_TYPE != 'MAP')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MSG_ID" FIELD="TEXT" NUM_ROW="70"
+        SHOW_IF="(SERVER == 'WEBSPHERE') AND (IS_USE_MESSAGE_ID == 'true') AND (MESSAGE_BODY_TYPE != 'MAP')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+  </PARAMETERS>
+
+  <ADVANCED_PARAMETERS>
+
+    <PARAMETER NAME="GET_JMS_HEADER" FIELD="CHECK" REQUIRED="false" NUM_ROW="40"
+        SHOW_IF="(SERVER != 'WEBSPHERE')">
+      <DEFAULT>"false"</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="JMS_HEADERS" FIELD="TABLE" NB_LINES="3" REQUIRED="false" NUM_ROW="50"
+        SHOW_IF="(GET_JMS_HEADER == 'true') AND (SERVER != 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="JMS_HEADER_NAME" FIELD="CLOSED_LIST">
+          <ITEMS DEFAULT="JMSDESTINATION">
+            <ITEM NAME="JMSDESTINATION" VALUE="JMSDestination" />
+            <ITEM NAME="JMSDELIVERYMODE" VALUE="JMSDeliveryMode" />
+            <ITEM NAME="JMSEXPIRATION" VALUE="JMSExpiration" />
+            <ITEM NAME="JMSPRIORITY" VALUE="JMSPriority" />
+            <ITEM NAME="JMSMESSAGEID" VALUE="JMSMessageID" />
+            <ITEM NAME="JMSTIMESTAMP" VALUE="JMSTimestamp" />
+            <ITEM NAME="JMSCORRELATIONID" VALUE="JMSCorrelationID" />
+            <ITEM NAME="JMSREPLYTO" VALUE="JMSReplyTo" />
+            <ITEM NAME="JMSTYPE" VALUE="JMSType" />
+            <ITEM NAME="JMSREDELIVERED" VALUE="JMSRedelivered" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="GET_JMS_PROPERTIES" FIELD="CHECK" REQUIRED="false" NUM_ROW="60"
+        SHOW_IF="(SERVER != 'WEBSPHERE')">
+      <DEFAULT>"false"</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="JMS_PROPERTIES" FIELD="TABLE" NB_LINES="3" REQUIRED="false" NUM_ROW="70"
+        SHOW_IF="(GET_JMS_PROPERTIES == 'true') AND (SERVER != 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="JMS_PROPERTIES_NAME" FIELD="TEXT" />
+        <ITEM NAME="JMS_PROPERTIES_TYPE" FIELD="CLOSED_LIST">
+          <ITEMS DEFAULT="STRING">
+            <ITEM NAME="BOOLEAN" VALUE="Boolean" />
+            <ITEM NAME="BYTE" VALUE="Byte" />
+            <ITEM NAME="SHORT" VALUE="Short" />
+            <ITEM NAME="INT" VALUE="Int" />
+            <ITEM NAME="LONG" VALUE="Long" />
+            <ITEM NAME="FLOAT" VALUE="Float" />
+            <ITEM NAME="DOUBLE" VALUE="Double" />
+            <ITEM NAME="STRING" VALUE="String" />
+            <ITEM NAME="OBJECT" VALUE="Object" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="GET_MQMD_FIELDS" FIELD="CHECK" REQUIRED="false" NUM_ROW="80"
+        SHOW_IF="(SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="MQMD_FIELDS" FIELD="TABLE" NB_LINES="3" REQUIRED="false" NUM_ROW="81"
+        SHOW_IF="(GET_MQMD_FIELDS == 'true') AND (SERVER == 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="MQMD_FIELD_NAME" FIELD="CLOSED_LIST">
+          <ITEMS DEFAULT="ACCOUNTINGTOKEN">
+            <ITEM NAME="ACCOUNTINGTOKEN" VALUE="accountingToken" />
+            <ITEM NAME="APPLICATIONIDDATA" VALUE="applicationIdData" />
+            <ITEM NAME="APPLICATIONORIGINDATA" VALUE="applicationOriginData" />
+            <ITEM NAME="BACKOUTCOUNT" VALUE="backoutCount" />
+            <ITEM NAME="CHARACTERSET" VALUE="characterSet" />
+            <ITEM NAME="CORRELATIONID" VALUE="correlationId" />
+            <ITEM NAME="ENCODING" VALUE="encoding" />
+            <ITEM NAME="EXPIRY" VALUE="expiry" />
+            <ITEM NAME="FEEDBACK" VALUE="feedback" />
+            <ITEM NAME="GROUPID" VALUE="groupId" />
+            <ITEM NAME="MESSAGEFLAGS" VALUE="messageFlags" />
+            <ITEM NAME="MESSAGEID" VALUE="messageId" />
+            <ITEM NAME="MESSAGESEQUENCENUMBER" VALUE="messageSequenceNumber" />
+            <ITEM NAME="MESSAGETYPE" VALUE="messageType" />
+            <ITEM NAME="OFFSET" VALUE="offset" />
+            <ITEM NAME="ORIGINALLENGTH" VALUE="originalLength" />
+            <ITEM NAME="PERSISTENCE" VALUE="persistence" />
+            <ITEM NAME="PRIORITY" VALUE="priority" />
+            <ITEM NAME="PUTAPPLICATIONNAME" VALUE="putApplicationName" />
+            <ITEM NAME="PUTAPPLICATIONTYPE" VALUE="putApplicationType" />
+            <ITEM NAME="PUTDATETIME" VALUE="putDateTime" />
+            <ITEM NAME="REPLYTOQUEUEMANAGERNAME" VALUE="replyToQueueManagerName" />
+            <ITEM NAME="REPLYTOQUEUENAME" VALUE="replyToQueueName" />
+            <ITEM NAME="REPORT" VALUE="report" />
+            <ITEM NAME="USERID" VALUE="userId" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="USE_MQ_HEADER" FIELD="CHECK" REQUIRED="false" NUM_ROW="90"
+        SHOW_IF="(SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="USE_FIX_MQRFH2" FIELD="CHECK" REQUIRED="false" NUM_ROW="91"
+        SHOW_IF="(USE_MQ_HEADER=='true') AND (SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="MQRFH2_FIXED_FIELD" FIELD="TABLE" REQUIRED="false" NUM_ROW="92"
+        SHOW_IF="(USE_MQ_HEADER == 'true') AND (USE_FIX_MQRFH2=='true') AND (SERVER == 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="MQMD_FIELD_NAME" FIELD="CLOSED_LIST">
+          <ITEMS DEFAULT="STRUC_ID">
+            <ITEM NAME="STRUC_ID" VALUE="STRUC_ID" />
+            <ITEM NAME="Version" VALUE="Version" />
+            <ITEM NAME="StrucLength" VALUE="StrucLength" />
+            <ITEM NAME="Encoding" VALUE="Encoding" />
+            <ITEM NAME="Format" VALUE="Format" />
+            <ITEM NAME="Flags" VALUE="Flags" />
+            <ITEM NAME="NameValueCCSID" VALUE="NameValueCodedCharSetId" />
+            <ITEM NAME="CodedCharSetId" VALUE="CodedCharSetId" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+    <PARAMETER NAME="USE_MQRFH2_MCD" FIELD="CHECK" REQUIRED="false" NUM_ROW="93"
+        SHOW_IF="(USE_MQ_HEADER=='true') AND (SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="MQRFH2_MCD_FIELD" FIELD="TABLE" REQUIRED="false" NUM_ROW="94"
+        SHOW_IF="(USE_MQ_HEADER == 'true') AND (USE_MQRFH2_MCD=='true') AND (SERVER == 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="MQMD_FIELD_NAME" FIELD="CLOSED_LIST">
+          <ITEMS DEFAULT="Type">
+            <ITEM NAME="Type" VALUE="MessageType" />
+            <ITEM NAME="Set" VALUE="MessageSet" />
+            <ITEM NAME="Fmt" VALUE="OutputFormat" />
+            <ITEM NAME="Msd" VALUE="MessageDomain" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+    <PARAMETER NAME="USE_MQRFH2_JMS" FIELD="CHECK" REQUIRED="false" NUM_ROW="95"
+        SHOW_IF="(USE_MQ_HEADER=='true') AND (SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MQRFH2_JMS_FIELD" FIELD="TABLE" REQUIRED="false" NUM_ROW="96"
+        SHOW_IF="(USE_MQ_HEADER == 'true') AND (USE_MQRFH2_JMS=='true') AND (SERVER == 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="MQMD_FIELD_NAME" FIELD="CLOSED_LIST" >
+          <ITEMS DEFAULT="Destination">
+            <ITEM NAME="Dst" VALUE="Destination" />
+            <ITEM NAME="Exp" VALUE="Expiration" />
+            <ITEM NAME="Pri" VALUE="Priority" />
+            <ITEM NAME="Dlv" VALUE="DeliveryMode" />
+            <ITEM NAME="Cid" VALUE="CorrelationId" />
+            <ITEM NAME="Rto" VALUE="ReplyTo" />
+            <ITEM NAME="Tms" VALUE="Timestamp" />
+            <ITEM NAME="Gid" VALUE="GroupId" />
+            <ITEM NAME="Seq" VALUE="GroupSeq" />
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+    <PARAMETER NAME="USE_MQRFH2_USR" FIELD="CHECK" REQUIRED="false" NUM_ROW="97"
+        SHOW_IF="(USE_MQ_HEADER=='true') AND (SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MQRFH2_USR_FIELD" FIELD="TABLE" REQUIRED="false" NUM_ROW="98"
+        SHOW_IF="(USE_MQ_HEADER == 'true') AND (USE_MQRFH2_USR=='true') AND (SERVER == 'WEBSPHERE')">
+      <ITEMS>
+        <ITEM NAME="MQMD_FIELD_NAME" FIELD="TEXT" />
+        <ITEM NAME="REFERENCE_COLUMN" FIELD="COLUMN_LIST" />
+      </ITEMS>
+    </PARAMETER>
+
+  </ADVANCED_PARAMETERS>
+
+  <CODEGENERATION />
+
+  <RETURNS>
+    <RETURN NAME="NB_LINE" TYPE="id_Integer" AVAILABILITY="AFTER" />
+  </RETURNS>
+
+</COMPONENT>

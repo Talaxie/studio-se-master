@@ -1,0 +1,134 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever	
+    java.util.List
+    java.util.ArrayList
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String table = ElementParameterParser.getValue(node, "__TABLE__");
+	String username = ElementParameterParser.getValue(node, "__USER__");
+	String dbversion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+	boolean includeHeader = "true".equals(ElementParameterParser.getValue(node, "__INCLUDEHEADER__"));
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	List<IMetadataColumn> columnList = getColumnList(node);
+%>
+	String file_<%=cid %> = <%=ElementParameterParser.getValue(node, "__FILENAME__") %>;
+	file_<%=cid %> = file_<%=cid %>.replaceAll("\\\\", "/");
+	String fileName_<%=cid %> = file_<%=cid %>.substring(file_<%=cid %>.lastIndexOf("/")+1);
+	String fileDirectory_<%=cid %> = file_<%=cid %>.substring(0,file_<%=cid %>.lastIndexOf("/"));
+	
+	String tableName_<%=cid%> = <%=table%>;
+	java.sql.Connection conn_<%=cid%> = null;
+	<%
+	boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	if(useExistingConnection) {
+		String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+		String conn = "conn_" + connection;
+		%>
+		conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+	<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	} else {
+	%>
+		String driverClass_<%=cid%> = "sun.jdbc.odbc.JdbcOdbcDriver";
+		java.lang.Class.forName(driverClass_<%=cid%>);
+		
+		<%if ("Access_2003".equalsIgnoreCase(dbversion)){
+		%>
+			String url_<%=cid %> = "jdbc:odbc:Driver={Microsoft Access Driver (*.mdb)};DBQ=" + <%=dbname%>;
+		<%
+		}else if ("Access_2007".equalsIgnoreCase(dbversion)) {
+		%>
+			String url_<%=cid %> = "jdbc:odbc:Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" + <%=dbname%>;
+		<%
+		}
+		%>
+		String dbUser_<%=cid %> = <%=username%>;
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect_begin();
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+	%>
+		conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>, dbUser_<%=cid %>, dbPwd_<%=cid %>);
+	<%
+		} else {
+	%>
+		String atnParams_<%=cid%> = <%=dbproperties%>;
+		atnParams_<%=cid%> = atnParams_<%=cid%>.replaceAll("&", "\n");
+		java.util.Properties atnParamsPrope_<%=cid%> = new java.util.Properties();
+		atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid %>);
+		atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid %>);
+		atnParamsPrope_<%=cid%>.load(new java.io.ByteArrayInputStream(atnParams_<%=cid%>.getBytes()));
+	  
+		conn_<%=cid%> =  java.sql.DriverManager.getConnection(url_<%=cid%>, atnParamsPrope_<%=cid%>);
+	<%
+		}
+		log4jCodeGenerateUtil.connect_end();
+	%>
+<%
+	}
+%>
+<%
+	String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	List<Column> stmtStructure = null;
+	Manager manager = null;
+	if(columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+	if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction)){
+
+%>
+		<%@ include file="../templates/_tableActionForBulk.javajet"%>
+<%      
+	}
+%> 
+
+<%
+	String dataAction = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+	if(("INSERT").equals(dataAction)) {
+%>
+		String bulkInsert_<%=cid%> = "INSERT INTO [" + tableName_<%=cid%> + "] SELECT * FROM [Text;Database="
+										+ fileDirectory_<%=cid %> + ";HDR=<%=(includeHeader)? "YES":"NO"%>].[" + fileName_<%=cid %> + "]";
+		java.sql.Statement stmt_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+    		log.debug("<%=cid%> - Bulk SQL:"+bulkInsert_<%=cid%>+".");
+    		log.info("<%=cid%> - Bulk inserting data into " + tableName_<%=cid%> + "." );
+		<%}%>
+		stmt_<%=cid%>.execute(bulkInsert_<%=cid%>);
+
+		stmt_<%=cid%>.close();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Bulk insert data into " + tableName_<%=cid%> + " has finished.");
+    	<%}%>
+	<%
+	}
+	if(!useExistingConnection)
+	{
+		log4jCodeGenerateUtil.close(node);
+	}
+    %>
+

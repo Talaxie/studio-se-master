@@ -1,0 +1,122 @@
+<%@ jet 
+    imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser 
+        org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.IMetadataColumn 
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        java.util.List 
+    " 
+%>
+
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();  
+%>
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {                                    
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+        String delim1 = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+        boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+        String delim = delim1.substring(1,delim1.length()-1);
+        String rowSeparator1 = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+        String rowSeparator = rowSeparator1.substring(1,rowSeparator1.length()-1);
+        String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+        String escapeChar = escapeChar1.substring(1,escapeChar1.length()-1);
+        String textEnclosure1 = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+        String textEnclosure = textEnclosure1.substring(1,textEnclosure1.length()-1);
+        List< ? extends IConnection> conns = node.getIncomingConnections();
+        if(!("\\n").equals(rowSeparator) && !("\\r").equals(rowSeparator)){
+%>
+            CsvWriter<%=cid %>.setLineEnd(""+'<%=rowSeparator%>');
+<%              
+        }
+        if(!"".equals(textEnclosure)){
+%>
+			<%if(("\\\\").equals(escapeChar)){%>
+			     CsvWriter<%=cid %>.setEscapeChar('\\');
+			<%}else{%>
+				 CsvWriter<%=cid %>.setEscapeChar('<%=textEnclosure %>');
+			<%}%>
+        	CsvWriter<%=cid %>.setQuoteChar('<%=textEnclosure %>'); 
+        	CsvWriter<%=cid %>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.FORCE);
+        <%} else {%>
+        	CsvWriter<%=cid %>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.NO);
+        <% } %>
+<%      
+        if(conns!=null){
+            if (conns.size()>0){
+                IConnection conn =conns.get(0);
+                if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                List<IMetadataColumn> columns = metadata.getListColumns();
+                    int sizeColumns = columns.size();
+%>      
+                    String[] row<%=cid%>=new String[<%=sizeColumns%>];      
+                    <%
+                    for (int i = 0; i < sizeColumns; i++) {
+                        IMetadataColumn column = columns.get(i);
+                        JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                        String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                        if(JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable())){
+                            %>
+                            row<%=cid%>[<%=i%>] =String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>); 
+                            <%
+                        }else { 
+                            %>
+                            if(<%=conn.getName() %>.<%=column.getLabel() %> == null){
+                                row<%=cid%>[<%=i%>]="";
+                            }else{
+                                <%                  
+                                if(javaType == JavaTypesManager.STRING ){
+                                    %>
+                                    row<%=cid%>[<%=i%>] = <%=conn.getName() %>.<%=column.getLabel() %>;
+                                    <%
+                                }else if(javaType == JavaTypesManager.DATE && pattern != null){
+                                    %>
+                                    row<%=cid%>[<%=i%>] = FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+                                    <%
+                                }else if(javaType == JavaTypesManager.BYTE_ARRAY){
+                                    %>
+                                    row<%=cid%>[<%=i%>] = java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString();
+                                    <%
+                                }else{
+                                    %>
+                                    row<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+                                    <%
+                                }
+                                %>
+                            }
+                            <%              
+                        }
+                    } 
+
+                        %>
+                    <% if(compress){%>
+                       //encoding
+                        for(int i =0;i<row<%=cid%>.length;i++){
+                            row<%=cid%>[i]=java.util.Base64.getMimeEncoder().encodeToString(com<%=cid%>.zip(row<%=cid%>[i].getBytes(<%=encoding%>)));//encodeing!!!!!!!!!!!!!!!!!!!
+                        }
+                    <% } %>    
+                        CsvWriter<%=cid%>.writeNext(row<%=cid%>); 
+                        CsvWriter<%=cid%>.flush();                
+
+                    nb_line_<%=cid %>++;
+                    <%          
+                }
+            
+            }
+        }   
+    
+    }
+
+}
+%>            

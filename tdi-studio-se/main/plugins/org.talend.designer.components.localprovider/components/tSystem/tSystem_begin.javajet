@@ -1,0 +1,285 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+    	org.talend.core.model.metadata.IMetadataColumn 
+    	org.talend.core.model.process.IConnection
+    	org.talend.core.model.process.IConnectionCategory
+    	java.util.List
+    	java.util.Map
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String command = ElementParameterParser.getValue(node, "__COMMAND__");
+	
+	String outputAction  = ElementParameterParser.getValue(node, "__OUTPUT__");
+	
+	String errorOuput  = ElementParameterParser.getValue(node, "__ERROROUTPUT__");
+	
+	
+	boolean ifDir = ("true").equals(ElementParameterParser.getValue(node, "__ROOTDIR__"));
+	
+	String rootDir  = ElementParameterParser.getValue(node, "__DIRECTORY__").replace("\\","/");
+	
+	List<Map<String, String>> params = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__PARAMS__");
+	boolean single_command = ("true").equals(ElementParameterParser.getValue(node, "__USE_SINGLE_COMMAND__"));
+	
+	boolean array_command = ("true").equals(ElementParameterParser.getValue(node, "__USE_ARRAY_COMMAND__"));
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	
+	if(array_command){
+		List<Map<String,String>> list_data = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__ARRAY_COMMAND__");
+%>
+		<%if(isLog4jEnabled){%>
+			String commandArrayForLog_<%=cid%> ="";
+		<%}%>
+		String[] command_<%=cid%> = new String[<%=list_data.size()%>];
+		
+<%
+		int command_array_index = 0;
+		for(Map<String,String> map : list_data){
+%>
+			command_<%=cid%>[<%=command_array_index++%>] = <%=map.get("VALUE")%>;
+			<%if(isLog4jEnabled){%>
+				if((<%=map.get("VALUE")%>).contains(" "))
+					commandArrayForLog_<%=cid%>+="\"" + <%=map.get("VALUE")%> + "\" ";
+				else
+					commandArrayForLog_<%=cid%>+=<%=map.get("VALUE")%> + " ";
+			<%}%>
+<%
+		}
+	}
+	
+		
+	// To launch an internal command to cmd.exe (XP), you have to call :
+	// cmd.exe /c dir (for example)
+
+	if (("NORMAL_OUTPUT").equals(outputAction)||("NORMAL_OUTPUT").equals(errorOuput)) {
+%>
+final java.util.Vector<String> output_<%=cid%> = new java.util.Vector<String>();
+<%
+	}
+%>
+Runtime runtime_<%=cid %> = Runtime.getRuntime();
+
+String[] env_<%=cid %>= null;
+java.util.Map<String,String> envMap_<%=cid %>= System.getenv();
+java.util.Map<String,String> envMapClone_<%=cid %>= new java.util.HashMap();
+envMapClone_<%=cid %>.putAll(envMap_<%=cid %>);
+
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Setting the parameters.");
+<%}%>
+<%
+    for (int i = 0; i < params.size(); i++) {
+        Map<String, String> line = params.get(i);
+%>
+<%if(isLog4jEnabled){%>
+	log.debug("<%=cid%> - Parameter " + (<%=i+1%>) + ": Key='" + <%= line.get("NAME") %> + "', Value='" + <%= line.get("VALUE") %> + "'.");
+<%}%>
+envMapClone_<%=cid %>.put(<%= line.get("NAME") %>, <%= line.get("VALUE") %>);
+<%
+    }
+
+    if (params.size() > 0) {
+%>
+env_<%=cid %>= new String[envMapClone_<%=cid %>.size()];
+int i_<%=cid %>= 0;
+for (String envKey : (java.util.Set<String>) envMapClone_<%=cid %>.keySet()) {
+    env_<%=cid %>[i_<%=cid %>++]= envKey + "=" + envMapClone_<%=cid %>.get(envKey);
+}
+<%
+    }
+
+if(ifDir){%>
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Root directory: '" + <%=rootDir%> + "'.");
+	<%}%>
+final Process ps_<%=cid %> = runtime_<%=cid %>.exec(<% if(single_command) { %> <%= command%> <% } else { %>command_<%=cid %> <% } %>,env_<%=cid %>,new java.io.File(<%=rootDir%>));
+<%  }else{%>
+final Process ps_<%=cid %> = runtime_<%=cid %>.exec(<% if(single_command) { %> <%= command%> <% } else { %>command_<%=cid %> <% } %>,env_<%=cid %>);
+<%  }%>
+
+globalMap.remove("<%=cid %>_OUTPUT");
+globalMap.remove("<%=cid %>_ERROROUTPUT");
+
+Thread normal_<%=cid %> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+<%
+	if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the standard output to the console.");
+					<%}%>
+					System.out.println(line);
+<%
+	} else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the standard output to the global variable '<%=cid %>_OUTPUT'.");
+					<%}%>
+					if (globalMap.get("<%=cid %>_OUTPUT") != null) {
+						globalMap.put("<%=cid %>_OUTPUT", (String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+					} else {
+						globalMap.put("<%=cid %>_OUTPUT", line);
+					}
+<%
+	} else if(("OUTPUT_TO_CONSOLE_AND_RETRIVE_OUTPUT").equals(outputAction)){
+%>
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Sending the standard output to both the console and the global variable '<%=cid %>_OUTPUT'.");
+		<%}%>
+        System.out.println(line);
+        
+        	if (globalMap.get("<%=cid %>_OUTPUT") != null) {
+						globalMap.put("<%=cid %>_OUTPUT", (String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+					} else {
+						globalMap.put("<%=cid %>_OUTPUT", line);
+					}
+					
+    	 
+<%
+   } else if (("NORMAL_OUTPUT").equals(outputAction)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the standard output to a column of the schema.");
+					<%}%>
+					output_<%=cid%>.add(line);
+<%
+	}
+%>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%if(isLog4jEnabled){%>
+				log.error("<%=cid%> - "  + ioe.getMessage());
+			<%}%>
+			ioe.printStackTrace();
+		}
+	}
+};
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Executing the command.");
+	log.info("<%=cid%> - Command to execute: '" + <% if(single_command) { %> <%= command%> <% } else { %>commandArrayForLog_<%=cid%> <% } %> + "'.");
+<%}%>
+normal_<%=cid %>.start();
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - The command has been executed successfully.");
+<%}%>
+
+Thread error_<%=cid %> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+<%
+	if (("OUTPUT_TO_CONSOLE").equals(errorOuput)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the error output to the console.");
+					<%}%>
+					System.err.println(line);
+<%
+	} else if (("RETRIEVE_OUTPUT").equals(errorOuput)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the error output to the global variable '<%=cid %>_ERROROUTPUT'.");
+					<%}%>
+					if (globalMap.get("<%=cid %>_ERROROUTPUT") != null) {
+						globalMap.put("<%=cid %>_ERROROUTPUT", (String)globalMap.get("<%=cid %>_ERROROUTPUT")+"\n"+line);
+					} else {
+						globalMap.put("<%=cid %>_ERROROUTPUT", line);
+					}
+<%
+	}else if(("OUTPUT_TO_CONSOLE_AND_RETRIVE_OUTPUT").equals(errorOuput)){
+%>
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Sending the error output to both the console and the global variable '<%=cid %>_ERROROUTPUT'.");
+		<%}%>
+        System.err.println(line);
+        
+        	if (globalMap.get("<%=cid %>_ERROROUTPUT") != null) {
+						globalMap.put("<%=cid %>_ERROROUTPUT", (String)globalMap.get("<%=cid %>_ERROROUTPUT")+"\n"+line);
+					} else {
+						globalMap.put("<%=cid %>_ERROROUTPUT", line);
+					}
+					
+    	 
+<% 
+	}else if (("NORMAL_OUTPUT").equals(errorOuput)) {
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Sending the error output to a column of the schema.");
+					<%}%>
+					output_<%=cid%>.add(line);
+<%
+	}
+%>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%if(isLog4jEnabled){%>
+				log.error("<%=cid%> - "  + ioe.getMessage());
+			<%}%>
+			ioe.printStackTrace();
+		}
+	}
+};
+error_<%=cid %>.start();
+<%//for bug TDI-22281%>
+if(ps_<%=cid %>.getOutputStream()!=null){
+    ps_<%=cid %>.getOutputStream().close();
+}
+ps_<%=cid %>.waitFor();
+normal_<%=cid %>.join();
+error_<%=cid %>.join();
+
+<%
+if(("NORMAL_OUTPUT").equals(outputAction)||("NORMAL_OUTPUT").equals(errorOuput)){
+	List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+    	IMetadataTable metadata = metadatas.get(0);
+    	if (metadata!=null) {
+    		List<IMetadataColumn> columns=metadata.getListColumns();
+    		List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+    		if (conns!=null && conns.size()>0) {
+				IConnection conn = conns.get(0);  
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+				for(String tmp_<%=cid %>:output_<%=cid%>){
+<%
+					for(IMetadataColumn column:columns) {
+						if("outputline".equals(column.getLabel())){
+%>
+							<%=conn.getName()%>.<%=column.getLabel()%> = tmp_<%=cid %>;				
+<%
+						}
+					}
+				}
+			}
+		}
+	}
+}
+%>

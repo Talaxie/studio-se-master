@@ -1,0 +1,573 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.Map
+    java.util.List
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String directory = ElementParameterParser.getValue(node, "__TEMP_DIRECTORY__");
+String buffer = ElementParameterParser.getValue(node, "__BUFFER_SIZE__");
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String bufferSize = "1000000";
+if(("S").equals(buffer)){
+	bufferSize = "500000";
+}else if(("B").equals(buffer)){
+	bufferSize = "2000000";
+} else if(("M").equals(buffer)){
+	bufferSize = "1000000";
+} else {
+	bufferSize = buffer;
+}
+
+if (("").equals(directory)) { 
+	directory=ElementParameterParser.getValue(node.getProcess(), "__COMP_DEFAULT_FILE_DIR__") + "/temp"; 
+} 
+String cid = ElementParameterParser.getValue(node, "__CID__");
+boolean ignoreTrailingZerosForBigDecimal = "true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__IGNORE_TRAILING_ZEROS_FOR_BIGDECIMAL__"));
+
+String connName = "";
+if (node.getIncomingConnections().size()==1) {
+	IConnection conn = node.getIncomingConnections().get(0);
+	connName = conn.getName();
+}
+
+///////////////
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0) && !("").equals(connName)) {//HSS_____0
+    IMetadataTable metadata = metadatas.get(0);
+    List<IMetadataColumn> columnList = metadata.getListColumns();
+    List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__UNIQUE_KEY__");
+	List<IMetadataColumn> uniqueColumnList = new java.util.ArrayList<IMetadataColumn>();
+	List<Boolean> uniqueColumnCaseFlagList = new java.util.ArrayList<Boolean>();
+	for(int i = 0; i < keyColumns.size(); i++){
+		Map<String, String> keyColumn = keyColumns.get(i);
+		if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+			uniqueColumnList.add(columnList.get(i));
+			uniqueColumnCaseFlagList.add(!("true").equals(keyColumn.get("CASE_SENSITIVE")));
+		}
+	}
+%>
+
+//////////////////////////
+long nb_<%=cid %> = 0;
+
+int bufferSize_<%=cid %> = <%=bufferSize %>;
+<%
+if (isLog4jEnabled) {
+%>
+	log.debug("<%=cid%> - Start to process the data from datasource.");
+<%
+}
+%>
+class rowStruct_<%=cid %> extends <%=connName %>Struct {
+
+    long id_<%=cid %>;
+
+    @Override
+    public void readData(ObjectInputStream dis) {
+        super.readData(dis);
+        try {
+			this.id_<%=cid %> = dis.readLong();
+        } catch (IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "{" + super.toString() + "\t" + id_<%=cid %> + "}";
+    }
+
+    @Override
+    public void writeData(ObjectOutputStream dos) {
+        super.writeData(dos);
+        try {
+			// Integer
+			dos.writeLong(this.id_<%=cid %>);
+
+        } catch (IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			throw new RuntimeException(e);
+        }
+    }
+
+    public boolean duplicateTo(rowStruct_<%=cid %> other) {
+
+<%
+	
+	for(int i = 0; i < uniqueColumnList.size(); i++){//HSS_____0_____2
+		IMetadataColumn keyColumn = uniqueColumnList.get(i);
+		Boolean flag = uniqueColumnCaseFlagList.get(i);
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(keyColumn.getTalendType());
+		boolean nullable = keyColumn.isNullable();
+		
+		if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.CHARACTER 
+					|| javaType == JavaTypesManager.SHORT || javaType == JavaTypesManager.INTEGER 
+					|| javaType == JavaTypesManager.LONG){//HSS_____0_____2_____1
+			if(nullable){
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			    if (!this.<%=keyColumn.getLabel() %>.equals(other.<%=keyColumn.getLabel() %>)) {
+			        return false;
+			    }
+			}
+        }
+			<%
+			}else{
+			%>
+		if(this.<%=keyColumn.getLabel() %> != other.<%=keyColumn.getLabel() %>){
+			return false;
+		}
+			<%
+			}
+		}else if(javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.DOUBLE){//HSS_____0_____2_____1
+			if(nullable){
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			    if (Math.abs(this.<%=keyColumn.getLabel() %> - other.<%=keyColumn.getLabel() %>) > 0.00000001) {
+			        return false;
+			    }
+			}
+        }
+			<%
+			}else{
+			%>
+		if(Math.abs(this.<%=keyColumn.getLabel() %> - other.<%=keyColumn.getLabel() %>) > 0.00000001) {
+			return false;
+		}
+			<%
+			}
+		}else if(javaType == JavaTypesManager.BOOLEAN){//HSS_____0_____2_____1
+			if(nullable){
+				%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			    if(this.<%=keyColumn.getLabel() %> && !other.<%=keyColumn.getLabel() %>){
+					return false;
+				}else if(!this.<%=keyColumn.getLabel() %> && other.<%=keyColumn.getLabel() %>){
+					return false;
+				}
+			}
+        }
+				<%
+			}else{
+				%>
+		if(this.<%=keyColumn.getLabel() %> && !other.<%=keyColumn.getLabel() %>){
+			return false;
+		}else if(!this.<%=keyColumn.getLabel() %> && other.<%=keyColumn.getLabel() %>){
+			return false;
+		}
+				<%
+			}
+		}else if(javaType == JavaTypesManager.BYTE_ARRAY){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+				String this_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(this.<%=keyColumn.getLabel() %>);
+				String other_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(other.<%=keyColumn.getLabel() %>);
+				
+			    if(!this_<%=keyColumn.getLabel() %>_<%=cid %>.equals<%=(flag ? "IgnoreCase" : "") %>(other_<%=keyColumn.getLabel() %>_<%=cid %>)){
+					return false;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.DATE){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			    if(!this.<%=keyColumn.getLabel() %>.equals(other.<%=keyColumn.getLabel() %>)){
+					return false;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.BIGDECIMAL){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			<%
+			if (ignoreTrailingZerosForBigDecimal) {
+			%>
+			    if (!this.<%=keyColumn.getLabel() %>.stripTrailingZeros().equals(other.<%=keyColumn.getLabel() %>.stripTrailingZeros())) {
+			        return false;
+			    }
+			<%
+			} else {
+			%>
+			    if (!this.<%=keyColumn.getLabel() %>.equals(other.<%=keyColumn.getLabel() %>)) {
+			        return false;
+			    }
+			<%
+			}
+			%>
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.OBJECT){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+				String this_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(this.<%=keyColumn.getLabel() %>);
+				String other_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(other.<%=keyColumn.getLabel() %>);
+				
+			    if(!this_<%=keyColumn.getLabel() %>_<%=cid %>.equals<%=(flag ? "IgnoreCase" : "") %>(other_<%=keyColumn.getLabel() %>_<%=cid %>)){
+					return false;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.STRING){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+			    if(!this.<%=keyColumn.getLabel() %>.equals<%=(flag ? "IgnoreCase" : "") %>(other.<%=keyColumn.getLabel() %>)){
+					return false;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.LIST){//HSS_____0_____2_____1
+			%>
+		if (this.<%=keyColumn.getLabel() %> == null) {
+			if (other.<%=keyColumn.getLabel() %> != null) {
+			    return false;
+			}
+		} else {
+			if (other.<%=keyColumn.getLabel() %> == null) {
+			    return false;
+			} else {
+				String this_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(this.<%=keyColumn.getLabel() %>);
+				String other_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(other.<%=keyColumn.getLabel() %>);
+				
+			    if(!this_<%=keyColumn.getLabel() %>_<%=cid %>.equals<%=(flag ? "IgnoreCase" : "") %>(other_<%=keyColumn.getLabel() %>_<%=cid %>)){
+					return false;
+				}
+			}
+        }
+			<%
+		}//HSS_____0_____2_____1
+		
+	}//HSS_____0_____2
+	
+%>
+
+        return true;
+    }
+
+}
+
+// comparator for first sort
+class Comparator_1_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+    public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+		int compare = 0;
+<%
+	
+	for(int i = 0; i < uniqueColumnList.size(); i++){//HSS_____0_____3
+		IMetadataColumn keyColumn = uniqueColumnList.get(i);
+		Boolean flag = uniqueColumnCaseFlagList.get(i);
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(keyColumn.getTalendType());
+		boolean nullable = keyColumn.isNullable();
+		
+		if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.CHARACTER 
+					|| javaType == JavaTypesManager.SHORT || javaType == JavaTypesManager.INTEGER 
+					|| javaType == JavaTypesManager.LONG){//HSS_____0_____3_____1
+			if(nullable){
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				compare = arg0.<%=keyColumn.getLabel() %>.compareTo(arg1.<%=keyColumn.getLabel() %>);
+			    if (compare != 0) {
+			        return compare;
+			    }
+			}
+        }
+			<%
+			}else{
+			%>
+		if(arg0.<%=keyColumn.getLabel() %> > arg1.<%=keyColumn.getLabel() %>){
+			return 1;
+		}else if(arg0.<%=keyColumn.getLabel() %> < arg1.<%=keyColumn.getLabel() %>){
+			return -1;
+		}
+			<%
+			}
+		}else if(javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.DOUBLE){//HSS_____0_____3_____1
+			if(nullable){
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+			    if (Math.abs(arg0.<%=keyColumn.getLabel() %> - arg1.<%=keyColumn.getLabel() %>) > 0.00000001) {
+			        if(arg0.<%=keyColumn.getLabel() %> > arg1.<%=keyColumn.getLabel() %>){
+			        	return 1;
+			        }else{
+			        	return -1;
+			        }
+			    }
+			}
+        }
+			<%
+			}else{
+			%>
+		if(Math.abs(arg0.<%=keyColumn.getLabel() %> - arg1.<%=keyColumn.getLabel() %>) > 0.00000001) {
+			if(arg0.<%=keyColumn.getLabel() %> > arg1.<%=keyColumn.getLabel() %>){
+				return 1;
+			}else{
+				return -1;
+			}
+		}
+			<%
+			}
+		}else if(javaType == JavaTypesManager.BOOLEAN){//HSS_____0_____3_____1
+			if(nullable){
+				%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+			    if(arg0.<%=keyColumn.getLabel() %> && !arg1.<%=keyColumn.getLabel() %>){
+					return 1;
+				}else if(!arg0.<%=keyColumn.getLabel() %> && arg1.<%=keyColumn.getLabel() %>){
+					return -1;
+				}
+			}
+        }
+				<%
+			}else{
+				%>
+		if(arg0.<%=keyColumn.getLabel() %> && !arg1.<%=keyColumn.getLabel() %>){
+			return 1;
+		}else if(!arg0.<%=keyColumn.getLabel() %> && arg1.<%=keyColumn.getLabel() %>){
+			return -1;
+		}
+				<%
+			}
+		}else if(javaType == JavaTypesManager.BYTE_ARRAY){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				String arg0_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg0.<%=keyColumn.getLabel() %>);
+				String arg1_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg1.<%=keyColumn.getLabel() %>);
+				compare = arg0_<%=keyColumn.getLabel() %>_<%=cid %>.compareTo<%=(flag ? "IgnoreCase" : "") %>(arg1_<%=keyColumn.getLabel() %>_<%=cid %>);
+			    if(compare != 0){
+					return compare;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.DATE){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				compare = arg0.<%=keyColumn.getLabel() %>.compareTo(arg1.<%=keyColumn.getLabel() %>);
+			    if (compare != 0) {
+			        return compare;
+			    }
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.BIGDECIMAL){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				<%
+				if (ignoreTrailingZerosForBigDecimal) {
+				%>
+			    compare = arg0.<%=keyColumn.getLabel() %>.stripTrailingZeros().compareTo(arg1.<%=keyColumn.getLabel() %>.stripTrailingZeros());
+				<%
+				} else {
+				%>
+			    compare = arg0.<%=keyColumn.getLabel() %>.compareTo(arg1.<%=keyColumn.getLabel() %>);
+				<%
+				}
+				%>
+			    if (compare != 0) {
+			        return compare;
+			    }
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.OBJECT){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				String arg0_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg0.<%=keyColumn.getLabel() %>);
+				String arg1_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg1.<%=keyColumn.getLabel() %>);
+				
+			    compare = arg0_<%=keyColumn.getLabel() %>_<%=cid %>.compareTo<%=(flag ? "IgnoreCase" : "") %>(arg1_<%=keyColumn.getLabel() %>_<%=cid %>);
+			    if(compare != 0){
+					return compare;
+				}
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.STRING){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+			    compare = arg0.<%=keyColumn.getLabel() %>.compareTo<%=(flag ? "IgnoreCase" : "") %>(arg1.<%=keyColumn.getLabel() %>);
+			    if (compare != 0) {
+			        return compare;
+			    }
+			}
+        }
+			<%
+		}else if(javaType == JavaTypesManager.LIST){//HSS_____0_____3_____1
+			%>
+		if (arg0.<%=keyColumn.getLabel() %> == null) {
+			if (arg1.<%=keyColumn.getLabel() %> != null) {
+			    return -1;
+			}
+		} else {
+			if (arg1.<%=keyColumn.getLabel() %> == null) {
+			    return 1;
+			} else {
+				String arg0_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg0.<%=keyColumn.getLabel() %>);
+				String arg1_<%=keyColumn.getLabel() %>_<%=cid %> = String.valueOf(arg1.<%=keyColumn.getLabel() %>);
+				
+			    compare = arg0_<%=keyColumn.getLabel() %>_<%=cid %>.compareTo<%=(flag ? "IgnoreCase" : "") %>(arg1_<%=keyColumn.getLabel() %>_<%=cid %>);
+			    if(compare != 0){
+					return compare;
+				}
+			}
+        }
+			<%
+		}//HSS_____0_____3_____1
+		
+	}//HSS_____0_____3
+	
+%>
+        return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+    }
+
+}
+
+int bufferSize_1_<%=cid %> = bufferSize_<%=cid %>;
+
+rowStruct_<%=cid %>[] buffer_1_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_1_<%=cid %>];
+
+for(int i_<%=cid %> = 0; i_<%=cid %> < buffer_1_<%=cid %>.length; i_<%=cid %>++){
+	buffer_1_<%=cid %>[i_<%=cid %>] = new rowStruct_<%=cid %>();
+}
+
+int rowsInBuffer_1_<%=cid %> = 0;
+
+Comparator<rowStruct_<%=cid %>> comparator_1_<%=cid %> = new Comparator_1_<%=cid %>();
+
+java.util.ArrayList<java.io.File> files_1_<%=cid %> = new java.util.ArrayList<java.io.File>();
+
+String temp_file_path_prefix_<%=cid %> = <%=directory %> + "/" + jobName + "_<%=cid %>_" + Thread.currentThread().getId() + "_" + pid  + "_";
+
+<%
+}//HSS_____0
+%>

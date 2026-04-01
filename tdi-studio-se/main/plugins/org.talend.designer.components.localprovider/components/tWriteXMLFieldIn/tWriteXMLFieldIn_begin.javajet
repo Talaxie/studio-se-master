@@ -1,0 +1,109 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable
+    java.util.List
+   	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.utils.NodeUtil
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String xmlField = ElementParameterParser.getValue(node, "__XMLFIELD__");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    		
+				INode sourceNode = node.getIncomingConnections(EConnectionType.ON_COMPONENT_OK).get(0).getSource();
+				String virtualSourceCid = sourceNode.getUniqueName();
+				INode startNode = NodeUtil.getSpecificStartNode(sourceNode);
+				String startNodeCid = null; 
+				if(startNode != null){
+					startNodeCid = startNode.getUniqueName();
+				} 
+    			IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+    			if(nextMergeConn != null && nextMergeConn.getInputId()>1 && startNodeCid != null){
+   				%>
+    				java.util.Queue<String> queue_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<String>();
+					
+					class ThreadXMLField_<%=cid%> extends Thread {
+						java.util.Queue<String> queue;
+						java.util.List<java.util.Map<String,String>> flows;
+						java.lang.Exception lastException;
+						java.lang.Error lastError;
+						String currentComponent;
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q) {
+							this.queue = q;
+							globalMap.put("queue_<%=virtualSourceCid%>", queue);
+							lastException = null;
+						}
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q, java.util.List<java.util.Map<String,String>> l) {
+							this.queue = q;
+							this.flows = l;
+							lastException = null;
+							globalMap.put("queue_<%=virtualSourceCid%>", queue);
+							globalMap.put("flows_<%=virtualSourceCid%>", flows);
+						}
+						
+						public java.lang.Exception getLastException() {
+							return this.lastException;
+						}
+						
+						public java.lang.Error getLastError() {
+							return this.lastError;
+						}
+						
+						public String getCurrentComponent() {
+							return this.currentComponent;
+						}
+					
+						@Override
+						public void run() {
+							try {
+								<%=startNodeCid%>Process(globalMap);
+							} catch (TalendException te) {
+								this.lastException = te.getException();
+								this.currentComponent = te.getCurrentComponent();
+								globalMap.put("<%=cid%>_FINISH" + (this.queue==null?"":this.queue.hashCode()), "true");
+							} catch (java.lang.Error error) {
+								this.lastError = error;
+								globalMap.put("<%=cid%>_FINISH" + (this.queue==null?"":this.queue.hashCode()), "true");
+							}
+						}
+					}
+					
+					ThreadXMLField_<%=cid%> txf_<%=cid%> = new ThreadXMLField_<%=cid%>(queue_<%=cid%>);
+					txf_<%=cid%>.start();
+    			<%
+    			}else{
+				%>
+					java.util.Queue<String> queue_<%=cid%> = (java.util.Queue<String>) globalMap.get("queue_<%=cid%>");
+				<%
+				}
+				%>
+				String readFinishMarkWithPipeId_<%=cid%> = "<%=cid%>_FINISH"+(queue_<%=cid%>==null?"":queue_<%=cid%>.hashCode());
+				int nb_line_<%=cid%> = 0;
+				while(!globalMap.containsKey(readFinishMarkWithPipeId_<%=cid%>) || !queue_<%=cid%>.isEmpty()) {
+					if (!queue_<%=cid%>.isEmpty()) {
+			<%
+			}
+		}
+	}
+}
+%>

@@ -1,0 +1,387 @@
+<%@ jet
+imports="
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.process.IProcess
+        org.talend.core.model.process.INode
+        org.talend.core.model.utils.NodeUtil
+        java.io.File
+        java.io.BufferedWriter
+        java.io.FileOutputStream
+        java.io.OutputStreamWriter
+        java.io.IOException
+        java.util.List
+        java.util.Map
+        java.util.HashMap
+"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+
+    boolean useExistingConn = "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+
+    String userName = ElementParameterParser.getValue(node,"__USER__");
+    String passwordFieldName = "__PASSWORD__";
+    String endPoint = ElementParameterParser.getValue(node,"__ENDPOINT__");
+
+    String datasetName = ElementParameterParser.getValue(node,"__DATASET__");
+    String datasetOperation = ElementParameterParser.getValue(node,"__DATASET_OPERATION__");
+    String csvDataPath = ElementParameterParser.getValue(node,"__LOAD_DATA_PATH__");
+
+    String jsonMetadataPath = ElementParameterParser.getValue(node,"__JSON_METADATA_PATH__");
+    boolean uploadJsonMetadata = "true".equals(ElementParameterParser.getValue(node,"__UPLODE_JSON_METADATA__"));
+    boolean specifyJsonMetadata = "true".equals(ElementParameterParser.getValue(node,"__SPECIFY_JSON_METADATA__"));
+
+    boolean generateJsonInFile = "true".equals(ElementParameterParser.getValue(node,"__GENERATE_JSON_IN_FILE__"));
+    boolean doCleanWork = generateJsonInFile && !specifyJsonMetadata;
+
+    String encoding = "UTF-8";
+    String charsetName = ElementParameterParser.getValue(node,"__CHARSET__");
+    if(charsetName != null && !"".equals(charsetName) && !"\"\"".equals(charsetName)){
+           encoding = charsetName;
+    }
+
+    boolean retrieveUploadStatus = "true".equals(ElementParameterParser.getValue(node,"__RETRIEVE_UPLOAD_STATUS__"));
+    String seconds2getStatus = ElementParameterParser.getValue(node,"__SECONDS_TO_WAIT_FOR_SERVER_ANSWER__");
+%>
+        //Step one: Connect to salesforce
+        com.sforce.ws.ConnectorConfig connectorConfig_<%= cid %> = new com.sforce.ws.ConnectorConfig();
+        <%
+        if(useExistingConn){
+        %>
+        	Object sharedConn_<%=cid%> = globalMap.get("<%= connection %>" + "_connection");
+        	if(sharedConn_<%=cid%> != null){
+        		if(sharedConn_<%=cid%> instanceof com.sforce.soap.partner.PartnerConnection){
+        			connectorConfig_<%= cid %> = ((com.sforce.soap.partner.PartnerConnection)sharedConn_<%=cid%>).getConfig();
+        		}else{
+        			connectorConfig_<%= cid %> = ((com.sforce.async.BulkConnection)sharedConn_<%=cid%>).getConfig();
+        		}
+        		connectorConfig_<%= cid %>.setManualLogin(true);
+        	}else{
+        		System.err.println("No connection available!");
+        	}
+        <%
+        }else{
+        %>
+          	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+          	connectorConfig_<%= cid %>.setUsername(<%= userName %>);
+          	connectorConfig_<%= cid %>.setPassword(decryptedPassword_<%=cid%>);
+          	connectorConfig_<%= cid %>.setAuthEndpoint(<%= endPoint %>);
+        <%
+        }
+        %>
+
+        com.sforce.soap.partner.PartnerConnection partnerConnection_<%= cid %> = null;
+        try{
+            partnerConnection_<%= cid %> = new com.sforce.soap.partner.PartnerConnection(connectorConfig_<%= cid %>);
+        }catch(com.sforce.ws.ConnectionException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            throw e;
+        }
+
+        //Step two: Config the upload
+        com.sforce.soap.partner.sobject.SObject sobject_<%= cid %> = new com.sforce.soap.partner.sobject.SObject();
+        sobject_<%= cid %>.setType("InsightsExternalData");
+        sobject_<%= cid %>.setField("Format","CSV");
+        sobject_<%= cid %>.setField("EdgemartAlias", <%= datasetName %>);
+        <%
+          if("".equals(datasetName) || "\"\"".equals(datasetName)){
+             %>
+//////////////////////////////////////// Compile Error //////////////////////////////////////////////////
+            datasetName can't be empty string or ""
+//////////////////////////////////////// Compile Error //////////////////////////////////////////////////
+             <%
+          }
+         %>
+        if(!com.talend.salesforce.wave.SalesforceWaveHelper.isValidValue(<%= datasetName %>)){
+             System.err.println("DatasetName is invalid,thus it may lead to upload failed.");
+             System.err.println("Names can use only alpha-numeric or '_' characters");
+        }
+        <%
+          if(uploadJsonMetadata){
+        %>
+        byte[] metadataJsonInBytes_<%= cid %> = null;
+            <%
+                if(specifyJsonMetadata){
+                     %>
+                    try{
+                        metadataJsonInBytes_<%= cid %> = org.apache.commons.io.FileUtils.readFileToByteArray(new java.io.File(<%= jsonMetadataPath %>));
+                    }catch(IOException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                            throw e;
+                    }
+                     <%
+                }else if(!specifyJsonMetadata && generateJsonInFile){
+                     %>
+                    try{
+                        metadataJsonInBytes_<%= cid %> = org.apache.commons.io.FileUtils.readFileToByteArray(new java.io.File(generateJsonMetadataPath_<%= cid %>));
+                    }catch(IOException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                            throw e;
+                    }
+                     <%
+                }else if(!specifyJsonMetadata && !generateJsonInFile){//Generate JSON Metadata in Memory
+                     %>
+                        metadataJsonInBytes_<%= cid %> = com.talend.salesforce.wave.SalesforceWaveHelper
+                                                            .generateJsonMetadata(
+                                                               null
+                                                               ,metadataColumnRuntimeList_<%= cid %>
+                                                               ,customConfig_<%= cid %>
+                                                            ).getBytes(<%= encoding %>);
+                     <%
+                }else{
+                    %>
+                       Unexcepted usecase.
+                    <%
+                }
+             %>
+            sobject_<%= cid %>.setField("MetadataJson", metadataJsonInBytes_<%= cid %>);
+        <%
+            }
+         %>
+        sobject_<%= cid %>.setField("Operation","<%= datasetOperation %>");
+        sobject_<%= cid %>.setField("Action","None");
+
+        com.sforce.soap.partner.SaveResult[] saveResultArr_<%= cid %> = null;
+        String parentId_<%= cid %> = null;
+        try{
+            saveResultArr_<%= cid %> = partnerConnection_<%= cid %>.create(
+                                                            new com.sforce.soap.partner.sobject.SObject[] { sobject_<%= cid %> }
+                                                    );
+            for(com.sforce.soap.partner.SaveResult result: saveResultArr_<%= cid %>){
+                if(result.isSuccess()){
+                    parentId_<%= cid %> = result.getId();
+                }else{
+                    StringBuilder errMsg = new StringBuilder("Saving InsightsExternalData failed.");
+                    <%
+                      if(uploadJsonMetadata){
+                          %>
+                             errMsg.append("There is something wrong with JSON metadata.");
+                          <%
+                      }
+                     %>
+                    for(com.sforce.soap.partner.Error err: result.getErrors()){
+                            for(String fieldName: err.getFields()){
+                                errMsg.append("\nThe errors come from the field: ");
+                                errMsg.append(fieldName);
+                                errMsg.append(".");
+                            }
+                                errMsg.append("\n");
+                                errMsg.append(err.getMessage());
+                                errMsg.append(".");
+                    }
+                    throw new RuntimeException(errMsg.toString());
+                }
+            }
+        }catch(com.sforce.ws.ConnectionException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            throw e;
+        }
+
+        //Step three: add the data
+        java.io.File csvFile_<%= cid %> = new java.io.File(<%= csvDataPath %>);
+        if(csvFile_<%= cid %>.isDirectory()){
+            throw new RuntimeException("Can't load directory,please spectify a CSV file.");
+        }
+
+        <%
+           if(generateJsonInFile && !specifyJsonMetadata){
+                %>
+        //Spilt file to 8 MB
+        List<java.io.File> splitFileList_<%= cid %> = com.talend.io.FileUtils.splitFilePer8Mb(csvFile_<%= cid %>,tempDirectory_<%= cid %>);
+
+        for(int i=0,j=splitFileList_<%= cid %>.size(); i < j; i++){
+            com.sforce.soap.partner.sobject.SObject sobject_for_<%= cid %> = new com.sforce.soap.partner.sobject.SObject();
+            sobject_for_<%= cid %>.setType("InsightsExternalDataPart");
+            try{
+                sobject_for_<%= cid %>.setField("DataFile", org.apache.commons.io.FileUtils.readFileToByteArray(splitFileList_<%= cid %>.get(i)));
+            }catch(java.io.IOException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                throw e;
+            }
+            sobject_for_<%= cid %>.setField("InsightsExternalDataId", parentId_<%= cid %>);
+            sobject_for_<%= cid %>.setField("PartNumber",i+1); //Part numbers should start at 1
+
+            com.sforce.soap.partner.SaveResult[] saveResultArr_for_<%= cid %> = null;
+            String rowId_<%= cid %> = null;
+            try{
+                saveResultArr_for_<%= cid %> = partnerConnection_<%= cid %>.create(
+                     new com.sforce.soap.partner.sobject.SObject[] { sobject_for_<%= cid %> }
+               );
+
+               for(com.sforce.soap.partner.SaveResult result: saveResultArr_for_<%= cid %>){
+                   if(result.isSuccess()){
+                       rowId_<%= cid %> = result.getId();
+                   }else{
+                       StringBuilder errMsgBuilder = new StringBuilder("Digest file failed.");
+                       for(com.sforce.soap.partner.Error err: result.getErrors()){
+                               for(String fieldName: err.getFields()){
+                                   errMsgBuilder.append("\nThe errors come from the field: ");
+                                   errMsgBuilder.append(fieldName);
+                                   errMsgBuilder.append(".");
+                               }
+                                   errMsgBuilder.append("\n");
+                                   errMsgBuilder.append(err.getMessage());
+                                   errMsgBuilder.append(".");
+                       }
+                       throw new RuntimeException(errMsgBuilder.toString());
+                   }
+               }
+            }catch(com.sforce.ws.ConnectionException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                throw e;
+            }
+        }
+                <%
+           }else{
+                //read from memory
+                %>
+                   boolean hasNextChunk_<%= cid %> = true;
+                   int index_<%= cid %> = 0;
+                   while(hasNextChunk_<%= cid %>){
+                        com.sforce.soap.partner.sobject.SObject sobject_for_<%= cid %> = new com.sforce.soap.partner.sobject.SObject();
+                        sobject_for_<%= cid %>.setType("InsightsExternalDataPart");
+                        try{
+                            sobject_for_<%= cid %>.setField("DataFile",com.talend.io.FileUtils.readFilePer8Mb(csvFile_<%= cid %>,index_<%= cid %>));
+                        }catch(java.io.IOException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                            hasNextChunk_<%= cid %> = false;
+                        }
+                        if(!hasNextChunk_<%= cid %>){
+                            break;
+                        }
+                        sobject_for_<%= cid %>.setField("InsightsExternalDataId", parentId_<%= cid %>);
+                        sobject_for_<%= cid %>.setField("PartNumber",index_<%= cid %>+1); //Part numbers should start at 1
+
+                        com.sforce.soap.partner.SaveResult[] saveResultArr_for_<%= cid %> = null;
+                        String rowId_<%= cid %> = null;
+                        try{
+                            saveResultArr_for_<%= cid %> = partnerConnection_<%= cid %>.create(
+                                 new com.sforce.soap.partner.sobject.SObject[] { sobject_for_<%= cid %> }
+                           );
+
+                           for(com.sforce.soap.partner.SaveResult result: saveResultArr_for_<%= cid %>){
+                               if(result.isSuccess()){
+                                   rowId_<%= cid %> = result.getId();
+                               }else{
+                                       StringBuilder errMsgBuilder = new StringBuilder("Digest file failed.");
+                                       for(com.sforce.soap.partner.Error err: result.getErrors()){
+                                               for(String fieldName: err.getFields()){
+                                                   errMsgBuilder.append("\nThe errors come from the field: ");
+                                                   errMsgBuilder.append(fieldName);
+                                                   errMsgBuilder.append(".");
+                                               }
+                                                   errMsgBuilder.append("\n");
+                                                   errMsgBuilder.append(err.getMessage());
+                                                   errMsgBuilder.append(".");
+                                       }
+                                       throw new RuntimeException(errMsgBuilder.toString());
+                                    }
+                           }
+                        }catch(com.sforce.ws.ConnectionException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                            throw e;
+                        }
+                        index_<%= cid %> ++;
+                   }
+                <%
+           }
+         %>
+
+        //Step four: start to upload
+        com.sforce.soap.partner.sobject.SObject sobject4process_<%= cid %> = new com.sforce.soap.partner.sobject.SObject();
+        sobject4process_<%= cid %>.setType("InsightsExternalData");
+        sobject4process_<%= cid %>.setField("Action","Process");
+        sobject4process_<%= cid %>.setId(parentId_<%= cid %>);
+
+        com.sforce.soap.partner.SaveResult[] saveResultArr4Process_<%= cid %> = null;
+        try{
+             saveResultArr4Process_<%= cid %> = partnerConnection_<%= cid %>.update(
+                        new com.sforce.soap.partner.sobject.SObject[] { sobject4process_<%= cid %> }
+                );
+        for(com.sforce.soap.partner.SaveResult result: saveResultArr4Process_<%= cid %>){
+            if(result.isSuccess()){
+                parentId_<%= cid %> = result.getId();
+            }else{
+                StringBuilder errMsgBuilder = new StringBuilder("Upload file failed.");
+                for(com.sforce.soap.partner.Error err: result.getErrors()){
+                        for(String fieldName: err.getFields()){
+                            errMsgBuilder.append("\nThe errors come from the field: ");
+                            errMsgBuilder.append(fieldName);
+                            errMsgBuilder.append(".");
+                        }
+                            errMsgBuilder.append("\n");
+                            errMsgBuilder.append(err.getMessage());
+                            errMsgBuilder.append(".");
+                }
+                throw new RuntimeException(errMsgBuilder.toString());
+            }
+          }
+        }catch(com.sforce.ws.ConnectionException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            throw e;
+        }
+
+    <%
+        if(doCleanWork){
+            %>
+               //Step five: do clean work
+               for(java.io.File file: splitFileList_<%= cid %>){
+                    if(file.exists()){
+                        if(!file.delete()){
+                            System.err.println("Can't remove the generated file: " + file.getName());
+                        }
+                    }
+               }
+            <%
+        }
+     %>
+
+        com.sforce.soap.partner.sobject.SObject[] statusObjArr_<%= cid %> = null;
+        <%
+           if(!retrieveUploadStatus){
+                %>
+                   int times2try_<%= cid %> = 1;
+                <%
+           }else{
+                %>
+                   int times2try_<%= cid %> = Integer.valueOf(<%= seconds2getStatus %>).intValue() / 10;
+                <%
+          }
+         %>
+        String finalProcessStatus_<%= cid %> = null;
+        try {
+            for (int i = 0; i < times2try_<%= cid %>; i++ ){
+                 try{
+                      Thread.sleep(10000);
+                  }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                      e.printStackTrace();
+                  }
+               statusObjArr_<%= cid %> = partnerConnection_<%= cid %>.retrieve("Status",
+                                                                   sobject4process_<%= cid %>.getType(),
+                                                                   new String[] { sobject4process_<%= cid %>.getId() });
+                for(com.sforce.soap.partner.sobject.SObject obj: statusObjArr_<%= cid %>){
+                    finalProcessStatus_<%= cid %> = (String)obj.getField("Status");
+                }
+                if("Completed".equalsIgnoreCase(finalProcessStatus_<%= cid %>) || "Failed".equalsIgnoreCase(finalProcessStatus_<%= cid %>)){
+                        break;
+                }
+            }
+        } catch (com.sforce.ws.ConnectionException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            throw e;
+        }
+
+        if("Failed".equalsIgnoreCase(finalProcessStatus_<%= cid %>)){
+            throw new RuntimeException("Upload CSV file failed.");
+        } else if (!"Completed".equalsIgnoreCase(finalProcessStatus_<%= cid %>)) {
+            System.out.println("The upload status is '" + finalProcessStatus_<%= cid %> + "'.");
+        }

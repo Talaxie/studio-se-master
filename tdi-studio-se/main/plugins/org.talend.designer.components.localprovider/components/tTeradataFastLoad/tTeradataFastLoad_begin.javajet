@@ -1,0 +1,111 @@
+<%@ jet
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		java.util.List
+		java.util.ArrayList
+		java.util.LinkedList
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+    String dbServer = ElementParameterParser.getValue(node, "__SERVER__");
+    String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+    String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+	String tableName = ElementParameterParser.getValue(node,"__TABLE__");
+	String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+	int nb_line_<%=cid%> = 0;
+	int nb_line_inserted_<%=cid%> = 0;
+	int insertedCount_<%=cid%>=0;
+	
+	String driverClass_<%=cid%> = "com.teradata.jdbc.TeraDriver";
+	java.lang.Class.forName(driverClass_<%=cid%>);
+	String url_<%=cid %> = "jdbc:teradata://" + <%=dbhost%>+"/TYPE=FASTLOAD";
+	
+	String dbProperties_<%=cid%> = <%=dbproperties%>;
+	if(dbProperties_<%=cid%> != null && dbProperties_<%=cid%>.trim().length() > 0) {
+		url_<%=cid %> +=","+dbProperties_<%=cid%>;
+	}
+
+	String dbUser_<%=cid %> = <%=dbuser%>;
+	<% String passwordFieldName = "__PASS__"; %>
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+	java.sql.Connection conn_<%=cid%> = null;
+	<%
+	  	log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect(node);
+	%>
+	
+	String tableName_<%=cid%> = <%=tableName%>;
+	String dbname_<%=cid%> = <%=dbname%>;
+	if(dbname_<%=cid%> == null || dbname_<%=cid%>.trim().length() == 0) {
+		tableName_<%=cid%> = <%=tableName%>;
+	} else {
+		tableName_<%=cid%> = dbname_<%=cid%> + "." + <%=tableName%>;
+	}
+
+	int commitCounter_<%=cid%> = 0;
+<%
+	if(!"".equals(commitEvery) && !"0".equals(commitEvery)){
+%>
+	int commitEvery_<%=cid%> = <%=commitEvery%>;
+	conn_<%=cid%>.setAutoCommit(false);
+<%
+	}
+%>
+
+	java.sql.PreparedStatement pstmt_<%=cid %> = null;
+
+<%
+	boolean isDynamic = false;
+	List<IMetadataColumn> columnList = null;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if(metadatas !=null && metadatas.size()>0){
+		IMetadataTable metadata = metadatas.get(0);
+		if(metadata != null){
+			columnList = metadata.getListColumns();
+			isDynamic = metadata.isDynamicSchema();
+		}
+	}
+	
+	if(isDynamic || (columnList == null) || (columnList.isEmpty())){
+		return stringBuffer.toString();
+	}
+	
+	StringBuilder insertColName = new StringBuilder();
+	StringBuilder insertValueStmt = new StringBuilder();
+	
+	int count = 0;
+	for(IMetadataColumn column:columnList){
+		String suffix = ",";
+		if(count==(columnList.size()-1)) {
+			suffix = "";
+		}
+		String insertValue = "?";
+		String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+	    if ("java.util.Date".equals(typeToGenerate)) {
+	    	String dbType = column.getType();
+	    	if ("DATE".equals(dbType)||"TIME".equals(dbType)) {
+	    		insertValue = "cast(cast(? as timestamp) as "+dbType+")";
+	    	}
+	    }
+		insertColName.append(column.getLabel()).append(suffix);
+		insertValueStmt.append(insertValue).append(suffix);
+		count++;
+	}
+%>
+
+	pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement("INSERT INTO " + tableName_<%=cid%> + " (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)");

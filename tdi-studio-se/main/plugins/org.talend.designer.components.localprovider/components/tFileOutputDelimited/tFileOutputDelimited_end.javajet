@@ -1,0 +1,181 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+		java.util.List
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.process.AbstractNode
+	" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+    boolean isInRowMode = ("true").equals(ElementParameterParser.getValue(node,"__ROW_MODE__"));
+    
+    String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+	boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__")); 
+	boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+	
+	boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+	
+	String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+	boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+	
+	boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+	IProcess process = node.getProcess();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));
+%>
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+	%>
+		<% 
+	    if(codeGenArgument.getIsRunInMultiThread()){
+		%>
+	   		synchronized (multiThreadLockWrite) {
+		<%
+		}
+		if (((AbstractNode)node).getParallelIterator() != null) {
+		%>
+			synchronized (fileName_<%=cid %>.intern()) {
+		<% 
+		}
+		if (isParallelize) {
+		%>
+			Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+			synchronized (pLockWrite) {
+		<% 
+		}
+		%>
+			<%
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {	
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				if(!useStream){
+				%>
+					if(out<%=cid %>!=null) {
+						out<%=cid %>.flush();
+						out<%=cid %>.close();
+					}
+				<%
+				}else{
+				%>
+					if(out<%=cid %>!=null) {
+						out<%=cid%>.flush();
+						writer_<%=cid %>.flush();
+						out<%=cid %> = null;
+					}
+				<%
+				}
+				%>
+				globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+				globalMap.put("<%=cid %>_FILE_NAME",fileName_<%=cid%>);
+			<%
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			}else{//the following is the tFileOutputCSV component
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+			%>
+		
+				<%
+				if(!useStream){
+				%>
+					if(CsvWriter<%=cid%>!=null) {
+				    	CsvWriter<%=cid%>.close();
+				    }
+					<%
+					if(isInRowMode){
+						if (split || compress) {
+					%>
+						if(out<%=cid %>!=null) {
+							out<%=cid %>.flush();
+							out<%=cid %>.close();
+						}
+					<%
+						} else {
+%>
+							java.io.Writer outWriter_<%=cid %> = (java.io.Writer) resourceMap.get("outWriter_for_" + (<%=filename %>));
+							if(outWriter_<%=cid %> != null) {
+								outWriter_<%=cid %>.flush();
+								outWriter_<%=cid %>.close();
+								resourceMap.remove("outWriter_for_" + (<%=filename %>));
+							}
+<%
+						}
+					}
+				}else{
+					if(isInRowMode){
+					%>
+						if(CsvWriter<%=cid%>!=null) {
+							CsvWriter<%=cid%>.close();
+						}
+						if(out<%=cid %>!=null) {
+							out<%=cid %>.flush();
+						}
+						if(outWriter_<%=cid %>!=null) {
+							outWriter_<%=cid %>.flush();
+						}
+					<%
+					}else{
+					%>
+						if(CsvWriter<%=cid%>!=null) {
+							CsvWriter<%=cid%>.flush();
+						}
+						if(bufferWriter_<%=cid %>!=null) {
+							bufferWriter_<%=cid %>.flush();
+						}
+						if(outWriter_<%=cid %>!=null) {
+							outWriter_<%=cid %>.flush();
+						}
+						CsvWriter<%=cid%> = null;
+					<%
+					}
+				}
+				%>
+		    	globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+			<%
+			}
+			%>
+		<% 
+		if (isParallelize) {
+		%>
+			}
+		<%
+		}
+		if (((AbstractNode)node).getParallelIterator() != null) {
+		%>
+			}
+		<% 
+		}
+		if(codeGenArgument.getIsRunInMultiThread()){
+		%>
+			}
+		<%
+		}
+		%>
+		<%if(!useStream && isDeleteEmptyFile){%>
+			if(isFileGenerated_<%=cid %> && nb_line_<%=cid %> == 0){
+				<%if(compress && !isAppend && !split){%>
+					file_<%=cid%>.delete();
+				<%}else{%>
+					file<%=cid%>.delete();
+				<%}%>
+			}		
+		<%}%>
+		resourceMap.put("finish_<%=cid%>", true);
+	<%
+	}
+}
+%>
+<%
+log4jFileUtil.writeDataFinishInfo(node);
+%>

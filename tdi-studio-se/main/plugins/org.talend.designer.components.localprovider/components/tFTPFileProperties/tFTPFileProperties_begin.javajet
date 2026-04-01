@@ -1,0 +1,265 @@
+<%@ jet 
+imports="
+  org.talend.core.model.process.INode
+  org.talend.core.model.process.ElementParameterParser
+  org.talend.core.model.process.IConnection
+  org.talend.core.model.process.IConnectionCategory
+  org.talend.designer.codegen.config.CodeGeneratorArgument
+  java.util.List
+  java.util.Map
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String ftpsPort = ElementParameterParser.getValue(node, "__FTPS_PORT__");
+String username = ElementParameterParser.getValue(node, "__USERNAME__");
+
+boolean use_encoding = "true".equals(ElementParameterParser.getValue(node, "__USE_ENCODING__"));
+
+String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+String remoteDir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String user = ElementParameterParser.getValue(node, "__USERNAME__");
+String pass = ElementParameterParser.getValue(node, "__PASSWORD__");
+String authMethod = ElementParameterParser.getValue(node, "__AUTH_METHOD__");
+String privateKey = ElementParameterParser.getValue(node, "__PRIVATEKEY__");
+
+boolean useProxy = ("true").equals(ElementParameterParser.getValue(node, "__USE_PROXY__"));
+String proxyHost = ElementParameterParser.getValue(node, "__PROXY_HOST__");
+String proxyPort = ElementParameterParser.getValue(node, "__PROXY_PORT__");
+String proxyUser = ElementParameterParser.getValue(node, "__PROXY_USERNAME__");
+
+String connectMode = ElementParameterParser.getValue(node, "__CONNECT_MODE__");
+String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+String conn= "conn_" + connection;
+String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+String mode = ElementParameterParser.getValue(node, "__MODE__");
+boolean MD5 = new Boolean(ElementParameterParser.getValue(node, "__MD5__"));
+boolean sftp = false;
+boolean ftps = false;
+
+String protectionLevel = ElementParameterParser.getValue(node, "__FTPS_PROT__");
+String protectionBufferSize = ElementParameterParser.getValue(node, "__FTPS_PROTECTION_BUFF_SIZE__");
+String timeoutValue = ElementParameterParser.getValue(node, "__CONNECTION_TIMEOUT__");
+boolean useRemoteVerification = ("true").equals(ElementParameterParser.getValue(node, "__REMOTE_VERIFICATION__"));
+boolean useStrictReplyParsing = ("true").equals(ElementParameterParser.getValue(node, "__USE_STRICT_REPLY_PARSING__"));
+boolean isConfigClient = "true".equals(ElementParameterParser.getValue(node, "__CONFIG_CLIENT__"));
+List<Map<String, String>> clientParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CLIENT_PARAMETERS__");
+
+log4jFileUtil.componentStartInfo(node);
+
+if (("true").equals(useExistingConn)) {
+  List<? extends INode> nodeList = node.getProcess().getGeneratingNodes();
+
+  for (INode n : nodeList) {
+    if (n.getUniqueName().equals(connection)) {
+      sftp = ("true").equals(ElementParameterParser.getValue(n, "__SFTP__"));
+      ftps = ("true").equals(ElementParameterParser.getValue(n, "__FTPS__"));
+    }
+  }
+} else {
+  sftp = ("true").equals(ElementParameterParser.getValue(node, "__SFTP__"));
+  ftps = ("true").equals(ElementParameterParser.getValue(node, "__FTPS__"));
+%>
+  int connectionTimeout_<%=cid %> = Integer.valueOf(<%=timeoutValue %>);
+<%
+}
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String passwordFieldName = "";
+
+if (useProxy && !("true").equals(useExistingConn)) {
+%>
+  java.util.Properties props_<%=cid%> = System.getProperties();
+  props_<%=cid%>.put("socksProxyPort", <%=proxyPort %>);
+  props_<%=cid%>.put("socksProxyHost", <%=proxyHost %>);
+  props_<%=cid%>.put("java.net.socks.username", <%=proxyUser %>);
+  
+<%
+passwordFieldName = "__PROXY_PASSWORD__";
+if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%> 
+  String decryptedProxyPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%} else {%>
+  String decryptedProxyPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%}%>
+
+  props_<%=cid%>.put("java.net.socks.password", decryptedProxyPassword_<%=cid%>);
+  java.net.Authenticator.setDefault(new java.net.Authenticator() {
+        public java.net.PasswordAuthentication getPasswordAuthentication() {
+            return new java.net.PasswordAuthentication(<%=proxyUser %>, decryptedProxyPassword_<%=cid%>.toCharArray());
+        }
+  });
+<%
+}
+String outputConnName = null;
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+
+if (conns != null) {
+  if (conns.size() > 0) {
+    for (int i = 0; i < conns.size(); i++) {
+      IConnection connTemp = conns.get(i);
+      if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        outputConnName = connTemp.getName();
+        break;
+      }
+    }
+  }
+}
+
+if (outputConnName == null) {
+  return "";
+}
+
+//The following part support the socks proxy for FTP and SFTP (Socks V4 or V5, they are all OK). 
+//And it can not work with the FTP proxy directly, only support the socks proxy.
+if (sftp) {  // *** sftp *** //
+
+	if (("false").equals(useExistingConn)) {
+		final String passwordFieldKey = "__PASSWORD__";
+%>
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/sftp_connect.javajet"%>
+
+    <%if(use_encoding) {%>
+    	c_<%=cid%>.setFilenameEncoding(<%=encoding%>);
+    <%}%>
+	    
+	<%} else {%>    
+		com.jcraft.jsch.ChannelSftp c_<%=cid%> = (com.jcraft.jsch.ChannelSftp)globalMap.get("<%=conn %>");
+		<%if(isLog4jEnabled){%>
+			if(c_<%=cid%>!=null && c_<%=cid%>.getSession()!=null) {
+				log.info("<%=cid%> - Use an existing connection. Connection username: " + c_<%=cid%>.getSession().getUserName() + ", Connection hostname: " + c_<%=cid%>.getSession().getHost() + ", Connection port: " + c_<%=cid%>.getSession().getPort() + "."); 
+			}
+		<%}%>
+		if(c_<%=cid%>.getHome()!=null && !c_<%=cid%>.getHome().equals(c_<%=cid%>.pwd())){
+	  		c_<%=cid%>.cd(c_<%=cid%>.getHome());
+  		}
+  	<%}%> 
+	String remoteDir_<%=cid %> = <%=remoteDir %>.replaceAll("\\\\", "/");
+	<%=outputConnName %> = new <%=outputConnName %>Struct();
+	String remoteFile_<%=cid %> = <%=remoteDir %> + "/" + <%=filename%>;
+	com.jcraft.jsch.SftpATTRS lstat_<%=cid %> = c_<%=cid %>.lstat(remoteFile_<%=cid %>);
+
+	if (lstat_<%=cid %> != null) {
+	    <%=outputConnName %>.abs_path = (remoteFile_<%=cid %>).replaceAll("//", "/");
+	    <%=outputConnName %>.dirname = <%=remoteDir %>;
+	    <%=outputConnName %>.basename = <%=filename%>;
+	    <%=outputConnName %>.size = lstat_<%=cid %>.getSize();
+	    <%=outputConnName %>.mtime = (long)lstat_<%=cid %>.getMTime();
+	    <%=outputConnName %>.mtime_string = lstat_<%=cid %>.getMtimeString();
+
+	    <%if (MD5) {%>
+	      // Calculation of the Message Digest MD5
+	      java.io.InputStream is_<%=cid %> = c_<%=cid%>.get(remoteFile_<%=cid %>);
+	      byte[] buffer_<%=cid %> = new byte[8192];
+	      int read_<%=cid %> = 0;
+	      java.security.MessageDigest dgs_<%=cid %> = java.security.MessageDigest.getInstance("MD5");
+	
+	      while ( (read_<%=cid %> = is_<%=cid %>.read(buffer_<%=cid %>)) > 0) {
+	        dgs_<%=cid %>.update(buffer_<%=cid %>, 0, read_<%=cid %>);
+	      }
+	      <%=outputConnName %>.md5 =String.format("%032x", new java.math.BigInteger(1, dgs_<%=cid %>.digest()));
+	      <%if(isLog4jEnabled){%>
+				log.info("<%= cid %> - md5 message is : '"+ <%=outputConnName %>.md5 + "'."); 
+		  <%}%>
+	      is_<%=cid %>.close();
+		<%}%>
+	}  
+<%
+} else {
+    if (ftps) {  // *** ftps *** //
+%>
+        org.apache.commons.net.ftp.FTPSClient ftp_<%=cid %> = null;
+<%
+        if (("false").equals(useExistingConn)) {
+            String keystoreFile = ElementParameterParser.getValue(node, "__KEYSTORE_FILE__");
+            String securityMode = ElementParameterParser.getValue(node, "__SECURITY_MODE__");
+%>
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftps_connect.javajet"%>
+<%
+        } else {
+%>
+            ftp_<%=cid %> = (org.apache.commons.net.ftp.FTPSClient) globalMap.get("<%=conn %>");
+<%
+        }
+    } else { // *** ftp *** //
+%>
+        org.apache.commons.net.ftp.FTPClient ftp_<%=cid %> = null;
+<%
+        if (("true").equals(useExistingConn)) {
+%>
+            ftp_<%=cid %> = (org.apache.commons.net.ftp.FTPClient) globalMap.get("<%=conn %>");
+            <%if(isLog4jEnabled){%>
+                if(ftp_<%=cid %>!=null) {
+                    log.info("<%=cid%> - Use an existing connection. Connection hostname: " +  ftp_<%=cid %>.getRemoteAddress().toString() + ", Connection port: " + ftp_<%=cid %>.getRemotePort() + ".");
+                }
+            <%}%>
+<%
+        } else {
+            passwordFieldName = "__PASSWORD__";
+%>
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftp_connect.javajet"%>
+<%
+        }
+
+        if("binary".equalsIgnoreCase(mode)){
+%>
+            ftp_<%=cid %>.setFileType(org.apache.commons.net.ftp.FTP.BINARY_FILE_TYPE);
+<%
+        } else {
+%>
+            ftp_<%=cid %>.setFileType(org.apache.commons.net.ftp.FTP.ASCII_FILE_TYPE);
+<%
+        }
+    } //common code for ftp and ftps:
+%>
+	String remoteDir_<%=cid %> = (<%=remoteDir %>).replaceAll("\\\\", "/");
+	org.apache.commons.net.ftp.FTPFile[] allFiles_<%=cid %> = ftp_<%=cid %>.listFiles(remoteDir_<%=cid %>);
+
+	org.apache.commons.net.ftp.FTPFile expectedFile_<%=cid %> = null;
+
+	for (org.apache.commons.net.ftp.FTPFile file_<%=cid %> : allFiles_<%=cid %>) {
+		if ((<%=filename%>).equals(file_<%=cid %>.getName())) {
+			expectedFile_<%=cid %> = file_<%=cid %>;
+			break;
+		}
+	}
+
+	<%=outputConnName %> = new <%=outputConnName %>Struct();
+	if (expectedFile_<%=cid %> != null) {
+		String fullFilePath_<%=cid %> = (remoteDir_<%=cid %> + "/" + expectedFile_<%=cid %>.getName()).replaceAll("//", "/");
+		<%=outputConnName %>.abs_path = fullFilePath_<%=cid %>;
+		<%=outputConnName %>.dirname = remoteDir_<%=cid %>;
+		<%=outputConnName %>.basename = expectedFile_<%=cid %>.getName();
+		<%=outputConnName %>.size = expectedFile_<%=cid %>.getSize();
+		<%=outputConnName %>.mtime = expectedFile_<%=cid %>.getTimestamp().getTimeInMillis();
+		<%=outputConnName %>.mtime_string = expectedFile_<%=cid %>.getTimestamp().getTime().toString();
+
+		<%if (MD5) {%>
+			// Calculation of the Message Digest MD5
+			java.io.InputStream is_<%=cid %> = ftp_<%=cid%>.retrieveFileStream(fullFilePath_<%=cid %>);
+			byte[] buffer_<%=cid %> = new byte[8192];
+			int read_<%=cid %> = 0;
+			java.security.MessageDigest dgs_<%=cid %> = java.security.MessageDigest.getInstance("MD5");
+
+			while ( (read_<%=cid %> = is_<%=cid %>.read(buffer_<%=cid %>)) > 0) {
+				dgs_<%=cid %>.update(buffer_<%=cid %>, 0, read_<%=cid %>);
+			}
+			<%=outputConnName %>.md5 =String.format("%032x", new java.math.BigInteger(1, dgs_<%=cid %>.digest()));
+			<%if(isLog4jEnabled){%>
+				log.info("<%= cid %> - md5 message is : '"+ <%=outputConnName %>.md5 + "'."); 
+		  <%}%>
+			is_<%=cid %>.close();
+			ftp_<%=cid%>.completePendingCommand();
+		<%}%>
+	}
+<%
+}
+%>

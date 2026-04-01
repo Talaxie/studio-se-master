@@ -1,0 +1,163 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+" 
+class="LDAPInput"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+    
+	String cid = node.getUniqueName();
+	String baseDN=ElementParameterParser.getValue(node, "__BASEDN__");
+	
+	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	String exConn= "conn_" + connection;
+	String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(("false").equals(useExistingConn)){
+	String host=ElementParameterParser.getValue(node, "__HOST__");
+	String port=ElementParameterParser.getValue(node, "__PORT__");
+	String protocol=ElementParameterParser.getValue(node, "__PROTOCOL__");
+	String advanced=ElementParameterParser.getValue(node, "__ADVANCEDCA__");
+	boolean alwaysTrust = ("true").equals(ElementParameterParser.getValue(node, "__ALWAYS_TRUST__"));
+	String storepath=ElementParameterParser.getValue(node, "__STORECA__");
+	String storepwd = ElementParameterParser.getValue(node, "__STORECAPWD__");
+	boolean useAuth = "true".equals(ElementParameterParser.getValue(node, "__AUTHENTIFICATION__"));
+	String user =ElementParameterParser.getValue(node, "__USER__");
+
+	String referrals=ElementParameterParser.getValue(node, "__REFERRALS__");
+	String aliases=ElementParameterParser.getValue(node, "__ALIASES__");
+%>
+	java.util.Hashtable env_<%=cid%> = new java.util.Hashtable();
+	env_<%=cid%>.put(javax.naming.Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
+	env_<%=cid%>.put(javax.naming.Context.REFERRAL, "<%=referrals%>");
+	env_<%=cid%>.put("java.naming.ldap.derefAliases","<%=aliases%>");
+<%
+	if(baseDN == null || baseDN.length()<=2){
+%>
+	env_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, "ldap://"+<%=host%>+":"+<%=port%>);
+<%
+	}else{
+%>
+	env_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, "ldap://"+<%=host%>+":"+<%=port%>+"/"+<%=baseDN%>);
+<%
+	}
+    if(("LDAPS").equals(protocol)){
+%>
+	env_<%=cid%>.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
+	env_<%=cid%>.put("java.naming.ldap.factory.socket", "talend.ssl.AdvancedSocketFactory");
+<%
+	}
+	if(("LDAPS").equals(protocol) || ("TLS").equals(protocol)){
+		if(("true").equals(advanced)){
+			if(alwaysTrust) {
+%>
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Adnanced CA trusting all certs.");
+				<%}%>
+				talend.ssl.AdvancedSocketFactory.alwaysTrust();
+<%
+			} else {
+%>
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Advanced CA using a store CA file and Keystore password.");
+					log.debug("Store CA : '" + <%=storepath %> + "'.");
+				<%}%>
+				talend.ssl.AdvancedSocketFactory.setCertStorePath(<%=storepath%>);
+<%
+				if(storepwd !=null && storepwd.length() !=0 ){%>
+				
+                    <%
+                    String passwordFieldName = "__STORECAPWD__";
+                    %>
+            
+                    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+                    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+                    <%} else {%>
+                    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+                    <%}%>				
+    				
+				talend.ssl.AdvancedSocketFactory.setCertStorePassword(decryptedPwd_<%=cid%>);
+<%
+				}
+			}
+		}
+    }
+%>
+
+	<%@ include file="../tLDAPConnection/ldapconnect.javajet"%>
+	
+<%
+}else{
+%>
+javax.naming.ldap.InitialLdapContext ctx_<%=cid%> = (javax.naming.ldap.InitialLdapContext)globalMap.get("<%=exConn%>");
+	<%if(isLog4jEnabled){%>
+		if(ctx_<%=cid%>!=null) {
+			log.info("<%=cid%> - Uses an existing connection ,connection URL is: '" + ctx_<%=cid%>.getEnvironment().get(javax.naming.Context.PROVIDER_URL) + "'."); 
+		}
+	<%}%>
+<%
+}
+%>
+boolean whetherReject_<%=cid%> = false;
+class LDAPRenameEntryUtil_<%=cid%> {
+	
+	private java.util.Map<String, javax.naming.directory.Attributes> childs = new java.util.HashMap();
+	private java.util.List<String> paths = new java.util.ArrayList();
+	
+	public void renameWithChilds(String oldName, String newName, javax.naming.ldap.InitialLdapContext ldapCtx) throws java.lang.Exception {
+		this.list(oldName, ldapCtx);
+		
+		this.destroySubcontext(paths, ldapCtx);
+		
+		try {
+			ldapCtx.rename(oldName, newName);
+		} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			this.createSubcontext(paths, paths, childs, ldapCtx);
+			
+			throw e;
+		}
+		
+		java.util.List<String> newPaths = new java.util.ArrayList();
+		for (String childName : paths) {
+			newPaths.add(childName.replaceAll(oldName, newName));
+		}
+		
+		this.createSubcontext(newPaths, paths, childs, ldapCtx);
+	}
+	public void list(String rootName, javax.naming.ldap.InitialLdapContext ldapCtx) throws java.lang.Exception {
+		javax.naming.NamingEnumeration nern =ldapCtx.list(rootName);
+		while(nern.hasMore()){
+			javax.naming.NameClassPair nameCP= (javax.naming.NameClassPair)nern.next();
+			childs.put(nameCP.getName()+","+rootName, ldapCtx.getAttributes(nameCP.getName()+","+rootName));
+			list(nameCP.getName()+","+rootName, ldapCtx);
+			paths.add(nameCP.getName()+","+rootName);
+		} 
+	}
+	
+	public void destroySubcontext(java.util.List<String> paths, javax.naming.ldap.InitialLdapContext ldapCtx)throws java.lang.Exception {
+		for (String childName : paths) {
+			ldapCtx.destroySubcontext(childName);
+		}
+	}
+		
+	public void createSubcontext(java.util.List<String> newPaths, java.util.List<String> oldPaths,
+							 java.util.Map<String, javax.naming.directory.Attributes> childs, 
+							javax.naming.ldap.InitialLdapContext ldapCtx)throws java.lang.Exception {
+		for (int i=newPaths.size(); i>0; i-- ) {
+			ldapCtx.createSubcontext(newPaths.get(i-1), childs.get(oldPaths.get(i-1)));
+		}
+	}
+	
+}
+
+
+
+

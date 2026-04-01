@@ -1,0 +1,78 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String table = ElementParameterParser.getValue(node,"__TABLE__");
+String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+String max = ElementParameterParser.getValue(node,"__MAX_ITERATIONS__");
+String operator = ElementParameterParser.getValue(node,"__OPERATOR__");
+String value = ElementParameterParser.getValue(node,"__VALUE__");
+boolean isEnableWhereClause = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_WHERE_CLAUSE__"));
+boolean isEnableSQLStmt = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_SQL_STMT__"));
+
+final String conn;
+INode connNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+if((connNode!=null) && "tSnowflakeConnection".equals(connNode.getComponent().getName())){
+   conn = connection + "_connection";
+}else{
+   conn = "conn_" + connection;
+}
+
+String query = "SELECT COUNT(*) FROM ";
+%>
+
+<%
+if(isEnableSQLStmt) {
+    %>
+    String sqlStr_<%=cid%> = <%=ElementParameterParser.getValue(node,"__SQL_STMT__")%>;
+    <%
+} else {
+    if(isEnableWhereClause) {
+        %>
+        String sqlStr_<%=cid%> = "<%=query%>" + <%=table%> + " " + <%=ElementParameterParser.getValue(node,"__WHERE_CLAUSE__")%>;
+        <%
+    } else {
+        %>
+        String sqlStr_<%=cid%> = "<%=query%>" + <%=table%>;
+        <%
+    }
+}
+%>
+
+java.sql.Connection connection_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+java.sql.Statement statement_<%=cid%> = connection_<%=cid%>.createStatement();
+int count_<%=cid%> = 0;
+int rowCount_<%=cid%>=0;
+while (true) {
+    <%
+    if(!("").equals(max)) {
+        %>
+        if(<%=max%> == count_<%=cid%>) {
+        	break;
+        }
+        <%
+    }
+    %>
+    statement_<%=cid%>.execute(sqlStr_<%=cid%>);
+    java.sql.ResultSet set_<%=cid%> = statement_<%=cid%>.getResultSet();
+    set_<%=cid%>.next();
+    rowCount_<%=cid%> = set_<%=cid%>.getInt(1);
+    connection_<%=cid%>.commit();
+    globalMap.put("<%=cid%>_ROW_COUNT", rowCount_<%=cid%>);
+    
+    count_<%=cid%>++;
+	globalMap.put("<%=cid%>_CURRENT_ITERATION", count_<%=cid%>);
+                
+    if (!(rowCount_<%=cid%><%=operator%><%=value%>)) {
+    	Thread.currentThread().sleep(<%=ElementParameterParser.getValue(node, "__WAIT__")%>*1000);
+        continue;
+    }

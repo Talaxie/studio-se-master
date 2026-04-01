@@ -1,0 +1,496 @@
+<%@ jet
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.MappingTypeRetriever
+        org.talend.core.model.metadata.MetadataTalendType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.utils.NodeUtil
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+dbLog = new DBLogUtil(node);
+
+List<Map<String, String>> addCols = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__ADD_COLS__" );
+boolean useFieldOptions = ("true").equals(ElementParameterParser.getValue(node, "__USE_FIELD_OPTIONS__"));
+List<Map<String, String>> fieldOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FIELD_OPTIONS__");
+String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+String tableSchema = ElementParameterParser.getValue(node, "__TABLESCHEMA__");
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbport = ElementParameterParser.getValue(node, "__PORT__");
+String dbuser= ElementParameterParser.getValue(node, "__USER__");
+String table = ElementParameterParser.getValue(node,"__TABLE__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+boolean convertToUppercase = ("true").equals(ElementParameterParser.getValue(node, "__CONVERT_COLUMN_TABLE_TO_UPPERCASE__"));
+boolean isEnableDebug = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_DEBUG_MODE__"));
+boolean useBatchSize = ("true").equals(ElementParameterParser.getValue(node,"__USE_BATCH_SIZE__"));
+String batchSize=ElementParameterParser.getValue(node,"__BATCH_SIZE__");
+boolean useAlternateSchema = "true".equals(ElementParameterParser.getValue(node, "__USE_ALTERNATE_SCHEMA__"));
+String alternateSchema = ElementParameterParser.getValue(node, "__ALTERNATE_SCHEMA__");
+
+String rejectConnName = null;
+IConnection rejectConn = null;
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+    rejectConn = rejectConns.get(0);
+    rejectConnName = rejectConn.getName();
+}
+
+boolean useBatch = useBatchSize && (rejectConnName == null)
+         && (
+              ("INSERT").equals(dataAction) || ("UPDATE").equals(dataAction) || ("DELETE").equals(dataAction)
+            );
+%>
+int nb_line_<%=cid%> = 0;
+int nb_line_update_<%=cid%> = 0;
+int nb_line_inserted_<%=cid%> = 0;
+int nb_line_deleted_<%=cid%> = 0;
+int nb_line_rejected_<%=cid%> = 0;
+int deletedCount_<%=cid%> = 0;
+int updatedCount_<%=cid%> = 0;
+int insertedCount_<%=cid%> = 0;
+int rowsToCommitCount_<%=cid%>=0;
+int rejectedCount_<%=cid%> = 0;
+<%
+getManager(dbmsId, cid, node);
+
+IConnection inputConn = null;
+String incomingConnName = null;
+
+List< ? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null && conns.size()>0){
+	inputConn = conns.get(0);
+	incomingConnName = inputConn.getName();
+}
+
+boolean isDynamic = false;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+	isDynamic = metadata.isDynamicSchema();
+}
+
+List<IMetadataColumn> columnList = getColumnList(node);
+List<Column> stmtStructure = null;
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, useFieldOptions, fieldOptions, addCols);
+	isDynamic = isDynamic && !getManager(dbmsId, cid).isDynamicColumnReplaced();
+
+    if(convertToUppercase) {
+        for(Column column : stmtStructure) {
+            if(column.isReplaced()) {
+                for (Column replacedColumn : column.getReplacement()) {
+                    replacedColumn.setColumnName(replacedColumn.getColumnName().toUpperCase());
+                }
+            } else if(!column.isDynamic()){
+                column.setColumnName(column.getColumnName().toUpperCase());
+            }
+        }
+    }
+}
+
+List<Column> colStruct = new ArrayList();
+if(stmtStructure!=null) {
+    for(Column colStmt:stmtStructure) {
+    	if(!colStmt.isReplaced()&&!colStmt.isAddCol()&&!colStmt.isDynamic()) {
+    		colStruct.add(colStmt);
+    	}
+    }
+}
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/CheckKeysForUpdateAndDelete.javajet"%>
+
+
+boolean whetherReject_<%=cid%> = false;
+java.sql.Connection conn_<%=cid%> = null;
+String dbschema_<%=cid%> = null;
+String dbUser_<%=cid %> = null;
+<%
+String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+if(("true").equals(useExistingConn)) {
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    String conn = "conn_" + connection;
+	if(useAlternateSchema) {%>
+		dbschema_<%=cid%> = <%=alternateSchema%>;
+	<%
+	} else {
+		String tableschema = "tableschema_" + connection;
+	%>
+		dbschema_<%=cid%> = (String)globalMap.get("<%=tableschema%>");
+	<%
+	}
+    String username = "username_" + connection;
+    %>
+    conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+    dbUser_<%=cid %> = (String)globalMap.get("<%=username%>");
+    <%dbLog.conn().useExistConn("conn_"+cid+".getMetaData().getURL()", "conn_"+cid+".getMetaData().getUserName()");%>
+    <%
+} else {
+	boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+	if(specify_alias){
+		String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+		%>
+		java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+		if (null != dataSources_<%=cid%>) {
+			String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+    		if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+       			throw new RuntimeException("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+          	}
+    		conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+		} else {
+	<%
+	}
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+	    String url_<%=cid %> = "jdbc:db2://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+	} else {
+%>
+		String url_<%=cid %> = "jdbc:db2://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":" + <%=dbproperties%>;
+<%
+	}
+%>
+    java.lang.Class.forName("com.ibm.db2.jcc.DB2Driver");
+	<%dbLog.conn().logJDBCDriver(dbLog.str("com.ibm.db2.jcc.DB2Driver"));%>
+    dbUser_<%=cid %> = <%=dbuser%>;
+    <%
+    String passwordFieldName = "__PASS__";
+    %>
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+    String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+    dbschema_<%=cid%> = <%=tableSchema%>;
+    <%dbLog.conn().connTry(dbLog.var("url"), dbLog.var("dbUser"));%>
+    conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+    <%dbLog.conn().connDone(dbLog.var("url"));%>
+    <%
+   	if(specify_alias){
+	%>
+		}
+	<%
+	}
+    %>
+    resourceMap.put("conn_<%=cid%>", conn_<%=cid%>);
+    <%
+}
+if(!("true").equals(useExistingConn)) {
+    if(!("").equals(commitEvery) && !("0").equals(commitEvery)) {
+        %>
+        conn_<%=cid%>.setAutoCommit(false);
+        int commitEvery_<%=cid%> = <%=commitEvery%>;
+        int commitCounter_<%=cid%> = 0;
+        <%
+    }
+}
+dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
+%>
+
+<%
+if (useBatch) {
+%>
+   int batchSize_<%=cid%> = <%=batchSize%>;
+   int batchSizeCounter_<%=cid%>=0;
+<%
+}
+%>
+String tableName_<%=cid%> = null;
+if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+    tableName_<%=cid%> = <%=table%><%=convertToUppercase ? ".toUpperCase()" : ""%>;
+} else {
+    tableName_<%=cid%> = dbschema_<%=cid%> + "\".\"" + <%=table%><%=convertToUppercase ? ".toUpperCase()" : ""%>;
+}
+
+<%
+if(!isDynamic) {
+%>
+int count_<%=cid%>=0;
+<%
+if(columnList != null && columnList.size() > 0) {
+       Manager manager = null;
+    %>
+    <%@ include file="../templates/_tableActionForOutput.javajet"%>
+    <%
+    Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+    StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);
+    StringBuilder insertValueStmt = actionSQLMap.get(INSERT_VALUE_STMT);
+    StringBuilder updateSetStmt = actionSQLMap.get(UPDATE_SET_STMT);
+    StringBuilder updateWhereStmt = actionSQLMap.get(UPDATE_WHERE_STMT);
+    StringBuilder deleteWhereStmt = actionSQLMap.get(DELETE_WHERE_STMT);
+
+	if(("INSERT").equals(dataAction)) {
+	    %>
+	    String insert_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+	    resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	} else if (("UPDATE").equals(dataAction)) {
+	    %>
+	    String update_<%=cid%> = "UPDATE \"" + tableName_<%=cid%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+	    resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	} else if (("INSERT_OR_UPDATE").equals(dataAction)) {
+	    %>
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement("SELECT COUNT(1) FROM \"" + tableName_<%=cid%> + "\" WHERE <%=updateWhereStmt.toString()%>");
+	    resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    String insert_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+	    resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+	    String update_<%=cid%> = "UPDATE \"" + tableName_<%=cid%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+	    resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+	    <%
+	} else if (("UPDATE_OR_INSERT").equals(dataAction)) {
+	    %>
+	    String update_<%=cid%> = "UPDATE \"" + tableName_<%=cid%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+	    resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+	    String insert_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+	    resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+	    <%
+	} else if (("DELETE").equals(dataAction)) {
+	    %>
+	    String delete_<%=cid%> = "DELETE FROM \"" + tableName_<%=cid%> + "\" WHERE <%=deleteWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(delete_<%=cid%>);
+	    resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	}
+    if(isEnableDebug) {
+        %>
+		StringBuffer query_<%=cid%> = null;
+       	<%@ include file="../templates/DB/Output/splitSQLForAllDBInBegin.javajet" %>
+        <%
+    }
+}
+}// end !isDynamic
+
+if(isDynamic) {
+%>
+	java.sql.PreparedStatement pstmt_<%=cid %> =null;
+	java.sql.PreparedStatement pstmtInsert_<%=cid %> =null;
+	java.sql.PreparedStatement pstmtUpdate_<%=cid %> =null;
+	<%if(isEnableDebug) {%>
+		StringBuffer query_<%=cid%> = null;
+		<%@ include file="../templates/DB/Output/splitSQLForAllDBInDynamicBegin.javajet" %>
+<%
+	}
+}
+
+if(incomingConnName==null || columnList == null || columnList.isEmpty()) {
+	return stringBuffer.toString();
+}
+
+int schemaOptNum = 100;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+	schemaOptNum = Integer.parseInt(schemaOptNumStr);
+}
+
+if(columnList.size() <= schemaOptNum) {//optimize for 65535 method size issue in java
+	return stringBuffer.toString();
+}
+
+%>
+class SetPrepareStatementUtil_<%=cid%> {
+<%
+List<String> types = new ArrayList<String>();
+if(dataAction!=null && dataAction.contains("INSERT")) {
+	types.add("Insert");
+}
+if(dataAction!=null && dataAction.contains("UPDATE")) {
+	types.add("Update");
+}
+for(String type : types) {
+	int counter = 1;
+	for(Column column : colStruct) {
+        if("Insert".equals(type) && !column.isInsertable()) {
+        	continue;
+        }
+
+        if("Update".equals(type) && !column.isUpdatable()) {
+        	continue;
+        }
+
+        String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+
+        int actionType = NORMAL_TYPE;
+        String splits = "insertSQLSplits_";
+
+        if("INSERT_OR_UPDATE".equals(dataAction) || "UPDATE_OR_INSERT".equals(dataAction)) {
+        	if("Insert".equals(type)) {
+        		actionType = INSERT_TYPE;
+        	} else if("Update".equals(type)) {
+        		actionType = UPDATE_TYPE;
+        		splits = "updateSQLSplits_";
+        	}
+        } else if("UPDATE".equals(dataAction)) {
+        	splits = "updateSQLSplits_";
+        }
+
+    	if((counter-1)%schemaOptNum==0){//begin method
+%>
+			void set<%=type%>_<%=(counter-1)/schemaOptNum%>(
+				final <%=NodeUtil.getPrivateConnClassName(inputConn) %>Struct <%=inputConn.getName() %>,
+				final java.sql.PreparedStatement
+<%
+				if(actionType == NORMAL_TYPE) {
+%>
+				pstmt_<%=cid%>
+<%
+				} else if(actionType == INSERT_TYPE) {
+%>
+				pstmtInsert_<%=cid%>
+<%
+				} else {
+%>
+				pstmtUpdate_<%=cid%>
+<%
+				}
+
+				if(isEnableDebug) {
+%>
+				,
+				final StringBuffer query_<%=cid%>
+				,
+				final String[] <%=splits%><%=cid%>
+<%
+				}
+%>
+			) throws java.sql.SQLException {
+			//}
+<%
+    	}
+%>
+		<%=getManager(dbmsId, cid).generateSetStmt(typeToGenerate, column, counter, incomingConnName, cid, actionType)%>
+<%
+    	if(isEnableDebug) {
+%>
+    	<%=getManager(dbmsId, cid).retrieveSQL(typeToGenerate, column, incomingConnName, cid, "query_" , counter, splits)%>;
+<%
+   		}
+
+    	if(counter%schemaOptNum==0) {//close method
+%>
+			//{
+			}
+<%
+		}
+
+		counter++;
+	}
+
+    if((counter-1) >0&&((counter-1)%schemaOptNum)>0){//close method
+%>
+		//{
+		}
+<%
+	}
+}
+%>
+}
+
+SetPrepareStatementUtil_<%=cid%> setPrepareStatementUtil_<%=cid%> = new SetPrepareStatementUtil_<%=cid%>();
+
+<%
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+
+IConnection outputConn = null;
+
+for(IConnection outgoingConn : outgoingConns) {
+	if(rejectConn == null || (rejectConn != null && !outgoingConn.getName().equals(rejectConn.getName()))) {
+	    if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	       outputConn = outgoingConn;
+	    }
+	}
+}
+
+List<IConnection> outputConns = new ArrayList<IConnection>();
+
+if(outputConn!=null) {
+	outputConns.add(outputConn);
+}
+
+String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+List<IMetadataColumn> rejectColumnList = null;
+IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+if(metadataTable != null) {
+    rejectColumnList = metadataTable.getListColumns();
+}
+
+if(!"true".equals(dieOnError) && rejectConn != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+	outputConns.add(rejectConn);
+}
+
+if(outputConns.isEmpty()) {
+	return stringBuffer.toString();
+}
+%>
+
+class DataPropagateUtil_<%=cid%> {
+<%
+	for(IConnection outputConnection : outputConns) {
+		String sourceObjectName = incomingConnName;
+		String sourceObjectType = NodeUtil.getPrivateConnClassName(inputConn);
+
+		String targetObjectName = outputConnection.getName();
+		String targetObjectType = NodeUtil.getPrivateConnClassName(outputConnection);
+
+		int index = 0;
+		for(IMetadataColumn column : columnList) {
+			if(index%schemaOptNum==0){//begin method
+%>
+			void assign_<%=targetObjectName%>_<%=index/schemaOptNum%>(final <%=sourceObjectType%>Struct <%=sourceObjectName%>,final <%=targetObjectType%>Struct <%=targetObjectName%>) {
+			//}
+<%
+			}
+
+			//do assign
+%>
+			<%=targetObjectName%>.<%=column.getLabel()%> = <%=sourceObjectName%>.<%=column.getLabel()%>;
+<%
+
+			if((index+1)%schemaOptNum==0) {//close method
+%>
+			//{
+			}
+<%
+			}
+
+			index++;
+		}
+
+		if(index>0&&(index%schemaOptNum)>0){//close method
+%>
+		//{
+		}
+<%
+		}
+	}
+%>
+}
+
+DataPropagateUtil_<%=cid%> dataPropagateUtil_<%=cid%> = new DataPropagateUtil_<%=cid%>();
+
+

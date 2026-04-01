@@ -1,0 +1,58 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable 
+    	org.talend.core.model.metadata.IMetadataColumn 
+    	org.talend.core.model.process.IConnection
+    	org.talend.core.model.process.IConnectionCategory
+    	java.util.List
+	" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+String processingMode = ElementParameterParser.getValue(node, "__PROCESSING_MODE__");
+List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		List<IMetadataColumn> columns = metadata.getListColumns();
+		List< ? extends IConnection> conns = node.getIncomingConnections();
+		if((conns!=null)&&(conns.size()>0)) {
+			IConnection conn = conns.get(0);
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+				if("RAW".equals(processingMode)){
+%>
+producer_<%=cid %>.send((javax.jms.Message)<%=conn.getName() %>.message);
+nbline_<%=cid %>++;
+<%
+				}else{
+					if("id_Document".equals(metadata.getColumn("messageContent").getTalendType())){
+%>
+javax.jms.ObjectMessage message_<%=cid %> = session_<%=cid %>.createObjectMessage();
+message_<%=cid %>.setObject(<%=conn.getName() %>.messageContent);
+<%
+					}else{
+%>
+javax.jms.TextMessage message_<%=cid %> = session_<%=cid %>.createTextMessage();
+message_<%=cid %>.setText(<%=conn.getName() %>.messageContent);
+<%
+					}
+%>
+producer_<%=cid %>.send(message_<%=cid %>);
+
+nbline_<%=cid %>++;
+<%
+				}
+                log.debug(log.str("Sending the message "), log.var("nbline"), log.str("."));
+			}
+		}
+	}
+%>
+
+
+            

@@ -1,0 +1,91 @@
+<%@ jet 
+%>
+ <%
+    if(!("NONE").equals(tableAction)) {
+        if(("CREATE").equals(tableAction)) {
+%>
+            java.sql.Statement stmtCreate_<%=cid%> = connection_<%=cid%>.createStatement();
+            stmtCreate_<%=cid%>.execute("<%=scdManager.getCreateTableSQL(outputSchema, scdConfiger)%>");
+            stmtCreate_<%=cid%>.close();
+<%
+        } else if(("CREATE_IF_NOT_EXISTS").equals(tableAction)) {
+%>
+			java.sql.DatabaseMetaData dbMetaData_<%=cid%> = connection_<%=cid%>.getMetaData();
+<%
+            if (ORACLE.equalsIgnoreCase(dbType)) {
+%>   
+				String dbschemaForSearch_<%=cid%> = null;
+				if (schema_<%=cid%> == null
+						|| schema_<%=cid%>.trim().length() == 0) {
+					dbschemaForSearch_<%=cid%> = ((String)<%=dbuser%>).toUpperCase();
+				} else {
+					dbschemaForSearch_<%=cid%> = schema_<%=cid%>.toUpperCase();
+				}
+				String tableName4Search_<%=cid%> = <%=dbtable%>;
+            	if(tableName4Search_<%=cid%>.indexOf("\"")==-1){
+            		tableName4Search_<%=cid%> = tableName4Search_<%=cid%>.toUpperCase();
+            	}else{
+            		tableName4Search_<%=cid%> = tableName4Search_<%=cid%>.replaceAll("\"","");
+            	}
+	            java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(null, dbschemaForSearch_<%=cid%>, tableName4Search_<%=cid%>, new String[]{"TABLE"});
+	            boolean whetherExist_<%=cid%> = false;
+	            if(rsTable_<%=cid%>.next()) {
+	            	whetherExist_<%=cid%> = true;
+	            }
+	            rsTable_<%=cid%>.close();
+	            
+<%
+            } else if (MYSQL.equalsIgnoreCase(dbType)) {
+                boolean useExistMySQLConn = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+                String dbnameMySQL = null;
+                if (useExistMySQLConn) {
+                    List< ? extends INode> nodes =  node.getProcess().getNodesOfType("tMysqlConnection");
+                    String connectionMySQL = ElementParameterParser.getValue(node,"__CONNECTION__");
+                    for (INode ne : nodes) {
+                        if (connectionMySQL.equals(ne.getUniqueName())) {
+                            dbnameMySQL = ElementParameterParser.getValue(ne, "__DBNAME__");
+                            break;
+                        }
+                    }
+                } else {
+                    dbnameMySQL = ElementParameterParser.getValue(node, "__DBNAME__");
+                }
+                dbnameMySQL = ("".equals(dbnameMySQL)) ? null : dbnameMySQL;
+%>
+                <%if (dbnameMySQL != null) { %>
+                    java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(<%=dbnameMySQL%>, null, null, new String[]{"TABLE"});
+                <%} else { %>
+                    java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(connection_<%=cid%>.getCatalog(), null, null, new String[]{"TABLE"});
+                <% } %>
+                boolean whetherExist_<%=cid%> = false;
+                while(rsTable_<%=cid%>.next()) {
+                    String table_<%=cid%> = rsTable_<%=cid%>.getString("TABLE_NAME");
+                    if(table_<%=cid%>.equalsIgnoreCase(<%=dbtable%>)) {
+                        whetherExist_<%=cid%> = true;
+                        break;
+                    }
+                }
+<%
+			} else {
+%>
+	            java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(null, null, null, new String[]{"TABLE"});
+	            boolean whetherExist_<%=cid%> = false;
+	            while(rsTable_<%=cid%>.next()) {
+	                String table_<%=cid%> = rsTable_<%=cid%>.getString("TABLE_NAME");
+	                if(table_<%=cid%>.equalsIgnoreCase(<%=dbtable%>)) {
+	                    whetherExist_<%=cid%> = true;
+	                    break;
+	                }
+	            }
+<%
+			}
+%>            
+            if(!whetherExist_<%=cid%>) {
+                java.sql.Statement stmtCreate_<%=cid%> = connection_<%=cid%>.createStatement();
+                stmtCreate_<%=cid%>.execute("<%=scdManager.getCreateTableSQL(outputSchema, scdConfiger)%>");
+                stmtCreate_<%=cid%>.close();
+            }
+<%
+        }        
+    }
+    %>

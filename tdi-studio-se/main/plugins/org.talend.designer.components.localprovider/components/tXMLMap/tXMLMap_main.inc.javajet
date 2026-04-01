@@ -1,0 +1,617 @@
+<%@ jet 
+	imports="
+			java.util.ArrayList
+			java.util.Collections
+			java.util.Comparator
+			java.util.HashMap
+			java.util.List
+			java.util.Map
+			
+			org.eclipse.emf.common.util.EList
+			org.talend.core.model.metadata.IMetadataColumn
+			org.talend.core.model.metadata.IMetadataTable
+			org.talend.core.model.metadata.types.JavaType
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.core.model.process.BlockCode
+			org.talend.core.model.process.EConnectionType
+			org.talend.core.model.process.ElementParameterParser
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.INode
+			org.talend.core.model.utils.NodeUtil
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.generation.GenerationManager
+			org.talend.designer.xmlmap.generation.HashedMetadataTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.Connection
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.LookupConnection
+			org.talend.designer.xmlmap.model.emf.xmlmap.FilterConnection
+			org.talend.designer.xmlmap.model.emf.xmlmap.NodeType
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+"
+skeleton="tXMLMap_java.skeleton"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	GenerationManager gm =  (GenerationManager)node.initGenerationManager();
+	String cid = node.getUniqueName();
+	
+	String uniqueNameComponent = cid.replaceAll("_TXMLMAP_IN", "");
+	uniqueNameComponent = uniqueNameComponent.replaceAll("_TXMLMAP_OUT", "");
+	
+	boolean checkingSyntax = codeGenArgument.isCheckingSyntax();
+	String cr = "\n";
+	
+	XmlMapData xmlMapData=(XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	boolean isVirtual = false;
+	int closeWhileCountForMultiResult = 0;
+	String loopKey = null;
+	List<InputLoopNodesTable> allInputLoopNodesTables = null;
+	boolean parallelLoopExistInCurrentOutputTable = false;
+	boolean parallelRelationExistBetweenAllOutputTables = false;
+	TreeNode documentNodeInMainInputTable = null;
+	ArrayList<OutputXmlTree> outputTablesSortedByReject = null;
+	
+	LoopHelper loopHelper = null;
+	
+	
+	EList<InputXmlTree> inputTablesWithInvalid = xmlMapData.getInputTrees();
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	EList<VarTable> varsTables = xmlMapData.getVarTables();
+
+	String rejectedInnerJoin = "rejectedInnerJoin_" + cid;
+	String rejectedDocInnerJoin = "rejectedDocInnerJoin_" + cid;
+	String rejected = "rejected_" + cid;
+	String mainRowRejected = "mainRowRejected_" + cid;
+	
+//	boolean isLookup = false;
+	boolean isXpathFromLookup = true;
+	boolean hasOutgoingConnection = false;//to output or another lookup
+	boolean hasDocumentInMainInputTable = false;
+	boolean atLeastOneInputTableWithInnerJoin = false;
+	boolean isPlainNode = true;
+//	boolean isPlainNodeInLookup = false;
+	boolean hasValidLookupTables = false;
+	boolean hasDocumentGlobal = false;
+	
+//	boolean hasMainFilter = false;
+//	boolean mainFilterAlreadyDone = false;
+	
+	List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+	  		nameToOutputConnection.put(connection.getName(), connection);
+	}
+    
+	List<IConnection> inputConnections = (List<IConnection>) node.getIncomingConnections();
+	HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+	for(IConnection connection : inputConnections){
+		 hNameToConnection.put(connection.getName(), connection);
+	}
+	
+	List<InputXmlTree> inputTables = new ArrayList<InputXmlTree>();
+	for(int i=0; i<inputTablesWithInvalid.size(); i++){
+		InputXmlTree  currentTree = inputTablesWithInvalid.get(i);
+		if(hNameToConnection.get(currentTree.getName()) != null){
+			inputTables.add(currentTree);
+		}
+	}
+	
+	boolean hasDocumentInAnyLookupTable = false;
+	
+	int lstSizeInputs = inputTables.size();
+	for(int i = 1; i<lstSizeInputs; i++){
+		InputXmlTree inputTable = (InputXmlTree)inputTables.get(i);
+		EList<TreeNode> treeNodes = inputTable.getNodes();
+		if(treeNodes!=null) {
+			for(TreeNode treeNode : treeNodes) {
+				if("id_Document".equals(treeNode.getType())) {
+					hasDocumentInAnyLookupTable = true;
+					break;
+				}
+			}
+		}
+	}
+	
+//	HashMap<String, TreeNode> hInputTableNodes = new HashMap<String, TreeNode>();
+	int sizeInputTables = inputTables.size();
+	InputXmlTree mainInputTable = null;  // the main input table
+	
+//	String mainInputTableName = null;
+//	IConnection realMainConnection = null;
+//	java.util.Map<String, String> xpathTypeMap = null;
+//	String str  = "";
+//	TreeNode currentMainNode = null;
+//	boolean findNext = false;
+
+//	String nextLookupName = null;
+//	List<IMetadataColumn> nextLookupColumnsKeys = new ArrayList<IMetadataColumn>();
+ 
+//	boolean hasPersistentLookup = false;
+//	int indexLastPersistentSortedTable = -1;
+	 
+	ArrayList<InputXmlTree> inputTablesWithInnerJoin = new ArrayList<InputXmlTree>();
+	if(inputConnections==null) {
+		inputConnections = new ArrayList<IConnection>();//avoid NPE
+	}
+	%>
+	boolean <%= rejectedInnerJoin %> = false;
+	boolean <%= rejectedDocInnerJoin %> = false;
+	boolean <%= mainRowRejected %> = false;
+	boolean isMatchDocRow<%=cid%> = false;
+	  
+	<%
+	for(IConnection conn : inputConnections) { // find the input main table
+		EConnectionType connectionType = conn.getLineStyle();
+		if (connectionType == EConnectionType.FLOW_MAIN && !inputTables.isEmpty()) {
+			InputXmlTree inputTable = inputTables.get(0);
+			if(!inputTable.isLookup()) { // lookup is used to sign it is lookup table
+    			mainInputTable = inputTable;
+    			break;
+			}
+		}
+	}
+	
+	MatchXmlTreeExpr matchXmlTreeExpr = new MatchXmlTreeExpr(cid);
+	
+	if(mainInputTable != null) {//TD8096
+		
+		List<TreeNode> allNodes = new ArrayList<TreeNode>();
+		for(InputXmlTree inputTable : inputTables) {
+			allNodes.addAll(inputTable.getNodes());
+		}
+		
+		matchXmlTreeExpr = new MatchXmlTreeExpr(allNodes,cid);
+		for(OutputXmlTree outputTable : outputTables) {
+			String outputTableName = outputTable.getName();
+			if(nameToOutputConnection.get(outputTableName) == null) {
+				continue;
+			}
+			for(OutputTreeNode outputNode: outputTable.getNodes()) {
+				if(("id_Document").equals(outputNode.getType())){
+				%>
+				    GenerateDocument_<%=outputTableName %> gen_Doc_<%=outputTableName %>_<%=cid %> = new GenerateDocument_<%=outputTableName %>();
+					<%=outputTableName %>_tmp.<%=outputNode.getName()%> = null;
+					<%
+					break;
+				} // if(docuemnt)
+			}// for(outputNode)
+		} // for (outputXMLTree)
+		%>
+		
+<%
+	TreeUtil treeUtil = new TreeUtil();
+	for (int iInputTable = 0; iInputTable < sizeInputTables; iInputTable++) {
+		hasOutgoingConnection = false;//reset the var for every lookup table 
+		InputXmlTree nextInputTable = inputTables.get(iInputTable);
+		if(!atLeastOneInputTableWithInnerJoin) {
+			if(nextInputTable.isInnerJoin()) {
+				atLeastOneInputTableWithInnerJoin = true;
+			}
+		}
+%>
+
+		<%@ include file="tXMLMap_lookup.inc.javajet" %>
+<%
+	} // end for lookup tables
+	
+}//TD8096
+	
+	// /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // VARIABLES
+        // 
+        
+        %>
+        { // start of Var scope
+        
+	        // ###############################
+        	// # Vars tables
+        
+        <%
+        
+        for (VarTable varsTable : varsTables) {
+            EList<VarNode> varsTableEntries = varsTable.getNodes();
+            if (varsTableEntries == null) {
+                continue;
+            }
+            String varsTableName = varsTable.getName();
+            String instanceVarName = varsTableName + "__" + uniqueNameComponent;
+            String className = instanceVarName + "__Struct";
+
+            %><%= cr + className + " " + varsTableName + " = " + instanceVarName + ";" %><%
+            
+            for (VarNode varsTableEntry : varsTableEntries) {
+                String varsColumnName = varsTableEntry.getName();
+                String varExpression = varsTableEntry.getExpression();
+                if (varExpression == null || varExpression.trim().length() == 0) {
+                    varExpression = JavaTypesManager.getDefaultValueFromJavaIdType(varsTableEntry.getType(),
+                            varsTableEntry.isNullable());
+                }
+                
+				String resultExpression = "";
+				if(matchXmlTreeExpr != null)
+					resultExpression = matchXmlTreeExpr.generateExprCode(varExpression);
+				if(resultExpression!=null && !("").equals(resultExpression)){
+%>
+					<%= cr + gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, varsTableName, varsColumnName, false) + " = " + resultExpression
+                        + ";" %>
+<%
+				}
+            }
+        }
+	
+	// /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // OUTPUTS
+        // 
+        
+%>
+		// ###############################
+		// # Output tables
+<%
+
+		StringBuilder sb = new StringBuilder();
+		
+		outputTablesSortedByReject = new ArrayList<OutputXmlTree>(outputTables);
+		// sorting outputs : rejects tables after not rejects table
+		Collections.sort(outputTablesSortedByReject, new Comparator<OutputXmlTree>() {
+
+			public int compare(OutputXmlTree o1, OutputXmlTree o2) {
+				if (o1.isReject() != o2.isReject()) {
+					if (o1.isReject()) {
+						return 1;
+					} else {
+						return -1;
+					}
+				}
+				if (o1.isRejectInnerJoin() != o2.isRejectInnerJoin()) {
+					if (o1.isRejectInnerJoin()) {
+						return 1;
+					} else {
+						return -1;
+					}
+				}
+				return 0;
+			}
+
+		});
+		
+		boolean lastValueReject = false;
+        boolean oneFilterForNotRejectTable = false;
+        boolean allNotRejectTablesHaveFilter = true;
+        boolean atLeastOneReject = false;
+//        boolean atLeastOneRejectInnerJoin = false;
+        boolean closeTestInnerJoinConditionsBracket = false;
+
+        for (IConnection outputConnection : outputConnections) {
+            nameToOutputConnection.put(outputConnection.getName(), outputConnection);
+        }
+
+        int lstSizeOutputs = outputTablesSortedByReject.size();
+        // ///////////////////////////////////////////////////////////////////
+        // init of allNotRejectTablesHaveFilter and atLeastOneReject
+        String lastValidOutputTableName = null;
+		
+		for (int i = 0; i < lstSizeOutputs; i++) {
+            OutputXmlTree outputTable = (OutputXmlTree) outputTablesSortedByReject.get(i);
+
+            String outputTableName = outputTable.getName();
+
+//            if (outputTable.isRejectInnerJoin()) {
+//               atLeastOneRejectInnerJoin = true;
+//            }
+            EList<OutputTreeNode> columnEntries = outputTable.getNodes();
+            boolean hasFilter = outputTable.isActivateExpressionFilter() && outputTable.getExpressionFilter() != null && !("").equals(outputTable.getExpressionFilter().trim());
+            if (columnEntries != null && columnEntries.size() > 0) {
+                if (!hasFilter && !(outputTable.isReject() || outputTable.isRejectInnerJoin())) {
+                    if(!outputTable.isErrorReject()){
+                    	allNotRejectTablesHaveFilter = false;
+                    }
+                }
+                if (outputTable.isReject()) {
+                    atLeastOneReject = true;
+                }
+            }
+			IConnection outputConnection = nameToOutputConnection.get(outputTableName);            
+			if (outputConnection != null) {
+				sb.append(cr + outputTableName + " = null;");
+			}
+			if(checkingSyntax 
+			|| !checkingSyntax && outputConnection != null) {
+				lastValidOutputTableName = outputTableName;
+			}
+			
+
+        }
+        // ///////////////////////////////////////////////////////////////////
+		sb.append(cr);
+
+        if (allNotRejectTablesHaveFilter && atLeastOneReject) {
+            // write rejected = false;
+            sb.append(cr + "boolean " + rejected + " = true;");
+        }
+
+        // write conditions for inner join reject
+        if (lastValidOutputTableName != null && hasValidLookupTables && lstSizeOutputs > 0 && atLeastOneInputTableWithInnerJoin) {
+            sb.append(cr + "if(");
+            sb.append("!" + rejectedInnerJoin);
+            sb.append(" ) {");
+            closeTestInnerJoinConditionsBracket = true;
+        }
+
+        // ///////////////////////////////////////////////////////////////////
+        // run through output tables list for generating intilization of outputs arrays
+        int dummyVarCounter = 0;
+        for (int indexCurrentTable = 0; indexCurrentTable < lstSizeOutputs; indexCurrentTable++) {
+            OutputXmlTree outputTable = (OutputXmlTree) outputTablesSortedByReject.get(indexCurrentTable);
+            EList<OutputTreeNode> outputTableEntries = outputTable.getNodes();
+            String outputTableName = outputTable.getName();
+            
+            boolean connectionExists = true;
+            IConnection outputConnection =null;
+            outputConnection = nameToOutputConnection.get(outputTableName);
+            
+            HashedMetadataTable hashedMetadataTable = null;
+            if (outputTableEntries == null || outputConnection == null) {
+                connectionExists = false;
+            } else {
+            	hashedMetadataTable = new HashedMetadataTable(outputConnection.getMetadataTable());
+            }
+
+            boolean currentIsReject = outputTable.isReject();
+            boolean currentIsRejectInnerJoin = outputTable.isRejectInnerJoin();
+
+            boolean hasExpressionFilter = outputTable.isActivateExpressionFilter() && outputTable.getExpressionFilter() != null && !("").equals(outputTable.getExpressionFilter().trim());
+            boolean rejectValueHasJustChanged = lastValueReject != (currentIsReject || currentIsRejectInnerJoin);
+            oneFilterForNotRejectTable = !(currentIsReject || currentIsRejectInnerJoin) && hasExpressionFilter;
+
+            if (rejectValueHasJustChanged) {
+                if (closeTestInnerJoinConditionsBracket) {
+                    sb.append(cr + "} // closing inner join bracket (1)");
+                    if (atLeastOneReject && allNotRejectTablesHaveFilter) {
+                        sb.append(cr + " else {");
+                        sb.append(cr + rejected + " = false;");
+                        sb.append(cr + "} // closing else inner join bracket (1)");
+                    }
+                    closeTestInnerJoinConditionsBracket = false;
+                }
+            }
+
+            // No connection matching and no checking errors
+            if (connectionExists || checkingSyntax) {
+	            if (rejectValueHasJustChanged) {
+	                sb.append(cr + "// ###### START REJECTS ##### ");
+	            }
+
+	            // write filters conditions and code to execute
+	            if (!currentIsReject && !currentIsRejectInnerJoin || rejectValueHasJustChanged
+	                    && oneFilterForNotRejectTable || currentIsReject && allNotRejectTablesHaveFilter
+	                    || currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin || checkingSyntax) {
+
+	                boolean closeFilterOrRejectBracket = false;
+	                if (currentIsReject || currentIsRejectInnerJoin) {
+	                    sb.append(cr + cr + "// # Output reject table : '" + outputTableName + "'");
+	                } else {
+	                    sb.append(cr + cr + "// # Output table : '" + outputTableName + "'");
+	                }
+	                if (hasExpressionFilter || currentIsReject || currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin) {
+	                    sb.append(cr + "// # Filter conditions ");
+						String ifConditions = "if( ";
+	                    String rejectedTests = null;
+	                    if (allNotRejectTablesHaveFilter && atLeastOneReject && currentIsReject && currentIsRejectInnerJoin
+	                            && atLeastOneInputTableWithInnerJoin) {
+	                        rejectedTests = rejected + " || " + rejectedInnerJoin;
+	                        if (hasExpressionFilter) {
+	                            rejectedTests = "(" + rejectedTests + ")";
+	                        }
+	                    } else if (allNotRejectTablesHaveFilter && atLeastOneReject && currentIsReject) {
+	                        rejectedTests = rejected;
+	                    } else if (currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin) {
+	                        rejectedTests = rejectedInnerJoin;
+	                    }
+	                    String filtersConditions = null;
+	                    filtersConditions = outputTable.getExpressionFilter();
+						if(filtersConditions != null && !("".equals(filtersConditions.trim())) && (filtersConditions.trim().length()>0)) {
+							String filtersConditionsFormatted = "";
+							if(matchXmlTreeExpr != null)
+								filtersConditionsFormatted = matchXmlTreeExpr.generateExprCode(filtersConditions);
+							if (rejectedTests == null) {
+								ifConditions += cr + cr + filtersConditionsFormatted  + cr + cr;
+							} else {
+								ifConditions += rejectedTests + " && (" + cr + cr + filtersConditionsFormatted + cr + cr +")";
+							}
+						} else {
+							if (rejectedTests != null) {
+								ifConditions += rejectedTests;
+							}
+						}
+	                    
+	                    ifConditions += " ) {";
+	
+	                    sb.append(cr).append(ifConditions);
+	
+	                    closeFilterOrRejectBracket = true;
+	                    if (allNotRejectTablesHaveFilter && !(currentIsReject || currentIsRejectInnerJoin)
+	                            && atLeastOneReject) {
+	                        sb.append(cr + rejected + " = false;");
+	                    }
+	                }
+
+	                if (outputTableEntries != null && (!currentIsReject && !currentIsRejectInnerJoin || currentIsReject || currentIsRejectInnerJoin
+	                        && atLeastOneInputTableWithInnerJoin || checkingSyntax)) {
+						if(isLog4jEnabled){
+							sb.append(cr + "count_" + outputTableName + "_" + cid + "++;" + cr);
+						}
+						boolean hasDocument = false;
+	                    for (OutputTreeNode outputTableEntry : outputTableEntries) {
+	                        String outputColumnName = outputTableEntry.getName();
+	                        IMetadataColumn metadataColumnFromConn = null;
+	                        if(connectionExists) {
+		                        metadataColumnFromConn = hashedMetadataTable.getColumn(outputColumnName);
+		                    }
+	                        
+	                        String outputExpression = outputTableEntry.getExpression();
+							String resultExpression = "";
+							if(matchXmlTreeExpr != null)
+								resultExpression = matchXmlTreeExpr.generateExprCode(outputExpression);
+	                        if (resultExpression == null || resultExpression.trim().length() == 0) {
+	                        	if(metadataColumnFromConn == null) {
+		                            resultExpression = JavaTypesManager.getDefaultValueFromJavaIdType(outputTableEntry
+	    	                                .getType(), outputTableEntry.isNullable());
+	    	                    } else {
+		                            resultExpression = JavaTypesManager.getDefaultValueFromJavaIdType(metadataColumnFromConn
+	    	                                .getTalendType(), metadataColumnFromConn.isNullable());
+	    	                    }
+	                        } else {
+	                        
+	                        	if(metadataColumnFromConn == null) {
+									continue;
+								}	                        
+	                        
+	                        }
+		
+	                        String assignationVar = null;
+	                        if (connectionExists) {                       
+	                        	assignationVar = gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, outputTableName + "_tmp",outputColumnName, false);
+	                        } else {
+	                        	if(metadataColumnFromConn == null) {
+		                            assignationVar = JavaTypesManager.getTypeToGenerate(outputTableEntry.getType(),
+	                                    outputTableEntry.isNullable())
+	                                    + " dummyVar" + (dummyVarCounter++);
+	                            } else {
+		                            assignationVar = JavaTypesManager.getTypeToGenerate(metadataColumnFromConn
+	    	                                .getTalendType(), metadataColumnFromConn.isNullable())
+	                                    + " dummyVar" + (dummyVarCounter++);
+	                            }
+	                        }
+    	                    String expression = assignationVar + " = " + resultExpression + ";";
+	
+							if(("id_Document").equals(outputTableEntry.getType())){
+								hasDocument = true;
+								hasDocumentGlobal = true;
+								JavaType javaType = JavaTypesManager.getJavaTypeFromId(outputTableEntry.getType());
+								String typeToGenerate = javaType.getNullableClass().getCanonicalName();
+								
+								sb.append(cr + cr +"gen_Doc_"+outputTableName+"_"+uniqueNameComponent+".generateElements(");
+								if(hasDocumentInMainInputTable || hasDocumentInAnyLookupTable) {
+									sb.append("treeNodeAPI_"+uniqueNameComponent+",");
+								}
+								sb.append(rejectedDocInnerJoin);
+								for (InputXmlTree inputTable: inputTables) {
+									sb.append(","+inputTable.getName());
+								}
+								for (VarTable var : varsTables) {
+									sb.append(","+var.getName());
+								}
+
+								sb.append(");" + cr + cr);
+								sb.append("if("+assignationVar + " == null){" + cr);
+								sb.append(assignationVar + " = new " + typeToGenerate + "();" + cr);
+								sb.append(assignationVar + ".setDocument(gen_Doc_"+outputTableName+"_"+uniqueNameComponent+".getDocument());" + cr);
+								
+								sb.append("}" + cr);
+							} else {
+								sb.append(cr).append(expression);
+							}
+	                    } // for entries
+	
+	                    if (connectionExists) {
+							if(hasDocument && !isPlainNode) {
+								sb.append("if(nb_line_"+uniqueNameComponent+">=nodeList_"+uniqueNameComponent+".size())");
+							}
+							sb.append(cr + outputTableName + " = " + outputTableName + "_tmp;");
+							if(hasDocument) {
+								sb.append(cr + outputTableName + "_save = " + outputTableName + "_tmp;");
+							}
+							
+							if(isLog4jEnabled){
+								sb.append(cr + "log.debug(\"" + cid + " - Outputting the record \" + count_" + outputTableName + "_" + cid + " + \" of the output table '" + outputTableName + "'.\");" + cr);
+							}
+	                    }
+	                        
+	                                                
+	                }
+					if (closeFilterOrRejectBracket) {
+						sb.append(cr + "} // closing filter/reject");
+					}
+				}
+				lastValueReject = currentIsReject || currentIsRejectInnerJoin;
+			}
+
+			boolean isLastTable = indexCurrentTable == lstSizeOutputs - 1;
+			if (closeTestInnerJoinConditionsBracket 
+				&& (isLastTable || !checkingSyntax && (outputTableName.equals(lastValidOutputTableName) || lastValidOutputTableName == null))) {
+				sb.append(cr + "}  // closing inner join bracket (2)");
+				closeTestInnerJoinConditionsBracket = false;
+			}
+
+		} // for output tables
+			
+		sb.append(cr + "// ###############################");
+
+		
+		sb.append(cr);
+		sb.append(cr + "} // end of Var scope");
+
+
+
+		sb.append(cr + cr + rejectedInnerJoin + " = false;");
+		
+		sb.append(cr);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+%>
+<%= sb.toString()%>
+
+<%
+	
+	if((!isPlainNode && !hasDocumentGlobal) || (hasDocumentGlobal && !isPlainNode)) {
+		gm.addBlocksCodeToClose(new BlockCode("G_TXM_M_001 close"));
+%>
+		if(nb_line_<%=cid%> == nodeList_<%=cid%>.size()) {
+<%
+			boolean flat = true;
+			for (OutputXmlTree table : outputTables) {        
+				EList<OutputTreeNode> tableEntries = table.getNodes();
+				if (tableEntries == null || nameToOutputConnection.get(table.getName()) == null) {
+					continue;
+				}
+				for(OutputTreeNode tableEntry : tableEntries) {
+					if(("id_Document").equals(tableEntry.getType())){
+						flat = false;
+						break;
+					}
+				}
+				
+				String tableName1 = table.getName();
+            
+				String instanceVarName = tableName1 + "__" + node.getUniqueName();
+				String className = tableName1 + "Struct";
+				if(!flat) {
+            
+%>
+					<%= tableName1 %> = <%= tableName1 %>_save;
+<%
+				}
+			}
+%>
+		}
+<%
+	}
+%>

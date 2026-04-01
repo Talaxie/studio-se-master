@@ -1,0 +1,37 @@
+<%
+      boolean queryBand = "true".equals(ElementParameterParser.getValue(node, "__QUERY_BAND__"));
+      boolean activateQueryLogging = "true".equals(ElementParameterParser.getValue(node, "__ACTIVATE_QUERY_LOGGING__"));
+      String usrName = ElementParameterParser.getValue(node, "__USER__");
+      List<Map<String, String>> queryBandList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__QUERY_BAND_PARAMETERS__");
+      if(queryBand){%>
+             boolean currentAutoCommitMode<%= cid %> =  conn_<%=cid%>.getAutoCommit();
+             conn_<%=cid%>.setAutoCommit(true);
+             try{
+                 <%
+                    if(activateQueryLogging){
+                        %>
+                           try{
+                               conn_<%=cid%>.createStatement().execute("BEGIN QUERY LOGGING WITH SQL,OBJECTS ON " + <%= usrName %>);
+                           }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                                 System.err.println(e.getMessage());
+                           }
+                        <%
+                    }
+                  %>
+                 conn_<%=cid%>.createStatement().execute(
+              "SET QUERY_BAND='" +
+<%
+            for(Map<String, String> map : queryBandList) {
+%>
+               <%= map.get("KEY") %> + "=" + <%= map.get("VALUE") %> + ";" +
+<%
+            }
+%> "' FOR SESSION"
+           );
+              }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+               System.err.println(e.getMessage());
+      }
+      conn_<%= cid %>.setAutoCommit(currentAutoCommitMode<%= cid %>);
+   <%}%>

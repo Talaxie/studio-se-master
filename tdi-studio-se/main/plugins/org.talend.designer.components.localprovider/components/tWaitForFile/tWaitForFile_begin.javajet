@@ -1,0 +1,606 @@
+<%@ jet 
+    imports="
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.INode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    
+    java.util.List
+    " 
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean incldSubdir = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDE_SUBDIR__"));
+    boolean present = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDE_PRESENT__"));
+    String triggerAction = ElementParameterParser.getValue(node, "__ACTION_ON__");
+    boolean waitRelease = ("true").equals(ElementParameterParser.getValue(node, "__WAIT_RELEASE__"));
+    boolean nonUpdate = "true".equals(ElementParameterParser.getValue(node, "__NON_UPDATE__"));
+    String interval = ElementParameterParser.getValue(node, "__INTERVAL_CHECK__");
+	String directoryToScan = ElementParameterParser.getValue(node, "__DIRECTORY__");
+	String usedFileMask = ElementParameterParser.getValue(node, "__FILEMASK__");
+	boolean isCaseSensitive = "true".equals(ElementParameterParser.getValue(node, "__CASE_SENSITIVE__"));
+	
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    if(isLog4jEnabled){
+%>
+		log.debug("<%=cid%> - Start to scan the folder '" + <%=directoryToScan%> + "'" + <%=incldSubdir?"\" including subdirectories.\"":"\".\""%>);
+		log.debug("<%=cid%> - Filemask : '" + <%=usedFileMask%> + "'." + <%=isCaseSensitive?"\" The filemask is case sensitive.\"":"\"\""%>);
+<%
+	}
+%>
+       
+        class Util_<%=cid %> {
+
+            private boolean flagt = false;
+
+            private java.util.regex.Pattern fileNamePatternt = null;
+        	private java.util.List<String> list;
+			public java.util.List<String> getFiles(){
+				setFiles();
+				return list;
+			}
+        <%
+        if(("fileupdated").equals(triggerAction) || ("fileall").equals(triggerAction)) {
+        %>
+			private java.util.Map<String, Long> originalTimeMap;
+			private java.util.Map<String, String> originalContentMap;
+			private boolean initMap = false;
+			public Util_<%=cid %>(){
+			}
+			public Util_<%=cid %>(boolean iniMap){
+				list = new java.util.ArrayList<String>();
+				if(iniMap){
+					this.initMap = true;
+					originalTimeMap = new java.util.HashMap<String, Long>();
+					originalContentMap = new java.util.HashMap<String, String>();
+				}
+			}
+			public void addFile(java.io.File file){
+				list.add(file.getPath());
+				if(initMap){
+					originalTimeMap.put(file.getPath(), file.lastModified());
+					originalContentMap.put(file.getPath(),getFileChecksum(file));
+				}
+			}
+			public java.util.Map<String, Long> getTimeMap(){
+				return originalTimeMap;
+			}
+			public java.util.Map<String, String> getContentMap(){
+				return originalContentMap;
+			}
+			public String getFileChecksum(java.io.File file) {
+            	String strMD5 = "";
+            	java.security.MessageDigest complete = null;
+            	java.io.InputStream fis = null;
+            	try{
+                    fis =  new java.io.FileInputStream(file);
+                    byte[] buffer = new byte[1024];
+                    complete = java.security.MessageDigest.getInstance("MD5");
+                    int numRead;
+                    while((numRead = fis.read(buffer))!= -1){
+                      	if (numRead > 0) {
+                        	complete.update(buffer, 0, numRead);
+                        }
+                    }
+                } catch(java.lang.Exception ex) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+                	<%if(isLog4jEnabled){%>
+                		log.warn("<%=cid %> - " + ex.getMessage());
+                	<%}%>
+                } finally {
+                	if(fis != null) {
+                		try {
+                			fis.close();
+                		} catch(java.lang.Exception ex) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+                		<%if(isLog4jEnabled){%>
+                			log.warn("<%=cid%> - " + ex.getMessage());
+                		<%}%>
+                		}
+                	}
+                }
+               	
+               	if(complete != null){
+        			byte[] b = complete.digest();
+         			for (int i = 0; i < b.length; i++) {
+          				strMD5 += Integer.toString( ( b[i] & 0xff ) + 0x100, 16).substring( 1 );
+          			}
+      			}
+        		return strMD5;
+            }
+        <%
+        }else{
+        %>
+        	public Util_<%=cid %>(){
+				this.list = new java.util.ArrayList<String>();
+			}
+			public void addFile(java.io.File file){
+				this.list.add(file.getPath());
+			}
+        <%
+        }
+        %>
+            void setFiles() {
+                String directoryt = <%=ElementParameterParser.getValue(node, "__DIRECTORY__") %>;
+                String filemaskt = <%=ElementParameterParser.getValue(node, "__FILEMASK__")%>+"$";
+
+                if (filemaskt.indexOf("^") == -1) {
+                    filemaskt = "^" + filemaskt;
+                }
+                if (!(filemaskt.lastIndexOf(".*$") == -1) && filemaskt.lastIndexOf("*.*$") == -1) {
+                    filemaskt = filemaskt.substring(0, filemaskt.length() - 3) + "$";
+                    flagt = true;
+                } else {
+                    filemaskt = java.util.regex.Pattern.compile("[*]").matcher(filemaskt).replaceAll(".*");
+                }
+
+                boolean case_sensitivet = <%=ElementParameterParser.getValue(node, "__CASE_SENSITIVE__") %>;
+                fileNamePatternt = java.util.regex.Pattern.compile(filemaskt);
+                if (!case_sensitivet) {
+                    fileNamePatternt = java.util.regex.Pattern.compile(filemaskt, java.util.regex.Pattern.CASE_INSENSITIVE);
+                }
+                java.io.File filet = new java.io.File(directoryt);
+                filet.listFiles(new java.io.FilenameFilter() {
+
+                    public boolean accept(java.io.File dir, String name) {
+                        java.io.File file = new java.io.File(dir, name);
+                        if (file.isFile()) {
+                            String fileNamet = name;
+                            if (flagt == true) {
+                                if (!(fileNamet.indexOf(".") == -1)) {
+                                    if (fileNamePatternt.matcher(fileNamet.substring(0, fileNamet.indexOf("."))).find()) {
+                                        addFile(file);
+
+                                    }
+                                } else {
+                                    if (fileNamePatternt.matcher(fileNamet).find()) {
+                                        addFile(file);
+                                    }
+                                }
+                            } else {
+                                if (fileNamePatternt.matcher(fileNamet).find()) {
+                                    addFile(file);
+                                }
+                            }
+
+                            return true;
+                        } 
+                        <%
+                        if(incldSubdir==true)  {
+                            %>                          
+                            else {
+
+                                file.listFiles(this);
+                            }
+                      
+                            <%
+                        }   
+                        %>                        
+                        return false;
+                    }
+
+                });
+
+            }
+<%
+			if(("filecreated").equals(triggerAction) || ("fileall").equals(triggerAction)) {
+%>
+			java.util.List<java.io.File> getCreatedFiles(java.util.List<String> originalFiles, java.util.List<String> fetchOneTimeFiles) {
+				java.util.List<java.io.File> newCreatedFiles = new java.util.ArrayList<java.io.File>();
+				String [] array = originalFiles.toArray(new String[]{});
+				for(String file: fetchOneTimeFiles){
+					int index = java.util.Arrays.binarySearch(array, file);
+					if(index<0){
+						newCreatedFiles.add(new java.io.File(file));
+					}
+				}
+				return newCreatedFiles;
+			}
+			
+<%
+			}
+%>
+        }
+            
+        Util_<%=cid %> util_<%=cid %> = new Util_<%=cid %>(<%if(("fileupdated").equals(triggerAction) || ("fileall").equals(triggerAction)) {%>true<%}%>);
+        java.util.List<String> originalFiles_<%=cid %> = util_<%=cid %>.getFiles();            
+        <%
+        if(("fileupdated").equals(triggerAction) || ("fileall").equals(triggerAction)) {
+            %>
+            java.util.Map<String,Long> originalMap_<%=cid%> = util_<%=cid %>.getTimeMap();
+            java.util.Map<String,String> originalContentMap_<%=cid%> = util_<%=cid %>.getContentMap();
+            <%
+        }
+        %>
+      
+        int count_<%=cid %> = 0;
+        
+        <%if(waitRelease) {%>
+        String osName_<%=cid %> = System.getProperty("os.name");
+        boolean isWindows_<%=cid %> = osName_<%=cid %> != null && osName_<%=cid %>.toLowerCase(java.util.Locale.US).startsWith("win");
+        <%}%>
+        
+        while (true) {
+            <%
+            if(!("").equals(ElementParameterParser.getValue(node,"__MAX_ITERATIONS__"))){
+                %>                
+                if (count_<%=cid %> == <%=ElementParameterParser.getValue(node, "__MAX_ITERATIONS__") %> ) {
+<%
+					if(isLog4jEnabled){
+%>
+						log.debug("<%=cid%> - The maximum iteration number has been reached. Breaking the loop.");
+<%
+					}
+%>
+                    break;
+                }
+                <%
+            } 
+            %>                
+            boolean found_<%=cid %> = false;
+            <%
+            if(present){
+                %>
+				if(globalMap.get("<%=cid %>_PRESENT_FILE") != null){
+	                globalMap.remove("<%=cid %>_PRESENT_FILE");
+				}              
+    			if( count_<%=cid %> < originalFiles_<%=cid %>.size()) {
+                    java.io.File file_<%=cid %> = new java.io.File(originalFiles_<%=cid %>.get(count_<%=cid %>));
+					<%if (isLog4jEnabled) {%>
+						log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' already exists in the listen folders.");
+					<%}%>
+                    globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                    globalMap.put("<%=cid %>_PRESENT_FILE", file_<%=cid %>.getAbsolutePath());
+                    found_<%=cid %> = true;
+    			} else {
+			    <%
+    			}
+			%>
+			util_<%=cid%> = new Util_<%=cid%>(<%if(("fileupdated").equals(triggerAction) || ("fileall").equals(triggerAction)) {%>false<%}%>);
+			
+            java.util.List<String> fetchFilesOneTime_<%=cid %> = util_<%=cid %>.getFiles();
+            
+			List<String> intersectionList = new java.util.ArrayList<String>();
+			
+			for(String cachedFile : originalFiles_<%=cid%>)
+			{
+				if(fetchFilesOneTime_<%=cid%>.contains(cachedFile))
+				{
+					intersectionList.add(cachedFile);
+				}
+			}     
+            
+            util_<%=cid%> = new Util_<%=cid%>();
+            <%
+            if(("filecreated").equals(triggerAction)) {
+            %>
+				originalFiles_<%=cid%> = intersectionList;
+            	if(globalMap.get("<%=cid %>_CREATED_FILE") != null){
+	                globalMap.remove("<%=cid %>_CREATED_FILE");
+				}
+				java.util.Collections.sort(originalFiles_<%=cid%>);
+                java.util.List<java.io.File> newCreatedFiles_<%=cid %> = util_<%=cid %>.getCreatedFiles(originalFiles_<%=cid%>,fetchFilesOneTime_<%=cid%>);
+
+               	for ( int i=0; i< newCreatedFiles_<%=cid %>.size(); i++) {
+					java.io.File file_<%=cid %> = newCreatedFiles_<%=cid %>.get(i);
+           			<%	
+   					//fix bug 22123,if we can rename the filename,that means no other program is using the file.
+           			if(waitRelease){
+           			%>
+	  				if (isWindows_<%=cid %>){
+	  					java.io.File tempfile_<%=cid%> =new java.io.File(file_<%=cid %>.getAbsolutePath()+".talendTempfile"); 
+	  					Thread.sleep(<%=interval%>);
+	  					if(file_<%=cid %>.renameTo(tempfile_<%=cid%>)) {
+	  						tempfile_<%=cid%>.renameTo(file_<%=cid %>); 
+	  					} else {
+	  						continue;
+	  					}
+	  				} else { 
+						long timestamp_<%=cid%> = file_<%=cid %>.lastModified();
+	
+						Thread.sleep(<%=interval%>);
+	
+	                	if(file_<%=cid %>.lastModified() != timestamp_<%=cid%>){
+	                		continue;
+	                	}
+	                }
+            		<%
+            		}
+            		%>
+					<%if (isLog4jEnabled) {%>
+						log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been created.");
+					<%}%>
+                    globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                    globalMap.put("<%=cid %>_CREATED_FILE", file_<%=cid %>.getAbsolutePath());
+                    found_<%=cid %> = true;
+                    originalFiles_<%=cid %>.add(file_<%=cid %>.getPath());              
+                    break;
+            	}
+			<%
+            } else if(("filedeleted").equals(triggerAction)) {
+            %>
+            	if(globalMap.get("<%=cid %>_DELETED_FILE") != null){
+	                globalMap.remove("<%=cid %>_DELETED_FILE");
+				}
+            	java.util.Collections.sort(fetchFilesOneTime_<%=cid%>);
+            	String [] arrayFetchFilesOneTime_<%=cid%> = fetchFilesOneTime_<%=cid %>.toArray(new String[]{});
+            	for(String str_<%=cid %> : originalFiles_<%=cid %>) {
+            		int index_delete_<%=cid%> = java.util.Arrays.binarySearch(arrayFetchFilesOneTime_<%=cid%>,str_<%=cid %>);
+                    if(index_delete_<%=cid%> < 0) {
+	            		java.io.File file_<%=cid%> = new java.io.File(str_<%=cid%>);
+						<%if (isLog4jEnabled) {%>
+							log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been deleted.");
+						<%}%>
+                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                        globalMap.put("<%=cid %>_DELETED_FILE", file_<%=cid %>.getAbsolutePath());
+                        found_<%=cid %> = true;  
+                        originalFiles_<%=cid %>.remove(str_<%=cid %>);                  
+                        break;
+                    }
+                }
+                <%
+            } else if(("fileupdated").equals(triggerAction)) {
+                %>
+                for(String str_<%=cid %> : fetchFilesOneTime_<%=cid %>) {
+                	java.io.File file_<%=cid%> = new java.io.File(str_<%=cid%>);
+                	
+            	<%if(waitRelease) {%>
+					if (isWindows_<%=cid %>){
+						java.io.File tempfile_<%=cid%> =new java.io.File(file_<%=cid %>.getAbsolutePath()+".talendTempfile");
+						Thread.sleep(<%=interval%>);
+						if(file_<%=cid %>.renameTo(tempfile_<%=cid%>)) {
+	  						tempfile_<%=cid%>.renameTo(file_<%=cid %>); 
+	  					} else {
+	  						continue;
+	  					}
+					} else {
+						long timestamp_<%=cid%> = file_<%=cid %>.lastModified();
+	
+						Thread.sleep(<%=interval%>);
+	
+	                	if(file_<%=cid %>.lastModified() != timestamp_<%=cid%>){
+	                		continue;
+	                	}
+					}
+				<%}%>
+				
+                <%if(!nonUpdate){%>
+                	if(globalMap.get("<%=cid %>_UPDATED_FILE") != null){
+	                	globalMap.remove("<%=cid %>_UPDATED_FILE");
+					}
+					if(originalMap_<%=cid %>.get(str_<%=cid %>)==null ){
+                    	originalMap_<%=cid %>.put(str_<%=cid %>,file_<%=cid %>.lastModified());
+                    	originalContentMap_<%=cid%>.put(str_<%=cid%>,util_<%=cid %>.getFileChecksum(file_<%=cid%>));
+					} else if(originalMap_<%=cid %>.get(str_<%=cid %>)!=file_<%=cid %>.lastModified()) {
+                        originalMap_<%=cid %>.put(str_<%=cid %>,file_<%=cid %>.lastModified());
+                        String fileMD5_<%=cid%> = util_<%=cid %>.getFileChecksum(file_<%=cid%>);
+						if(!fileMD5_<%=cid%>.equals(originalContentMap_<%=cid%>.get(str_<%=cid%>))){
+							<%if (isLog4jEnabled) {%>
+								log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been updated.");
+							<%}%>
+	                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+	                        globalMap.put("<%=cid %>_UPDATED_FILE", file_<%=cid %>.getAbsolutePath());
+	                       	found_<%=cid %> = true;
+	                        originalContentMap_<%=cid%>.put(str_<%=cid%>,fileMD5_<%=cid%>);
+	                        break;
+						}
+                    }
+            	<%}else{%>
+            		if(globalMap.get("<%=cid %>_NOT_UPDATED_FILE") != null){
+	                	globalMap.remove("<%=cid %>_NOT_UPDATED_FILE");
+					}
+					if(originalMap_<%=cid %>.get(str_<%=cid %>)==null ){
+                    	originalMap_<%=cid %>.put(str_<%=cid %>,file_<%=cid %>.lastModified());
+                    	originalContentMap_<%=cid%>.put(str_<%=cid%>,util_<%=cid %>.getFileChecksum(file_<%=cid%>));
+					} else if(originalMap_<%=cid %>.get(str_<%=cid %>)!=file_<%=cid %>.lastModified()) {
+            			originalMap_<%=cid%>.put(str_<%=cid %>,file_<%=cid %>.lastModified());
+	            		String fileMD5_<%=cid%> = util_<%=cid %>.getFileChecksum(file_<%=cid%>);
+            			if(!fileMD5_<%=cid%>.equals(originalContentMap_<%=cid%>.get(str_<%=cid%>))){
+							originalContentMap_<%=cid%>.put(str_<%=cid%>,fileMD5_<%=cid%>);
+	            			globalMap.put("<%=cid %>_NOT_UPDATED_FILE", null);
+	            			found_<%=cid%> = false;
+            			}else{
+							<%if (isLog4jEnabled) {%>
+								log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been updated.");
+							<%}%>
+	                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+	                    	globalMap.put("<%=cid %>_NOT_UPDATED_FILE", file_<%=cid %>.getAbsolutePath());
+	                    	found_<%=cid%> = true;
+	                    	break;
+                    	}
+                   	}else{                   
+						<%if (isLog4jEnabled) {%>
+							log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been updated.");
+						<%}%>
+                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                    	globalMap.put("<%=cid %>_NOT_UPDATED_FILE", file_<%=cid %>.getAbsolutePath());
+                    	found_<%=cid %> = true;
+                    	break;
+                    }
+                <%}%>
+                }    
+                
+                <%
+            } else if(("fileall").equals(triggerAction)) {
+                %>
+	            if(globalMap.get("<%=cid %>_DELETED_FILE") != null){
+	                globalMap.remove("<%=cid %>_DELETED_FILE");
+				}
+	            if(globalMap.get("<%=cid %>_CREATED_FILE") != null){
+	                globalMap.remove("<%=cid %>_CREATED_FILE");
+				}
+	            if(globalMap.get("<%=cid %>_UPDATED_FILE") != null){
+	                globalMap.remove("<%=cid %>_UPDATED_FILE");
+				}
+                java.util.Collections.sort(originalFiles_<%=cid%>);
+                java.util.Collections.sort(fetchFilesOneTime_<%=cid%>);
+                String [] arrayFetchFilesOneTime_<%=cid%> = fetchFilesOneTime_<%=cid %>.toArray(new String[]{});
+                for(String str_<%=cid %> : originalFiles_<%=cid %>) {
+                	int index_fileall_<%=cid%> = java.util.Arrays.binarySearch(arrayFetchFilesOneTime_<%=cid%>,str_<%=cid %>);
+                    if(index_fileall_<%=cid%> < 0 ) {
+	                	java.io.File file_<%=cid%> = new java.io.File(str_<%=cid%>);
+						<%if (isLog4jEnabled) {%>
+							log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been deleted.");
+						<%}%>
+                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                        globalMap.put("<%=cid %>_DELETED_FILE", file_<%=cid %>.getAbsolutePath());
+                        found_<%=cid %> = true;
+                        originalFiles_<%=cid %>.remove(str_<%=cid %>);
+                        originalMap_<%=cid %>.remove(str_<%=cid %>);
+                    	originalContentMap_<%=cid%>.remove(str_<%=cid%>);
+                        break;
+                    }
+                }
+                java.util.List<java.io.File> newCreatedFiles_<%=cid %> = util_<%=cid %>.getCreatedFiles(originalFiles_<%=cid%>,fetchFilesOneTime_<%=cid%>);
+                for ( int i=0; i< newCreatedFiles_<%=cid %>.size(); i++) {
+					java.io.File file_<%=cid %> = newCreatedFiles_<%=cid %>.get(i);
+           			<%	
+   					//fix bug 22123,if we can rename the filename,that means no other program is using the file.
+           			if(waitRelease) {
+           			%>
+	  				if (isWindows_<%=cid %>){
+	  					java.io.File tempfile=new java.io.File(file_<%=cid %>.getAbsolutePath()+".talendTempfile"); 
+	  					Thread.sleep(<%=interval%>);
+	  					if(file_<%=cid %>.renameTo(tempfile)) {
+	  						tempfile.renameTo(file_<%=cid %>); 
+	  					} else {
+	  						continue;
+	  					}
+	  				} else { 
+						long timestamp_<%=cid%> = file_<%=cid %>.lastModified();
+	
+						Thread.sleep(<%=interval%>);
+	
+	                	if(file_<%=cid %>.lastModified() != timestamp_<%=cid%>){
+	                		continue;
+	                	}
+	                }
+<%
+        	    	}
+            		%>
+					<%if (isLog4jEnabled) {%>
+						log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been created.");
+					<%}%>
+                    globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+                    globalMap.put("<%=cid %>_CREATED_FILE", file_<%=cid %>.getAbsolutePath());
+                    found_<%=cid %> = true;
+                    originalFiles_<%=cid %>.add(file_<%=cid %>.getPath());           
+                    originalMap_<%=cid %>.put(file_<%=cid %>.getPath(),file_<%=cid %>.lastModified());
+                    originalContentMap_<%=cid%>.put(file_<%=cid %>.getPath(),util_<%=cid %>.getFileChecksum(file_<%=cid%>));
+                    break;
+				}
+                for(String str_<%=cid %> : fetchFilesOneTime_<%=cid %>) {
+                	java.io.File file_<%=cid%> = new java.io.File(str_<%=cid %>);
+                	
+					<%if(waitRelease) {%>
+					if (isWindows_<%=cid %>){
+						java.io.File tempfile_<%=cid%> =new java.io.File(file_<%=cid %>.getAbsolutePath()+".talendTempfile");
+						Thread.sleep(<%=interval%>);
+						if(file_<%=cid %>.renameTo(tempfile_<%=cid%>)) {
+	  						tempfile_<%=cid%>.renameTo(file_<%=cid %>); 
+	  					} else {
+	  						continue;
+	  					}
+					} else {
+						long timestamp_<%=cid%> = file_<%=cid %>.lastModified();
+	
+						Thread.sleep(<%=interval%>);
+	
+	                	if(file_<%=cid %>.lastModified() != timestamp_<%=cid%>){
+	                		continue;
+	                	}
+					}
+					<%}%>
+					
+					if(originalMap_<%=cid %>.get(str_<%=cid %>)==null ){
+                    	originalMap_<%=cid %>.put(str_<%=cid %>,file_<%=cid %>.lastModified());
+                    	originalContentMap_<%=cid%>.put(str_<%=cid%>,util_<%=cid %>.getFileChecksum(file_<%=cid%>));
+					} else if(originalMap_<%=cid %>.get(str_<%=cid %>)!=file_<%=cid %>.lastModified()) {
+                        originalMap_<%=cid %>.put(str_<%=cid %>,file_<%=cid %>.lastModified());//occur repeat value              
+                        String fileMD5_<%=cid%> = util_<%=cid %>.getFileChecksum(file_<%=cid%>);
+                        if(!fileMD5_<%=cid%>.equals(originalContentMap_<%=cid%>.get(str_<%=cid%>))){
+                        	originalContentMap_<%=cid%>.put(str_<%=cid%>,fileMD5_<%=cid%>);
+							<%if (isLog4jEnabled) {%>
+								log.debug("<%=cid%> - File '" + file_<%=cid %>.getName() + "' has been updated.");
+							<%}%>
+	                    	globalMap.put("<%=cid %>_FILENAME", file_<%=cid %>.getName());
+	                        globalMap.put("<%=cid %>_UPDATED_FILE", file_<%=cid %>.getAbsolutePath());
+	                        found_<%=cid %> = true;
+	                        break;
+                        }
+                    }
+                }               
+                <%
+            }
+            %>
+
+            <%
+            if(present) {
+                %>   
+                }
+                <%
+            }
+            %>
+            count_<%=cid %>++;
+            
+            globalMap.put("<%=cid %>_CURRENT_ITERATION", count_<%=cid %>);
+            
+            if (!found_<%=cid %>) {
+				<%if (isLog4jEnabled) {%>
+					log.trace("<%=cid%> - Nothing appened. Waiting for <%=ElementParameterParser.getValue(node, "__WAIT__")%> seconds and continue to loop.");
+				<%}%>
+            	Thread.sleep(<%=ElementParameterParser.getValue(node, "__WAIT__")%> * 1000);
+                continue;
+            }            
+
+<%	
+	//*************************************************************//	
+	//The following part will extract data from globalMap to schema in order to support the MAIN link simply.
+	//step 1:
+	
+	IConnection firstDataConn = null;
+	List<IMetadataColumn> firstColumnList = null;
+
+	//1. get first DATA Link
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();	
+	if(conns != null && conns.size() > 0){
+		for(IConnection conn : conns){
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				firstDataConn = conn;
+				break;
+			}
+		}
+	}
+
+	//2. get first columnList (with real columns data) 	
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ( metadatas != null && metadatas.size() > 0 ) {
+		IMetadataTable metadata = metadatas.get(0);
+		if(metadata != null){
+			firstColumnList = metadata.getListColumns(); 
+			if ( firstColumnList == null || firstColumnList.size() == 0 ) {
+				firstColumnList = null;
+			}
+		}
+	}
+	
+	//3. check the config Link and Schema
+	if(firstDataConn != null && firstColumnList != null)
+	{
+    	//step 2:
+    
+        String firstDataConnName = firstDataConn.getName();
+        for (IMetadataColumn column: firstColumnList) {
+        	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+%>	
+		<%=firstDataConnName %>.<%=column.getLabel() %> = ((<%=typeToGenerate %>)globalMap.get("<%=cid %>_<%=column.getLabel() %>"));
+<%
+	    }
+ 	}
+%>            

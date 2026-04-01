@@ -1,0 +1,48 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+	class="ComponentPartEndMain" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String startNodeCid=node.getDesignSubjobStartNode().getUniqueName();
+	boolean trace =  codeGenArgument.isTrace();
+	int pauseTime = codeGenArgument.getPauseTime();
+%>
+
+<%
+if ((trace)&&(node!=null)&&(!node.isThereLinkWithHash())) {
+%>
+
+if(!isChildJob && (Boolean)globalMap.get("ENABLE_TRACES_CONNECTION_<%=startNodeCid%>")){
+	if (globalMap.get("USE_CONDITION") != null && (Boolean) globalMap.get("USE_CONDITION")) {	    
+		if (globalMap.get("TRACE_CONDITION") != null && (Boolean) globalMap.get("TRACE_CONDITION")) {
+		    // if next breakpoint has been clicked on UI or if start job, should wait action of user.
+            if (runTrace.isNextBreakpoint()) {
+            	runTrace.waitForUserAction();
+            } else if (runTrace.isNextRow()) {
+            	runTrace.waitForUserAction();
+            }
+		} else {
+		    // if next row has been clicked on UI or if start job, should wait action of user.
+            if (runTrace.isNextRow()) {
+            	runTrace.waitForUserAction();
+            }
+		}
+	} else { // no condition set
+        if (runTrace.isNextRow()) {
+           runTrace.waitForUserAction();
+        } else {
+		   Thread.sleep(<%=pauseTime%>);
+		}
+	}
+
+}
+globalMap.put("USE_CONDITION",Boolean.FALSE);
+<%
+}
+%>

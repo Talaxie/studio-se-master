@@ -1,0 +1,258 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.lang.StringBuilder
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String dbhost= ElementParameterParser.getValue(node, "__HOST__");
+String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+String dbuser= ElementParameterParser.getValue(node, "__USER__");
+
+String table= ElementParameterParser.getValue(node, "__TABLE__");
+
+String scriptPath= ElementParameterParser.getValue(node, "__SCRIPT_PATH__");
+String execution= ElementParameterParser.getValue(node, "__EXECUTION__");
+String action= ElementParameterParser.getValue(node, "__ACTION__");
+String where= ElementParameterParser.getValue(node, "__WHERE__");
+String loadFile= ElementParameterParser.getValue(node, "__LOAD_FILE__");
+String separator= ElementParameterParser.getValue(node, "__FIELD_SEPARATOR__");
+String errorFile= ElementParameterParser.getValue(node, "__ERROR_FILE__");
+String beginLoad= ElementParameterParser.getValue(node, "__BEGINLOAD_ADVANCEDPARAM__");
+boolean returnCodeDie= ElementParameterParser.getValue(node, "__RETURN_CODE_DIE__").equals("true");
+String returnCode= ElementParameterParser.getValue(node, "__RETURN_CODE__");
+boolean specifyLogTable= ElementParameterParser.getValue(node, "__SPECIFY_LOG_TABLE__").equals("true");
+String logTable= ElementParameterParser.getValue(node, "__LOG_TABLE_TABLE__");
+
+String defineCharset = ElementParameterParser.getValue(node, "__DEFINE_CHARSET__");
+String charset = ElementParameterParser.getValue(node, "__CHARSET__");
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+//windows line separator as default
+String lineSeparator = "\\r\\n";
+if("Unix".equals(execution)){
+	lineSeparator = "\\n";
+}
+if(!scriptPath.endsWith("/\"")){
+	scriptPath = scriptPath+	"+\"/\"";
+}
+if(loadFile.indexOf("/") !=0 && ("Windows").equals(execution)){
+	loadFile = loadFile.replaceAll("/", "\\\\\\\\");
+}
+
+String dbmsId = "teradata_id";
+
+List<IMetadataColumn> columnList = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		columnList = metadata.getListColumns();
+	}
+}
+%>
+String tableFullName_<%=cid%> = <%=dbname%> + "." + <%=table%>;
+java.io.File file_<%=cid %> = new java.io.File(<%=scriptPath%>+<%=table%>+<%if("Windows".equals(execution)){%>".script"<%}else{%>".scr"<%}%>);
+
+<%//build script---------------------------------------------------------%>
+try{
+java.io.FileWriter fw_<%=cid %> = new java.io.FileWriter(file_<%=cid%>);
+StringBuilder script_<%=cid%> = new StringBuilder();
+<%
+if(!specifyLogTable) {
+%>
+	fw_<%=cid %>.write(".LOGTABLE "+<%=dbname%>+"."+<%=table%>+"_lt;"+"<%=lineSeparator%>");
+<%
+} else {
+%>
+	fw_<%=cid %>.write(".LOGTABLE "+<%=logTable%>+";"+"<%=lineSeparator%>");
+<%
+}
+%>
+	        
+<%
+String passwordFieldName = "__PASS__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+fw_<%=cid %>.write(".LOGON "+<%if(dbhost!=null && !"\"\"".equals(dbhost)){%><%=dbhost%>+"/"+<%}%><%=dbuser%>+","+decryptedPassword_<%=cid%>+";"+"<%=lineSeparator%>");
+
+<%//Layout---------------------------------------------------------------%>
+fw_<%=cid %>.write(".BEGIN LOAD "+ <%=beginLoad %> + ";"+"<%=lineSeparator%>");
+fw_<%=cid %>.write(".LAYOUT customer_layout;"+"<%=lineSeparator%>");
+<%
+if(columnList!=null){
+	for(IMetadataColumn column:columnList){	
+%>
+fw_<%=cid %>.write(".FIELD "+"<%=column.getOriginalDbColumnName()%>"+" * VARCHAR(<%=column.getLength() == null ? 0 : column.getLength()%>);"+"<%=lineSeparator%>");
+<%
+	}
+}
+%>
+fw_<%=cid %>.write(".DML LABEL DML_LABEL;"+"<%=lineSeparator%>");
+
+<%//SQL statements-------------------------------------------------------%>
+<%
+StringBuilder updateSetSQL = new StringBuilder();
+StringBuilder updateWhereSQL = new StringBuilder();
+StringBuilder insertColSQL = new StringBuilder();
+StringBuilder insertValueSQL = new StringBuilder();
+if(columnList!=null){
+	String columnName = "";
+ 	for(IMetadataColumn column:columnList){	
+ 		columnName= column.getOriginalDbColumnName();
+ 		if(insertColSQL.length()>0){
+ 			insertColSQL.append(",");
+ 		}
+ 		insertColSQL.append(columnName);
+ 		
+ 		if(insertValueSQL.length()>0){
+ 			insertValueSQL.append(",");
+ 		}
+ 		insertValueSQL.append(":").append(columnName);
+ 		
+ 		if(column.isKey()){
+ 			if(updateWhereSQL.length()>0){
+     			updateWhereSQL.append(" AND ");
+     		}
+     		updateWhereSQL.append(columnName).append("=:").append(columnName);
+ 		}else{
+     		if(updateSetSQL.length()>0){
+     			updateSetSQL.append(",");
+     		}
+     		updateSetSQL.append(columnName).append("=:").append(columnName);
+ 		}
+	}
+}
+if(("Update").equals(action)){
+%>
+fw_<%=cid %>.write("UPDATE "+tableFullName_<%=cid%>+" SET "+"<%=updateSetSQL.toString()%>"
+	+" WHERE "+"<%=updateWhereSQL%>"+";"+"<%=lineSeparator%>");
+<%
+}%>
+  
+  <% if(("InsertOrUpdate").equals(action)){ %>
+		fw_<%= cid %>.write("UPDATE "+tableFullName_<%= cid %>+" SET <%=updateSetSQL.toString()%> WHERE (<%=updateWhereSQL%>) ELSE INSERT INTO "+tableFullName_<%=cid%>+" (<%=insertColSQL%>) VAlUES(<%=insertValueSQL.toString()%>);<%=lineSeparator%>");
+  <% } %>
+
+<%
+if(("Insert").equals(action)){
+%>
+fw_<%=cid %>.write("INSERT INTO "+tableFullName_<%=cid%>+"("
+	+"<%=insertColSQL%>"+") VAlUES("+"<%=insertValueSQL.toString()%>"+");"+"<%=lineSeparator%>");
+<%
+}
+if(("Delete").equals(action)){
+%>
+fw_<%=cid %>.write("DELETE FROM "+tableFullName_<%=cid%>+" "+<%=where%>+" ;"+"<%=lineSeparator%>");
+<%
+}
+%>
+
+<%//Import file----------------------------------------------------------%>
+fw_<%=cid %>.write(".IMPORT INFILE \""+<%=loadFile%> +"\"");
+fw_<%=cid %>.write(" FROM 1 FORMAT VARText '"+<%=separator%>+"' LAYOUT customer_layout APPLY DML_LABEL;"+"<%=lineSeparator%>");
+fw_<%=cid %>.write(".END LOAD;"+"<%=lineSeparator%>");
+fw_<%=cid %>.write(".LOGOFF;"+"<%=lineSeparator%>");
+
+<%//write script to file-------------------------------------------------%>
+fw_<%=cid %>.close();
+
+<%//run tPump command----------------------------------------------------%>
+<%if("true".equals(defineCharset)) {
+	if(!("".equals(charset))) {
+		if("Windows".equals(execution)){%>
+			String[] sb_<%=cid%>= {"cmd","/c","tpump -c "+<%=charset%>+" < \""+<%=scriptPath%>+<%=table%>+".script\" > \""+<%=errorFile%>+"\" 2>&1"};
+		<%}else{%>
+			String[] sb_<%=cid%>= {"sh","-c","tpump -c "+<%= charset%>+" < \""+<%=scriptPath%>+<%=table%>+".scr\" > \""+<%=errorFile%>+"\" 2>&1"};
+		<%}
+	}
+} else {
+	if("Windows".equals(execution)){%>
+		String[] sb_<%=cid%>= {"cmd","/c","tpump < \""+<%=scriptPath%>+<%=table%>+".script\" > \""+<%=errorFile%>+"\" 2>&1"};
+	<%}else{%>
+		String[] sb_<%=cid%>= {"sh","-c","tpump < \""+<%=scriptPath%>+<%=table%>+".scr\" > \""+<%=errorFile%>+"\" 2>&1"};
+	<%}
+}%>
+<%if(isLog4jEnabled){%>
+	String cmdStr_<%= cid %> = java.util.Arrays.toString(sb_<%=cid%>);
+    log.info("<%=cid%> - Executing command: '" + cmdStr_<%= cid %> + "'.");
+<%}%>
+final Process process_<%=cid %> = Runtime.getRuntime().exec(sb_<%=cid%>); 
+Thread normal_<%=cid %> = new Thread() {
+    public void run() {
+    	try {
+    		java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process_<%=cid %>.getInputStream()));
+    		String line = "";
+    		try {
+    			while((line = reader.readLine()) != null) {
+					System.out.println(line);
+    	        }
+    	    } finally {
+    	         reader.close();
+    	    }
+        }catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+            <%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+    		ioe.printStackTrace();
+    	}
+    }
+};
+normal_<%=cid %>.start();
+
+Thread error_<%=cid %> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process_<%=cid %>.getErrorStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+					System.err.println(line);
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+            <%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+		   ioe.printStackTrace();
+		}
+	}
+};
+error_<%=cid %>.start();
+process_<%=cid %>.waitFor();
+normal_<%=cid %>.join();
+error_<%=cid %>.join();
+
+globalMap.put("<%=cid %>_EXIT_VALUE", process_<%=cid %>.exitValue());
+
+<%
+if(returnCodeDie) {
+%>
+	if(process_<%=cid %>.exitValue()>=<%=returnCode%>) {
+		throw new RuntimeException("TPump returned exit code "+process_<%=cid %>.exitValue());
+	}
+<%	
+}
+%>
+<%if(isLog4jEnabled){%>
+    log.info("<%=cid%> - Excute command:'" + cmdStr_<%= cid %> + "' has finished.");
+<%}%>
+}finally{
+	try{
+		file_<%=cid %>.delete();
+	}catch(Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+        <%log4jCodeGenerateUtil.logError(node,"warn","e_"+cid);%>
+	}
+}

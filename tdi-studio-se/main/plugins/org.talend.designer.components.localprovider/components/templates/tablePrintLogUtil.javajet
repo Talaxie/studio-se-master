@@ -1,0 +1,149 @@
+ class Util_<%=cid %> {
+
+        String[] des_top = { ".", ".", "-", "+" };
+
+        String[] des_head = { "|=", "=|", "-", "+" };
+
+        String[] des_bottom = { "'", "'", "-", "+" };
+
+        String name="";
+
+        java.util.List<String[]> list = new java.util.ArrayList<String[]>();
+
+        int[] colLengths = new int[<%=sizeColumns %>];
+
+        public void addRow(String[] row) {
+
+            for (int i = 0; i < <%=sizeColumns %>; i++) {
+                if (row[i]!=null) {
+                  colLengths[i] = Math.max(colLengths[i], row[i].length());
+                }
+            }
+            list.add(row);
+        }
+
+        public void setTableName(String name) {
+
+            this.name = name;
+        }
+
+            public StringBuilder format() {
+            
+                StringBuilder sb = new StringBuilder();
+ 
+                <% 
+                if (sizeColumns > 0) { //more than one column
+                %> 
+            
+                    sb.append(print(des_top));
+    
+                    int totals = 0;
+                    for (int i = 0; i < colLengths.length; i++) {
+                        totals = totals + colLengths[i];
+                    }
+    
+                    // name
+                    sb.append("|");
+                    int k = 0;
+                    for (k = 0; k < (totals + <%=sizeColumns-1 %> - name.length()) / 2; k++) {
+                        sb.append(' ');
+                    }
+                    sb.append(name);
+                    for (int i = 0; i < totals + <%=sizeColumns-1 %> - name.length() - k; i++) {
+                        sb.append(' ');
+                    }
+                    sb.append("|\n");
+
+                    // head and rows
+                    sb.append(print(des_head));
+                    for (int i = 0; i < list.size(); i++) {
+    
+                        String[] row = list.get(i);
+    
+                        java.util.Formatter formatter = new java.util.Formatter(new StringBuilder());
+                        
+                        StringBuilder sbformat = new StringBuilder();                                       
+                        <%
+                        for ( int i = 0; i < sizeColumns; i++) {
+                            %>      
+        			        sbformat.append("|%<%=i+1 %>$-");
+        			        sbformat.append(colLengths[<%=i %>]);
+        			        sbformat.append("s");
+        			        <%
+                        }
+                        %>              
+                        sbformat.append("|\n");                    
+       
+                        formatter.format(sbformat.toString(), (Object[])row);	
+                                
+                        sb.append(formatter.toString());
+                        if (i == 0)
+                            sb.append(print(des_head)); // print the head
+                    }
+    
+                    // end
+                    sb.append(print(des_bottom));
+                    return sb;
+                }
+            
+
+            private StringBuilder print(String[] fillChars) {
+                StringBuilder sb = new StringBuilder();
+                //first column
+                sb.append(fillChars[0]);
+                <% 
+                if (sizeColumns > 1) { 
+                    %>                
+                    for (int i = 0; i < colLengths[0] - fillChars[0].length() + 1; i++) {
+                        sb.append(fillChars[2]);
+                    }
+                    sb.append(fillChars[3]);
+                    <%
+                }
+                %>	                
+
+                <%
+                for(int i = 0; i< sizeColumns-2;i++) {
+                    %>
+                    for (int i = 0; i < colLengths[<%=i+1 %>] - fillChars[3].length() + 1; i++) {
+                        sb.append(fillChars[2]);
+                    }
+                    sb.append(fillChars[3]);
+                    <%
+                }
+                %>
+                
+                <% 
+                if (sizeColumns == 1) { 
+                    %>  
+                    //last column
+                    for (int i = 0; i < colLengths[<%=sizeColumns-1 %>] - fillChars[0].length() - fillChars[1].length()+2; i++) {
+                        sb.append(fillChars[2]);
+                    }
+                    <% 
+                } else if (sizeColumns > 1){
+                    %>
+                    //last column
+                    for (int i = 0; i < colLengths[<%=sizeColumns-1 %>] - fillChars[1].length() + 1; i++) {
+                        sb.append(fillChars[2]);
+                    }
+                    <%
+                }
+                %>         
+                sb.append(fillChars[1]);
+                sb.append("\n");
+            <% 
+            } 
+            %>               
+                return sb;
+            }
+            
+            public boolean isTableEmpty(){
+            	if (list.size() > 1)
+            		return false;
+            	return true;
+            }
+        }
+        Util_<%=cid %> util_<%=cid %> = new Util_<%=cid %>();
+        util_<%=cid %>.setTableName("<%=label%>");
+        util_<%=cid %>.addRow(new String[]{<%for(int i=0;i< columns.size();i++){%>"<%=columns.get(i).getLabel() %>",<%}%>});

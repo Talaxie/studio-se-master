@@ -1,0 +1,368 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.Map
+    java.util.List
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	
+	String insertMode =ElementParameterParser.getValue(node, "__INSERT_MODE__");
+	String separatorText=ElementParameterParser.getValue(node, "__MULTI_VALUE_SEPARATOR__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	String dnColumnName = ElementParameterParser.getValue(node, "__DN_COLUMN_NAME__");
+	boolean useAttributeOptions = "true".equals(ElementParameterParser.getValue(node, "__USE_ATTRIBUTE_OPTIONS__"));
+	List<Map<String, String>> attributeOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ATTRIBUTE_OPTIONS__");
+	List<Map<String, String>> fieldOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FIELD_OPTIONS__");
+	boolean useFieldOptions = ("true").equals(ElementParameterParser.getValue(node, "__USE_FIELD_OPTIONS__"));
+	boolean isBase64 = false;
+	String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+	boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+	String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+	String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+	String separator = separatorText;
+	if(("\"|\"").equals(separatorText)){
+		separator="\"\\\\|\"";
+	}
+	
+	String rejectConnName = null;
+	List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+	if(rejectConns != null && rejectConns.size() > 0) {
+	    IConnection rejectConn = rejectConns.get(0);
+	    rejectConnName = rejectConn.getName();
+	}
+	List<IMetadataColumn> rejectColumnList = null;
+	IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+	if(metadataTable != null) {
+	    rejectColumnList = metadataTable.getListColumns();	    
+	}
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+    for(IConnection conn : outgoingConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+        <%=conn.getName() %> = null;            
+<%      }
+    }
+    
+	String cid = node.getUniqueName();
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		JavaType javaType = null;
+		String pattern = null;
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	for(IConnection conn:conns){
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {
+     			String firstConnName = conn.getName();
+    			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {	
+%>
+					javax.naming.directory.Attributes entry_<%=cid%> = new javax.naming.directory.BasicAttributes(true);
+					whetherReject_<%=cid%> = false;
+					String dn_<%=cid%> = String.valueOf(<%=conn.getName() %>.<%=dnColumnName%>).trim();
+<%
+					for(IMetadataColumn column:columnList){
+						javaType= JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						if (dnColumnName.equals(column.getLabel().trim())) {
+							continue;
+						}
+%>
+<%
+						if(!("DELETE").equals(insertMode) && !("UPDATA").equals(insertMode)){
+%>
+							if(<%=conn.getName() %>.<%=column.getLabel()%> != null){
+<%
+								if(useFieldOptions){
+									for(Map<String, String> line:fieldOptions){// search in the configuration table
+										String columnName = line.get("SCHEMA_COLUMN");				
+										if(column.getLabel().equals(columnName)){
+											isBase64 = "true".equals(line.get("BASE64"));
+											break;
+										}
+									}
+								}
+								if(javaType ==  JavaTypesManager.BYTE_ARRAY){
+%>
+									base64_<%=cid%>.checkByteArray(<%=isBase64%>,"<%=column.getOriginalDbColumnName()%>",entry_<%=cid%>,<%=conn.getName()%>.<%=column.getLabel()%>);
+<%
+								}else{
+									if(javaType ==  JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0){
+%>
+										String incomingColumn_<%=cid%> = FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+<%
+									} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+										if(javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+        									String incomingColumn_<%=cid%> = FormatterUtils.format_Number(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);					
+<%
+										} else {
+%>
+        									String incomingColumn_<%=cid%> = FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);					
+<%
+										}									
+									} else if(javaType == JavaTypesManager.BIGDECIMAL) { 
+%>
+										String incomingColumn_<%=cid%> = <%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString();
+<%
+									}else {
+%>
+										String incomingColumn_<%=cid%> = String.valueOf(<%=conn.getName()%>.<%=column.getLabel()%>);
+<%
+									}
+									//for bug TDI-19611	
+%>
+									incomingColumn_<%=cid%> = base64_<%=cid%>.filterNullElement(incomingColumn_<%=cid%>,<%=separatorText%>);
+							    	if(incomingColumn_<%=cid%>.trim().indexOf(<%=separatorText%>)>0){
+							    		javax.naming.directory.Attribute attr_<%=cid%> = new javax.naming.directory.BasicAttribute("<%=column.getOriginalDbColumnName()%>");
+							    		for(String value_<%=cid%> : incomingColumn_<%=cid%>.trim().split(<%=separator%>)){
+												base64_<%=cid%>.addToAttribute(<%=isBase64%>,attr_<%=cid%>,value_<%=cid%>);
+							    		}
+							    		entry_<%=cid%>.put(attr_<%=cid%>);
+							    	}else{
+							    			if(incomingColumn_<%=cid%>!=null && !"".equals(incomingColumn_<%=cid%>)){
+							    				base64_<%=cid%>.checkString(<%=isBase64%>,"<%=column.getOriginalDbColumnName()%>",entry_<%=cid%>,incomingColumn_<%=cid%>);
+							    			}
+							    	}
+<%
+								}
+%>
+						    }
+<%
+						}
+					}
+%>
+	try{
+<%
+					if(("ADD").equals(insertMode)){
+%>
+						ctx_<%=cid%>.modifyAttributes(dn_<%=cid%>, javax.naming.directory.DirContext.ADD_ATTRIBUTE, entry_<%=cid%>);
+						nb_line_<%=cid %> ++;
+<%
+					} else if(("INSERT").equals(insertMode)){
+%> 
+						ctx_<%=cid%>.createSubcontext(dn_<%=cid%>, entry_<%=cid%>);
+						nb_line_<%=cid %> ++;
+<%
+					}else if(("UPDATA").equals(insertMode)){
+						if(useAttributeOptions && attributeOptions.size() > 0){
+						//7631: tLDAPOutput: Add a attributes options parameter 
+%>
+							List<javax.naming.directory.ModificationItem> mfItem_<%=cid%> = new java.util.ArrayList();
+							List<javax.naming.directory.Attribute> forUpate<%=cid%> = new java.util.ArrayList();
+							javax.naming.directory.Attribute attrForUpdate_<%=cid%>;
+							String incomingColumn_<%=cid%>  = null;
+<%
+						  	for (int i=0; i<attributeOptions.size(); i++) {
+						  		Map<String, String> row  = attributeOptions.get(i);
+						  		String option = row.get("ATTRIBUTE_OPTION").trim();
+						  		String name = row.get("ATTRIBUTE_NAME").trim();
+						  		String dbColumnName = null;
+						  		isBase64 = "true".equals(row.get("UPDATEBASE64"));
+						  		Integer precision = null;
+						  		boolean isNullable = false;
+						  		for(IMetadataColumn column : columnList){
+						  			if(column.getLabel().equals(name)){
+										javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+										pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+										precision = column.getPrecision();
+										isNullable = column.isNullable();
+										dbColumnName = column.getOriginalDbColumnName();
+						  			}
+								}
+					  			if (!"REMOVE_ATTRIBUTE".equals(option)) {
+					  					if(javaType == JavaTypesManager.BYTE_ARRAY){
+%>
+											base64_<%=cid%>.checkByteArrayUpdate(<%=isBase64%>,"<%=dbColumnName %>",forUpate<%=cid%>,<%=conn.getName() %>.<%=name%>);
+<%																  					
+										}else if(javaType == JavaTypesManager.STRING){
+%>										
+											 // Create attribute before, to add multiple values if necessary and don't add any value if empty or null
+											 attrForUpdate_<%=cid%> = new javax.naming.directory.BasicAttribute("<%=dbColumnName %>");
+											 if(<%=conn.getName() %>.<%=name%> != null){										
+							    				 for(String value_<%=cid%> : <%=conn.getName() %>.<%=name%>.trim().split(<%=separator%>)){
+							    					 if(value_<%=cid%> != null && !"".equals(value_<%=cid%>)){
+							    					 	base64_<%=cid%>.checkStringUpdateAttr(<%=isBase64%>,"<%=dbColumnName %>",attrForUpdate_<%=cid%>,value_<%=cid%>);
+							    					 }
+									    		 }
+									    	 }
+   											 forUpate<%=cid%>.add(attrForUpdate_<%=cid%>);
+<%
+										}else{
+											if(advancedSeparator && JavaTypesManager.isNumberType(javaType, isNullable)) { 
+												if(javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+        											incomingColumn_<%=cid%> = FormatterUtils.format_Number(<%=precision == null? conn.getName() + "." + name : conn.getName() + "." + name + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+<%
+												} else {
+%>
+        											incomingColumn_<%=cid%> = FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=name %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+<%
+												}
+											}else if(javaType == JavaTypesManager.BIGDECIMAL){
+%>
+												incomingColumn_<%=cid%> = <%=precision == null? conn.getName() + "." + name : conn.getName() + "." + name + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString();
+<%
+											}else if(javaType ==  JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0){
+%>
+												incomingColumn_<%=cid%> = FormatterUtils.format_Date(<%=conn.getName() %>.<%=name %>, <%= pattern %>);
+<%
+											}else{
+%>
+												incomingColumn_<%=cid%> = String.valueOf(<%=conn.getName()%>.<%=name%>);
+<%
+											}
+%>
+												base64_<%=cid%>.checkStringUpdate(<%=isBase64%>,"<%=dbColumnName %>",forUpate<%=cid%>,incomingColumn_<%=cid%>);
+<%
+										}
+  								} else {
+%>
+							  		forUpate<%=cid%>.add(new javax.naming.directory.BasicAttribute("<%=dbColumnName %>"));
+<%
+  								}
+  								if ("ADD".equals(option)) {
+%>
+							  		for (javax.naming.directory.Attribute attrForUpate_<%=cid%> : forUpate<%=cid%>) {
+							  			mfItem_<%=cid%>.add(new javax.naming.directory.ModificationItem(javax.naming.directory.DirContext.ADD_ATTRIBUTE, attrForUpate_<%=cid%>));
+							  		}
+<%
+  								} else if ("REPLACE".equals(option)) {
+%>
+							    	for (javax.naming.directory.Attribute attrForUpate_<%=cid%> : forUpate<%=cid%>) {
+							  			mfItem_<%=cid%>.add(new javax.naming.directory.ModificationItem(javax.naming.directory.DirContext.REPLACE_ATTRIBUTE, attrForUpate_<%=cid%>));
+							  		}
+<%
+  								} else if ("REMOVE_VALUE".equals(option)){
+%>
+									for (javax.naming.directory.Attribute attrForUpate_<%=cid%> : forUpate<%=cid%>) {
+										mfItem_<%=cid%>.add(new javax.naming.directory.ModificationItem(javax.naming.directory.DirContext.REMOVE_ATTRIBUTE, attrForUpate_<%=cid%>));
+									}
+<%
+  								} else {
+%>
+							  	  for (javax.naming.directory.Attribute attrDelete_<%=cid%> : forUpate<%=cid%>) {
+							  			mfItem_<%=cid%>.add(new javax.naming.directory.ModificationItem(javax.naming.directory.DirContext.REMOVE_ATTRIBUTE, attrDelete_<%=cid%>));
+							  		}
+<%
+  								}
+%>
+								forUpate<%=cid%>.clear();
+<%
+  							}
+%>
+  							ctx_<%=cid%>.modifyAttributes(dn_<%=cid%>,mfItem_<%=cid%>.toArray(new javax.naming.directory.ModificationItem[0]));
+  							nb_line_<%=cid %> ++;
+<%
+  	//7631
+						}else{
+%>
+							ctx_<%=cid%>.modifyAttributes(dn_<%=cid%>, javax.naming.directory.DirContext.REPLACE_ATTRIBUTE, entry_<%=cid%>);
+							nb_line_<%=cid %> ++;
+<%
+						}
+					}else if(("DELETE").equals(insertMode)){
+%>
+						//ctx_<%=cid%>.destroySubcontext(dn_<%=cid%>);
+						int nb_line = 0;
+						nb_line = ldap_<%=cid %>.delete(dn_<%=cid%>,"(objectclass=*)",ctx_<%=cid%>,baseDN_<%=cid%>);
+						nb_line_<%=cid %> = nb_line_<%=cid %> + nb_line;
+<%
+					}else if(("INSERT_UPDATA").equals(insertMode)){
+%>
+						boolean found = false;
+						try{
+							ctx_<%=cid%>.getAttributes(dn_<%=cid%>);
+							found = true;
+						}catch(javax.naming.NameNotFoundException nfEx_<%=cid%>){
+                            globalMap.put("<%=cid%>_ERROR_MESSAGE",nfEx_<%=cid%>.getMessage());
+							<%if(isLog4jEnabled){%>
+								log.warn("<%=cid%> - " + nfEx_<%=cid%>.getMessage());
+							<%}%>
+							ctx_<%=cid%>.createSubcontext(dn_<%=cid%>, entry_<%=cid%>);
+							nb_line_<%=cid %> ++;
+						}
+						if(found)
+						{
+							ctx_<%=cid%>.modifyAttributes(dn_<%=cid%>, javax.naming.directory.DirContext.REPLACE_ATTRIBUTE, entry_<%=cid%>);
+							nb_line_<%=cid %> ++;
+						}
+<%
+					}
+%>
+	}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        whetherReject_<%=cid%> = true;
+<%
+        if (("true").equals(dieOnError)) {
+%>
+        	throw(e);
+<%
+        } else {
+            if(rejectConnName != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+        		<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+                for(IMetadataColumn column : columnList) {
+%>
+        			<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+                }
+%>
+				nb_line_rejected_<%=cid%>++;
+                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+            } else {
+%>
+                System.err.print(e.getMessage());
+<%
+				if(isLog4jEnabled){
+%>
+					log.error("<%=cid%> - " + e.getMessage());
+<%
+				}
+            }
+        }
+%>
+    }
+<%
+    	if(outgoingConns != null && outgoingConns.size() > 0) {
+%>
+        	if(!whetherReject_<%=cid%>) {
+<%
+            	for(IConnection outgoingConn : outgoingConns) {
+                	if(rejectConnName == null || (rejectConnName != null && !outgoingConn.getName().equals(rejectConnName))) {
+                   		if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+							<%=outgoingConn.getName()%> = new <%=outgoingConn.getName()%>Struct();
+<%
+                        	for(IMetadataColumn column : columnList) {
+%>
+            					<%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<% 
+                        	}
+                    	}
+                	}
+            	}
+%>
+       	 	}
+<%
+		}
+				}
+			}
+		}
+	}
+%>

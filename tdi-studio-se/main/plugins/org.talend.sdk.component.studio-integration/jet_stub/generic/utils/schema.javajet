@@ -1,0 +1,153 @@
+<%/*
+  Copyright (C) 2006-2022 Talaxie Inc. - www.deilink.fr
+   Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/%>
+<%@ jet
+    imports="
+        org.talend.core.model.components.IComponent
+        org.talend.core.model.process.INode
+        org.talend.core.runtime.IAdditionalInfo
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.core.model.components.EParameterName
+        org.talend.designer.core.model.components.ElementParameter
+        org.talend.core.model.process.IElementParameter
+        org.talend.core.model.process.EParameterFieldType
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.utils.NodeUtil
+        org.talend.sdk.component.api.record.Schema
+        java.util.Arrays
+        java.util.List
+        java.util.Locale
+    "
+%>
+final org.talend.sdk.component.runtime.manager.ComponentManager mgrt_<%=cid%> = org.talend.sdk.component.runtime.manager.ComponentManager.instance();
+if (mgrt_<%=cid%>.getContainer().findAll().isEmpty()) {
+    mgrt_<%=cid%>.autoDiscoverPlugins(false, true);
+}
+final java.util.Map<Class<?>, Object> svc_<%=cid%> = mgrt_<%=cid%>.findPlugin("<%=pluginName%>").get().get(org.talend.sdk.component.runtime.manager.ComponentManager.AllServices.class).getServices();
+final org.talend.sdk.component.api.service.record.RecordBuilderFactory rbf_<%=cid%> = org.talend.sdk.component.api.service.record.RecordBuilderFactory.class.cast(svc_<%=cid%>.get(org.talend.sdk.component.api.service.record.RecordBuilderFactory.class));
+// we cannot determine type for id_List or id_Object with what's provided by studio, so we'll use a fake elementSchema.
+final org.talend.sdk.component.api.record.Schema elementSchema_<%=cid%> = rbf_<%=cid%>.newSchemaBuilder(org.talend.sdk.component.api.record.Schema.Type.STRING).build();
+final org.talend.sdk.component.api.record.Schema.Builder builder_<%=cid%> = rbf_<%=cid%>.newSchemaBuilder(org.talend.sdk.component.api.record.Schema.Type.RECORD);
+final org.talend.sdk.component.api.record.Schema schema_<%=cid%> = builder_<%=cid%>
+<%
+java.util.Map<String, String> typeMappings = new java.util.HashMap<String, String>() {
+{
+    put("id_List"       , "org.talend.sdk.component.api.record.Schema.Type.ARRAY");
+    put("id_Boolean"    , "org.talend.sdk.component.api.record.Schema.Type.BOOLEAN");
+    put("id_Byte"       , "org.talend.sdk.component.api.record.Schema.Type.BYTES");
+    put("id_Date"       , "org.talend.sdk.component.api.record.Schema.Type.DATETIME");
+    // we should use at least component-runtime 1.49+ for id_BigDecimal
+    put("id_BigDecimal" , "org.talend.sdk.component.api.record.Schema.Type.DECIMAL");
+    put("id_Double"     , "org.talend.sdk.component.api.record.Schema.Type.DOUBLE");
+    put("id_Float"      , "org.talend.sdk.component.api.record.Schema.Type.FLOAT");
+    put("id_Integer"    , "org.talend.sdk.component.api.record.Schema.Type.INT");
+    put("id_Short"      , "org.talend.sdk.component.api.record.Schema.Type.INT");
+    put("id_Long"       , "org.talend.sdk.component.api.record.Schema.Type.LONG");
+    put("id_Object"     , "org.talend.sdk.component.api.record.Schema.Type.RECORD");
+    put("id_Character"  , "org.talend.sdk.component.api.record.Schema.Type.STRING");
+    put("id_String"     , "org.talend.sdk.component.api.record.Schema.Type.STRING");
+    put("id_byte[]"     , "org.talend.sdk.component.api.record.Schema.Type.BYTES");
+}};
+boolean hasInput = false;
+IConnection inputConn = null;
+for (IConnection conn : node.getIncomingConnections()) {
+    if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+       inputConn = conn;
+       hasInput = true;
+    }
+}
+if (!hasInput) {
+    for (IConnection conn : node.getOutgoingConnections()) {
+        if ("FLOW".equals(conn.getConnectorName())) {
+            inputConn = conn;
+        }
+    }
+}
+List<IMetadataColumn> input_columnList = java.util.Collections.emptyList();
+if (inputConn != null) {
+    input_columnList = inputConn.getMetadataTable().getListColumns();
+}
+for (IMetadataColumn col: input_columnList){
+    String label = col.getLabel();
+    String rawname = col.getOriginalDbColumnName();
+    String ttype = col.getTalendType();
+    String comment = col.getComment();
+    String pattern = col.getPattern();
+    Integer precision = col.getPrecision();
+    Integer length = col.getLength();
+    String id = col.getId();
+    String dft = col.getDefault();
+    Boolean nil = col.isNullable();
+    Boolean key=  col.isKey();
+    String sdkType = typeMappings.get(ttype);
+    // TODO: TCOMP-2283 - Handle Dynamic column in guess schema
+    // we skip (temporary) un-manageable studio specific types (id_Dynamic, id_Document)
+    if (sdkType == null){
+        continue;
+    }
+%>
+.withEntry(rbf_<%=cid%>.newEntryBuilder().withName("<%=label%>").withType(<%=sdkType%>).withNullable(<%=nil%>)
+<%
+if (rawname != null){
+%>
+.withRawName("<%=org.talend.core.model.utils.TalendTextUtils.escapeJavaText(rawname)%>")
+<%
+}
+if (comment != null && !comment.isEmpty()){
+%>
+.withComment("<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(comment)%>")
+<%
+}
+if (dft != null){
+%>
+.withDefaultValue( "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(dft)%>")
+<%
+}
+%>
+.withProp(org.talend.sdk.component.api.record.SchemaProperty.STUDIO_TYPE, "<%=ttype%>")
+<%
+if (key) {
+%>
+.withProp(org.talend.sdk.component.api.record.SchemaProperty.IS_KEY, "true")
+<%
+}
+if (precision != null) {
+%>
+.withProp(org.talend.sdk.component.api.record.SchemaProperty.SCALE, "<%=precision%>")
+<%
+}
+if (length != null) {
+%>
+.withProp(org.talend.sdk.component.api.record.SchemaProperty.SIZE, "<%=length%>")
+<%
+}
+if (pattern != null && !pattern.isEmpty()) {
+%>
+.withProp(org.talend.sdk.component.api.record.SchemaProperty.PATTERN, "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(pattern)%>")
+<%
+}
+%>
+<% if (ttype.equals("id_List") || ttype.equals("id_Object")) { %>
+.withElementSchema(elementSchema_<%=cid%>)
+<%
+}
+%>
+.build())
+<% } %>
+.build();

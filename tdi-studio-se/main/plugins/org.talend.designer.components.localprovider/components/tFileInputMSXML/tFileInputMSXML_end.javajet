@@ -1,0 +1,61 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode  
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	    org.talend.core.model.process.IConnection
+	    org.talend.core.model.process.IConnectionCategory
+	    java.util.List
+	"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+
+final boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+List< ? extends IConnection> connections = node.getOutgoingSortedConnections();
+String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+
+String ignoreOrderStr = ElementParameterParser.getValue(node, "__IGNORE_ORDER__");
+boolean ignoreOrder = (ignoreOrderStr!=null&&!("").equals(ignoreOrderStr))?("true").equals(ignoreOrderStr):false;
+
+String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false; 
+
+if(connections!=null && connections.size()>0){
+	if(("Dom4j").equals(mode)){
+%>
+	}
+<%
+	}
+}
+%>
+}
+
+<%if((connections!=null) && (connections.size()>0) && "SAX".equals(mode)){%>
+	try {
+		looper_<%=cid%>.handleTaskResponse();
+	} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	<% if(dieOnError) { %>
+		throw e;
+	<% } else { 
+		if(isLog4jEnabled) {
+	%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%
+		}
+	%>
+		System.err.println(e.getMessage());	
+	<% } %>
+	}
+<% } %>
+	globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+	
+<%
+log4jFileUtil.retrievedDataNumberInfo();
+%>

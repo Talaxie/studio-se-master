@@ -1,0 +1,155 @@
+<COMPONENT>
+	<HEADER PLATEFORM="ALL" SERIAL="" VERSION="0.101" STATUS="ALPHA"
+		COMPATIBILITY="ALL" AUTHOR="Talaxie" RELEASE_DATE="20050320A"
+		STARTABLE="false" DATA_AUTO_PROPAGATE="false"
+		HAS_CONDITIONAL_OUTPUTS="true" PARTITIONING="AUTO">
+		<SIGNATURE></SIGNATURE>
+	</HEADER>
+
+  <FAMILIES>
+    <FAMILY>Data_Quality</FAMILY>
+  </FAMILIES>
+
+	<DOCUMENTATION>
+		<URL />
+	</DOCUMENTATION>
+
+	<CONNECTORS>
+		<CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1"/>
+		<CONNECTOR NAME="REJECT" CTYPE="FLOW" MAX_INPUT="0"
+			MAX_OUTPUT="1" LINE_STYLE="2" COLOR="FF0000" BASE_SCHEMA="FLOW" />
+		<CONNECTOR NAME="OTHER" CTYPE="FLOW" MAX_INPUT="0"
+			MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0" />
+		<CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="COMPONENT_OK" />
+		<CONNECTOR CTYPE="COMPONENT_ERROR" />
+		<CONNECTOR CTYPE="RUN_IF" />
+	</CONNECTORS>
+	<PARAMETERS>
+		<PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true"
+			NUM_ROW="1">
+		</PARAMETER>
+
+		<PARAMETER NAME="CHECK_ALL" FIELD="RADIO" NUM_ROW="11" GROUP="MODE">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="CUSTOMER" FIELD="RADIO" NUM_ROW="21" GROUP="MODE">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="CHECKCOLS" FIELD="TABLE" REQUIRED="true"
+			NUM_ROW="23" NB_LINES="7"
+			SHOW_IF="CUSTOMER == 'true'" GROUP="MODE">
+			<ITEMS BASED_ON_SCHEMA="true">
+				<ITEM NAME="SELECTED_TYPE" FIELD="CLOSED_LIST">
+					<ITEMS DEFAULT="STRING">
+						<ITEM NAME="BYTE" VALUE="Byte" />
+						<ITEM NAME="SHORT" VALUE="Short" />
+						<ITEM NAME="INTEGER" VALUE="Integer" />
+						<ITEM NAME="LONG" VALUE="Long" />
+						<ITEM NAME="FLOAT" VALUE="Float" />
+						<ITEM NAME="DOUBLE" VALUE="Double" />
+						<ITEM NAME="BOOLEAN" VALUE="Boolean" />
+						<ITEM NAME="CHARACTER" VALUE="Character" />
+						<ITEM NAME="STRING" VALUE="String" />
+						<ITEM NAME="DATE" VALUE="Date" />
+					</ITEMS>
+				</ITEM>
+				<ITEM NAME="DATEPATTERN" FIELD="TEXT" NOT_READONLY_IF="CHECKCOLS.SELECTED_TYPE=='Date'"/>
+				<ITEM NAME="NULLABLE" FIELD="CHECK" VALUE="false" />
+				<ITEM NAME="MAX_LENGTH" FIELD="CHECK" VALUE="false" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="NOTE_CUSTOMER" FIELD="LABEL" REQUIRED="true" NUM_ROW="25" COLOR="255;0;0" GROUP="MODE" SHOW_IF="CUSTOMER == 'true'">
+          <DEFAULT>Please note:
+(1) Nullable setting in this table is more preferential than the default schema.
+(2) Length checking is base on the value of the default schema.</DEFAULT>
+        </PARAMETER>
+
+		<PARAMETER NAME="CHECK_ANOTHER" FIELD="RADIO" NUM_ROW="31" GROUP="MODE">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="SCHEMA_OTHER" FIELD="SCHEMA_TYPE"
+			REQUIRED="true" NUM_ROW="33" CONTEXT="OTHER"
+			SHOW_IF="CHECK_ANOTHER == 'true'" GROUP="MODE">
+		</PARAMETER>
+
+		<PARAMETER NAME="NOTE_CHECK_ANOTHER" FIELD="LABEL" REQUIRED="true" NUM_ROW="35" COLOR="255;0;0" GROUP="MODE" SHOW_IF="CHECK_ANOTHER == 'true'">
+          <DEFAULT>Please note: only index matching, for example, the second column of checking schema is correspond to the second of input schema</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER NAME="SUB_STRING" FIELD="CHECK" NUM_ROW="40" REQUIRED="true" GROUP="MODE">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="NOTE_SUB_STRING" FIELD="LABEL" REQUIRED="true" NUM_ROW="41" GROUP="MODE" >
+          <DEFAULT>     If exceed, either trim the field when above option checked or reject the row.</DEFAULT>
+        </PARAMETER>
+		<PARAMETER NAME="INFO" FIELD="LABEL" REQUIRED="true" NUM_ROW="51" COLOR="0;0;0">
+          <DEFAULT>If only one column has error, the errCode value is a summation of all error code; else the errCode is 16:
+(1) Type discrepancy (include wrong date pattern): 2
+(2) Empty or NULL: 4
+(3) Length/Precision Error: 8</DEFAULT>
+        </PARAMETER>
+
+		<PARAMETER NAME="SCHEMA_REJECT" FIELD="SCHEMA_TYPE"
+			REQUIRED="true" NUM_ROW="50" CONTEXT="REJECT" SHOW="true">
+			<TABLE READONLY="true">
+				<COLUMN NAME="errorCode" TYPE="id_String" LENGTH="255"
+					READONLY="false" CUSTOM="true" />
+				<COLUMN NAME="errorMessage" TYPE="id_String"
+					LENGTH="255" READONLY="false" CUSTOM="true" />
+			</TABLE>
+		</PARAMETER>
+
+	</PARAMETERS>
+    <ADVANCED_PARAMETERS>
+        <PARAMETER NAME="FAST_DATE_CHECK" FIELD="CHECK" NUM_ROW="1" REQUIRED="true" SHOW_IF="STRICT_DATE_CHECK == 'false'">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="NOTE" FIELD="LABEL" NUM_ROW="1" SHOW_IF="STRICT_DATE_CHECK == 'false'">
+            <DEFAULT>(Not compatible with multi-threaded jobs)</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="STRICT_DATE_CHECK" FIELD="CHECK" NUM_ROW="3" REQUIRED="true" SHOW_IF="FAST_DATE_CHECK == 'false'">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="IGNORE_TIMEZONE" FIELD="CHECK" NUM_ROW="5" REQUIRED="true" SHOW_IF="(CUSTOMER == 'true' OR CHECK_ANOTHER == 'true') AND (FAST_DATE_CHECK == 'false') AND (STRICT_DATE_CHECK == 'false')">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="EMPTY_IS_NULL" FIELD="CHECK" NUM_ROW="11" REQUIRED="true" SHOW="false">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="ALL_EMPTY_ARE_NULL" FIELD="CHECK" NUM_ROW="12" REQUIRED="true">
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+        <PARAMETER NAME="EMPTY_NULL_TABLE" FIELD="TABLE" REQUIRED="true" NUM_ROW="13" NB_LINES="3" SHOW_IF="ALL_EMPTY_ARE_NULL == 'false'">
+            <ITEMS BASED_ON_SCHEMA="true">
+                <ITEM NAME="EMPTY_NULL" FIELD="CHECK" VALUE="false" />
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER NAME="CHECK_STRING_BY_BYTE_LENGTH" FIELD="CHECK" NUM_ROW="20" REQUIRED="true">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+				NAME="CHARSET"
+				FIELD="TEXT"
+				NUM_ROW="20"
+				REQUIRED="false"
+				SHOW_IF="CHECK_STRING_BY_BYTE_LENGTH == 'true')"
+		>
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+    </ADVANCED_PARAMETERS>
+
+	<CODEGENERATION>
+	  <IMPORTS>
+        <IMPORT NAME="commons-lang-2.6.jar" MODULE="commons-lang-2.6.jar" MVN="mvn:commons-lang/commons-lang/2.6"  UrlPath="platform:/base/plugins/org.apache.commons.lang_2.6.0.v201404270220.jar" REQUIRED="true" />
+	  </IMPORTS>
+    </CODEGENERATION>
+
+	<RETURNS></RETURNS>
+</COMPONENT>

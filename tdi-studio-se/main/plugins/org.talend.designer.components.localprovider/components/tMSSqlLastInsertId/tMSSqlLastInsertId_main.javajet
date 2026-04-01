@@ -1,0 +1,67 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    java.util.List
+    java.util.Set
+    java.util.HashSet
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String incomingConnName = null;
+Set<String> incomingColumns = new HashSet<String>();
+List<? extends IConnection> incomingConns = node.getIncomingConnections();
+if(incomingConns != null && incomingConns.size() > 0) {
+    for(IConnection incomingConn : incomingConns) {
+        if(incomingConn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+            incomingConnName = incomingConn.getName();
+            IMetadataTable inputMetadataTable = incomingConn.getMetadataTable();
+            List<IMetadataColumn> inputSchema = inputMetadataTable.getListColumns();
+            if(inputSchema != null && inputSchema.size() > 0) {
+                for(IMetadataColumn column : inputSchema) {
+                    incomingColumns.add(column.getLabel());
+                }
+            }
+            break;
+        }
+    }
+}
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+if(outgoingConns != null && outgoingConns.size() > 0) {
+    for(IConnection outgoingConn : outgoingConns) {
+        if(outgoingConn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+            IMetadataTable outputMetadataTable = outgoingConn.getMetadataTable();
+            List<IMetadataColumn> outputSchema = outputMetadataTable.getListColumns();
+            if(outputSchema != null && outputSchema.size() > 0) {
+                for(IMetadataColumn column : outputSchema) {
+                    if(incomingColumns.contains(column.getLabel())) {
+                        %>
+                        <%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                        <%
+                    }
+                }
+                %>
+                java.sql.ResultSet rs_<%=cid %> = pstmt_<%=cid %>.executeQuery();
+                if(rs_<%=cid %>.next()) {
+                    <%=outgoingConn.getName() %>.last_insert_id = rs_<%=cid %>.getInt(1);
+                }
+                nb_line_<%=cid%>++;
+                <%
+            }
+        }
+    }
+}
+%>
+
+
+
+

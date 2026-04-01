@@ -1,0 +1,66 @@
+<%@ jet
+    imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.MetadataTalendType    
+        org.talend.core.model.metadata.MappingTypeRetriever
+        java.util.List
+        java.util.ArrayList
+        java.util.Map
+        java.util.HashMap
+    "
+    skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+boolean useExistingConn = ("true").equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+List<IMetadataColumn> columnList = getColumnList(node);
+if(("UPDATE").equals(dataAction)) {
+    if(columnList != null && columnList.size() > 0) {        
+        Manager manager = getManager(dbmsId, cid);
+        %>
+        tableName_<%=cid%> = tmpTableName_<%=cid%>;
+        tmpTableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+        if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+    		tmpTableName_<%=cid%>=dbschema_<%=cid%> + "." + tmpTableName_<%=cid%>;
+    	}
+        java.sql.Statement stmtUpdateBulk_<%=cid%> = conn_<%=cid%>.createStatement();
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - Updating <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> from <%=manager.getLProtectedChar()%>"+tmpTableName_<%=cid%>+"<%=manager.getRProtectedChar()%>.");
+        <%}%>
+        stmtUpdateBulk_<%=cid%>.executeUpdate("<%=manager.getUpdateBulkSQL(columnList)%>");
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Update has finished.");%>
+        stmtUpdateBulk_<%=cid%>.close();
+        tableName_<%=cid%> = tmpTableName_<%=cid%>;
+        java.sql.Statement stmtTmpDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - Droping table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>.");
+        <%}%>
+        stmtTmpDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - Drop table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has succeeded.");
+        <%}%>
+        stmtTmpDrop_<%=cid%>.close();         
+        <%
+    }
+}
+%>
+
+<%
+if(!useExistingConn) {
+    if(!"NONE".equals(tableAction)){%>
+	    if(conn_<%=cid%> != null && !conn_<%=cid%>.isClosed()) {
+	        <%log4jCodeGenerateUtil.close(node);%>
+	    }
+    <%}
+}
+%>

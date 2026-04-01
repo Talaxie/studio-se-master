@@ -1,0 +1,94 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.utils.NodeUtil
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	int button = Integer.parseInt(ElementParameterParser.getValue(node, "__BUTTONS__"));
+	boolean maskAnswer="true".equals(ElementParameterParser.getValue(node, "__ANSWER_MASK__"));
+	String msg = ElementParameterParser.getValue(node, "__MESSAGE__");
+	
+%>
+	int messageIcon<%=cid %> = javax.swing.JOptionPane.<%=ElementParameterParser.getValue(node, "__ICON__") %>;
+	String title<%=cid %> = <%=ElementParameterParser.getValue(node, "__TITLE__") %>;
+	String message<%=cid %> = <%=NodeUtil.replaceCRLFInMEMO_SQL(msg) %>;   	
+	String result<%=cid %> = null; 
+	
+<%
+	switch(button) {
+		case 0:
+		// 0) OK
+%>
+		javax.swing.JOptionPane.showMessageDialog(null, message<%=cid %>, title<%=cid %>, messageIcon<%=cid %>);
+		result<%=cid %> = String.valueOf(1);
+<%
+			break;
+		case 1:
+		// 1) OK and Cancel
+%>
+		//javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.YES_NO_OPTION, messageIcon<%=cid %>, null, new String[] { "OK", "Cancel" }, null);
+		//result<%=cid %> = 1;
+		
+		result<%=cid %> = String.valueOf(javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.OK_CANCEL_OPTION, messageIcon<%=cid %>, null, new String[] { "OK", "Cancel" }, null));
+<%
+			break;
+		case 2:
+		// 2) Abort Retry Ignore
+%>
+		result<%=cid %> = String.valueOf(javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.YES_NO_CANCEL_OPTION, messageIcon<%=cid %>, null, new String[] { "Abort", "Retry", "Ignore" }, null));
+<%
+			break;
+		case 3:
+		// 3) Yes No and Cancel
+%>
+		result<%=cid %> = String.valueOf(javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.YES_NO_CANCEL_OPTION, messageIcon<%=cid %>, null, new String[] { "Yes", "No", "Cancel" }, null));
+<%
+			break;
+		case 4:
+		// 4) Yes and No
+%>
+		result<%=cid %> = String.valueOf(javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.YES_NO_OPTION, messageIcon<%=cid %>, null, new String[] { "Yes", "No" }, null));
+<%
+			break;
+		case 5:
+		// 5) Retry and Cancel
+%>
+		result<%=cid %> = String.valueOf(javax.swing.JOptionPane.showOptionDialog(null, message<%=cid %>, title<%=cid %>, javax.swing.JOptionPane.YES_NO_OPTION, messageIcon<%=cid %>, null, new String[] { "Retry", "Cancel" }, null));
+<%
+			break;
+		case 6:
+		// 6) Question
+		if(maskAnswer){
+%>
+        //mask Answer by '*'
+		javax.swing.JPasswordField text_<%=cid%> = new javax.swing.JPasswordField(20);
+		text_<%=cid%>.setEchoChar('*');
+    	Object[] message_<%=cid%> = { <%=ElementParameterParser.getValue(node, "__QUESTION_LABEL__") %>, new javax.swing.JScrollPane(text_<%=cid%>)};
+    	javax.swing.JOptionPane pane_<%=cid%> = new javax.swing.JOptionPane(message_<%=cid%>, messageIcon<%=cid %>,javax.swing.JOptionPane.OK_CANCEL_OPTION);
+    	javax.swing.JDialog dialog_<%=cid%> = pane_<%=cid%>.createDialog(null, title<%=cid %>);
+    	dialog_<%=cid%>.show();
+    	if((pane_<%=cid%>.getValue()!=null)&&(pane_<%=cid%>.getValue().equals(0))){
+			result<%=cid %> = new String(text_<%=cid%>.getPassword());
+		}else{
+			result<%=cid %>=null;
+		}
+<%      }else{%>
+		result<%=cid %> = javax.swing.JOptionPane.showInputDialog(null, <%=ElementParameterParser.getValue(node, "__QUESTION_LABEL__") %> , title<%=cid %>, messageIcon<%=cid %>);
+<%
+		}
+			break;
+		default:
+			//do nothing
+			break;
+	}
+%>
+
+globalMap.put("<%=cid%>_RESULT", result<%=cid %>);

@@ -1,0 +1,105 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+		org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.MappingTypeRetriever
+        org.talend.core.model.metadata.MetadataTalendType        
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String dbType = ElementParameterParser.getValue(node,"__DBTYPE__");
+
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION_" + dbType + "__");
+    
+    String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");	
+
+    String conn = "conn_" + connection;
+    if ("SNOWFLAKE".equals(dbType)) {
+       conn = connection + "_connection";
+    }
+
+    String createTable = ElementParameterParser.getValue(node,"__STAGING_TABLE_CREATION__");
+    
+    String tableName = ElementParameterParser.getValue(node,"__ELT_TABLE_NAME__");
+    
+    String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+    
+    boolean convertToUppercase = ("true").equals(ElementParameterParser.getValue(node, "__CONVERT_COLUMN_TABLE_TO_UPPERCASE__"));//??
+%>
+java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+java.sql.Statement stmt_<%=cid%> = conn_<%=cid%>.createStatement();
+<%
+List<IMetadataColumn> columnList = getColumnList(node);
+List<Column> stmtStructure = null;
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, new java.util.ArrayList<java.util.Map<String, String>>(), new java.util.ArrayList<Map<String, String>>());
+    if(convertToUppercase) {
+        for(Column column : stmtStructure) {
+            if(column.isReplaced()) {
+                for (Column replacedColumn : column.getReplacement()) {
+                    replacedColumn.setColumnName(replacedColumn.getColumnName().toUpperCase());
+                }
+            } else {
+                column.setColumnName(column.getColumnName().toUpperCase());
+            }
+        }
+    }    
+}
+%><%
+	if(("true").equals(createTable)){
+%>
+String tableName_<%=cid%> = <%=tableName %>;
+<%
+        Manager manager = getManager(dbmsId, cid);
+        if(("DROP_CREATE").equals(tableAction)) {
+            %>
+            stmt_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+            stmt_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>");
+            <%
+        } else if(("CREATE").equals(tableAction)) {
+            %>
+            stmt_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>");
+            <%
+        } else if(("CREATE_IF_NOT_EXISTS").equals(tableAction) || ("DROP_IF_EXISTS_AND_CREATE").equals(tableAction)) {
+            %>
+            java.sql.DatabaseMetaData dbMetaData_<%=cid%> = conn_<%=cid%>.getMetaData();
+            java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(null, null, null, new String[]{"TABLE"});
+            boolean whetherExist_<%=cid%> = false;
+            while(rsTable_<%=cid%>.next()) {
+                String table_<%=cid%> = rsTable_<%=cid%>.getString("TABLE_NAME");
+                if(table_<%=cid%>.equalsIgnoreCase(<%=tableName%>)) {
+                    whetherExist_<%=cid%> = true;
+                    break;
+                }
+            }
+            <%
+            if(("CREATE_IF_NOT_EXISTS").equals(tableAction)) {
+                %>
+                if(!whetherExist_<%=cid%>) {
+                    stmt_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>");            
+                }                
+                <%
+            } else {
+                %>
+                if(whetherExist_<%=cid%>) {
+                    stmt_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+                }
+                stmt_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>");                
+            <%
+            }
+        }
+    }
+%>

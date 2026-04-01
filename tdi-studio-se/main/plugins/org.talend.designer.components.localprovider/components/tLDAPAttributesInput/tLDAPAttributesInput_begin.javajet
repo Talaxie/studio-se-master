@@ -1,0 +1,381 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode 
+	org.talend.core.model.process.ElementParameterParser 
+	org.talend.core.model.metadata.IMetadataTable 
+	org.talend.core.model.metadata.IMetadataColumn 
+	org.talend.core.model.process.IConnection
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnectionCategory
+	java.util.List
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	
+	List<IMetadataTable> metadatas = node.getMetadataList();
+		if ((metadatas!=null)&&(metadatas.size()>0)) {
+			IMetadataTable metadata = metadatas.get(0);			
+			if(metadata!=null) {
+
+				List<IMetadataColumn> columnList = metadata.getListColumns();
+				String cid = node.getUniqueName();
+				String limit =ElementParameterParser.getValue(node, "__LIMIT__");
+				boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));	
+				boolean paging =("true").equals(ElementParameterParser.getValue(node, "__ISPAGING__"));	
+				String pageSize = ElementParameterParser.getValue(node, "__PAGESIZE__");
+				String classDefRoot = ElementParameterParser.getValue(node, "__CLASSDEF_ROOT__");
+				String filter=ElementParameterParser.getValue(node, "__FILTER__");
+				String separator=ElementParameterParser.getValue(node, "__MULTI_VALUE_SEPARATOR__");
+				String timeout =ElementParameterParser.getValue(node, "__TIMEOUT__");
+				String baseDN=ElementParameterParser.getValue(node, "__BASEDN__");
+			
+				String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+				String exConn= "conn_" + connection;
+				String exConnBaseDN = "connBaseDN_" + connection;
+				String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+				boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+				String baseDN_<%=cid%> = "";
+<%
+				if(("false").equals(useExistingConn)){
+					boolean useAuth = "true".equals(ElementParameterParser.getValue(node, "__AUTHENTIFICATION__"));
+					String user =ElementParameterParser.getValue(node, "__USER__");
+
+					String host=ElementParameterParser.getValue(node, "__HOST__");
+					String port=ElementParameterParser.getValue(node, "__PORT__");
+					String protocol=ElementParameterParser.getValue(node, "__PROTOCOL__");
+					String advanced=ElementParameterParser.getValue(node, "__ADVANCEDCA__");
+					String storepath=ElementParameterParser.getValue(node, "__STORECA__");
+					String storepwd = ElementParameterParser.getValue(node, "__STORECAPWD__");
+					boolean alwaysTrust = ("true").equals(ElementParameterParser.getValue(node, "__ALWAYS_TRUST__"));
+					String referrals=ElementParameterParser.getValue(node, "__REFERRALS__");
+					String aliases=ElementParameterParser.getValue(node, "__ALIASES__");
+%>
+					java.util.Hashtable env_<%=cid%> = new java.util.Hashtable();
+					env_<%=cid%>.put(javax.naming.Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
+					env_<%=cid%>.put(javax.naming.Context.REFERRAL, "<%=referrals%>");
+					env_<%=cid%>.put("java.naming.ldap.derefAliases","<%=aliases%>");
+					env_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, "ldap://"+<%=host%>+":"+<%=port%>);
+<%
+					if(("LDAPS").equals(protocol)){
+%>
+						env_<%=cid%>.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
+						env_<%=cid%>.put("java.naming.ldap.factory.socket", "talend.ssl.AdvancedSocketFactory");
+<%
+					}
+					if(("LDAPS").equals(protocol) || ("TLS").equals(protocol)){
+						if(("true").equals(advanced)){
+							if(alwaysTrust) {
+%>
+								<%if(isLog4jEnabled){%>
+									log.info("<%=cid%> - Adnanced CA trusting all certs.");
+								<%}%>
+								talend.ssl.AdvancedSocketFactory.alwaysTrust();
+<%
+							} else {
+%>
+								<%if(isLog4jEnabled){%>
+									log.info("<%=cid%> - Advanced CA using a store CA file and Keystore password.");
+									log.debug("Store CA : '" + <%=storepath %> + "'.");
+								<%}%>
+								talend.ssl.AdvancedSocketFactory.setCertStorePath(<%=storepath%>);
+<%
+								if(storepwd !=null && storepwd.length() !=0 ){
+%>
+							
+                                    <%
+                                    String passwordFieldName = "__STORECAPWD__";
+                                    %>
+                                    
+                                    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+                                    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+                                    <%} else {%>
+                                    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+                                    <%}%>
+
+									talend.ssl.AdvancedSocketFactory.setCertStorePassword(decryptedPwd_<%=cid%>);
+<%
+								}
+							}
+						}
+					}
+%>
+					
+					<%@ include file="../tLDAPConnection/ldapconnect.javajet"%>
+					
+<%
+				}else{
+%>
+					javax.naming.ldap.InitialLdapContext ctx_<%=cid%> = (javax.naming.ldap.InitialLdapContext)globalMap.get("<%=exConn%>");
+					<%if(isLog4jEnabled){%>
+						if(ctx_<%=cid%>!=null) {
+							log.info("<%=cid%> - Uses an existing connection ,connection URL is: '" + ctx_<%=cid%>.getEnvironment().get(javax.naming.Context.PROVIDER_URL) + "'."); 
+						}
+					<%}%>
+					baseDN_<%=cid%> = (String)globalMap.get("<%=exConnBaseDN%>");
+<%
+				}
+%>
+				int <%=cid%>_NB_LINE = 0;
+				javax.naming.directory.SearchControls searchCtls_<%=cid%> = new javax.naming.directory.SearchControls();
+				searchCtls_<%=cid%>.setSearchScope(javax.naming.directory.SearchControls.SUBTREE_SCOPE);
+				searchCtls_<%=cid%>.setTimeLimit(<%=timeout%>*1000);
+				searchCtls_<%=cid%>.setCountLimit(<%=limit %>);
+<%
+				if(("false").equals(useExistingConn)){
+					if(baseDN == null || baseDN.length()<=2){
+%>
+						//get basce dn
+						javax.naming.directory.Attributes attrsNaming_<%=cid%> = ctx_<%=cid%>.getAttributes("",new String[] {"namingContexts"});
+						javax.naming.directory.Attribute aNaming_<%=cid%> = attrsNaming_<%=cid%>.get("namingContexts");
+						if(aNaming_<%=cid%> == null)
+						{
+							aNaming_<%=cid%> =attrsNaming_<%=cid%>.get("namingcontexts");
+						}
+						// String searchBase_<%=cid%> = (aNaming_<%=cid%>==null)|())?"":aNaming_<%=cid%>.get().toString();		 
+						String searchBase_<%=cid%> = ((aNaming_<%=cid%> == null) || ((aNaming_<%=cid%> != null)
+										&& (aNaming_<%=cid%>.get().toString() != null)
+										&& (aNaming_<%=cid%>.get().toString().length() > 0) && (Character
+										.isIdentifierIgnorable(aNaming_<%=cid%>.get().toString().charAt(0))))) ? ""
+										: aNaming_<%=cid%>.get().toString();
+<%
+					}else{
+%>
+						String searchBase_<%=cid%> = <%=baseDN%>;
+<%
+					}
+				}else{
+%>
+					String searchBase_<%=cid%> = "";
+<%
+				}
+%>
+				baseDN_<%=cid%> = searchBase_<%=cid%>;
+				javax.naming.directory.DirContext rootSchema_<%=cid%> = null;
+				<%if(paging){%>
+					// Set the page size and initialize the cookie that we pass back in subsequent pages
+					int pageSize_<%=cid%> = <%=pageSize %>;
+					byte[] cookie_<%=cid%> = null;
+					// Request the paged results control
+					javax.naming.ldap.Control[] ctls_<%=cid%> = new javax.naming.ldap.Control[] { new javax.naming.ldap.PagedResultsControl(pageSize_<%=cid%>, true) };
+					ctx_<%=cid%>.setRequestControls(ctls_<%=cid%>);
+	
+					do {
+				<%}%>
+
+						javax.naming.NamingEnumeration answer_<%=cid%> = ctx_<%=cid%>.search(searchBase_<%=cid%>, <%=filter%>, searchCtls_<%=cid%>);
+						
+						rootSchema_<%=cid%> = ctx_<%=cid%>.getSchema("");
+						java.util.Set<String> objectClasses_<%=cid%> = new java.util.HashSet<String>();
+						java.util.Set<String> objectAttributes_<%=cid%> = new java.util.HashSet<String>();
+						java.util.Set<String> mandatoryAttributes_<%=cid%> = new java.util.HashSet<String>();
+						java.util.Set<String> optionalAttributes_<%=cid%> = new java.util.HashSet<String>();
+						
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Retrieving records from the service.");
+						<%}%>
+					while (answer_<%=cid%> .hasMoreElements()) {//a
+						
+				<%
+						List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+					
+						String rejectConnName = "";
+						List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+						if(rejectConns != null && rejectConns.size() > 0) {
+							IConnection rejectConn = rejectConns.get(0);
+							rejectConnName = rejectConn.getName();
+						}
+						List<IMetadataColumn> rejectColumnList = null;
+						IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+						if(metadataTable != null) {
+							rejectColumnList = metadataTable.getListColumns();	  
+						}
+						
+						String firstConnName = "";
+						if (conns!=null) {
+							if (conns.size()>0) {
+								for (int i=0;i<conns.size();i++) {
+									IConnection connTemp = conns.get(i);
+									if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+										if(i==0){
+											firstConnName = connTemp.getName();
+										}
+%>
+										<%=connTemp.getName() %> = null;			
+<%
+									}
+								}
+							}
+						}
+%>
+						<%=cid%>_NB_LINE++;
+						javax.naming.directory.Attributes attrs_<%=cid%> = null;
+<%
+						if(firstConnName.length()>0){
+%>
+							<%=firstConnName %> = new <%=firstConnName %>Struct();
+							try{
+<%
+						}
+%>
+								javax.naming.directory.SearchResult sr_<%=cid%>  = (javax.naming.directory.SearchResult) answer_<%=cid%>.next();
+								globalMap.put("<%=cid%>_RESULT_NAME",sr_<%=cid%>.getName());
+								attrs_<%=cid%> = sr_<%=cid%>.getAttributes();
+								
+								objectClasses_<%=cid%>.clear();
+								objectAttributes_<%=cid%>.clear();
+								mandatoryAttributes_<%=cid%>.clear();
+								optionalAttributes_<%=cid%>.clear();
+
+								for (javax.naming.NamingEnumeration e_<%=cid%> = attrs_<%=cid%>.getIDs(); e_<%=cid%>.hasMore();){
+									objectAttributes_<%=cid%>.add((String)e_<%=cid%>.next());	
+					   			}
+								
+								for (javax.naming.NamingEnumeration e_<%=cid%> = attrs_<%=cid%>.get("objectClass").getAll(); e_<%=cid%>.hasMore();){
+									objectClasses_<%=cid%>.add((String)e_<%=cid%>.next());
+								}
+								
+								for(String objectClass_<%=cid%> : objectClasses_<%=cid%>) {
+									javax.naming.directory.DirContext schema_<%=cid%> = (javax.naming.directory.DirContext) rootSchema_<%=cid%>.lookup(<%=classDefRoot %> + objectClass_<%=cid%>);
+									javax.naming.directory.Attributes attributes_<%=cid%> = schema_<%=cid%>.getAttributes("");
+					
+									if(attributes_<%=cid%> != null) {
+										if (attributes_<%=cid%>.get("must") != null) {
+											for (javax.naming.NamingEnumeration e_<%=cid%> = attributes_<%=cid%>.get("must").getAll(); e_<%=cid%>.hasMore();){
+												mandatoryAttributes_<%=cid%>.add((String)e_<%=cid%>.next());
+											}
+										}
+										
+										if (attributes_<%=cid%>.get("may") != null) {
+											for (javax.naming.NamingEnumeration e_<%=cid%> = attributes_<%=cid%>.get("may").getAll(); e_<%=cid%>.hasMore();){
+												optionalAttributes_<%=cid%>.add((String)e_<%=cid%>.next());
+											}
+										}
+									}
+									schema_<%=cid%>.close();
+								}
+							
+						 		// for output
+						 		StringBuilder attrStr_<%=cid%> = null;
+<%
+								if (conns!=null) {//1
+									if (conns.size()>0) {//2
+										IConnection conn = conns.get(0); //the first connection
+										if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//3
+											firstConnName = conn.getName();		 
+						%>		  
+											if (attrs_<%=cid%> != null) {//b
+<%
+												for(IMetadataColumn column:columnList){//5
+													if ("objectAttributes".equals(column.getLabel())) {
+														// Availible attributes for this object
+%>
+														attrStr_<%=cid%> = new StringBuilder();
+														for (String objectAttribute_<%=cid%> : objectAttributes_<%=cid%>){
+															if(attrStr_<%=cid%>.length()>0){
+																attrStr_<%=cid%>.append(<%=separator%>);
+															}
+															attrStr_<%=cid%>.append(objectAttribute_<%=cid%>);
+														}
+														<%=conn.getName() %>.<%=column.getLabel() %> = attrStr_<%=cid%>.toString();
+<%
+													} else if ("mandatoryAttributes".equals(column.getLabel())) {
+%>
+														attrStr_<%=cid%> = new StringBuilder();
+														for (String mandatoryAttribute_<%=cid%> : mandatoryAttributes_<%=cid%>){
+															if(attrStr_<%=cid%>.length()>0){
+																attrStr_<%=cid%>.append(<%=separator%>);
+															}
+															attrStr_<%=cid%>.append(mandatoryAttribute_<%=cid%>);
+														}
+														<%=conn.getName() %>.<%=column.getLabel() %> = attrStr_<%=cid%>.toString();
+<%
+													} else if ("optionalAttributes".equals(column.getLabel())) {
+%>
+														attrStr_<%=cid%> = new StringBuilder();
+														for (String optionalAttribute_<%=cid%> : optionalAttributes_<%=cid%>){
+															if(attrStr_<%=cid%>.length()>0){
+																attrStr_<%=cid%>.append(<%=separator%>);
+															}
+															attrStr_<%=cid%>.append(optionalAttribute_<%=cid%>);
+														}
+														<%=conn.getName() %>.<%=column.getLabel() %> = attrStr_<%=cid%>.toString();
+<%
+													} else {
+%>
+														javax.naming.directory.Attribute attr_<%=column.getLabel()%>_<%=cid%> = attrs_<%=cid%>.get("<%=column.getOriginalDbColumnName()%>");
+														if(attr_<%=column.getLabel()%>_<%=cid%> != null)
+														{
+															attrStr_<%=cid%> = new StringBuilder();
+															for (javax.naming.NamingEnumeration e_<%=cid%> = attr_<%=column.getLabel()%>_<%=cid%>.getAll(); e_<%=cid%>.hasMore();){
+																if(attrStr_<%=cid%>.length()>0){
+																	attrStr_<%=cid%>.append(<%=separator%>);
+																}
+																attrStr_<%=cid%>.append(e_<%=cid%>.next().toString());
+															}
+															<%=conn.getName() %>.<%=column.getLabel() %> = attrStr_<%=cid%>.toString();
+														} else {
+															<%=conn.getName() %>.<%=column.getLabel() %> = null;
+														}			
+<%					
+													}
+												}//5
+%>
+											}//b
+							} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+
+<%
+								if (dieOnError) {
+%>
+									throw(e);
+<%
+								} else {
+									if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+%>					
+										<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+										for(IMetadataColumn column : metadata.getListColumns()) {
+%>
+											<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+										}
+%>
+										<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+										<%=firstConnName %> = null;
+<%
+									} else if(("").equals(rejectConnName)){
+%>
+										System.err.println(e.getMessage());
+<%
+										if(isLog4jEnabled){
+%>
+											log.error("<%=cid%> - " + e.getMessage());
+<%
+										}
+%>
+										<%=firstConnName %> = null;
+<%
+									} else if(rejectConnName.equals(firstConnName)){
+%>
+										<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+									}
+								}
+%>
+							}
+<%
+										}//3
+									}//2
+								}//1
+%>
+///////////////////////////////////		
+<%
+			}
+		}
+%>

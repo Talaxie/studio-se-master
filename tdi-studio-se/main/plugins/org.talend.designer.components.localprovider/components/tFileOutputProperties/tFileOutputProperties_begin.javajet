@@ -1,0 +1,149 @@
+<%@ jet 
+    imports="
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+    "
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();	
+String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+String append = ElementParameterParser.getValue(node,"__APPEND__");
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+log4jFileUtil.componentStartInfo(node);
+%>
+java.io.File file_<%=cid%> = new java.io.File(<%=filename%>);
+java.io.File parent_<%=cid%> = file_<%=cid%>.getParentFile();
+if(!parent_<%=cid%>.exists()){
+    parent_<%=cid%>.mkdirs();
+}
+<%
+if(("false").equals(append)){
+%>
+else{
+    if(file_<%=cid%>.exists()){
+        file_<%=cid%>.delete();
+    }
+}
+<%
+}
+%>
+file_<%=cid%>.createNewFile();
+<%
+if(("PROPERTIES_FORMAT").equals(fileFormat)){
+%>
+    java.io.InputStream fis_<%=cid%> = new java.io.FileInputStream(file_<%=cid%>);
+    java.util.Properties properties_<%=cid%> = new java.util.Properties() {
+        // use a LinkedHashMap since in java 9 entrySet() instead of keys() is used in store()
+        private final java.util.Map<Object, Object> linkedHashMap = new java.util.LinkedHashMap<>();
+
+        @Override
+        public synchronized java.util.Enumeration<Object> keys() {
+            return java.util.Collections.enumeration(linkedHashMap.keySet());
+        }
+
+        @Override
+        public synchronized Object put(Object key, Object value) {
+            linkedHashMap.put(key, value);
+            return super.put(key, value);
+        }
+
+        @Override
+        public java.util.Set<java.util.Map.Entry<Object, Object>> entrySet() {
+            return java.util.Collections.synchronizedSet(linkedHashMap.entrySet());
+        }
+
+        @Override
+        public synchronized Object remove(Object key) {
+            linkedHashMap.remove(key);
+            return super.remove(key);
+        }
+
+        @Override
+        public synchronized void putAll(java.util.Map<?, ?> t) {
+            linkedHashMap.putAll(t);
+            super.putAll(t);
+        }
+
+        @Override
+        public synchronized void clear() {
+            linkedHashMap.clear();
+            super.clear();
+        }
+
+        @Override
+        public synchronized void replaceAll(java.util.function.BiFunction<? super Object, ? super Object, ?> function) {
+            linkedHashMap.replaceAll(function);
+            super.replaceAll(function);
+        }
+
+        @Override
+        public synchronized Object putIfAbsent(Object key, Object value) {
+            linkedHashMap.putIfAbsent(key, value);
+            return super.putIfAbsent(key, value);
+        }
+
+        @Override
+        public synchronized boolean remove(Object key, Object value) {
+            linkedHashMap.remove(key, value);
+            return super.remove(key, value);
+        }
+
+        @Override
+        public synchronized boolean replace(Object key, Object oldValue, Object newValue) {
+            linkedHashMap.replace(key, oldValue, newValue);
+            return super.replace(key, oldValue, newValue);
+        }
+
+        @Override
+        public synchronized Object replace(Object key, Object value) {
+            linkedHashMap.replace(key, value);
+            return super.replace(key, value);
+        }
+
+        @Override
+        public synchronized Object computeIfAbsent(Object key,
+                java.util.function.Function<? super Object, ?> mappingFunction) {
+            linkedHashMap.computeIfAbsent(key, mappingFunction);
+            return super.computeIfAbsent(key, mappingFunction);
+        }
+
+        @Override
+        public synchronized Object computeIfPresent(Object key,
+                java.util.function.BiFunction<? super Object, ? super Object, ?> remappingFunction) {
+            linkedHashMap.computeIfPresent(key, remappingFunction);
+            return super.computeIfPresent(key, remappingFunction);
+        }
+
+        @Override
+        public synchronized Object compute(Object key,
+                java.util.function.BiFunction<? super Object, ? super Object, ?> remappingFunction) {
+            linkedHashMap.compute(key, remappingFunction);
+            return super.compute(key, remappingFunction);
+        }
+
+        @Override
+        public synchronized Object merge(Object key, Object value,
+                java.util.function.BiFunction<? super Object, ? super Object, ?> remappingFunction) {
+            linkedHashMap.merge(key, value, remappingFunction);
+            return super.merge(key, value, remappingFunction);
+        }
+    };
+    properties_<%=cid%>.load(fis_<%=cid%>);
+    fis_<%=cid%>.close();
+<%
+}else if(("INI_FORMAT").equals(fileFormat)){
+
+%>
+    org.ini4j.Wini ini_<%=cid%> = new org.ini4j.Wini(new java.io.File(<%=filename%>));
+    ini_<%=cid%>.getConfig().setFileEncoding(java.nio.charset.Charset.forName(<%=encoding %>));
+<%
+}
+%>

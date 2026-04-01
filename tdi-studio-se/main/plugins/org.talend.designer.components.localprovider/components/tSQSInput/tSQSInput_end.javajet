@@ -1,0 +1,71 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+    boolean deleteMessages = "true".equals(ElementParameterParser.getValue(node,"__DELETE_MESSAGE__"));
+    boolean readAllMessages = "true".equals(ElementParameterParser.getValue(node,"__READ_ALL_MESSAGE__"));
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+	%>
+
+			} //for loop
+			<%
+			if (deleteMessages && readAllMessages){
+    		%>
+        			isContinueReceive_<%=cid%> = <%=cid%>_messages.size() > 0;
+     		<%
+     			} else {
+     		%>
+     				isContinueReceive_<%=cid%> = false;
+     		<%	
+     			}
+     		%>
+     		<%=cid%>_messages = null;
+    	} // while loop
+		
+	}catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		<%
+		if (dieOnError) {
+		%>
+			throw(e_<%=cid%>);
+		<%
+		} else {
+			if(isLog4jEnabled){
+			%>
+				log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+		System.err.println(e_<%=cid%>.getMessage());
+		<%
+		}
+		if(!("true").equals(useExistingConn)) {
+		%>
+	}finally{
+		if(conn_<%=cid%> !=null){
+			conn_<%=cid%>.shutdown();
+		}
+		
+		<%
+			if(isLog4jEnabled){
+		%>
+				log.info("Number of Messages Read: " + nbline_<%=cid%>);
+		<%
+			}
+		}
+		%>
+	}
+	
+	globalMap.put("<%=cid %>_NB_LINE", nbline_<%=cid%>);

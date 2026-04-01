@@ -1,0 +1,26 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+          dbLog = new DBLogUtil(node);
+    String cid = node.getUniqueName();
+
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+
+    String conn = "conn_" + connection;
+%>
+	java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+	if(conn_<%=cid%> != null && !conn_<%=cid%>.isClosed())
+	{
+        <%dbLog.conn().closeTry(dbLog.str(conn));%>
+        conn_<%=cid%>.close();
+        <%dbLog.conn().closeDone(dbLog.str(conn));%>
+	}

@@ -1,0 +1,54 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser
+    	org.talend.designer.codegen.config.CodeGeneratorArgument
+    	org.talend.core.model.metadata.IMetadataTable 
+		java.util.List 
+	"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	log = new LogUtil(node);
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {//2 	
+	
+	String cid = node.getUniqueName();
+	String tablePrint = ElementParameterParser.getValue(node,"__TABLE_PRINT__");
+%>
+
+//////
+<%
+	if (("true").equals(tablePrint)) {//print all records one time
+%>
+
+                    
+                    java.io.PrintStream consoleOut_<%=cid%> = null;
+                    if (globalMap.get("tLogRow_CONSOLE")!=null)
+                    {
+                    	consoleOut_<%=cid%> = (java.io.PrintStream) globalMap.get("tLogRow_CONSOLE");
+                    }
+                    else
+                    {
+                    	consoleOut_<%=cid%> = new java.io.PrintStream(new java.io.BufferedOutputStream(System.out));
+                    	globalMap.put("tLogRow_CONSOLE",consoleOut_<%=cid%>);
+                    }
+                    
+                    consoleOut_<%=cid%>.println(util_<%=cid %>.format().toString());
+                    consoleOut_<%=cid%>.flush();
+<%
+  }
+%>
+//////
+globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+<%log.info(log.str("Printed row count: "), log.var("nb_line"), log.str("."));%>
+
+///////////////////////    			
+<%
+    }//2
+}//1
+%>

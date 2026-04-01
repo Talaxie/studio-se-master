@@ -1,0 +1,240 @@
+
+<%@ jet
+imports="
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IProcess
+	java.util.List
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+
+	String cid = node.getUniqueName();
+	dbLog = new DBLogUtil(node);
+	IProcess process = node.getProcess();
+	String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+
+	String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+
+	boolean setAutoCommit = false;
+
+	boolean useExistingConnection = "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+
+	String dbschema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+
+	String tableName = ElementParameterParser.getValue(node,"__TABLE__");
+
+	boolean useSpatialOptions = ("true").equals(ElementParameterParser.getValue(node,"__USE_SPATIAL_OPTIONS__"));
+
+	boolean createSpatialIndex = ("true").equals(ElementParameterParser.getValue(node,"__SPATIAL_INDEX__"));
+
+	boolean createGeometryColumns = ("true").equals(ElementParameterParser.getValue(node,"__GEOMETRY_COLUMNS__"));
+
+	boolean useBatchSize = ("true").equals(ElementParameterParser.getValue(node,"__USE_BATCH_SIZE__"));
+
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+
+	String rejectConnName = null;
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    if(useExistingConnection) {
+        List<? extends INode> nodes = process.getNodesOfType("tPostgresqlConnection");
+        for (INode ne:nodes) {
+            if (connection.equals(ne.getUniqueName())) {
+                setAutoCommit = "true".equals(ElementParameterParser.getValue(ne, "__AUTO_COMMIT__"));
+                break;
+            }
+        }
+    }
+
+    boolean useBatch = useBatchSize && (rejectConnName == null)
+                     && (
+                          ("INSERT").equals(dataAction) || ("UPDATE").equals(dataAction) || ("UPSERT").equals(dataAction) || ("DELETE").equals(dataAction)
+                        );
+
+    boolean isParallelize ="true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__PARALLELIZE__"));
+    String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+	boolean createTable = "CREATE".equals(tableAction) || "DROP_CREATE".equals(tableAction) || "CREATE_IF_NOT_EXISTS".equals(tableAction) || "DROP_IF_EXISTS_AND_CREATE".equals(tableAction);
+    if(createGeometryColumns && useSpatialOptions && !isParallelize && createTable){
+		%>
+		java.sql.Statement stmtCreateGeoColumns_<%=cid%> = conn_<%=cid%>.createStatement();
+
+		// Delete geometry columns entry if already exists.
+		String deleteGeometryColumns_<%=cid %> = "DELETE FROM geometry_columns WHERE f_table_name='" +
+												<%=tableName %> + "' AND f_table_schema='" + <%=dbschema %> +"'";
+		stmtCreateGeoColumns_<%=cid%>.execute(deleteGeometryColumns_<%=cid %>);
+
+		// Create new entry in geometry columns table
+        String insertGeometryColumns_<%=cid %> = "INSERT INTO geometry_columns VALUES ('', '"+ <%=dbschema %> +"', '"+
+        										<%=tableName %> +"','"+ geometryColumnName_<%=cid %> +
+        										"', "+dimension_<%=cid %>+", "+ SRID_<%=cid %> +", 'GEOMETRY')";
+        stmtCreateGeoColumns_<%=cid%>.execute(insertGeometryColumns_<%=cid %>);
+
+        stmtCreateGeoColumns_<%=cid%>.close();
+		<%
+	}
+	if(createSpatialIndex && useSpatialOptions && !isParallelize && createTable){
+		%>
+    	java.sql.Statement stmtCreateIndex_<%=cid%> = conn_<%=cid%>.createStatement();
+		// Drop spatial index if exists
+		String dropIndex_<%=cid %> = "DROP INDEX IF EXISTS \""+ tableName_<%=cid%> +"_geo_index\"";
+		stmtCreateIndex_<%=cid%>.execute(dropIndex_<%=cid %>);
+
+		// Create spatial index using GIST on geometry columns
+		String createIndex_<%=cid %> = "CREATE INDEX \""+ <%=tableName %> +"_geo_index\" ON \""+ tableName_<%=cid%> +
+								 "\" USING GIST (\"" + geometryColumnName_<%=cid %> +"\")";
+        stmtCreateIndex_<%=cid%>.execute(createIndex_<%=cid %>);
+       stmtCreateIndex_<%=cid%>.close();
+		<%
+	}
+    if(("INSERT_OR_UPDATE").equals(dataAction)) {
+%>
+        if(pstmtUpdate_<%=cid%> != null){
+            pstmtUpdate_<%=cid %>.close();
+            resourceMap.remove("pstmtUpdate_<%=cid %>");
+        }
+        if(pstmtInsert_<%=cid %> != null){
+            pstmtInsert_<%=cid %>.close();
+            resourceMap.remove("pstmtInsert_<%=cid %>");
+        }
+        if(pstmt_<%=cid %> != null) {
+            pstmt_<%=cid %>.close();
+            resourceMap.remove("pstmt_<%=cid %>");
+        }
+<%
+    } else if(("UPDATE_OR_INSERT").equals(dataAction)) {
+%>
+        if(pstmtUpdate_<%=cid%> != null){
+            pstmtUpdate_<%=cid %>.close();
+            resourceMap.remove("pstmtUpdate_<%=cid %>");
+        }
+        if(pstmtInsert_<%=cid %> != null){
+            pstmtInsert_<%=cid %>.close();
+            resourceMap.remove("pstmtInsert_<%=cid %>");
+        }
+<%
+    } else {
+        if (useBatch) {
+	    %>
+	    try {
+				int countSum_<%=cid%> = 0;
+				if (pstmt_<%=cid %> != null && batchSizeCounter_<%=cid%> > 0) {
+						<%dbLog.batch().executeTry(dbLog.str(dataAction));%>
+					for(int countEach_<%=cid%>: pstmt_<%=cid %>.executeBatch()) {
+						countSum_<%=cid%> += (countEach_<%=cid%> < 0 ? 0 : countEach_<%=cid%>);
+					}
+					rowsToCommitCount_<%=cid%> += countSum_<%=cid%>;
+						<%dbLog.batch().executeDone(dbLog.str(dataAction));%>
+				}
+		    	<%if (("INSERT").equals(dataAction) || ("UPSERT").equals(dataAction)) {
+		    	%>
+		    		insertedCount_<%=cid%> += countSum_<%=cid%>;
+		    	<%
+		    	}else if (("UPDATE").equals(dataAction)) {
+		    	%>
+		    		updatedCount_<%=cid%> += countSum_<%=cid%>;
+		    	<%
+		    	}else if (("DELETE").equals(dataAction)) {
+		    	%>
+		    	    deletedCount_<%=cid%> += countSum_<%=cid%>;
+		    	<%
+		    	}%>
+	    }catch (java.sql.BatchUpdateException e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+	    	java.sql.SQLException ne_<%=cid%> = e_<%=cid%>.getNextException(),sqle_<%=cid%>=null;
+	    	String errormessage_<%=cid%>;
+			if (ne_<%=cid%> != null) {
+				// build new exception to provide the original cause
+				sqle_<%=cid%> = new java.sql.SQLException(e_<%=cid%>.getMessage() + "\ncaused by: " + ne_<%=cid%>.getMessage(), ne_<%=cid%>.getSQLState(), ne_<%=cid%>.getErrorCode(), ne_<%=cid%>);
+				errormessage_<%=cid%> = sqle_<%=cid%>.getMessage();
+			}else{
+				errormessage_<%=cid%> = e_<%=cid%>.getMessage();
+			}
+	    	<%if(("true").equals(dieOnError)) {
+	    	%>
+	    		if (ne_<%=cid%> != null) {
+	    			throw(sqle_<%=cid%>);
+	    		}else{
+	            	throw(e_<%=cid%>);
+	            }
+	    	<%
+	    	}else {
+	    	%>
+	    	int countSum_<%=cid%> = 0;
+			for(int countEach_<%=cid%>: e_<%=cid%>.getUpdateCounts()) {
+				countSum_<%=cid%> += (countEach_<%=cid%> < 0 ? 0 : countEach_<%=cid%>);
+			}
+			rowsToCommitCount_<%=cid%> += countSum_<%=cid%>;
+			<%if (("INSERT").equals(dataAction) || ("UPSERT").equals(dataAction)) {
+	    	%>
+	    		insertedCount_<%=cid%> += countSum_<%=cid%>;
+	    	<%
+	    	}else if (("UPDATE").equals(dataAction)) {
+	    	%>
+	    		updatedCount_<%=cid%> += countSum_<%=cid%>;
+	    	<%
+	    	}else if (("DELETE").equals(dataAction)) {
+	    	%>
+	    	    deletedCount_<%=cid%> += countSum_<%=cid%>;
+	    	<%
+	    	}
+	    	dbLog.logPrintedException("errormessage_"+cid);%>
+	    	System.err.println(errormessage_<%=cid%>);
+	    	<%
+	    	}%>
+		}
+	    <%
+	    }%>
+        if(pstmt_<%=cid %> != null) {
+        		<%
+        		boolean usingStatsLogs = cid.equals("talendLogs_DB") || cid.equals("talendStats_DB") || cid.equals("talendMeter_DB");
+        		if(!usingStatsLogs){%>
+            pstmt_<%=cid %>.close();
+            resourceMap.remove("pstmt_<%=cid %>");
+            <%} else {%>
+            SharedDBPreparedStatement.releasePreparedStatement(keyPsmt_<%=cid%>);
+            resourceMap.remove("keyPsmt_<%=cid%>");
+            <%}%>
+        }
+        <%
+    }
+    %>
+    resourceMap.put("statementClosed_<%=cid%>", true);
+    <%
+	if(!useExistingConnection)
+	{
+		if(!("").equals(commitEvery) && !("0").equals(commitEvery))
+		{
+		%>
+			if(rowsToCommitCount_<%=cid%> != 0){
+				<%dbLog.commit().commitTry(null, dbLog.var("rowsToCommitCount"));%>
+			}
+			conn_<%=cid%>.commit();
+			if(rowsToCommitCount_<%=cid%> != 0){
+				<%dbLog.commit().commitDone(null);%>
+				rowsToCommitCount_<%=cid%> = 0;
+			}
+			commitCounter_<%=cid%> = 0;
+		<%
+		}
+
+		dbLog.conn().closeTry(null);%>
+    	conn_<%=cid%> .close();
+    	<%dbLog.conn().closeDone(null);%>
+    	resourceMap.put("finish_<%=cid%>", true);
+    	<%
+	}
+    %>
+
+<%@ include file="../templates/DB/Output/DBOutputEndGlobalVars.javajet"%>
+

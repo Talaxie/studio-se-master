@@ -1,0 +1,160 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String endpoint = ElementParameterParser.getValue(node,"__ENDPOINT__");
+
+String serviceNS = ElementParameterParser.getValue(node,"__SERVICE_NS__");
+String serviceName = ElementParameterParser.getValue(node,"__SERVICE_NAME__");
+String portNS = ElementParameterParser.getValue(node,"__PORT_NS__");
+String portName = ElementParameterParser.getValue(node,"__PORT_NAME__");
+
+String soapAction = ElementParameterParser.getValue(node,"__SOAPACTION__");
+String methodNS = ElementParameterParser.getValue(node,"__METHOD_NS__");
+
+boolean useNTLM = ("true").equals(ElementParameterParser.getValue(node,"__USE_NTLM__"));
+String domain = ElementParameterParser.getValue(node,"__NTLM_DOMAIN__");
+String host = ElementParameterParser.getValue(node,"__NTLM_HOST__");
+
+boolean needAuth = ("true").equals(ElementParameterParser.getValue(node,"__NEED_AUTH__"));
+String username = ElementParameterParser.getValue(node,"__AUTH_USERNAME__");
+
+boolean useProxy = ("true").equals(ElementParameterParser.getValue(node,"__USE_PROXY__"));
+String proxyHost = ElementParameterParser.getValue(node,"__PROXY_HOST__");
+String proxyPort = ElementParameterParser.getValue(node,"__PROXY_PORT__");
+String proxyUser = ElementParameterParser.getValue(node,"__PROXY_USERNAME__");
+
+boolean needSSLtoTrustServer = ("true").equals(ElementParameterParser.getValue(node,"__NEED_SSL_TO_TRUSTSERVER__"));
+String trustStoreFile = ElementParameterParser.getValue(node,"__SSL_TRUSTSERVER_TRUSTSTORE__");
+
+String connTimeout = ElementParameterParser.getValue(node,"__CONNECTION_TIMEOUT__");
+    if(connTimeout == null || "".equals(connTimeout) || "\"\"".equals(connTimeout)){
+        connTimeout = "20";
+    }
+%>
+   long connTimeout_<%= cid %> = (long)(Double.valueOf(<%= connTimeout %>) * 1000);
+<%
+
+String receiveTimeout = ElementParameterParser.getValue(node,"__RECEIVE_TIMEOUT__");
+    if(receiveTimeout == null || "".equals(receiveTimeout) || "\"\"".equals(receiveTimeout)){
+        receiveTimeout = "20";
+    }
+%>
+   long receiveTimeout_<%= cid %> = (long)(Double.valueOf(<%= receiveTimeout %>) * 1000);
+<%
+
+String tempPath = ElementParameterParser.getValue(node,"__TMPPATH__");
+
+String passwordFieldName = "";
+
+if("".equals(tempPath))tempPath="\"\"";
+
+%>
+    System.setProperty("org.apache.commons.logging.Log", "org.apache.commons.logging.impl.NoOpLog");
+
+    System.setProperty("javax.xml.accessExternalSchema", "all");
+
+	org.talend.webservice.helper.Utils util_<%=cid%> = new org.talend.webservice.helper.Utils();
+
+    org.talend.webservice.helper.conf.ServiceHelperConfiguration config_<%=cid%> = new org.talend.webservice.helper.conf.ServiceHelperConfiguration();
+
+	config_<%=cid%>.setConnectionTimeout(connTimeout_<%= cid %>);
+	config_<%=cid%>.setReceiveTimeout(receiveTimeout_<%= cid %>);
+
+	config_<%=cid%>.setKeyStoreFile(System.getProperty("javax.net.ssl.keyStore"));
+	config_<%=cid%>.setKeyStoreType(System.getProperty("javax.net.ssl.keyStoreType"));
+	config_<%=cid%>.setKeyStorePwd(System.getProperty("javax.net.ssl.keyStorePassword"));
+
+<%
+if(needAuth || useNTLM){
+	passwordFieldName = "__AUTH_PASSWORD__";
+%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+<%
+}
+if (needSSLtoTrustServer) {
+%>
+	System.setProperty("javax.net.ssl.trustStore", <%=trustStoreFile %>);
+
+    <%
+    passwordFieldName = "__SSL_TRUSTSERVER_PASSWORD__";
+    %>
+
+    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%>
+    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+    <%} else {%>
+    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>;
+    <%}%>
+
+	System.setProperty("javax.net.ssl.trustStorePassword", decryptedPwd_<%=cid%>);
+
+<%
+}if(needAuth&&!useNTLM){
+%>
+	config_<%=cid%>.setUsername(<%=username%>);
+	config_<%=cid%>.setPassword(decryptedPassword_<%=cid%>);
+<%
+}if(useProxy){
+%>
+	config_<%=cid%>.setProxyServer(<%=proxyHost %>);
+	config_<%=cid%>.setProxyPort(<%=proxyPort %>);
+    config_<%=cid%>.setProxyUsername(<%=proxyUser %>);
+
+    <%
+    passwordFieldName = "__PROXY_PASSWORD__";
+    %>
+
+    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%>
+    	final String decryptedProxyPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+    <%} else {%>
+    	final String decryptedProxyPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>;
+    <%}%>
+
+    config_<%=cid%>.setProxyPassword(decryptedProxyPwd_<%=cid%>);
+<%
+}if(useNTLM){
+%>
+	<%if(!"\"\"".equals(domain)){%>
+	System.setProperty("http.auth.ntlm.domain", <%=domain%>);
+	<%}%>
+	java.net.Authenticator.setDefault(new java.net.Authenticator() {
+        public java.net.PasswordAuthentication getPasswordAuthentication() {
+            return new java.net.PasswordAuthentication(<%=username%>, decryptedPassword_<%=cid%>.toCharArray());
+        }
+    });
+
+	config_<%=cid%>.setAllowChunking(false);
+<%
+}
+%>
+	org.talend.webservice.helper.ServiceDiscoveryHelper serviceDiscoveryHelper_<%=cid%> = null ;
+	org.talend.webservice.helper.ServiceInvokerHelper serviceInvokerHelper_<%=cid%> = null ;
+
+<%if(!useNTLM){%>
+	java.net.URI uri_<%=cid%> = new java.net.URI(<%=endpoint%>);
+    if ("http".equals(uri_<%=cid%>.getScheme()) || "https".equals(uri_<%=cid%>.getScheme())) {
+
+		serviceInvokerHelper_<%=cid%> = new org.talend.webservice.helper.ServiceInvokerHelper(<%=endpoint%>,config_<%=cid%>,<%=tempPath%>);
+
+	} else {
+<%}%>
+        serviceDiscoveryHelper_<%=cid%> = new org.talend.webservice.helper.ServiceDiscoveryHelper(<%=endpoint%>,<%=tempPath%>);
+    	serviceInvokerHelper_<%=cid%> = new org.talend.webservice.helper.ServiceInvokerHelper(serviceDiscoveryHelper_<%=cid%>,config_<%=cid%>);
+<%if(!useNTLM){%>
+	}
+<%}%>
+
+	javax.xml.namespace.QName serviceName_<%=cid%> = new javax.xml.namespace.QName("<%=serviceNS%>", "<%=serviceName%>");
+	javax.xml.namespace.QName portName_<%=cid%> = new javax.xml.namespace.QName("<%=portNS%>", "<%=portName%>");
+
+	java.util.Map<String,Object> inMap_<%=cid%> = null;

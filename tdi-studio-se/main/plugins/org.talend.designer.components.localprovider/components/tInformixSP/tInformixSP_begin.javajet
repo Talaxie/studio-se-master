@@ -1,0 +1,86 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode) codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+       dbLog = new DBLogUtil(node);
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbport = ElementParameterParser.getValue(node, "__PORT__");
+String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbserver = ElementParameterParser.getValue(node, "__DBSERVER__");
+String dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String spName = ElementParameterParser.getValue(node, "__SP_NAME__");
+boolean isFunction = ("true").equals(ElementParameterParser.getValue(node, "__IS_FUNCTION__"));
+List<Map<String, String>> spArgs = (List<Map<String,String>>) ElementParameterParser.getObjectValue(node, "__SP_ARGS__");
+boolean useExistingConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"));
+boolean useTransaction = ("true").equals(ElementParameterParser.getValue(node,"__USE_TRANSACTION__"));
+if (useExistingConnection) {
+	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	String connectionName = "conn_" + connection;
+%>
+	java.sql.Connection connection_<%=cid%> = (java.sql.Connection) globalMap.get("<%=connectionName%>");
+	<%dbLog.conn().useExistConn("connection_"+cid+".getMetaData().getURL()", "connection_"+cid+".getMetaData().getUserName()");%>
+<%
+} else {
+%>
+	java.lang.Class.forName("com.informix.jdbc.IfxDriver");
+	<%dbLog.conn().logJDBCDriver(dbLog.str("com.informix.jdbc.IfxDriver"));%>
+<%
+	if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+    	String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%>;
+<%
+	} else {
+%>
+		String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%> + ";" + <%=dbproperties%>;
+<%
+	}
+%>
+	        
+	<%
+	String passwordFieldName = "__PASS__";
+	%>
+	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+   	<%dbLog.conn().connTry(dbLog.var("url"), dbuser);%>
+	java.sql.Connection connection_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, <%=dbuser%>, decryptedPassword_<%=cid%>);
+	<%dbLog.conn().connDone(dbLog.var("url"));%>
+	<%
+}
+    dbLog.commit().logAutoCommit("connection_"+cid+".getAutoCommit()");
+	if (useTransaction) {
+%>
+	if(connection_<%=cid%>.getAutoCommit()) {
+	    connection_<%=cid%>.setAutoCommit(false);
+	}
+<%
+	}
+%>
+java.sql.CallableStatement statement_<%=cid%> = connection_<%=cid%>.prepareCall("{<%=isFunction ? "? = " : ""%>call " + <%=spName%> + "(
+<%
+boolean isFirstArg = true;
+for (int i = 0; i < spArgs.size(); i++) {
+	if(!("RECORDSET").equals(spArgs.get(i).get("TYPE"))){
+		if(isFirstArg){
+			%>?<%
+			isFirstArg=false;
+		}else{
+			%>,?<%
+		}
+	}
+}
+%>)}");
+
+java.sql.Timestamp tmpDate_<%=cid%>;
+String tmpString_<%=cid%>;

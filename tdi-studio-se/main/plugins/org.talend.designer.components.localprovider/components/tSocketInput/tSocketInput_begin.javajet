@@ -1,0 +1,275 @@
+<%@ jet 
+    imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser 
+        org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.IMetadataColumn 
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        java.util.List 
+    " 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();      
+%>
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+        boolean bindHostname = ("true").equals(ElementParameterParser.getValue(node,"__BIND_HOSTNAME__"));
+        String hostname = ElementParameterParser.getValue(node,"__SERVERHOSTNAME__");
+        String port = ElementParameterParser.getValue(node,"__PORT__");
+        boolean uncompress = ("true").equals(ElementParameterParser.getValue(node,"__UNCOMPRESS__"));
+        boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+        
+        String delim1 = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+        String fieldSeparator = delim1.substring(1,delim1.length()-1);
+        if(("'").equals(fieldSeparator)) fieldSeparator = "\\'";
+        
+        String rowSeparator1 = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+        String rowSeparator = rowSeparator1.substring(1,rowSeparator1.length()-1);
+        if(("'").equals(rowSeparator)) rowSeparator = "\\'";
+        
+        String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+        String escapeChar = escapeChar1.substring(1,escapeChar1.length()-1);
+        if(("'").equals(escapeChar)) escapeChar = "\\'";
+        
+        String textEnclosure1 = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+        String textEnclosure = textEnclosure1.substring(1,textEnclosure1.length()-1);
+        if ("".equals(textEnclosure)) textEnclosure = "\0";
+        if(("'").equals(textEnclosure)) textEnclosure = "\\'";
+        
+        String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+%>      
+<% if(uncompress){%>
+class Compress{
+    public byte[] unzip(byte[] zipBytes) throws java.io.IOException {
+        java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(zipBytes);
+        java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(bais);
+        zis.getNextEntry();
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        final int BUFSIZ = 8192;
+        byte inbuf[] = new byte[BUFSIZ];
+        int n;
+        while ((n = zis.read(inbuf, 0, BUFSIZ)) != -1) {
+            baos.write(inbuf, 0, n);
+        }
+        byte[] data = baos.toByteArray();
+        zis.close();
+        return data;
+    } 
+}
+Compress com<%=cid%> = new Compress();
+<%}%>
+
+int nb_line_<%=cid %>=0;
+
+java.net.ServerSocket ss<%=cid%>;
+java.net.Socket socket<%=cid%>=null;
+java.io.BufferedReader in<%=cid%>;
+java.io.PrintWriter out<%=cid%>;
+
+<%if(bindHostname){%>
+ss<%=cid%> = new java.net.ServerSocket(<%=port%>, 0, java.net.InetAddress.getByName(<%=hostname %>));
+<%}else{%>
+ss<%=cid%> = new java.net.ServerSocket(<%=port%>);
+<%}%>
+
+<%if(!("").equals(timeout)){%>
+    ss<%=cid%>.setSoTimeout(<%=timeout%>);
+<%}%>
+boolean done<%=cid%> = true;
+while (done<%=cid%>) {
+	try{
+	
+   	  socket<%=cid%> = ss<%=cid%>.accept();
+
+      System.out.println("socket connected");
+      //READ DATA
+      com.talend.csv.CSVReader csvReader<%=cid%> =
+          new com.talend.csv.CSVReader(new java.io.BufferedReader(new java.io.InputStreamReader(socket<%=cid%>.getInputStream(),<%=encoding%>)), '<%=fieldSeparator%>');
+                
+    <%              if(!("\\n").equals(rowSeparator) && !("\\r").equals(rowSeparator)){%>
+      csvReader<%=cid %>.setLineEnd("" + '<%=rowSeparator  %>');
+    <%              }%>
+      csvReader<%=cid %>.setSkipEmptyRecords(true);
+      csvReader<%=cid %>.setQuoteChar('<%=textEnclosure %>');                
+    <%      if(("\\\\").equals(escapeChar)){%>
+      csvReader<%=cid %>.setEscapeChar('\\');
+    <%      }else if(escapeChar.equals(textEnclosure)){%>
+      csvReader<%=cid %>.setEscapeChar('<%=textEnclosure %>');
+    <%      }else{%>
+                //?????doesn't work for other escapeChar
+      csvReader<%=cid %>.setEscapeChar('<%=textEnclosure %>');
+    <%      }%> 
+    
+    
+    String[] row<%=cid %>=null;   
+    while (csvReader<%=cid %>.readNext()) {         
+        row<%=cid %>=csvReader<%=cid %>.getValues();
+    <% if(uncompress){%>
+        //decoding
+        for(int i =0;i<row<%=cid%>.length;i++){
+           row<%=cid%>[i] = new String(com<%=cid%>.unzip(java.util.Base64.getMimeDecoder().decode(row<%=cid%>[i])), <%=encoding%>);           
+        }
+    <% } %>   
+        if(row<%=cid %>.length == 1 && ("\015").equals(row<%=cid %>[0])){//empty line when row separator is '\n'
+            continue;
+        }
+                                                                 
+<%
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+String rejectConnName = "";
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+    IConnection rejectConn = rejectConns.get(0);
+    rejectConnName = rejectConn.getName();
+}
+List<IMetadataColumn> rejectColumnList = null;
+IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+if(metadataTable != null) {
+    rejectColumnList = metadataTable.getListColumns();      
+}
+    if (conns!=null) {
+        if (conns.size()>0) {
+            for (int i=0;i<conns.size();i++) {
+                IConnection connTemp = conns.get(i);
+                if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+        <%=connTemp.getName() %> = null;            
+<%
+                }
+            }
+        }
+    }
+    
+String firstConnName = "";
+if (conns!=null) {
+    if (conns.size()>0) {
+        IConnection conn = conns.get(0);
+        firstConnName = conn.getName();       
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        %>
+        boolean whetherReject_<%=cid %> = false;
+        <%=firstConnName %> = new <%=conn.getName() %>Struct();
+        try {           
+        <%
+            List<IMetadataColumn> columns=metadata.getListColumns();
+            int columnSize = columns.size();
+            %>                          
+        if(row<%=cid %>.length == 1 && ("\015").equals(row<%=cid %>[0])){//empty line when row separator is '\n'           
+<%
+    for (IMetadataColumn column1: metadata.getListColumns()) {%>
+            <%=firstConnName %>.<%=column1.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaIdType(column1.getTalendType(), column1.isNullable())%>;           
+<%      }%>           
+        }else{      
+<%
+        for (int i=0;i<columnSize;i++) {
+                IMetadataColumn column=columns.get(i);
+                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+        %>                         
+            if(<%=i %> < row<%=cid %>.length){              
+<%
+                if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+                <%=firstConnName %>.<%=column.getLabel() %> = row<%=cid %>[<%=i %>];
+<%
+                } else {
+%>
+                    if(row<%=cid %>[<%=i %>].length() > 0) {
+<%
+                        if(javaType == JavaTypesManager.DATE) {
+%>
+                            <%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(row<%=cid %>[<%=i %>], <%= patternValue %>);
+<%
+                        } else if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+%>                          
+                            <%=firstConnName %>.<%=column.getLabel() %> = row<%=cid %>[<%=i %>].getBytes(<%=encoding %>);
+<%
+                        } else {
+%>
+                            <%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(row<%=cid %>[<%=i %>]);
+<%
+                        }
+%>                  
+                    }else{
+                        <%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+                    }
+<%                  
+                }%>                             
+            }else{                                      
+            <%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+            }
+<%          }%>
+        }
+        nb_line_<%=cid %>++;
+} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    whetherReject_<%=cid%> = true;
+    <%
+    if (dieOnError) {
+        %>
+        throw(e);
+        <%
+    } else {
+        if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+        %>
+                <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+            <%
+            for(IMetadataColumn column : metadata.getListColumns()) {
+                %>
+                <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+                <%
+            }
+            %>
+            <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+            <%=firstConnName %> = null;
+            <%
+        } else {
+            %>
+            System.err.print(e.getMessage());
+            <%=firstConnName %> = null;
+            <%
+        }
+    } 
+    %>
+}
+<%          
+        }
+    }
+    if (conns.size()>0) {   
+        boolean isFirstEnter = true;
+        for (int i=0;i<conns.size();i++) {
+            IConnection conn = conns.get(i);
+            if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+    <% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>      
+         if(<%=conn.getName() %> == null){ 
+             <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+         }              
+<%
+                 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+         <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;                    
+<%
+                }
+            }
+        }
+%>
+    <% if(!isFirstEnter) {%> } <% } %>  
+<%
+     }
+    }
+  }
+}
+%>

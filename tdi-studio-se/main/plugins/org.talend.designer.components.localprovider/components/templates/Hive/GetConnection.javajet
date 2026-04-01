@@ -1,0 +1,579 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+
+<% // Connect to Hive Server 2 using JDBC %>
+
+java.sql.Connection conn_<%=cid%> = null;
+<%
+	boolean setTempPath = "true".equals(ElementParameterParser.getValue(node, "__SET_TEMP_PATH__"));
+	if(setTempPath) {
+		String tempPath = ElementParameterParser.getValue(node, "__TEMP_PATH__");
+%>
+		System.setProperty("java.io.tmpdir", <%=tempPath%>);
+<%
+	}
+
+	String yarnClasspathSeparator = ElementParameterParser.getValue(node, "__CLASSPATH_SEPARATOR__");
+%>
+	globalMap.put("current_client_path_separator", System.getProperty("path.separator"));
+	System.setProperty("path.separator", <%=yarnClasspathSeparator%>);
+<%
+
+	String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+	if(("true").equals(useExistingConn)) {
+		String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+		String conn = "conn_" + connection;
+		String db = "db_" + connection;
+		String dbUser = "dbUser_" + connection;
+		%>
+		conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+
+		String dbname_<%=cid%> = (String)globalMap.get("<%=db%>");
+    	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+        	java.sql.Statement goToDatabase_<%=cid%> = conn_<%=cid%>.createStatement();
+        	goToDatabase_<%=cid%>.execute("use " + dbname_<%=cid%>);
+        	goToDatabase_<%=cid%>.close();
+    	}
+
+    	String dbUser_<%=cid%> = (String)globalMap.get("<%=dbUser%>");
+
+    	globalMap.put("HADOOP_USER_NAME_<%=cid%>", System.getProperty("HADOOP_USER_NAME"));
+		if(dbUser_<%=cid %>!=null && !"".equals(dbUser_<%=cid %>.trim())) {
+			System.setProperty("HADOOP_USER_NAME",dbUser_<%=cid %>);
+			//make relative file path work for hive
+			globalMap.put("current_client_user_name", System.getProperty("user.name"));
+			System.setProperty("user.name",dbUser_<%=cid %>);
+		}
+		<%
+	} else {
+		String javaDbDriver = "org.apache.hadoop.hive.jdbc.HiveDriver";
+		String connectionMode = ElementParameterParser.getValue(node, "__CONNECTION_MODE__");
+		String hiveVersion = ElementParameterParser.getValue(node, "__HIVE_VERSION__");
+		String fsDefalutName = "fs.default.name";
+		String hiveServer = ElementParameterParser.getValue(node, "__HIVE_SERVER__");
+
+		boolean setMapredJT = "true".equals(ElementParameterParser.getValue(node, "__SET_MAPRED_JT__"));
+		boolean setNamenode = "true".equals(ElementParameterParser.getValue(node, "__SET_FS_DEFAULT_NAME__"));
+		List<Map<String, String>> hadoopProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HADOOP_ADVANCED_PROPERTIES__");
+
+    	String storeByHBase = ElementParameterParser.getValue(node, "__STORE_BY_HBASE__");
+    	String zookeeperQuorumForHBase = ElementParameterParser.getValue(node, "__ZOOKEEPER_QUORUM__");
+    	String zookeeperClientPortForHBase = ElementParameterParser.getValue(node, "__ZOOKEEPER_CLIENT_PORT__");
+
+    	boolean setZNodeParent = "true".equals(ElementParameterParser.getValue(node, "__SET_ZNODE_PARENT__"));
+		String zNodeParent = ElementParameterParser.getValue(node, "__ZNODE_PARENT__");
+
+		String hbaseMasterPrincipal = ElementParameterParser.getValue(node, "__HBASE_MASTER_PRINCIPAL__");
+		String hbaseRegionServerPrincipal = ElementParameterParser.getValue(node, "__HBASE_REGIONSERVER_PRINCIPAL__");
+
+    	String defineRegisterJar = ElementParameterParser.getValue(node, "__DEFINE_REGISTER_JAR__");
+    	List<Map<String, String>> registerJarForHBase = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__REGISTER_JAR__");
+
+		boolean useYarn = "true".equals(ElementParameterParser.getValue(node, "__USE_YARN__"));
+
+		boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+		boolean securityIsEnabled = useKrb && (isCustom || (hiveDistrib.doSupportKerberos() && (("HIVE".equalsIgnoreCase(hiveServer) && "EMBEDDED".equalsIgnoreCase(connectionMode)) || "HIVE2".equalsIgnoreCase(hiveServer))));
+		boolean securedStandaloneHive2 = securityIsEnabled && "HIVE2".equalsIgnoreCase(hiveServer) && "STANDALONE".equalsIgnoreCase(connectionMode);
+		boolean securedEmbedded = securityIsEnabled && "EMBEDDED".equalsIgnoreCase(connectionMode);
+		boolean securedEmbeddedHive2 = securedEmbedded && "HIVE2".equalsIgnoreCase(hiveServer);
+
+		String hivePrincipal = ElementParameterParser.getValue(node, "__HIVE_PRINCIPAL__");
+		boolean useSsl = "true".equals(ElementParameterParser.getValue(node, "__USE_SSL__"));
+		String sslTrustStore = ElementParameterParser.getValue(node, "__SSL_TRUST_STORE__");
+		String sslStorepasswordFieldName = "__SSL_TRUST_STORE_PASSWORD__";
+
+        boolean useMapRTicket = ElementParameterParser.getBooleanValue(node, "__USE_MAPRTICKET__");
+        String mapRTicketUsername = ElementParameterParser.getValue(node, "__MAPRTICKET_USERNAME__");
+        String mapRTicketCluster = ElementParameterParser.getValue(node, "__MAPRTICKET_CLUSTER__");
+        String mapRTicketDuration = ElementParameterParser.getValue(node, "__MAPRTICKET_DURATION__");
+
+        boolean setMapRHomeDir = ElementParameterParser.getBooleanValue(node, "__SET_MAPR_HOME_DIR__");
+        String mapRHomeDir = ElementParameterParser.getValue(node, "__MAPR_HOME_DIR__");
+
+        boolean setMapRHadoopLogin = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_LOGIN__");
+        String mapRHadoopLogin = ElementParameterParser.getValue(node, "__HADOOP_LOGIN__");
+
+        String passwordFieldName = "";
+
+		if(hiveServer!=null && !"".equals(hiveServer.trim()) && (isCustom || hiveDistrib.doSupportHive2())) {
+			hiveServer = hiveServer.toLowerCase();
+			if ("hive2".equals(hiveServer)) {
+				javaDbDriver = "org.apache.hive.jdbc.HiveDriver";
+			}
+		} else {
+			hiveServer = "hive";
+		}
+
+		if(("hive".equals(hiveServer) && !hiveDistrib.doSupportHive1()) || ("hive2".equals(hiveServer) && !hiveDistrib.doSupportHive2())) {
+%>
+			if(true) {
+				throw new java.lang.Exception("The distribution <%=hiveDistrib.getVersion()%> does not support this version of Hive . Please check your component configuration.");
+			}
+<%
+		}
+
+		if(("STANDALONE".equals(connectionMode) && !hiveDistrib.doSupportStandaloneMode()) || ("EMBEDDED".equals(connectionMode) && !hiveDistrib.doSupportEmbeddedMode())) {
+%>
+			if(true) {
+				throw new java.lang.Exception("The distribution <%=hiveDistrib.getVersion()%> does not support this connection mode . Please check your component configuration.");
+			}
+<%
+		}
+
+		if("STANDALONE".equals(connectionMode) && "hive".equals(hiveServer) && !hiveDistrib.doSupportHive1Standalone()) {
+%>
+			if(true) {
+				throw new java.lang.Exception("The Hive version and the connection mode are not compatible together. Please check your component configuration.");
+			}
+<%
+		}
+
+		if(hadoopProps.size() > 0){
+			for(Map<String, String> item : hadoopProps){
+%>
+				System.setProperty(<%=item.get("PROPERTY") %> ,<%=item.get("VALUE") %>);
+<%
+			}
+		}
+
+		if(securedEmbedded) {
+			String metastoreUrl = ElementParameterParser.getValue(node, "__METASTORE_JDBC_URL__");
+			String driverClass = ElementParameterParser.getValue(node, "__METASTORE_CLASSNAME__");
+			String metastoreUsername = ElementParameterParser.getValue(node, "__METASTORE_USERNAME__");
+			boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+			String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+			String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+%>
+			System.setProperty("hive.metastore.sasl.enabled", "true");
+			System.setProperty("javax.jdo.option.ConnectionDriverName", <%=driverClass%>);
+			<%if(securedEmbeddedHive2){
+				// Disable authorization when using local HiveServer2 in secure mode
+				%>
+				System.setProperty("hive.security.authorization.enabled", "false");
+				<%
+			}else{
+				%>
+				System.setProperty("hive.security.authorization.enabled", "true");
+				<%
+			}
+			%>
+			System.setProperty("javax.jdo.option.ConnectionURL", <%=metastoreUrl%>);
+			System.setProperty("javax.jdo.option.ConnectionUserName", <%=metastoreUsername%>);
+
+    		<%
+    		passwordFieldName = "__METASTORE_PASSWORD__";
+    		%>
+
+    		<%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%>
+        	String decryptedMetastorePassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+   		 	<%} else {%>
+        	String decryptedMetastorePassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>;
+			<%}%>
+
+			System.setProperty("javax.jdo.option.ConnectionPassword", decryptedMetastorePassword_<%=cid%>);
+			System.setProperty("hive.metastore.kerberos.principal", <%=hivePrincipal%>);
+			<%
+			if(securedEmbeddedHive2){
+				%>
+				System.setProperty("hive.server2.authentication.kerberos.principal", <%=ElementParameterParser.getValue(node, "__HIVESERVER2_LOCAL_PRINCIPAL__")%>);
+				System.setProperty("hive.server2.authentication.kerberos.keytab", <%=ElementParameterParser.getValue(node, "__HIVESERVER2_LOCAL_KEYTAB__")%>);
+				<%
+			}
+			%>
+
+<%
+			if(useKeytab) {
+%>
+				org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+<%
+			}
+		}
+
+		if(((isCustom && !useYarn) || (!isCustom && hiveDistrib.isHadoop1())) && setMapredJT) {
+			String mapredJT = ElementParameterParser.getValue(node, "__MAPRED_JT__");
+%>
+			System.setProperty("mapred.job.tracker", <%=mapredJT%>);
+<%
+		}
+
+		if(setNamenode) {
+			String namenode = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+%>
+			System.setProperty("<%=fsDefalutName%>", <%=namenode%>);
+<%
+		}
+%>
+		String dbUser_<%=cid %> = <%=dbuser%>;
+
+		<%
+		passwordFieldName = "__PASS__";
+		%>
+
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+		String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+        <%
+        boolean setHadoopUser = "true".equals(ElementParameterParser.getValue(node, "__SET_HADOOP_USER__"));
+        if (setHadoopUser) {
+            String hadoopUser = ElementParameterParser.getValue(node, "__HADOOP_USER__");
+            %>
+            String username_<%=cid %> = <%=hadoopUser%>;
+            if(username_<%=cid %>!=null && !"".equals(username_<%=cid %>.trim())) {
+                System.setProperty("HADOOP_USER_NAME",username_<%=cid %>);
+            }
+            <%
+        }
+        %>
+        globalMap.put("HADOOP_USER_NAME_<%=cid%>", System.getProperty("HADOOP_USER_NAME"));
+<%
+		if("EMBEDDED".equals(connectionMode) && (isCustom || hiveDistrib.doSupportEmbeddedMode())) {
+%>
+			System.setProperty("hive.metastore.local", "false");
+			System.setProperty("hive.metastore.uris", "thrift://" + <%=dbhost%> + ":" + <%=dbport%>);
+			System.setProperty("hive.metastore.execute.setugi", "true");
+			String url_<%=cid%> = "jdbc:<%=hiveServer%>://";
+<%
+			if(isCustom || (!isCustom && hiveDistrib.doSupportImpersonation())) {
+%>
+				if(dbUser_<%=cid %>!=null && !"".equals(dbUser_<%=cid %>.trim())) {
+					System.setProperty("HADOOP_USER_NAME",dbUser_<%=cid %>);
+					//make relative file path work for hive
+					globalMap.put("current_client_user_name", System.getProperty("user.name"));
+					System.setProperty("user.name",dbUser_<%=cid %>);
+				}
+<%
+			}
+		} else if("STANDALONE".equals(connectionMode) && (isCustom || hiveDistrib.doSupportStandaloneMode())) {
+				if(securedStandaloneHive2) {
+					// using keytab with HiveServer2 in standalone mode
+					boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+					String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+					String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+                    
+					if ((isCustom || hiveDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                        %>
+                        System.setProperty("pname", "MapRLogin");
+                        System.setProperty("https.protocols", "TLSv1.2");
+                        System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+                        System.setProperty("hadoop.login", <%=setMapRHadoopLogin ? mapRHadoopLogin : "\"kerberos\""%>);
+                        <%
+                    }
+					if(useKeytab) {
+%>
+						org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+<%
+					}
+					// Using SSL in Secure Mode
+					if(useSsl && hiveDistrib.doSupportSSL()){
+						// Does the distrib support SSL + KERBEROS
+						if(hiveDistrib.doSupportSSLwithKerberos()){
+							if (ElementParameterParser.canEncrypt(node, sslStorepasswordFieldName)) {
+%>
+								String decryptedSslStorePassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, sslStorepasswordFieldName)%>);
+<%
+							}else{
+%>
+								String decryptedSslStorePassword_<%=cid%> = <%= ElementParameterParser.getValue(node, sslStorepasswordFieldName)%>;
+<%
+							}
+%>
+							String url_<%=cid%> = "jdbc:<%=hiveServer%>://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ";principal=" + <%=hivePrincipal%>+";ssl=true" +";sslTrustStore=" + <%=sslTrustStore%> + ";trustStorePassword=" + decryptedSslStorePassword_<%=cid%>;
+<%
+						// Does the distrib support only SASL-QOP + KERBEROS
+						} else {
+						
+%>
+							String url_<%=cid%> = "jdbc:<%=hiveServer%>://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ";principal=" + <%=hivePrincipal%>+";sasl.qop=auth-conf";
+<%
+						}
+					}else{
+%>
+						String url_<%=cid%> = "jdbc:<%=hiveServer%>://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ";principal=" + <%=hivePrincipal%>;
+<%
+					}
+					if ((isCustom || hiveDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                        %>
+                        com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+                        maprLogin_<%=cid%>.getMapRCredentialsViaKerberos(<%=mapRTicketCluster%>, <%=mapRTicketDuration%>);
+                        <%
+                    }
+				} else {
+                    // Mapr ticket
+				    if ((isCustom || hiveDistrib.doSupportMapRTicket()) && useMapRTicket) {
+                        passwordFieldName = "__MAPRTICKET_PASSWORD__";
+                        %>
+                        System.setProperty("pname", "MapRLogin");
+                        System.setProperty("https.protocols", "TLSv1.2");
+                        System.setProperty("mapr.home.dir", <%=setMapRHomeDir ? mapRHomeDir : "\"/opt/mapr\"" %>);
+                        com.mapr.login.client.MapRLoginHttpsClient maprLogin_<%=cid%> = new com.mapr.login.client.MapRLoginHttpsClient();
+                        <%
+                        if (setMapRHadoopLogin) {
+                            %>
+                            System.setProperty("hadoop.login", <%=mapRHadoopLogin%>);
+                            <%
+                        } else {
+                            %>
+                            maprLogin_<%=cid%>.setCheckUGI(false);
+                            <%
+                        }
+                        if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%>
+                            String decryptedMaprPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+                        <%} else {%>
+                            String decryptedMaprPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>;
+                        <%}
+                        	if(hiveDistrib.doSupportMaprTicketV52API()){
+                				%>
+                				maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=mapRTicketUsername%>, decryptedMaprPassword_<%=cid%>, <%=mapRTicketDuration%>, "");
+                				<%
+                			} else {
+                				%>
+                				maprLogin_<%=cid%>.getMapRCredentialsViaPassword(<%=mapRTicketCluster%>, <%=mapRTicketUsername%>, decryptedMaprPassword_<%=cid%>, <%=mapRTicketDuration%>);
+                				<%
+                			}
+                    }
+
+                    // Using SSL in non Secure Mode
+					if(useSsl && hiveDistrib.doSupportSSL()){
+						if (ElementParameterParser.canEncrypt(node, sslStorepasswordFieldName)) {
+%>
+							String decryptedSslStorePassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, sslStorepasswordFieldName)%>);
+<%
+						}else{
+%>
+							String decryptedSslStorePassword_<%=cid%> = <%= ElementParameterParser.getValue(node, sslStorepasswordFieldName)%>;
+<%
+						}
+%>
+						String url_<%=cid%> = "jdbc:<%=hiveServer%>://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>+ ";ssl=true" +";sslTrustStore=" + <%=sslTrustStore%> + ";trustStorePassword=" + decryptedSslStorePassword_<%=cid%>;
+<%
+					}else{
+%>
+						String url_<%=cid%> = "jdbc:<%=hiveServer%>://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+					}
+				}
+				String additionalJdbcSettings = ElementParameterParser.getValue(node, "__HIVE_ADDITIONAL_JDBC__");
+%>
+				String additionalJdbcSettings_<%=cid%> = <%=additionalJdbcSettings%>;
+				if(!"".equals(additionalJdbcSettings_<%=cid%>.trim())) {
+					if(!additionalJdbcSettings_<%=cid%>.startsWith(";")) {
+						additionalJdbcSettings_<%=cid%> = ";" + additionalJdbcSettings_<%=cid%>;
+					}
+					url_<%=cid%> += additionalJdbcSettings_<%=cid%>;
+				}
+<%
+			}
+%>
+		String driverClass_<%=cid%> = "<%=javaDbDriver %>";
+		java.lang.Class.forName(driverClass_<%=cid%>);
+		<%
+	   		log4jCodeGenerateUtil.debugConnectionParams(node);
+		%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection attempt to '" + url_<%=cid %> + "' with the username '" + dbUser_<%=cid%> + "'.");
+		<%}%>
+<%
+		if(securedStandaloneHive2) {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>);
+<%
+		} else {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>, dbUser_<%=cid%>, dbPwd_<%=cid%>);
+<%
+		}
+%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to '" + url_<%=cid %> + "' has succeeded.");
+		<%}%>
+
+		java.sql.Statement init_<%=cid%> = conn_<%=cid%>.createStatement();
+<%
+    	if(!isCustom && ("HDP_1_2".equals(hiveVersion) || "HDP_1_3".equals(hiveVersion))) {
+        	String mapMemory = ElementParameterParser.getValue(node,"__MAPRED_JOB_MAP_MEMORY_MB__");
+       		String reduceMemory = ElementParameterParser.getValue(node,"__MAPRED_JOB_REDUCE_MEMORY_MB__");
+%>
+        	init_<%=cid%>.execute("SET mapred.job.map.memory.mb=" + <%=mapMemory%>);
+	    	init_<%=cid%>.execute("SET mapred.job.reduce.memory.mb=" + <%=reduceMemory%>);
+<%
+	}
+
+	boolean isKerberosAvailableHadoop2 = !isCustom && hiveDistrib.isHadoop2() && hiveDistrib.doSupportKerberos();
+	boolean isHadoop2 = !isCustom && hiveDistrib.isHadoop2();
+	boolean isKerberosAvailableHadoop1 = !isCustom && hiveDistrib.isHadoop1() && hiveDistrib.doSupportKerberos();
+
+	if(securedEmbedded) {
+		String namenodePrincipal = ElementParameterParser.getValue(node, "__NAMENODE_PRINCIPAL__");
+%>
+		init_<%=cid%>.execute("SET dfs.namenode.kerberos.principal=" + <%=namenodePrincipal%>);
+<%
+		if(isKerberosAvailableHadoop1 || (isCustom && !useYarn)) {
+			String jobtrackerPrincipal = ElementParameterParser.getValue(node, "__JOBTRACKER_PRINCIPAL__");
+%>
+			init_<%=cid%>.execute("SET mapreduce.jobtracker.kerberos.principal=" + <%=jobtrackerPrincipal%>);
+<%
+		}
+		if(isKerberosAvailableHadoop2 || (isCustom && useYarn)) {
+			String resourceManagerPrincipal = ElementParameterParser.getValue(node, "__RESOURCEMANAGER_PRINCIPAL__");
+%>
+			init_<%=cid%>.execute("SET yarn.resourcemanager.principal=" + <%=resourceManagerPrincipal%>);
+<%
+		}
+
+	}
+
+    	boolean setResourceManager = "true".equals(ElementParameterParser.getValue(node, "__SET_RESOURCE_MANAGER__"));
+
+    	if((isCustom && useYarn) || (!isCustom && isHadoop2)) {
+    		if(setResourceManager) {
+    			String resourceManager = ElementParameterParser.getValue(node, "__RESOURCE_MANAGER__");
+%>
+        		init_<%=cid%>.execute("SET mapreduce.framework.name=yarn");
+        		init_<%=cid%>.execute("SET yarn.resourcemanager.address=" + <%=resourceManager%>);
+<%
+			}
+
+			boolean setJobHistoryAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_JOBHISTORY_ADDRESS__"));
+			if(setJobHistoryAddress) {
+				String jobHistoryAddress = ElementParameterParser.getValue(node,"__JOBHISTORY_ADDRESS__");
+    			%>
+				init_<%=cid%>.execute("SET mapreduce.jobhistory.address=" + <%=jobHistoryAddress%>);
+    			<%
+			}
+
+    		boolean setSchedulerAddress = "true".equals(ElementParameterParser.getValue(node, "__SET_SCHEDULER_ADDRESS__"));
+    		if(setSchedulerAddress) {
+    			String schedulerAddress = ElementParameterParser.getValue(node,"__RESOURCEMANAGER_SCHEDULER_ADDRESS__");
+%>
+				init_<%=cid%>.execute("SET yarn.resourcemanager.scheduler.address=" + <%=schedulerAddress%>);
+<%
+			}
+
+            if ("true".equals(ElementParameterParser.getValue(node, "__USE_DATANODE_HOSTNAME__"))) {
+                %>
+                init_<%=cid%>.execute("SET dfs.client.use.datanode.hostname=true");
+                <%
+            }
+
+    		if("true".equals(ElementParameterParser.getValue(node, "__SET_FS_DEFAULT_NAME__"))) {
+    			String namenode = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+%>
+				init_<%=cid%>.execute("SET fs.default.name=" + <%=namenode%>);
+<%
+			}
+
+			if("EMBEDDED".equals(connectionMode) && (isCustom || hiveDistrib.doSupportEmbeddedMode())) {
+				boolean crossPlatformSubmission = "true".equals(ElementParameterParser.getValue(node, "__CROSS_PLATFORM_SUBMISSION__"));
+				if((isCustom && useYarn && crossPlatformSubmission) || (!isCustom && hiveDistrib.doSupportCrossPlatformSubmission())) {
+%>
+					init_<%=cid%>.execute("SET mapreduce.app-submission.cross-platform=true");
+<%
+				}
+
+				if("MAPR410".equals(hiveVersion)){
+%>
+					init_<%=cid%>.execute("SET mapreduce.job.map.output.collector.class=org.apache.hadoop.mapred.MapRFsOutputBuffer");
+					init_<%=cid%>.execute("SET mapreduce.job.reduce.shuffle.consumer.plugin.class=org.apache.hadoop.mapreduce.task.reduce.DirectShuffle");
+<%
+				}
+
+				if(hiveDistrib.doSupportCustomMRApplicationCP()){
+%>
+					init_<%=cid%>.execute("SET mapreduce.application.classpath=<%=hiveDistrib.getCustomMRApplicationCP()%>");
+<%
+				}
+
+%>
+				init_<%=cid%>.execute("SET yarn.application.classpath=<%=hiveDistrib.getYarnApplicationClasspath()%>");
+<%
+			}
+
+    		boolean setMemory = "true".equals(ElementParameterParser.getValue(node, "__SET_MEMORY__"));
+    		if(setMemory) {
+    			String mapMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_MAP_MEMORY_MB__");
+    			String reduceMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_REDUCE_MEMORY_MB__");
+    			String amMemory = ElementParameterParser.getValue(node,"__YARN_APP_MAPREDUCE_AM_RESOURCE_MB__");
+%>
+    			init_<%=cid%>.execute("SET mapreduce.map.memory.mb=" + <%=mapMemory%>);
+    			init_<%=cid%>.execute("SET mapreduce.reduce.memory.mb=" + <%=reduceMemory%>);
+    			init_<%=cid%>.execute("SET yarn.app.mapreduce.am.resource.mb=" + <%=amMemory%>);
+<%
+			}
+		}
+
+		List<Map<String, String>> advProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_PROPERTIES__");
+		if(advProps!=null) {
+			for(Map<String, String> item : advProps){
+%>
+				init_<%=cid%>.execute("SET "+<%=item.get("PROPERTY")%>+"="+<%=item.get("VALUE")%>);
+<%
+			}
+		}
+%>
+
+		<%
+		if(("false").equals(useExistingConn)){
+		%>
+        	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Hive/PrepareTez.javajet"%>
+            	<%
+            	(new PrepareTez()).invoke(node, cid);
+        }
+    	%>
+		init_<%=cid%>.close();
+
+    	String dbname_<%=cid%> = <%=dbname%>;
+    	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+        	java.sql.Statement goToDatabase_<%=cid%> = conn_<%=cid%>.createStatement();
+        	goToDatabase_<%=cid%>.execute("use " + dbname_<%=cid%>);
+        	goToDatabase_<%=cid%>.close();
+    	}
+
+		<%if("true".equalsIgnoreCase(storeByHBase) && (isCustom || hiveDistrib.doSupportHBaseForHive())) {%>
+    		java.sql.Statement statement_<%=cid%> = conn_<%=cid%>.createStatement();
+    		<%if(zookeeperQuorumForHBase!=null && !"".equals(zookeeperQuorumForHBase) && !"\"\"".equals(zookeeperQuorumForHBase)) {%>
+    			statement_<%=cid%>.execute("SET hbase.zookeeper.quorum="+<%=zookeeperQuorumForHBase%>);
+    		<%}%>
+
+        	<%if(zookeeperClientPortForHBase!=null && !"".equals(zookeeperClientPortForHBase) && !"\"\"".equals(zookeeperClientPortForHBase)) {%>
+        		statement_<%=cid%>.execute("SET hbase.zookeeper.property.clientPort="+<%=zookeeperClientPortForHBase%>);
+        	<%}%>
+
+			<%if(setZNodeParent && zNodeParent!=null && !"".equals(zNodeParent) && !"\"\"".equals(zNodeParent)) {%>
+				statement_<%=cid%>.execute("SET zookeeper.znode.parent="+<%=zNodeParent%>);
+			<%}%>
+
+			<%if(useKrb){%>
+				statement_<%=cid%>.execute("SET hbase.security.authentication=kerberos");
+				statement_<%=cid%>.execute("SET hbase.rpc.engine=org.apache.hadoop.hbase.ipc.SecureRpcEngine");
+
+				<%if(hbaseMasterPrincipal!=null && !"".equals(hbaseMasterPrincipal) && !"\"\"".equals(hbaseMasterPrincipal)){%>
+					statement_<%=cid%>.execute("SET hbase.master.kerberos.principal="+<%=hbaseMasterPrincipal%>);
+				<%}%>
+				<%if(hbaseRegionServerPrincipal!=null && !"".equals(hbaseRegionServerPrincipal) && !"\"\"".equals(hbaseRegionServerPrincipal)){%>
+					statement_<%=cid%>.execute("SET hbase.regionserver.kerberos.principal="+<%=hbaseRegionServerPrincipal%>);
+				<%}%>
+			<%}%>
+
+        	<%if("true".equalsIgnoreCase(defineRegisterJar) && registerJarForHBase!=null && registerJarForHBase.size()>0) {
+        		for(Map<String, String> jar : registerJarForHBase){
+        			String path = jar.get("JAR_PATH");
+        			if(path == null || "".equals(path) || "\"\"".equals(path)) {
+        				continue;
+        			}
+        	%>
+				statement_<%=cid%>.execute("add jar "+<%=path%>);
+    		<%
+    			}
+    		}
+%>
+    		statement_<%=cid%>.close();
+<%
+	  	}
+	}
+%>

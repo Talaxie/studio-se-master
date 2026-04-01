@@ -1,0 +1,253 @@
+<%@ jet 
+	imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.eclipse.emf.common.util.EList
+			
+			org.talend.designer.xmlmap.generation.GenerationManager
+			org.talend.core.model.process.BlockCode
+			org.talend.designer.xmlmap.generation.HashedMetadataTable
+			
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.Connection
+			org.talend.designer.xmlmap.model.emf.xmlmap.LookupConnection
+			org.talend.designer.xmlmap.model.emf.xmlmap.FilterConnection
+			org.talend.designer.xmlmap.model.emf.xmlmap.NodeType
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputLoopNodesTable
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.EConnectionType
+			org.talend.core.model.metadata.IMetadataTable
+			org.talend.core.model.utils.NodeUtil
+			org.talend.core.model.metadata.IMetadataColumn
+            java.util.Map
+            java.util.HashMap
+            java.util.List
+			java.util.Comparator
+			java.util.Collections
+            java.util.ArrayList
+        	org.talend.core.model.metadata.types.JavaType
+        	org.talend.designer.xmlmap.model.emf.xmlmap.GlobalMapNode
+"
+skeleton="../tXMLMap/tXMLMap_java.skeleton"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	GenerationManager gm =  (GenerationManager)node.initGenerationManager();
+	String cid = node.getUniqueName();
+	
+	String uniqueNameComponent = cid.replaceAll("_TXMLMAP_OUT", "");
+	String uniqueNameComponentIn = cid.replaceAll("_TXMLMAP_OUT", "_TXMLMAP_IN");
+	boolean checkingSyntax = codeGenArgument.isCheckingSyntax();
+	String cr = "\n";
+	
+	INode generatingNodeIn = null;
+	for(INode loopNode : node.getProcess().getGeneratingNodes()) {
+		if(loopNode.getUniqueName().equals(uniqueNameComponentIn)) {
+			generatingNodeIn = loopNode;
+		}
+	}
+	
+	XmlMapData xmlMapData = (XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	XMLMapUtil utilXML = new XMLMapUtil();
+	
+	boolean isVirtual = true;
+	int closeWhileCountForMultiResult = 0;
+	String loopKey = null;
+	List<InputLoopNodesTable> allInputLoopNodesTables = null;
+	
+	EList<InputXmlTree> inputTablesWithInvalid = xmlMapData.getInputTrees();
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	EList<VarTable> varsTables = xmlMapData.getVarTables();
+
+	String rejectedInnerJoin = "rejectedInnerJoin_" + cid;
+	String rejectedDocInnerJoin = "rejectedDocInnerJoin_" + cid;
+	String rejected = "rejected_" + cid;
+	String mainRowRejected = "mainRowRejected_" + cid;
+	boolean isLookup = false;
+	boolean isXpathFromLookup = true;
+	boolean hasOutgoingConnection = false;//to output or another lookup
+	boolean hasDocumentInMainInputTable = false;
+	boolean atLeastOneInputTableWithInnerJoin = false;
+	boolean isPlainNode = true;
+	boolean isPlainNodeInLookup = false;
+	boolean hasValidLookupTables = false;
+	boolean hasDocumentGlobal = false;
+	
+	boolean isAllInOne = false;
+	
+	boolean hasMainFilter = false;
+	boolean mainFilterAlreadyDone = false;
+	
+	List<IConnection> outputConnections = (List<IConnection>) generatingNodeIn.getOutgoingConnections();
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+	  		nameToOutputConnection.put(connection.getName(), connection);
+	}
+    
+	List<IConnection> inputConnections = (List<IConnection>) node.getIncomingConnections();
+	HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+	for(IConnection connection : inputConnections){
+		 hNameToConnection.put(connection.getName(), connection);
+	}
+	
+	List<InputXmlTree> inputTables = new ArrayList<InputXmlTree>();
+	for(int i=0; i<inputTablesWithInvalid.size(); i++){
+		InputXmlTree  currentTree = inputTablesWithInvalid.get(i);
+		if(hNameToConnection.get(currentTree.getName()) != null){
+			inputTables.add(currentTree);
+		}
+	}
+	
+	boolean hasDocumentInAnyLookupTable = false;
+	
+	int lstSizeInputs = inputTables.size();
+	for(int i = 1; i<lstSizeInputs; i++){
+		InputXmlTree inputTable = (InputXmlTree)inputTables.get(i);
+		EList<TreeNode> treeNodes = inputTable.getNodes();
+		if(treeNodes!=null) {
+			for(TreeNode treeNode : treeNodes) {
+				if("id_Document".equals(treeNode.getType())) {
+					hasDocumentInAnyLookupTable = true;
+					break;
+				}
+			}
+		}
+	}
+	
+	HashMap<String, TreeNode> hInputTableNodes = new HashMap<String, TreeNode>();
+	int sizeInputTables = inputTables.size();
+	InputXmlTree mainInputTable = null;  // the main input table
+	
+	String mainInputTableName = null;
+	IConnection realMainConnection = null;
+	java.util.Map<String, String> xpathTypeMap = null;
+	String str  = "";
+	TreeNode currentMainNode = null;
+	boolean findNext = false;
+
+	String nextLookupName = null;
+	List<IMetadataColumn> nextLookupColumnsKeys = new ArrayList<IMetadataColumn>();
+ 
+	boolean hasPersistentLookup = false;
+	int indexLastPersistentSortedTable = -1;
+	 
+	ArrayList<InputXmlTree> inputTablesWithInnerJoin = new ArrayList<InputXmlTree>();
+	if(inputConnections==null || inputConnections.size() < 1) {
+		return "";
+	}
+	%>
+	boolean <%= rejectedInnerJoin %> = false;
+	boolean <%= rejectedDocInnerJoin %> = false;
+	boolean <%= mainRowRejected %> = false;
+	boolean isMatchDocRow<%=cid%> = false;
+	  
+	<%
+	if(inputTables==null || inputTables.size()==0) return "";
+	for(IConnection conn : inputConnections) { // find the input main table
+		InputXmlTree inputTable = inputTables.get(0);
+		EConnectionType connectionType = conn.getLineStyle();
+		if (connectionType == EConnectionType.FLOW_MAIN) {
+			if(!inputTable.isLookup()) { // lookup is used to sign it is lookup table
+    			mainInputTable = inputTable;
+    			break;
+			}
+		}
+	}
+	
+	//filter unvalid output tables
+	ArrayList<OutputXmlTree> outputTablesSortedByReject = new ArrayList<OutputXmlTree>();
+	for(OutputXmlTree outputTable : outputTables) {
+		if(nameToOutputConnection.get(outputTable.getName())!=null) {
+			outputTablesSortedByReject.add(outputTable);
+		}
+	}
+	// sorting outputs : rejects tables after not rejects table
+	Collections.sort(outputTablesSortedByReject, new Comparator<OutputXmlTree>() {
+
+		public int compare(OutputXmlTree o1, OutputXmlTree o2) {
+			if (o1.isReject() != o2.isReject()) {
+				if (o1.isReject()) {
+					return 1;
+				} else {
+					return -1;
+				}
+			}
+			if (o1.isRejectInnerJoin() != o2.isRejectInnerJoin()) {
+				if (o1.isRejectInnerJoin()) {
+					return 1;
+				} else {
+					return -1;
+				}
+			}
+			return 0;
+		}
+
+	});
+	
+	if(mainInputTable!=null) {
+		
+		List<TreeNode> allNodes = new ArrayList<TreeNode>();
+		for(InputXmlTree inputTable : inputTables) {
+			allNodes.addAll(inputTable.getNodes());
+		}
+		
+		MatchXmlTreeExpr matchXmlTreeExpr = new MatchXmlTreeExpr(allNodes,cid);
+		
+		String mainInputName = mainInputTable.getName();
+	
+		TreeNode documentNodeInMainInputTable = null;
+		LoopHelper loopHelper = null;
+		boolean isMultiLoop = false;
+		boolean parallelLoopExistInCurrentOutputTable = false;
+		boolean parallelRelationExistBetweenAllOutputTables = false;
+		List<TreeNode> currentInputLoopNodes;
+		//check whether multiloop
+		isMultiLoop = mainInputTable.isMultiLoops();
+		//check whether parallel relation exist
+		List<TreeNode> inputLoopNodesForPreviousOutputTable = null;
+		for(OutputXmlTree outputTable : outputTablesSortedByReject) {
+			if(outputTable.isMultiLoops()) {
+				isMultiLoop = true;
+			}
+			
+			List<InputLoopNodesTable> inputLoopNodesTables = getValidInputLoopNodesTables(outputTable.getInputLoopNodesTables());
+			
+			for(InputLoopNodesTable inputLoopNodesTable : inputLoopNodesTables) {
+				List<TreeNode> inputLoopNodesForCurrentOutputTable = inputLoopNodesTable.getInputloopnodes();
+				if(inputLoopNodesForPreviousOutputTable!=null) {
+					//use different loops for output tables(it is also a parallel relation,but between different output tables)
+					if(inputLoopNodesForPreviousOutputTable.size() != inputLoopNodesForCurrentOutputTable.size() || !inputLoopNodesForPreviousOutputTable.containsAll(inputLoopNodesForCurrentOutputTable)) {
+						parallelRelationExistBetweenAllOutputTables = true;
+					}
+				}
+				inputLoopNodesForPreviousOutputTable = inputLoopNodesForCurrentOutputTable;
+				
+			}
+			
+		}
+	
+		if(isMultiLoop) {
+%>
+			<%@ include file="tXMLMapOut_main.multiloop.inc.javajet" %>
+<%
+		} else {
+%>
+			<%@ include file="tXMLMapOut_main.inc.javajet" %>
+<%
+		}
+	}
+%>

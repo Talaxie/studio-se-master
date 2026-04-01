@@ -1,0 +1,174 @@
+<COMPONENT>
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20100926A"
+    STARTABLE="true"
+    DATA_AUTO_PROPAGATE="false"
+    HAS_CONDITIONAL_OUTPUTS="true"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Business/Bonita</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0"/>
+    <CONNECTOR NAME="REJECT" NOT_SHOW_IF="(DIE_ON_ERROR == 'true')" CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0" LINE_STYLE="2" COLOR="FF0000" BASE_SCHEMA="FLOW" />
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+    <CONNECTOR CTYPE="RUN_IF"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+  	<PARAMETER NAME="DB_VERSION" FIELD="CLOSED_LIST" NUM_ROW="1">
+		<ITEMS DEFAULT="BONITA_724">
+			<ITEM NAME="BONITA_652" VALUE="BONITA_652" />
+			<ITEM NAME="BONITA_724" VALUE="BONITA_724" />
+		</ITEMS>
+	</PARAMETER>
+	
+	<PARAMETER NAME="CLIENT_MODE" FIELD="CLOSED_LIST" NUM_ROW="5">
+		<ITEMS DEFAULT="JAVA_CLIENT">
+			<ITEM NAME="HTTP_CLIENT" VALUE="HTTP_CLIENT" SHOW_IF="(DB_VERSION=='BONITA_652') OR (DB_VERSION=='BONITA_724')"/>
+			<ITEM NAME="JAVA_CLIENT" VALUE="JAVA_CLIENT"/>
+		</ITEMS>
+	</PARAMETER>
+	
+	<PARAMETER
+      NAME="BONITA_URL"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      REQUIRED="true"
+      SHOW_IF="((DB_VERSION=='BONITA_652') OR (DB_VERSION=='BONITA_724')) AND (CLIENT_MODE=='HTTP_CLIENT')"
+    >
+    	<DEFAULT>"http://localhost:8080/bonita"</DEFAULT>
+    </PARAMETER>
+
+  	<!--config bonita-home path  -->
+	<PARAMETER
+      NAME="BONITA_HOME"
+      FIELD="DIRECTORY"
+      NUM_ROW="15"
+      REQUIRED="true"
+      GROUP="CONFIGURATION"
+      SHOW_IF="CLIENT_MODE=='JAVA_CLIENT'"
+    >
+    	<DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+	<PARAMETER
+      NAME="BUSINESS_ARCHIVE"
+      FIELD="FILE"
+      NUM_ROW="50"
+      REQUIRED="true"
+    >
+    	<DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="USERNAME"
+      FIELD="TEXT"
+      NUM_ROW="60"
+      REQUIRED="true"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="PASSWORD"
+      FIELD="PASSWORD"
+      NUM_ROW="60"
+      REQUIRED="true"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DIE_ON_ERROR"
+      FIELD="CHECK"
+      NUM_ROW="100"
+    >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+  </PARAMETERS>
+
+  <ADVANCED_PARAMETERS>
+  </ADVANCED_PARAMETERS>
+
+	<CODEGENERATION>
+		<IMPORTS>
+
+			<IMPORT NAME="xstream-1.4.17.jar" MODULE="xstream-1.4.17.jar" MVN="mvn:com.thoughtworks.xstream/xstream/1.4.17" REQUIRED_IF="(((DB_VERSION=='BONITA_652')OR(DB_VERSION=='BONITA_724')) AND (CLIENT_MODE=='JAVA_CLIENT'))" />
+			<IMPORT NAME="mxparser-1.2.1.jar" MODULE="mxparser-1.2.1.jar" MVN="mvn:io.github.x-stream/mxparser/1.2.1" REQUIRED_IF="(((DB_VERSION=='BONITA_652')OR(DB_VERSION=='BONITA_724')) AND (CLIENT_MODE=='JAVA_CLIENT'))" />
+
+			<!-- Bonita 6.5.2 HTTP API -->
+			<IMPORT NAME="talend-bonita-client-1.0.1.jar" MODULE="talend-bonita-client-1.0.1.jar" MVN="mvn:org.talend.bonita/talend-bonita-client/1.0.1" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="bonita-client-6.5.2.jar" MODULE="bonita-client-6.5.2.jar" MVN="mvn:org.bonitasoft.engine/bonita-client/6.5.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="bonita-common-6.5.2.jar" MODULE="bonita-common-6.5.2.jar" MVN="mvn:org.bonitasoft.engine/bonita-common/6.5.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			
+			<IMPORT NAME="httpmime-4.2.5.jar" MODULE="httpmime-4.2.5.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.2.5" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="httpclient-4.5.13.jar" MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="httpcore-4.4.13.jar" MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="commons-logging-1.2.jar" MODULE="commons-logging-1.2.jar" MVN="mvn:commons-logging/commons-logging/1.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			
+			<!-- Bonita 6.5.2 JAVA API -->
+			<IMPORT NAME="talend-bonita-client-1.0.1.jar" MODULE="talend-bonita-client-1.0.1.jar" MVN="mvn:org.talend.bonita/talend-bonita-client/1.0.1" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-client-6.5.2.jar" MODULE="bonita-client-6.5.2.jar" MVN="mvn:org.bonitasoft.engine/bonita-client/6.5.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-common-6.5.2.jar" MODULE="bonita-common-6.5.2.jar" MVN="mvn:org.bonitasoft.engine/bonita-common/6.5.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-server-6.5.2.jar" MODULE="bonita-server-6.5.2.jar" MVN="mvn:org.bonitasoft.engine/bonita-server/6.5.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="xpp3-1.1.6.jar" MODULE="xpp3-1.1.6.jar" MVN="mvn:org.ogce/xpp3/1.1.6" UrlPath="platform:/plugin/org.talend.libraries.xml/lib/xpp3-1.1.6.jar" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			
+			<IMPORT NAME="httpmime-4.2.5.jar" MODULE="httpmime-4.2.5.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.2.5" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="httpclient-4.5.13.jar" MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="httpcore-4.4.13.jar" MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="commons-logging-1.2.jar" MODULE="commons-logging-1.2.jar" MVN="mvn:commons-logging/commons-logging/1.2" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" REQUIRED_IF="(DB_VERSION=='BONITA_652') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			
+			<!-- Bonita 7.2.4 HTTP API -->
+			<IMPORT NAME="talend-bonita-client-1.0.1.jar" MODULE="talend-bonita-client-1.0.1.jar" MVN="mvn:org.talend.bonita/talend-bonita-client/1.0.1" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="bonita-client-7.2.4.jar" MODULE="bonita-client-7.2.4.jar" MVN="mvn:org.talend.libraries/bonita-client-7.2.4/6.3.0" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="bonita-common-7.2.4.jar" MODULE="bonita-common-7.2.4.jar" MVN="mvn:org.bonitasoft.engine/bonita-common/7.2.4" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			
+			<IMPORT NAME="httpmime-4.2.5.jar" MODULE="httpmime-4.2.5.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.2.5" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="httpclient-4.5.13.jar" MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="httpcore-4.4.13.jar" MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="commons-logging-1.2.jar" MODULE="commons-logging-1.2.jar" MVN="mvn:commons-logging/commons-logging/1.2" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			<IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='HTTP_CLIENT')" />
+			
+			<!-- Bonita 7.2.4 JAVA API -->
+			<IMPORT NAME="talend-bonita-client-1.0.1.jar" MODULE="talend-bonita-client-1.0.1.jar" MVN="mvn:org.talend.bonita/talend-bonita-client/1.0.1" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-client-7.2.4.jar" MODULE="bonita-client-7.2.4.jar" MVN="mvn:org.talend.libraries/bonita-client-7.2.4/6.3.0" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-common-7.2.4.jar" MODULE="bonita-common-7.2.4.jar" MVN="mvn:org.bonitasoft.engine/bonita-common/7.2.4" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="bonita-server-7.2.4.jar" MODULE="bonita-server-7.2.4.jar" MVN="mvn:org.talend.libraries/bonita-server-7.2.4/6.3.0" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="xpp3-1.1.6.jar" MODULE="xpp3-1.1.6.jar" MVN="mvn:org.ogce/xpp3/1.1.6" UrlPath="platform:/plugin/org.talend.libraries.xml/lib/xpp3-1.1.6.jar" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			
+			<IMPORT NAME="httpmime-4.2.5.jar" MODULE="httpmime-4.2.5.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.2.5" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="httpclient-4.5.13.jar" MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="httpcore-4.4.13.jar" MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="commons-logging-1.2.jar" MODULE="commons-logging-1.2.jar" MVN="mvn:commons-logging/commons-logging/1.2" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+			<IMPORT NAME="commons-io-2.8.0.jar" MODULE="commons-io-2.8.0.jar" MVN="mvn:commons-io/commons-io/2.8.0" REQUIRED_IF="(DB_VERSION=='BONITA_724') AND (CLIENT_MODE=='JAVA_CLIENT')" />
+		</IMPORTS>
+	</CODEGENERATION>
+
+  <RETURNS>
+    <RETURN NAME="ProcessDefinitionUUID" TYPE="id_String" AVAILABILITY="FLOW"/>
+  </RETURNS>
+</COMPONENT>

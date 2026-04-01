@@ -1,0 +1,272 @@
+<%@ jet
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.metadata.MappingTypeRetriever
+	org.talend.core.model.utils.NodeUtil
+	java.util.List
+	java.util.ArrayList
+	java.util.Map
+	java.util.HashMap
+"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String host = ElementParameterParser.getValue(node, "__HOST__");
+	String port = ElementParameterParser.getValue(node, "__PORT__");
+	String dbName = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String table = ElementParameterParser.getValue(node, "__TABLE__");
+	String userName = ElementParameterParser.getValue(node, "__USER__");
+	String dbschema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+	String jdbcUrl = ElementParameterParser.getValue(node, "__JDBC_URL__");
+	
+	String dbquery= ElementParameterParser.getValue(node, "__QUERY__");
+	dbquery = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(dbquery);
+	
+	boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	
+	boolean useExistingS3Connection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION_S3__"));
+	String s3ConnectionCid = ElementParameterParser.getValue(node,"__CONNECTION_S3__");
+    String redshiftTracker = org.talend.core.utils.TrackerUtil.getRedshiftTracker();
+	INode current_node = node;
+	if(useExistingS3Connection){
+		current_node = NodeUtil.getNodeByUniqueName(node.getProcess(),s3ConnectionCid,true);
+	}
+%>
+	java.sql.Connection conn_<%=cid%> = null;
+<%
+	if(useExistingConnection) {
+		String conn = "conn_" + ElementParameterParser.getValue(node,"__CONNECTION__");
+%>
+	 	conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	} else {
+	        			int driveVersion = "DRIVER_V2".equals(ElementParameterParser.getValue(node, "__DRIVER_VERSION__"))? 2 : 1;
+                        boolean useStringProperties = "true".equals(ElementParameterParser.getValue(node, "__USE_STRING_PROPERTIES__"));
+%>
+		String driverClass_<%=cid%> = "com.amazon.redshift.jdbc42.Driver";
+		Class.forName(driverClass_<%=cid%>).newInstance();
+        StringBuilder sbuilder_<%=cid%> = new StringBuilder();
+        sbuilder_<%=cid%>.append("jdbc:redshift:");
+<%
+        if ("SSO".equals(jdbcUrl)){
+%>
+            sbuilder_<%=cid%>.append("iam:");
+<%
+}
+%>
+        sbuilder_<%=cid%>.append("//")
+                         .append(<%=host%>)
+                         .append(":")
+                         .append(<%=port%>)
+                         .append("/")
+                         .append(<%=dbName%>);
+<%
+        if(( useStringProperties || driveVersion == 1) && dbproperties != null && !"\"\"".equals(dbproperties) && !"".equals(dbproperties)) {
+%>
+        sbuilder_<%=cid%>.append("?").append(<%=dbproperties%>);
+<%
+        }
+%>
+        String url_<%=cid%> = sbuilder_<%=cid%>.toString();
+<%
+        String passwordFieldName = "__PASS__";
+        %>
+        <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+        final String decryptedPass_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+        <%} else {%>
+        final String decryptedPass_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+        <%}%>
+        String dbUser_<%=cid %> = <%=userName%>;
+        String dbPwd_<%=cid %> = decryptedPass_<%=cid%>;
+<%
+        if(driveVersion == 2 && !useStringProperties){
+		    List<Map<String, String>> properties = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ENTRY_PROPERTIES__");
+		        log4jCodeGenerateUtil.connectWithProperties(node);
+		    } else {
+		        log4jCodeGenerateUtil.connect(node);
+		}
+	}
+	
+	boolean	log4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+	String exportType = ElementParameterParser.getValue(node, "__EXPORT_TYPE__");
+%>
+	StringBuilder command_<%=cid%> = new StringBuilder();
+<%
+	if("DELIMITED_OR_CSV".equals(exportType)) {
+%>
+		char fieldSeparator_<%=cid %> = 
+<%
+		if(fieldSeparator.trim().isEmpty()) {
+%>
+		',';
+<%
+		} else {
+%>
+		String.valueOf(<%=fieldSeparator.trim()%>).charAt(0);
+<%
+		}
+	}
+%>
+	command_<%=cid%>.append("UNLOAD ('").append(<%=dbquery%>).append("') TO ");
+<%
+	String bucket = ElementParameterParser.getValue(node,"__BUCKET__");
+    String keyPrefix = ElementParameterParser.getValue(node,"__OBJECTS_PREFIX__");
+	
+	boolean assumeRole = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__ASSUME_ROLE__"));
+	String access_key = ElementParameterParser.getValue(node, "__ACCESS_KEY__");
+	if(useExistingS3Connection){
+		access_key = ElementParameterParser.getValue(current_node, "__ACCESS_KEY__");
+	}
+	if(!assumeRole){
+		String passwordFieldKey = "__SECRET_KEY__";
+
+		if (ElementParameterParser.canEncrypt(current_node, passwordFieldKey)) {
+%>
+		    final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(current_node, passwordFieldKey)%>);
+<%
+		} else {
+%>
+		    final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(current_node, passwordFieldKey)%>;
+<%
+		}
+	}
+%>
+	command_<%=cid%>.append("'s3://").append(<%=bucket%>).append("/").append(<%=keyPrefix%>).append("' ")
+	.append("credentials '")
+<%
+	if(assumeRole){
+		List<Map<String,String>> roles = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROLE_TABLE__");
+		int roleListSize=roles.size();
+		if(roleListSize > 0){
+%>
+			.append("aws_iam_role=")
+<%
+			for(int roleIndex = 0;roleIndex<roleListSize;roleIndex++){
+				Map<String, String> role = roles.get(roleIndex);
+				String roleARN = role.get("ROLE_ARN");
+				if(roleIndex != 0){
+%>
+				    .append(",")	
+<%					
+				}
+%>
+			.append(<%=roleARN%>)
+<%		
+			}
+		}
+	}else{
+%>
+	    .append("aws_access_key_id=").append(<%=access_key%>).append(";aws_secret_access_key=").append(decryptedPwd_<%=cid%>)
+<%
+	}
+	boolean encrypt = "true".equals(ElementParameterParser.getValue(node, "__ENCRYPT__"));
+	String encryptionKeyPropertyName = "__ENCRYPTED_KEY__";
+	if(useExistingS3Connection){
+		encrypt = "true".equals(ElementParameterParser.getValue(current_node, "__ENCRYPT__"));
+		encryptionKeyPropertyName = "__ENCRYPTED_KEY_BASE64__";
+	}
+	if(!"PARQUET".equals(exportType) && encrypt) {
+%>
+		.append(";master_symmetric_key=")
+<%
+		if (ElementParameterParser.canEncrypt(current_node, encryptionKeyPropertyName)) {
+%>
+			.append(routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(current_node, encryptionKeyPropertyName)%>))
+<%
+		} else {
+%>
+			.append(<%=ElementParameterParser.getValue(current_node, encryptionKeyPropertyName)%>)
+<%
+		}
+	}
+%>
+	.append("' ")
+<%
+    if("PARQUET".equals(exportType)) {
+%>
+        .append("FORMAT PARQUET ")
+<%
+    }
+	if(!"PARQUET".equals(exportType) && encrypt) {
+%>
+		.append("ENCRYPTED ")
+<%
+	}
+	
+	if("DELIMITED_OR_CSV".equals(exportType)) {
+		if("DOUBLE_QUOTE".equals(ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__"))) {
+%>
+		.append("ADDQUOTES ")
+<%
+		}
+%>
+		.append("DELIMITER '").append(fieldSeparator_<%=cid%>).append("' ")
+<%
+	} else if("FIXEDWIDTH".equals(exportType)) {
+		String mapping = ElementParameterParser.getValue(node, "__FIXEDWIDTH_MAPPING__");
+%>
+		.append("FIXEDWIDTH '").append(<%=mapping%>).append("' ")
+<%
+	}
+	
+	boolean compressed = "true".equals(ElementParameterParser.getValue(node, "__COMPRESS__"));
+	if(!"PARQUET".equals(exportType) && compressed) {
+		String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+%>
+		.append("<%=compression%> ")
+<%
+	}
+	if(!"PARQUET".equals(exportType)) {
+        boolean escape = "true".equals(ElementParameterParser.getValue(node, "__ESCAPE__"));
+        if(escape) {
+%>
+            .append("ESCAPE ")
+<%
+        }
+	}
+	boolean allowOverwrite = "true".equals(ElementParameterParser.getValue(node, "__ALLOWOVERWRITE__"));
+	if(allowOverwrite) {
+%>
+		.append("ALLOWOVERWRITE ")
+<%
+	}
+	
+	boolean parallel = "true".equals(ElementParameterParser.getValue(node, "__PARALLEL__"));
+	if(!parallel) {
+%>
+		.append("PARALLEL OFF ")
+<%
+	}
+    if(!"PARQUET".equals(exportType)) {
+        boolean specifyNullString = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_NULL_STRING__"));
+        if(specifyNullString) {
+            String nullString = ElementParameterParser.getValue(node, "__NULL_STRING__");
+%>
+            .append("NULL '").append(<%=nullString%>).append("' ")
+<%
+        }
+    }
+%>
+	;
+	
+	java.sql.Statement stmt_<%=cid %>=conn_<%=cid %>.createStatement();
+	stmt_<%=cid %>.execute("<%=redshiftTracker%> \n " + command_<%=cid%>.toString());
+	<%if(log4jEnabled){%>
+		log.info("<%=cid%> - Finish unloading data to s3.");
+	<%}%>
+<%
+	if(!useExistingConnection) {
+		log4jCodeGenerateUtil.close(node);
+	}
+%>

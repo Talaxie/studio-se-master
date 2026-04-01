@@ -1,0 +1,474 @@
+<%@ jet
+imports="
+        org.talend.designer.core.generic.model.Component
+        java.util.ArrayList
+        java.util.HashMap
+        java.util.HashSet
+        java.util.List
+        java.util.Map
+        java.util.Set
+        java.util.Stack
+        org.talend.components.api.component.ComponentDefinition
+        org.talend.components.api.component.ConnectorTopology
+        org.talend.components.api.container.RuntimeContainer
+        org.talend.components.api.properties.ComponentProperties
+        org.talend.components.api.properties.ComponentReferenceProperties
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.EParameterFieldType
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.IElementParameter
+        org.talend.core.model.process.INode
+        org.talend.core.model.utils.TalendTextUtils
+        org.talend.core.model.utils.ContextParameterUtils
+        org.talend.daikon.NamedThing
+        org.talend.daikon.properties.property.Property
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.utils.NodeUtil
+        org.talend.designer.core.generic.constants.IGenericConstants
+        "
+%>
+<%@include file="@{org.talend.designer.codegen}/jet_stub/generic/component_util_indexedrecord_to_rowstruct.javajet"%>
+<%@include file="@{org.talend.designer.codegen}/jet_stub/generic/component_util_process_properties.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+Component component = (Component)node.getComponent();
+ComponentProperties componentProps = node.getComponentProperties();
+ComponentDefinition def = component.getComponentDefinition();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+IMetadataTable metadata = null;
+List<IMetadataColumn> columnList = null;
+if ((metadatas != null) && (metadatas.size() > 0)) { // metadata
+    metadata = metadatas.get(0);
+    if(metadata != null){
+        columnList = metadata.getListColumns();
+    }
+}
+
+// Set up the component definition, and the properties for all types of
+// components.
+
+List<? extends IConnection> allInLineJobConns = NodeUtil.getFirstIncomingLineConnectionsOfType(node, "tRESTRequestIn");
+%>
+boolean doesNodeBelongToRequest_<%=cid%> = <%= allInLineJobConns.size() %> == 0;
+@SuppressWarnings("unchecked")
+java.util.Map<String, Object> restRequest_<%=cid%> = (java.util.Map<String, Object>)globalMap.get("restRequest");
+String currentTRestRequestOperation_<%=cid%> = (String)(restRequest_<%=cid%> != null ? restRequest_<%=cid%>.get("OPERATION") : null);
+<%
+for (IConnection inLineConn : allInLineJobConns) {
+    %>
+        if("<%= inLineConn.getName() %>".equals(currentTRestRequestOperation_<%=cid%>)) {
+            doesNodeBelongToRequest_<%=cid%> = true;
+        }
+	<%
+    }
+%>
+
+org.talend.components.api.component.ComponentDefinition def_<%=cid %> =
+        new <%= def.getClass().getName()%>();
+
+org.talend.components.api.component.runtime.Writer writer_<%=cid%> = null;
+org.talend.components.api.component.runtime.Reader reader_<%=cid%> = null;
+
+<%
+List<Component.CodegenPropInfo> propsToProcess = component.getCodegenPropInfos(componentProps);
+%>
+
+<%= componentProps.getClass().getName()%> props_<%=cid %> =
+        (<%= componentProps.getClass().getName()%>) def_<%=cid %>.createRuntimeProperties();
+<%
+
+final Set<String> referenceProperties = new HashSet<String>();
+
+boolean hasInput = !NodeUtil.getIncomingConnections(node, IConnectionCategory.DATA).isEmpty();
+
+String connName = null;
+if(hasInput) {
+	IConnection main = null;
+    List<? extends IConnection> mains = NodeUtil.getIncomingConnections(node, IConnectionCategory.DATA);
+    if (mains!=null && !mains.isEmpty()) {
+        main = mains.get(0);
+        connName = main.getName();
+    }
+}
+ProcessPropertiesGenerator generator = new ProcessPropertiesGenerator(cid, component);
+List<String> referenceableProperties = new ArrayList<String>();
+
+for (Component.CodegenPropInfo propInfo : propsToProcess) { // propInfo
+    List<NamedThing> properties = propInfo.props.getProperties();
+    for (NamedThing prop : properties) { // property
+        if (prop instanceof Property) { // if, only deal with valued Properties
+            Property property = (Property)prop;
+            if (property.getFlags() != null && (property.getFlags().contains(Property.Flags.DESIGN_TIME_ONLY) || property.getFlags().contains(Property.Flags.HIDDEN)))
+                continue;
+            generator.setPropertyValues(property, propInfo, connName, true, true);
+        } else if (prop instanceof ComponentReferenceProperties) {
+            final String fieldString = propInfo.fieldName + "." + prop.getName();
+            referenceProperties.add(fieldString);
+            referenceableProperties.add(propInfo.fieldName);
+        } //else may be a ComponentProperties so ignore
+    } // property
+} // propInfo
+
+// Now that we know all ComponentReferenceProperties, we can re-itereate to remove tags for related properties.
+// So it removes tag for context variables for properties such as connection.
+for (Component.CodegenPropInfo propInfo : propsToProcess) {
+    for (NamedThing prop : propInfo.props.getProperties()) {
+        if (prop instanceof Property) {
+            Property property = (Property)prop;
+            if (property.getFlags() != null &&
+                (property.getFlags().contains(Property.Flags.DESIGN_TIME_ONLY) || property.getFlags().contains(Property.Flags.HIDDEN)) &&
+                (property.getTaggedValue(IGenericConstants.DYNAMIC_PROPERTY_VALUE) == null)){
+                continue;
+            }
+            boolean referenced = false;
+            for(String r: referenceableProperties){
+            		if(r == null || r.isEmpty()) {
+            			continue;
+            		}
+                referenced = referenced || propInfo.fieldName.startsWith(r);
+            }
+            if (referenced){
+                property.setTaggedValue(IGenericConstants.DYNAMIC_PROPERTY_VALUE, "false");
+            }
+        }
+    }
+}
+
+for (final String fieldString : referenceProperties) {
+    %>
+    if (org.talend.components.api.properties.ComponentReferenceProperties.ReferenceType.COMPONENT_INSTANCE == props_<%=cid %><%=fieldString %>.referenceType.getValue()) {
+        final String referencedComponentInstanceId_<%=cid %> = props_<%=cid %><%=fieldString %>.componentInstanceId.getStringValue();
+        if (referencedComponentInstanceId_<%=cid %> != null) {
+            org.talend.daikon.properties.Properties referencedComponentProperties_<%=cid %> = (org.talend.daikon.properties.Properties) globalMap.get(
+                referencedComponentInstanceId_<%=cid %> + "_COMPONENT_RUNTIME_PROPERTIES");
+            props_<%=cid %><%=fieldString %>.setReference(referencedComponentProperties_<%=cid %>);
+        }
+    }
+    <%
+}
+%>
+globalMap.put("<%=cid %>_COMPONENT_RUNTIME_PROPERTIES", props_<%=cid %>);
+globalMap.putIfAbsent("TALEND_PRODUCT_VERSION", "<%=org.talend.core.utils.TrackerUtil.getVersion()%>");
+globalMap.put("TALEND_COMPONENTS_VERSION", "<%=component.getVersion()%>");
+<%
+boolean isParallelize ="true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__PARALLELIZE__"));
+if (isParallelize) {
+%>
+final String buffersSizeKey_<%=cid%> = "buffersSizeKey_<%=cid%>_" + Thread.currentThread().getId();
+<%
+}
+%>
+java.net.URL mappings_url_<%=cid %>= this.getClass().getResource("/xmlMappings");
+globalMap.put("<%=cid %>_MAPPINGS_URL", mappings_url_<%=cid %>);
+
+org.talend.components.api.container.RuntimeContainer container_<%=cid%> = new org.talend.components.api.container.RuntimeContainer() {
+    public Object getComponentData(String componentId, String key) {
+        return globalMap.get(componentId + "_" + key);
+    }
+
+    public void setComponentData(String componentId, String key, Object data) {
+        globalMap.put(componentId + "_" + key, data);
+    }
+
+    public String getCurrentComponentId() {
+        return "<%=cid%>";
+    }
+
+    public Object getGlobalData(String key) {
+    	return globalMap.get(key);
+    }
+};
+
+int nb_line_<%=cid %> = 0;
+
+org.talend.components.api.component.ConnectorTopology topology_<%=cid%> = null;
+<%
+boolean hasOutput = !NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA).isEmpty();
+boolean hasOutputOnly = hasOutput && !hasInput;
+
+if (hasInput && hasOutput) {
+%>
+topology_<%=cid%> = org.talend.components.api.component.ConnectorTopology.INCOMING_AND_OUTGOING;
+<%
+} else if (hasInput) {
+%>
+topology_<%=cid%> = org.talend.components.api.component.ConnectorTopology.INCOMING;
+<%
+} else if (hasOutput) {
+%>
+topology_<%=cid%> = org.talend.components.api.component.ConnectorTopology.OUTGOING;
+<%
+} else {
+%>
+topology_<%=cid%> = org.talend.components.api.component.ConnectorTopology.NONE;
+<%
+}
+%>
+
+org.talend.daikon.runtime.RuntimeInfo runtime_info_<%=cid%> = def_<%=cid%>.getRuntimeInfo(
+    org.talend.components.api.component.runtime.ExecutionEngine.DI, props_<%=cid%>, topology_<%=cid%>);
+java.util.Set<org.talend.components.api.component.ConnectorTopology> supported_connector_topologies_<%=cid%> = def_<%=cid%>.getSupportedConnectorTopologies();
+
+org.talend.components.api.component.runtime.RuntimableRuntime componentRuntime_<%=cid%> = (org.talend.components.api.component.runtime.RuntimableRuntime)(Class.forName(runtime_info_<%=cid%>.getRuntimeClassName()).newInstance());
+org.talend.daikon.properties.ValidationResult initVr_<%=cid%> = componentRuntime_<%=cid%>.initialize(container_<%=cid%>, props_<%=cid%>);
+
+if (initVr_<%=cid%>.getStatus() == org.talend.daikon.properties.ValidationResult.Result.ERROR ) {
+    throw new RuntimeException(initVr_<%=cid%>.getMessage());
+}
+
+if(componentRuntime_<%=cid%> instanceof org.talend.components.api.component.runtime.ComponentDriverInitialization) {
+	org.talend.components.api.component.runtime.ComponentDriverInitialization compDriverInitialization_<%=cid%> = (org.talend.components.api.component.runtime.ComponentDriverInitialization)componentRuntime_<%=cid%>;
+	compDriverInitialization_<%=cid%>.runAtDriver(container_<%=cid%>);
+}
+
+org.talend.components.api.component.runtime.SourceOrSink sourceOrSink_<%=cid%> = null;
+if(componentRuntime_<%=cid%> instanceof org.talend.components.api.component.runtime.SourceOrSink) {
+	sourceOrSink_<%=cid%> = (org.talend.components.api.component.runtime.SourceOrSink)componentRuntime_<%=cid%>;
+	if (doesNodeBelongToRequest_<%=cid%>) {
+        org.talend.daikon.properties.ValidationResult vr_<%=cid%> = sourceOrSink_<%=cid%>.validate(container_<%=cid%>);
+        if (vr_<%=cid%>.getStatus() == org.talend.daikon.properties.ValidationResult.Result.ERROR ) {
+            throw new RuntimeException(vr_<%=cid%>.getMessage());
+        }
+	}
+}
+
+<%
+// Return at this point if there is no metadata.
+if (metadata == null) {
+    return stringBuffer.toString();
+}
+
+Set<ConnectorTopology> connectorTopologies = def.getSupportedConnectorTopologies();
+boolean asInputComponent = connectorTopologies!=null && (connectorTopologies.size() < 3) && connectorTopologies.contains(ConnectorTopology.OUTGOING);
+
+List< ? extends IConnection> iterateLine = node.getOutgoingConnections(EConnectionType.ITERATE);
+boolean hasIterateLine = iterateLine!=null && !iterateLine.isEmpty();
+boolean isTopologyNone = !hasOutput && !hasInput && !hasIterateLine;
+
+if(isTopologyNone) {
+    return stringBuffer.toString();
+}
+
+if (hasOutputOnly || asInputComponent) {
+    %>
+    if (sourceOrSink_<%=cid%> instanceof org.talend.components.api.component.runtime.Source) {
+        org.talend.components.api.component.runtime.Source source_<%=cid%> =
+                (org.talend.components.api.component.runtime.Source)sourceOrSink_<%=cid%>;
+        reader_<%=cid%> = source_<%=cid%>.createReader(container_<%=cid%>);
+	    reader_<%=cid%> = new org.talend.codegen.flowvariables.runtime.FlowVariablesReader(reader_<%=cid%>, container_<%=cid%>);
+
+    <%
+    IConnection main = null;
+    List<? extends IConnection> mains = node.getOutgoingConnections("MAIN");
+    if (mains!=null && !mains.isEmpty()) {
+        main = mains.get(0);
+    }
+
+    IConnection reject = null;
+    List<? extends IConnection> rejects = node.getOutgoingConnections("REJECT");
+    if (rejects != null && !rejects.isEmpty()) {
+        reject = rejects.get(0);
+    }
+
+	boolean hasDataOutput = (main != null || reject != null);
+	IndexedRecordToRowStructGenerator irToRow = null;
+
+	if(hasDataOutput) {
+    	IConnection schemaSourceConnector = (main!=null ? main : reject);
+    	String schemaSourceConnectorName = schemaSourceConnector.getMetadataTable().getAttachedConnector();
+	%>
+            boolean multi_output_is_allowed_<%=cid%> = false;
+        <% //take care SourceOrSink.validate will change the schema if it contains include-all-fields, so need to get design Avro schema before validate %>
+            org.talend.components.api.component.Connector c_<%=cid%> = null;
+            for (org.talend.components.api.component.Connector currentConnector : props_<%=cid %>.getAvailableConnectors(null, true)) {
+                if (currentConnector.getName().equals("<%=schemaSourceConnectorName%>")) {
+                    c_<%=cid%> = currentConnector;
+                }
+
+                if (currentConnector.getName().equals("REJECT")) {//it's better to move the code to javajet
+                    multi_output_is_allowed_<%=cid%> = true;
+                }
+            }
+            org.apache.avro.Schema schema_<%=cid%> = props_<%=cid %>.getSchema(c_<%=cid%>, true);
+
+    <%
+    	irToRow = new IndexedRecordToRowStructGenerator(cid, null, columnList);
+    	irToRow.generateInitialVariables("schema_" + cid, false);
+    }
+    %>
+
+        // Iterate through the incoming data.
+        boolean available_<%=cid%> = reader_<%=cid%>.start();
+
+        resourceMap.put("reader_<%=cid%>", reader_<%=cid%>);
+
+        for (; available_<%=cid%>; available_<%=cid%> = reader_<%=cid%>.advance()) {
+			nb_line_<%=cid %>++;
+
+			<%if(hasDataOutput) {%>
+			if (multi_output_is_allowed_<%=cid%>) {
+				<%if(main!=null){%>
+					<%=main.getName()%> = null;
+				<%}%>
+
+				<%if(reject!=null){%>
+					<%=reject.getName()%> = null;
+				<%}%>
+			}
+			<%}%>
+
+			try {
+				Object data_<%=cid%> = reader_<%=cid%>.getCurrent();
+				<%
+				if (main != null) {
+					%>
+
+					if(multi_output_is_allowed_<%=cid%>) {
+						<%=main.getName()%> = new <%=main.getName() %>Struct();
+					}
+
+					<%
+					irToRow.generateConvertRecord("data_" + cid, main.getName(), main.getMetadataTable().getListColumns());
+				}
+				%>
+			} catch (org.talend.components.api.exception.DataRejectException e_<%=cid%>) {
+				java.util.Map<String,Object> info_<%=cid%> = e_<%=cid%>.getRejectInfo();
+				<%
+				if (reject!=null) {
+					%>
+					Object data_<%=cid%> = info_<%=cid%>.get("talend_record");
+
+					if (multi_output_is_allowed_<%=cid%>) {
+						<%=reject.getName()%> = new <%=reject.getName() %>Struct();
+					}
+					try{
+					<%
+					irToRow.generateConvertRecord("data_" + cid, reject.getName());
+					%>
+					}catch(java.lang.Exception e){
+						// do nothing
+					}
+					<%
+					Set<String> commonColumns = new HashSet<String>();
+
+					for (IMetadataColumn column : columnList) {
+						commonColumns.add(column.getLabel());
+					}
+
+					//pass error columns
+					List<IMetadataColumn> rejectColumns = reject.getMetadataTable().getListColumns();
+					for(IMetadataColumn column : rejectColumns) {
+						String columnName = column.getLabel();
+
+						// JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+						//error columns
+						if(!commonColumns.contains(columnName)) {
+							%>
+							<%=reject.getName()%>.<%=columnName%> = (<%=typeToGenerate%>)info_<%=cid%>.get("<%=columnName%>");
+							<%
+						}
+					}
+				} else {
+				%>
+					//TODO use a method instead of getting method by the special key "error/errorMessage"
+					Object errorMessage_<%=cid%> = null;
+					if(info_<%=cid%>.containsKey("error")){
+						errorMessage_<%=cid%> = info_<%=cid%>.get("error");
+					}else if(info_<%=cid%>.containsKey("errorMessage")){
+						errorMessage_<%=cid%> = info_<%=cid%>.get("errorMessage");
+					}else{
+						errorMessage_<%=cid%> = "Rejected but error message missing";
+					}
+					errorMessage_<%=cid%> = "Row "+ nb_line_<%=cid %> + ": "+errorMessage_<%=cid%>;
+					System.err.println(errorMessage_<%=cid%>);
+				<%
+				}
+				if (main != null) {
+				%>
+					// If the record is reject, the main line record should put NULL
+					<%=main.getName()%> = null;
+				<%
+				}
+			%>
+			} // end of catch
+    <%
+    // The for loop around the incoming records from the reader is left open.
+
+
+} else if (hasInput) {
+    %>
+    org.talend.codegen.enforcer.IncomingSchemaEnforcer incomingEnforcer_<%=cid%> = null;
+    if (sourceOrSink_<%=cid%> instanceof org.talend.components.api.component.runtime.Sink) {
+    	org.talend.components.api.component.runtime.Sink sink_<%=cid%> =
+            	(org.talend.components.api.component.runtime.Sink)sourceOrSink_<%=cid%>;
+        org.talend.components.api.component.runtime.WriteOperation writeOperation_<%=cid%> = sink_<%=cid%>.createWriteOperation();
+        if (doesNodeBelongToRequest_<%=cid%>) {
+            writeOperation_<%=cid%>.initialize(container_<%=cid%>);
+        }
+        writer_<%=cid%> = writeOperation_<%=cid%>.createWriter(container_<%=cid%>);
+        if (doesNodeBelongToRequest_<%=cid%>) {
+            writer_<%=cid%>.open("<%=cid%>");
+        }
+
+        resourceMap.put("writer_<%=cid%>", writer_<%=cid%>);
+    } // end of "sourceOrSink_<%=cid%> instanceof ...Sink"
+    org.talend.components.api.component.Connector c_<%=cid%> = null;
+    for (org.talend.components.api.component.Connector currentConnector : props_<%=cid %>.getAvailableConnectors(null, false)) {
+        if (currentConnector.getName().equals("MAIN")) {
+            c_<%=cid%> = currentConnector;
+            break;
+        }
+    }
+    org.apache.avro.Schema designSchema_<%=cid%> = props_<%=cid %>.getSchema(c_<%=cid%>, false);
+    incomingEnforcer_<%=cid%> = new org.talend.codegen.enforcer.IncomingSchemaEnforcer(designSchema_<%=cid%>);
+    <%
+    List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+    if (outgoingConns!=null){
+        for (IConnection outgoingConn : outgoingConns) {
+            if ("MAIN".equals(outgoingConn.getConnectorName())) {
+                %>
+                c_<%=cid%> = null;
+                for (org.talend.components.api.component.Connector currentConnector : props_<%=cid %>.getAvailableConnectors(null, true)) {
+                    if (currentConnector.getName().equals("MAIN")) {
+                        c_<%=cid%> = currentConnector;
+                    }
+                }
+                org.apache.avro.Schema mainSchema_<%=cid%> = props_<%=cid %>.getSchema(c_<%=cid%>, true);
+                <%
+                IndexedRecordToRowStructGenerator mainIrToRow = new IndexedRecordToRowStructGenerator(
+                        cid + "OutMain", outgoingConn);
+                mainIrToRow.generateInitialVariables("mainSchema_" + cid, false);
+            }
+            if ("REJECT".equals(outgoingConn.getConnectorName())) {
+                %>
+                c_<%=cid%> = null;
+                for (org.talend.components.api.component.Connector currentConnector : props_<%=cid %>.getAvailableConnectors(null, true)) {
+                    if (currentConnector.getName().equals("REJECT")) {
+                        c_<%=cid%> = currentConnector;
+                    }
+                }
+                org.apache.avro.Schema rejectSchema_<%=cid%> = props_<%=cid %>.getSchema(c_<%=cid%>, true);
+                <%
+                IndexedRecordToRowStructGenerator rejectIrToRow = new IndexedRecordToRowStructGenerator(
+                        cid + "OutReject", outgoingConn);
+                rejectIrToRow.generateInitialVariables("rejectSchema_" + cid, false);
+            }
+        }
+    }
+}
+ %>
+
+                java.lang.Iterable<?> outgoingMainRecordsList_<%=cid%> = new java.util.ArrayList<Object>();
+                java.util.Iterator outgoingMainRecordsIt_<%=cid%> = null;
+

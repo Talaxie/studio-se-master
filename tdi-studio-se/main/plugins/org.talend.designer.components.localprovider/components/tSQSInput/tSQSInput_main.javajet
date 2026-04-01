@@ -1,0 +1,119 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.process.IConnection
+	java.util.List
+	java.util.Map
+
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+    boolean deleteMessages = "true".equals(ElementParameterParser.getValue(node,"__DELETE_MESSAGE__"));
+    boolean getAttributes = "true".equals(ElementParameterParser.getValue(node,"__GET_ATTRIBUTES__"));
+    boolean getMessageAttributes = "true".equals(ElementParameterParser.getValue(node,"__GET_MESSAGE_ATTRIBUTES__"));
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    List<String> msgInfoField = java.util.Arrays.asList("MessageId","ReceiptHandle","MD5OfBody","Body");
+    List<String> msgDefultAttributes = java.util.Arrays.asList("ApproximateFirstReceiveTimestamp","ApproximateReceiveCount","SenderId","SentTimestamp");
+    
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas != null) && (metadatas.size() > 0)) {//b
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata != null) {//a
+			List<IMetadataColumn> columns = metadata.getListColumns();	
+			List< ? extends IConnection> outConns = node.getOutgoingConnections();
+			for (IConnection conn : outConns) { //2	
+				if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)||conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)) { //3
+					String outputConnName = conn.getName();
+   	%>
+					<%=outputConnName%> = new <%=outputConnName %>Struct();
+   	<%
+					if (getAttributes){
+	%>
+						java.util.Map<String,String> attributes_<%=cid%> = <%=cid%>_message.getAttributes();
+	<%
+					}
+					if (getMessageAttributes){
+	%>
+						java.util.Map<String,com.amazonaws.services.sqs.model.MessageAttributeValue> msgAttributes_<%=cid%> = <%=cid%>_message.getMessageAttributes();
+						com.amazonaws.services.sqs.model.MessageAttributeValue attributeValue_<%=cid%> = null;
+	<%
+					}
+					for (int i = 0; i < columns.size(); i++) {//4
+ 						IMetadataColumn column = columns.get(i);
+ 						if (msgInfoField.contains(column.getLabel())) {
+	%>
+							<%=outputConnName %>.<%=column.getLabel() %> = <%=cid%>_message.get<%=column.getLabel() %>();
+	<% 
+						} else if (msgDefultAttributes.contains(column.getLabel()) && getAttributes) {
+	%>
+								<%=outputConnName %>.<%=column.getLabel() %> = attributes_<%=cid%>.get("<%=column.getLabel()%>");
+	<%
+						} else {
+							if (getMessageAttributes){
+	%>
+								attributeValue_<%=cid%> = msgAttributes_<%=cid%>.get("<%=column.getOriginalDbColumnName()%>");
+    							if(attributeValue_<%=cid%> != null){
+	<%
+    								if ("id_byte[]".equals(column.getTalendType())){
+	%>
+										java.nio.ByteBuffer binaryValue_<%=cid%> = attributeValue_<%=cid%>.getBinaryValue();
+										if(binaryValue_<%=cid%>!=null){
+											<%=outputConnName %>.<%=column.getLabel() %> = binaryValue_<%=cid%>.array();
+										}
+	<%
+    								}else{
+    									String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+										JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+										if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+   	%>
+											<%=outputConnName %>.<%=column.getLabel() %> = attributeValue_<%=cid%>.getStringValue();
+   	<%
+										}else{
+    %>
+											if(attributeValue_<%=cid%>.getStringValue()!=null){
+												<%=outputConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(attributeValue_<%=cid%>.getStringValue());
+											}
+    <%
+										}
+    								}
+	%>
+    							}
+	<%
+							}
+						}
+					}//4
+				}//3
+			}//2
+		}//a
+	}//b
+	if(isLog4jEnabled){
+	%>	
+		log.debug("<%=cid%> - Message Start: ");
+		log.debug("<%=cid%> - MessageId: " + <%=cid%>_message.getMessageId());
+		log.debug("<%=cid%> - ReceiptHandle: " + <%=cid%>_message.getReceiptHandle());
+		log.debug("<%=cid%> - MD5OfBody: " + <%=cid%>_message.getMD5OfBody());
+		log.debug("<%=cid%> - Body: " + <%=cid%>_message.getBody());
+		log.debug("<%=cid%> - Attribute Start: ");
+		for (java.util.Map.Entry<String, String> <%=cid%>_entry : <%=cid%>_message.getAttributes().entrySet()) {
+			log.debug("<%=cid%> - Attribute Name: " + <%=cid%>_entry.getKey() + " ,Attribute Value: " + <%=cid%>_entry.getValue());
+        }
+	<%
+	}
+	if(deleteMessages){
+	%>	
+		conn_<%=cid%>.deleteMessage(new com.amazonaws.services.sqs.model.DeleteMessageRequest().withQueueUrl(<%=queueUrl%>).withReceiptHandle(<%=cid%>_message.getReceiptHandle()));
+	<%
+	}
+	%>

@@ -1,0 +1,70 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Map
+		java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String action = ElementParameterParser.getValue(node, "__ACTION__");
+	String region = ElementParameterParser.getValue(node, "__REGION__");
+	
+	String cluster_id = ElementParameterParser.getValue(node, "__CLUSTER_ID__");
+	
+	boolean filter_core_and_master_instances = "true".equals(ElementParameterParser.getValue(node, "__FILTER_CORE_AND_MASTER_INSTANCES__"));
+	
+	boolean enable_key_pair = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_KEY_PAIR__"));
+	String key_pair = ElementParameterParser.getValue(node, "__KEY_PAIR__");
+		
+%>
+	
+	int nb_line_<%=cid %> = 0;
+	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Amazon/EMRClient.javajet"%>
+		
+	com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsRequest request_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsRequest()
+		.withClusterId(<%=cluster_id%>);
+		
+	com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsResult result_<%=cid%> = emr_<%=cid%>.listInstanceGroups(request_<%=cid%>);
+		 
+	List<com.amazonaws.services.elasticmapreduce.model.InstanceGroup> groupList_<%=cid%> = result_<%=cid%>.getInstanceGroups();
+	
+	java.util.Iterator<com.amazonaws.services.elasticmapreduce.model.InstanceGroup> iterator_<%=cid %> = groupList_<%=cid%>.iterator();
+	
+	com.amazonaws.services.elasticmapreduce.model.InstanceGroup instanceGroup_<%=cid %> = null;
+	
+	while (iterator_<%=cid %>.hasNext()) {
+
+		nb_line_<%=cid %>++;
+		instanceGroup_<%=cid %> = iterator_<%=cid %>.next();
+		String instanceGroupName_<%=cid%> = instanceGroup_<%=cid %>.getName();	
+		String instanceGroupId_<%=cid %> = instanceGroup_<%=cid %>.getId();
+		String instanceGroupType_<%=cid %> = instanceGroup_<%=cid %>.getInstanceGroupType();
+				
+		<% 
+		if(filter_core_and_master_instances)
+		{
+			%> 
+			if(!instanceGroupType_<%=cid %>.equalsIgnoreCase("TASK"))	
+			{
+				continue;
+			}							
+			<% 
+		}
+		%>
+				
+		globalMap.put("<%=cid %>_CURRENT_GROUP_ID", instanceGroupId_<%=cid%>);
+		globalMap.put("<%=cid %>_CURRENT_GROUP_NAME", instanceGroupName_<%=cid%>);
+
+					
+
+
+	
+	

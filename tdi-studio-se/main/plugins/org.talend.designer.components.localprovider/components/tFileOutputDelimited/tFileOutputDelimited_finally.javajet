@@ -1,0 +1,168 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+		java.util.List
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.process.AbstractNode
+	" 
+%>
+
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+    boolean isInRowMode = ("true").equals(ElementParameterParser.getValue(node,"__ROW_MODE__"));
+    
+    String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+	boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__")); 
+	boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+	
+	boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+	
+	String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+	boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+	
+	boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+	IProcess process = node.getProcess();
+%>
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+	%>
+		if(resourceMap.get("finish_<%=cid%>") == null){ 
+			<% 
+		    if(codeGenArgument.getIsRunInMultiThread()){
+			%>
+		   		synchronized (multiThreadLockWrite) {
+			<%
+			}
+			if (((AbstractNode)node).getParallelIterator() != null) {
+			%>
+				synchronized ((Object[])globalMap.get("lockWrite_<%=((AbstractNode)node).getParallelIterator()%>")) {
+			<% 
+			}
+			if (isParallelize) {
+			%>
+				Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+				synchronized (pLockWrite) {
+			<% 
+			}
+			%>
+				<%
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {	
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+					if(!useStream){
+					%>
+						java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out_<%=cid%>");
+						if(out<%=cid%>!=null) {
+							out<%=cid%>.flush();
+							out<%=cid%>.close();
+						}
+					<%
+					}else{
+					%>
+						java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out_<%=cid%>");
+						java.io.OutputStreamWriter writer_<%=cid%> = (java.io.OutputStreamWriter)resourceMap.get("writer_<%=cid%>");
+						if(out<%=cid%>!=null) {
+							out<%=cid%>.flush();
+							writer_<%=cid%>.flush();
+							out<%=cid%> = null;
+						}
+					<%
+					}
+					%>
+				<%
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				}else{//the following is the tFileOutputCSV component
+				//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				%>
+			
+					com.talend.csv.CSVWriter CsvWriter<%=cid%> = (com.talend.csv.CSVWriter)resourceMap.get("CsvWriter_<%=cid%>");
+					<%
+					if(!useStream){
+					%>
+						if(CsvWriter<%=cid%>!=null) {
+					    	CsvWriter<%=cid%>.close();
+					    }
+						<%
+						if(isInRowMode){
+						%>
+							java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out_<%=cid%>");
+							if(out<%=cid%>!=null) {
+								out<%=cid%>.flush();
+								out<%=cid%>.close();
+							}
+						<%
+						}
+					}else{
+						if(isInRowMode){
+						%>
+							if(CsvWriter<%=cid%>!=null) {
+								CsvWriter<%=cid%>.close();
+							}
+							java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out_<%=cid%>");
+							if(out<%=cid%>!=null) {
+								out<%=cid%>.flush();
+							}
+							java.io.OutputStreamWriter outWriter_<%=cid%> = (java.io.OutputStreamWriter)resourceMap.get("outWriter_<%=cid%>");
+							if(outWriter_<%=cid%>!=null) {
+								outWriter_<%=cid%>.flush();
+							}
+						<%
+						}else{
+						%>
+							if(CsvWriter<%=cid%>!=null) {
+								CsvWriter<%=cid%>.flush();
+							}
+							java.io.BufferedWriter bufferWriter_<%=cid%> = (java.io.BufferedWriter)resourceMap.get("bufferWriter_<%=cid%>");
+							if(bufferWriter_<%=cid%>!=null) {
+								bufferWriter_<%=cid%>.flush();
+							}
+							java.io.OutputStreamWriter outWriter_<%=cid%> = (java.io.OutputStreamWriter)resourceMap.get("outWriter_<%=cid%>");
+							if(outWriter_<%=cid%>!=null) {
+								outWriter_<%=cid%>.flush();
+							}
+							CsvWriter<%=cid%> = null;
+						<%
+						}
+					}
+				}
+			if (isParallelize) {
+			%>
+				}
+			<%
+			}
+			if (((AbstractNode)node).getParallelIterator() != null) {
+			%>
+				}
+			<% 
+			}
+			if(codeGenArgument.getIsRunInMultiThread()){
+			%>
+				}
+			<%
+			}
+			%>
+			<%if(!useStream && isDeleteEmptyFile){%>
+				if(Boolean.valueOf(String.valueOf(resourceMap.get("isFileGenerated_<%=cid%>"))) && Integer.valueOf(String.valueOf(resourceMap.get("nb_line_<%=cid%>"))) == 0){
+					<%if(compress && !isAppend && !split){%>
+						((java.io.File)resourceMap.get("file_<%=cid%>")).delete();
+					<%}else{%>
+						((java.io.File)resourceMap.get("file<%=cid%>")).delete();
+					<%}%>
+				}		
+			<%}%>
+		}
+	<%
+	}
+}
+%>

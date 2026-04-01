@@ -1,0 +1,94 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable    
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.process.ElementParameterParser
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+%>
+
+org.json.simple.JSONObject jsonRow<%=cid%> = new org.json.simple.JSONObject();
+<%
+List< ? extends IConnection> conns = node.getIncomingConnections();
+for (IConnection conn : conns) {
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			List<IMetadataColumn> columns = metadata.getListColumns();
+			int sizeColumns = columns.size();
+			for (int i = 0; i < sizeColumns; i++) {
+						
+				IMetadataColumn column = columns.get(i);
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType(javaType, column.isNullable());
+			    if(!isPrimitive){
+			    %>
+			    	if(<%=conn.getName()%>.<%=column.getLabel()%> != null){
+			    <%
+			    }
+				if (javaType == JavaTypesManager.DATE && column.getPattern() != null && column.getPattern().trim().length() != 0) {
+					String pattern = column.getPattern();
+					%>
+					jsonRow<%=cid%>.put("<%=column.getLabel()%>",FormatterUtils.format_Date(<%=conn.getName()%>.<%=column.getLabel()%>, <%=pattern%>));
+				<%
+				}else if(javaType == JavaTypesManager.CHARACTER){
+				%>
+					jsonRow<%=cid%>.put("<%=column.getLabel()%>", String.valueOf(<%=conn.getName()%>.<%=column.getLabel()%>));
+				<%
+				}
+				// add dynamic schema support here
+				else if("id_Dynamic".equals(column.getTalendType())) {%>
+					Dynamic col_<%=cid%> = <%=conn.getName()%>.<%=column.getLabel()%>;
+					for (int i_<%=cid%> = 0; i_<%=cid%> < col_<%=cid%>.getColumnCount(); i_<%=cid%>++) {
+						DynamicMetadata metadata_<%=cid%> = col_<%=cid%>.getColumnMetadata(i_<%=cid%>);
+						Object val_<%=cid%> = col_<%=cid%>.getColumnValue(i_<%=cid%>);
+						if (metadata_<%=cid%> != null && val_<%=cid%> != null) {
+							if (val_<%=cid%> instanceof Date) {
+								val_<%=cid%> = FormatterUtils.format_Date((Date)val_<%=cid%>, metadata_<%=cid%>.getFormat());
+							}
+							jsonRow<%=cid%>.put(metadata_<%=cid%>.getName(),val_<%=cid%>);
+						}
+					}
+				<%
+				} //end of add dynamic support here  (this assumes dynamic datatype does not contain nested dynamic datatype fields)
+				else {
+				%>
+					jsonRow<%=cid%>.put("<%=column.getLabel()%>", <%=conn.getName()%>.<%=column.getLabel()%>);
+				<%
+				}
+				if(!isPrimitive){
+				%>
+					}else{
+						jsonRow<%=cid%>.put("<%=column.getLabel()%>", null);
+					}
+				<%
+				}
+			}
+		}
+	}
+}
+%>
+
+if(!isFirst_<%=cid%>){
+	out<%=cid%>.append(",");
+}
+isFirst_<%=cid%> = false;
+out<%=cid%>.append(jsonRow<%=cid%>.toJSONString());
+nb_line_<%=cid %>++;
+<%if(isLog4jEnabled){%>
+	log.debug("<%=cid%> - Writing the record " + nb_line_<%=cid%> + ".");
+<%}%>

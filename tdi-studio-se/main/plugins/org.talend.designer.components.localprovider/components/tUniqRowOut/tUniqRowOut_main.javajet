@@ -1,0 +1,76 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.INode  
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    java.util.List
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = ElementParameterParser.getValue(node, "__CID__");
+
+String connName = "";
+if (node.getIncomingConnections().size()==1) {
+	IConnection conn = node.getIncomingConnections().get(0);
+	connName = conn.getName();
+}
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+///////////////
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0) && !("").equals(connName)) {//HSS_____0
+	IMetadataTable metadata = metadatas.get(0);
+    List<IMetadataColumn> columnList = metadata.getListColumns();
+%>
+	if (rowsInBuffer_1_<%=cid %> >= bufferSize_1_<%=cid %>) {// buffer is full do sort and
+	
+		java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_1_<%=cid %>, 0, bufferSize_1_<%=cid %>, comparator_1_<%=cid %>);
+	                    
+	    java.io.File file_<%=cid %> = new java.io.File(temp_file_path_prefix_<%=cid %> + files_1_<%=cid %>.size());
+	    <%
+		if (isLog4jEnabled) {
+		%>
+			log.debug("<%=cid%> - Invoke request to delete file: "+file_<%=cid %>.getPath()+" When VM exit.");
+		<%
+		}
+		%>
+	    file_<%=cid %>.deleteOnExit();
+	    java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(new java.io.FileOutputStream(file_<%=cid %>)));
+	    <%
+		if (isLog4jEnabled) {
+		%>
+			log.debug("<%=cid%> - Writing the data into: "+file_<%=cid %>.getPath());
+		<%
+		}
+		%>
+		for (int i_<%=cid %> = 0; i_<%=cid %> < bufferSize_1_<%=cid %>; i_<%=cid %>++) {
+	    	buffer_1_<%=cid %>[i_<%=cid %>].writeData(rw);
+	    }
+	                    
+	    rw.close();
+		<%
+		if (isLog4jEnabled) {
+		%>
+			log.debug("<%=cid%> - Wrote successfully.");
+		<%
+		}
+		%>
+	    files_1_<%=cid %>.add(file_<%=cid %>);
+	
+	    rowsInBuffer_1_<%=cid %> = 0;
+	}
+	rowStruct_<%=cid %> row_<%=cid %> = buffer_1_<%=cid %>[rowsInBuffer_1_<%=cid %>++];
+	row_<%=cid %>.id_<%=cid %> = ++nb_<%=cid %>;
+<%
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+	row_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+}//HSS_____0
+%>

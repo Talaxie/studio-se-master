@@ -1,0 +1,566 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever 
+    org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.ArrayList    
+    java.lang.StringBuilder
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String dbuser = ElementParameterParser.getValue(node, "__USER__");
+	String dbtable = ElementParameterParser.getValue(node, "__TABLE__");
+	String tableAction = ElementParameterParser.getValue(node, "__TABLE_ACTION__");
+	String dataFile = ElementParameterParser.getValue(node, "__DATA_FILE__");
+	boolean useNamedPiped = ElementParameterParser.getValue(node, "__USE_NAMED_PIPE__").equals("true");
+	String namedPipeName = ElementParameterParser.getValue(node, "__NAMED_PIPE__");
+	boolean useExistingCtrlFile = ElementParameterParser.getValue(node, "__USE_EXISTING_CLT_FILE__").equals("true");
+	String ctrlFile = ElementParameterParser.getValue(node, "__CLT_FILE__");
+	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELD_SEPARATOR__");
+	String quoteFields = ElementParameterParser.getValue(node, "__QUOTE_FIELDS__");
+	List<Map<String, String>> options = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OPTIONS__");
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	boolean nzloadExePathGiven = ElementParameterParser.getValue(node, "__SPECIFY_NZLOAD_PATH__").equals("true");
+	String nzloadExePath = ElementParameterParser.getValue(node, "__NZLOAD_PATH__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+	boolean printCommand = ("true").equals(ElementParameterParser.getValue(node,"__PRINT_COMMAND__"));
+	boolean showLog = ("true").equals(ElementParameterParser.getValue(node,"__SHOW_LOG__"));
+	List<IMetadataColumn> columnList = getColumnList(node);
+	List<Column> stmtStructure = null;
+	if (columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+	
+	List< ? extends IConnection> inputConns = node.getIncomingConnections();
+	List< ? extends IConnection> outputConns = node.getOutgoingConnections();
+	boolean hasInputRow = false;
+	boolean hasOutputRow = false;
+	if (inputConns != null || inputConns.size() > 0) {
+		for(IConnection conn : inputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasInputRow)
+					hasInputRow = true;
+		}
+	}
+	if (outputConns != null || outputConns.size() > 0) {
+		for(IConnection conn : outputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasOutputRow)
+					hasOutputRow = true;
+		}
+	}
+
+		
+	if (!nzloadExePathGiven) {
+		nzloadExePath = "\"nzload\"";
+	}
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+%>
+	int deletedCount_<%=cid%> = 0;
+	int insertedCount_<%=cid%> = 0;
+<%
+	// -----------------------------------------------------------
+	// basic setup check:
+	// 		if the component is used with named-piped option, it must have an input row
+	//		if the component is used as a start component, then it must not have an output row
+	// -----------------------------------------------------------
+	boolean missConfiguration = false;
+	String  missConfigurationMsg = "";
+	if (useNamedPiped && !hasInputRow) {
+		missConfiguration = true;
+		missConfigurationMsg = cid + " is miss configured. When this component is used in named-pipe mode, it must have an input row.";
+	}
+	if (hasOutputRow && !hasInputRow) {
+		missConfiguration = true;
+		missConfigurationMsg = cid + " is miss configured. This component can only have an output row when it has an input row.";
+	}
+	if (missConfiguration) {
+		%>
+		boolean missConfiguration_<%=cid%> = true;
+		String missConfigurationMsg_<%=cid%> = "<%=missConfigurationMsg%>";
+		if (missConfiguration_<%=cid%>) {
+			throw new java.lang.Exception(missConfigurationMsg_<%=cid%>);
+		}
+		<%
+	}
+%>
+
+
+<%
+	//-----------------------------------------------------------
+	// create table option
+	//-----------------------------------------------------------
+	if((columnList != null && columnList.size() > 0 && !("NONE".equals(tableAction))) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)) {
+        Manager manager = getManager(dbmsId, cid);
+		%>
+		String driverClass_<%=cid%> = "org.netezza.Driver";
+		java.lang.Class.forName(driverClass_<%=cid%>);
+		<%
+        if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+            %>
+			String url_<%=cid%> = "jdbc:netezza://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+			<%
+        } else {
+            %>
+            String url_<%=cid%> = "jdbc:netezza://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + "?" + <%=dbproperties%>;
+            <%
+        }       
+        %>
+		String dbUser_<%=cid %> = <%=dbuser%>;
+	        
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	   	
+        String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	        		
+		String tableName_<%=cid%> = <%=dbtable%>;
+		java.sql.Connection conn_<%=cid%> = null;
+		<%
+	   		log4jCodeGenerateUtil.debugConnectionParams(node);	
+		%>	
+		<%log4jCodeGenerateUtil.connect();%>
+		<%
+		
+        if(("DROP_CREATE").equals(tableAction)) {
+            %>
+			java.sql.Statement stmtDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Droping table '" + tableName_<%=cid%> + "'.");
+			<%}%>
+			stmtDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Drop table '" + tableName_<%=cid%> + "' has succeeded.");
+			<%}%>
+			stmtDrop_<%=cid%>.close();
+			java.sql.Statement stmtCreate_<%=cid%> =  null;
+			try{
+				stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement();
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Creating table '" + tableName_<%=cid%> + "'.");
+				<%}%>
+				stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Create table '" + tableName_<%=cid%> + "' has succeeded.");
+				<%}%>
+				stmtCreate_<%=cid%>.close();
+			}catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+				if(<%=dieOnError%>){
+					 throw new RuntimeException ("Failure on DROP_CREATE action, process terminated.");
+				}
+			}
+            <%
+        } else if(("CREATE").equals(tableAction)) {
+            %>
+			java.sql.Statement stmtCreate_<%=cid%> = null; 
+			try{
+				stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement();
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Creating table '" + tableName_<%=cid%> + "'.");
+				<%}%>
+				stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Create table '" + tableName_<%=cid%> + "' has succeeded.");
+				<%}%>
+				stmtCreate_<%=cid%>.close();
+			}catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+				if(<%=dieOnError%>){
+					 throw new RuntimeException ("Table '" + tableName_<%=cid%>  + "' already exists. process terminated.");
+				}else{
+					<%if(isLog4jEnabled){%>
+						log.error("<%=cid%> - Table '" + tableName_<%=cid%>  + "' already exists. process terminated.");
+					<%}%>
+					 e.printStackTrace();
+				}
+			}
+            <%
+        } else if(("CREATE_IF_NOT_EXISTS").equals(tableAction) || ("DROP_IF_EXISTS_AND_CREATE").equals(tableAction)) {
+            %>
+			java.sql.DatabaseMetaData dbMetaData_<%=cid%> = conn_<%=cid%>.getMetaData();
+			java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(null, null, null, new String[]{"TABLE"});
+			boolean whetherExist_<%=cid%> = false;
+			while(rsTable_<%=cid%>.next()) {
+				String table_<%=cid%> = rsTable_<%=cid%>.getString("TABLE_NAME");
+				if(table_<%=cid%>.equalsIgnoreCase(<%=dbtable%>)) {
+					whetherExist_<%=cid%> = true;
+					break;
+				}
+			}
+            <%
+            if(("CREATE_IF_NOT_EXISTS").equals(tableAction)) {
+                %>
+				if(!whetherExist_<%=cid%>) {
+					java.sql.Statement stmtCreate_<%=cid%> = null;
+					try{
+						stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement();
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Creating table '" + tableName_<%=cid%>+"'.");
+						<%}%>
+						stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Create table " + tableName_<%=cid%> + "' has succeeded. ");
+						<%}%> 
+						stmtCreate_<%=cid%>.close();
+					}catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+						if(<%=dieOnError%>){
+							 throw new RuntimeException ("Failure to create table '" + tableName_<%=cid%>  + "'. process terminated.");
+						}
+						else{
+							<%if(isLog4jEnabled){%>
+								log.error("<%=cid%> - Failure to create table '" + tableName_<%=cid%>  + "'. process terminated.");
+							<%}%>
+							 e.printStackTrace();
+						}
+					}
+				}                
+                <%
+            } else {
+                %>
+                if(whetherExist_<%=cid%>) {
+                    java.sql.Statement stmtDrop_<%=cid%> = null;
+                    try{
+                    	stmtDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Droping table '" + tableName_<%=cid%> + "'.");
+						<%}%>
+                    	stmtDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Drop table '" + tableName_<%=cid%> + "' has succeeded.");
+						<%}%>
+						stmtDrop_<%=cid%>.close();
+                    }catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                    	if(<%=dieOnError%>){
+							 throw new RuntimeException ("Failure to drop table '" + tableName_<%=cid%>  + "'. process terminated.");
+                    	
+                    	}else{
+							<%if(isLog4jEnabled){%>
+								log.error("<%=cid%> - Failure to drop table '" + tableName_<%=cid%>  + "'. process terminated.");
+							<%}%>
+							 e.printStackTrace();
+						}
+                    }
+                }
+                java.sql.Statement stmtCreate_<%=cid%> = null;
+                try{
+                stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement();
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Creating table '" + tableName_<%=cid%>+"'.");
+				<%}%>
+                stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");           
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Drop table '" + tableName_<%=cid%> + "' has succeeded.");
+				<%}%>
+				stmtCreate_<%=cid%>.close();
+                }catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                	if(<%=dieOnError%>){
+						 throw new RuntimeException ("Failure to create table '" + tableName_<%=cid%>  + "'. process terminated.");
+                	}else{
+						<%if(isLog4jEnabled){%>
+							log.error("<%=cid%> - Failure to create table '" + tableName_<%=cid%>  + "'. process terminated.");
+						<%}%>
+						 e.printStackTrace();
+                	}
+                }
+            <%
+            }
+        } else if(("TRUNCATE").equals(tableAction)) {
+            %>
+            java.sql.Statement stmtClearCount_<%=cid%> = conn_<%=cid%>.createStatement();
+            java.sql.ResultSet rsClearCount_<%=cid%> = stmtClearCount_<%=cid%>.executeQuery("<%=manager.getSelectionSQL()%>");
+            java.sql.Statement stmtClear_<%=cid%> = conn_<%=cid%>.createStatement();
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Truncating table '" + tableName_<%=cid%> + "'.");
+			<%}%>
+            stmtClear_<%=cid%>.executeUpdate("<%=manager.getTruncateTableSQL()%>");
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Truncate table '" + tableName_<%=cid%> + "' has succeeded.");
+			<%}%>
+            while(rsClearCount_<%=cid%>.next()) {
+                deletedCount_<%=cid%> = rsClearCount_<%=cid%>.getInt(1);
+            }
+            stmtClearCount_<%=cid%>.close();
+			stmtClear_<%=cid%>.close();
+            <% 
+        } else if (("CLEAR").equals(tableAction)){
+            %>
+            java.sql.Statement stmtClear_<%=cid%> = null;
+            try{
+            	stmtClear_<%=cid%> = conn_<%=cid%>.createStatement();
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Clearing table '" + tableName_<%=cid%> + "'.");
+				<%}%>
+            	deletedCount_<%=cid%> = stmtClear_<%=cid%>.executeUpdate("<%=manager.getDeleteTableSQL()%>");
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Clear table '" + tableName_<%=cid%> + "' has succeeded.");
+				<%}%>
+            	stmtClear_<%=cid%>.close();
+            }catch(java.sql.SQLException e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            	if(<%=dieOnError%>){
+					 throw new RuntimeException ("Failure to clear table '" + tableName_<%=cid%>  + "'. process terminated.");
+            	}else{
+					<%if(isLog4jEnabled){%>
+						log.error("<%=cid%> - Failure to clear table '" + tableName_<%=cid%>  + "'. process terminated.");
+					<%}%>
+					 e.printStackTrace();
+            	}
+            }
+            <%
+        }
+		log4jCodeGenerateUtil.close(node);
+    }
+%>
+
+<%
+	//---------------------------------------------------------------
+	// construct the nzload thread
+	//---------------------------------------------------------------
+	List<String> parametersList = new ArrayList();
+	parametersList.add("\"-host\"");
+	parametersList.add(dbhost);
+	parametersList.add("\"-u\"");
+	parametersList.add(dbuser);
+	parametersList.add("\"-pw\"");
+
+	parametersList.add("decryptedPwd_" + cid);
+	
+	parametersList.add("\"-db\"");
+	parametersList.add(dbname);
+	parametersList.add("\"-t\"");
+	parametersList.add(dbtable);
+	
+	if (useExistingCtrlFile) {
+		parametersList.add("\"-cf\"");
+		parametersList.add(ctrlFile);
+	}
+	else {
+		parametersList.add("\"-delim\"");
+		parametersList.add(fieldSeparator);
+		parametersList.add("\"-quotedValue\"");
+		parametersList.add("\"" + quoteFields + "\"");
+		parametersList.add("\"-encoding\"");
+		parametersList.add("\"" + encoding + "\"");
+		parametersList.add("\"-df\"");
+		if (useNamedPiped) {
+			parametersList.add("(new com.infobright.io.NamedPipeFactory()).getNativePipeName(" + namedPipeName + ")");
+		} else {
+			parametersList.add(dataFile);
+		}
+		for(Map<String, String> option : options) {
+			String key = option.get("KEY");
+			String value = option.get("VALUE");
+			parametersList.add("\"" + key + "\"");
+			if(value != null && !("".equals(value))) {
+				parametersList.add(value);
+			}
+		}
+	}
+%>
+	final StringBuilder nzloadOutput_<%=cid%> = new StringBuilder(200);
+	final java.util.concurrent.atomic.AtomicInteger nb_line_<%=cid%> = new java.util.concurrent.atomic.AtomicInteger();
+	//final 
+	
+    <%
+    String passwordFieldName = "__PASS__";
+    %>
+    
+    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+    <%} else {%>
+    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+    <%}%>
+	
+	Thread nzloadThread_<%=cid%> = new Thread() {
+		public void run() {
+<%
+			//even if user doesn't specify it - nzload.exe will write to default path log file
+			boolean isLogFilePathSpecified = parametersList.contains("\"-lf\"");
+%>
+			try {
+				String[] envp = null;
+				String[] cmds = new String[] {<%=nzloadExePath%> <%
+						for (int i=0; i < parametersList.size(); i++) {
+							%>,<%=parametersList.get(i)%><%
+						}
+						%>};
+				
+				// added "print command" feature
+				<% if (printCommand == true) { %>
+					System.out.println("INFO: executing nzload command:");
+					for(int i = 0; i < cmds.length; i++) {
+						if ("-pw".equals(cmds[i]) && decryptedPwd_<%=cid %>.equals(cmds[i+1])) {
+							System.out.print(cmds[i] + " " + routines.system.PasswordEncryptUtil.PASSWORD_FOR_LOGS_VALUE + " ");
+							i++;
+						} else {
+							System.out.print(cmds[i] + " ");
+						}
+					}
+				<% } %>
+				
+				Runtime rt = Runtime.getRuntime();
+				final Process ps = rt.exec(cmds, envp);
+				
+				ps.waitFor();
+				java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps.getInputStream()));
+				// fixed no showing of error messages
+				java.io.BufferedReader errReader = new java.io.BufferedReader(new java.io.InputStreamReader(ps.getErrorStream()));
+				
+				String line = "";
+				String errLine = "";
+				while ((line = reader.readLine()) != null) {
+					nzloadOutput_<%=cid%>.append(line);
+<%
+					if (isLog4jEnabled) {
+%>
+						log.info(line);
+<%
+					} else {
+%>
+						System.out.println(line);
+<%
+					}
+%>
+				}
+				while((errLine = errReader.readLine()) != null) {
+					nzloadOutput_<%=cid%>.append(errLine);
+<%
+					if (isLog4jEnabled) {
+%>
+						log.error(errLine);
+<%
+					} else {
+%>
+						System.err.println(errLine);
+<%
+					}
+%>
+				}
+
+                String tableName_<%=cid%> = <%=dbtable%>;
+                String dbUser_<%=cid%> = <%=dbuser%>;
+                String dbName_<%=cid%> = <%=dbname%>;
+				String actualLogFilePath_<%=cid%> = <%if(isLogFilePathSpecified){%>
+					<%=parametersList.get(parametersList.indexOf("\"-lf\"") + 1)%>;
+				<%} else {%>
+					tableName_<%=cid%>.toUpperCase()
+					+ "." + dbUser_<%=cid%>.toUpperCase()
+					+ "." + dbName_<%=cid%>.toUpperCase()
+					+ ".nzlog";
+				<%}%>
+
+				nb_line_<%=cid%>.set(getProcessedRowsCount(actualLogFilePath_<%=cid%>));
+			}
+			catch (java.lang.Exception e) {
+				globalMap.put("<%=cid%>_NZLOAD_ERROR",e.getMessage());
+				throw new RuntimeException(e.getMessage(),e.getCause());
+			}
+		}
+		private int getProcessedRowsCount(String pathToLogFile) {
+			int processedRowsCount = 0;
+			try (org.apache.commons.io.input.ReversedLinesFileReader reversedLinesFileReader_<%=cid%> = new org.apache.commons.io.input.ReversedLinesFileReader(new java.io.File(pathToLogFile))) {
+				String logLine = null;
+				while(null != (logLine = reversedLinesFileReader_<%=cid%>.readLine())) {
+					if (logLine.contains("  number of records read:")) {
+						processedRowsCount = Integer.parseInt(logLine.split(":")[1].trim());
+						break;
+					}
+				}
+			}
+			catch(IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+				String warningMessage = "Can't get NB_LINE value from log file";
+				if (isLog4jEnabled) {
+%>
+					log.warn("<%=warningMessage%>");
+<%
+				} else {
+%>
+					System.err.println("<%=warningMessage%>");
+<%
+				}
+%>
+				return 0;
+			}
+			return processedRowsCount;
+		}
+		
+	};
+	
+<%
+	//-----------------------------------------------------------------
+	// construct the output stream to write the data to
+	// we don't need output stream the data file already exists and the
+	// component is used in startable mode.
+	//-----------------------------------------------------------------
+	if(isLog4jEnabled){%>
+		StringBuffer command_<%=cid%> = new StringBuffer(<%=nzloadExePath%>);
+		<%
+		for (int i=0; i < parametersList.size(); i++) {
+		%>
+			command_<%=cid%>.append(<%=parametersList.get(i)%> +" ");
+		<%
+		}
+		%>
+	<%}
+	if (hasInputRow) {
+		if (useNamedPiped) {
+		%>
+			com.infobright.io.NamedPipe outputStream_<%=cid%> = (new com.infobright.io.NamedPipeFactory()).createServer(<%=namedPipeName%>, true, true, 1024000, 10000);
+			nzloadThread_<%=cid%>.start();
+			// in Windows wait for named pipe to get opened by nzload.exe
+			if ((new com.infobright.io.NamedPipeFactory()).isWindowsMode()) { 
+				Thread.sleep(10000);
+			}
+		<%
+		} else { // use data file
+		%>
+			java.io.BufferedOutputStream outputStream_<%=cid%> = new java.io.BufferedOutputStream(new java.io.FileOutputStream(<%=dataFile%>,false), 1024000);
+		<%
+		}
+	} else { // no input connections
+%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Executing '"+command_<%=cid %>.toString()+"'.");
+		<%}%>
+		nzloadThread_<%=cid%>.start();
+		nzloadThread_<%=cid%>.join(0);
+		globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid%>.get());
+		globalMap.put("<%=cid%>_NZLOAD_OUTPUT", nzloadOutput_<%=cid%>.toString());
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Execute '"+command_<%=cid %>.toString()+"' has finished.");
+		<%}%>
+<%
+	}
+%>
+
+

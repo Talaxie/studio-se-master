@@ -1,0 +1,97 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean useNTLM = ("true").equals(ElementParameterParser.getValue(node,"__USE_NTLM__"));
+String domain = ElementParameterParser.getValue(node,"__NTLM_DOMAIN__");
+        
+boolean needAuth = ("true").equals(ElementParameterParser.getValue(node,"__NEED_AUTH__"));
+String username = ElementParameterParser.getValue(node,"__AUTH_USERNAME__");
+String password = ElementParameterParser.getValue(node,"__AUTH_PASSWORD__");
+
+boolean enforceNtlm = ("true").equals(ElementParameterParser.getValue(node,"__ENFORCE_NTLM__"));
+
+boolean useProxy = ("true").equals(ElementParameterParser.getValue(node,"__USE_PROXY__"));
+String proxyHost = ElementParameterParser.getValue(node,"__PROXY_HOST__");
+String proxyPort = ElementParameterParser.getValue(node,"__PROXY_PORT__");
+String proxyUser = ElementParameterParser.getValue(node,"__PROXY_USERNAME__");
+String proxyPassword = ElementParameterParser.getValue(node,"__PROXY_PASSWORD__");
+        
+boolean needSSLtoTrustServer = ("true").equals(ElementParameterParser.getValue(node,"__NEED_SSL_TO_TRUSTSERVER__"));
+String trustStoreFile = ElementParameterParser.getValue(node,"__SSL_TRUSTSERVER_TRUSTSTORE__");
+String trustStorePassword = ElementParameterParser.getValue(node,"__SSL_TRUSTSERVER_PASSWORD__");
+
+boolean useKerberos = ("true").equals(ElementParameterParser.getValue(node,"__USE_KERBEROS__"));
+String kerberosConfiguration = ElementParameterParser.getValue(node,"__KERBEROS_CONFIGURATION__");
+
+String passwordFieldName = "";
+%>
+<%if(useKerberos){%>final<%}%> org.talend.soap.SOAPUtil soapUtil_<%=cid%> = new org.talend.soap.SOAPUtil();
+<%		
+if(needSSLtoTrustServer){
+%>   
+System.setProperty("javax.net.ssl.trustStore", <%=trustStoreFile %>);
+
+    <%
+    passwordFieldName = "__SSL_TRUSTSERVER_PASSWORD__";
+    %>
+    
+    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+    <%} else {%>
+    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+    <%}%>
+
+System.setProperty("javax.net.ssl.trustStorePassword", decryptedPwd_<%=cid%>);
+<% 
+}
+%>
+
+<%
+passwordFieldName = "__AUTH_PASSWORD__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+<%
+if(needAuth&&!useNTLM){
+%>
+soapUtil_<%=cid%>.setBasicAuth(<%=username%>,decryptedPassword_<%=cid%>);
+<%
+}
+if(needAuth&&useNTLM){
+%>
+soapUtil_<%=cid%>.setNTLMAuth(<%=domain%>,<%=username%>,decryptedPassword_<%=cid%>);
+<%
+	if(enforceNtlm) {
+	%>
+	//Enforcing NTLM authentication credentials.
+	soapUtil_<%=cid%>.enforceNtlmCredentials();
+	<%
+	}
+}
+if(useProxy){
+%>
+
+    <%
+    passwordFieldName = "__PROXY_PASSWORD__";
+    %>
+    
+    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+    	final String decryptedProxyPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+    <%} else {%>
+    	final String decryptedProxyPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+    <%}%>
+
+soapUtil_<%=cid%>.setProxy(<%=proxyHost%>,<%=proxyPort%>,<%=proxyUser%>,decryptedProxyPwd_<%=cid%>);
+<%
+}
+%>

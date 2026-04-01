@@ -1,0 +1,372 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    java.util.List
+    java.util.Map
+   	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.utils.NodeUtil
+"
+%>
+//tWriteXMLFieldOut_begin
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String dst4WriteJSONField = ElementParameterParser.getValue(node, "__DESTINATION__");
+boolean istWriteJSONField = dst4WriteJSONField == null ? false : dst4WriteJSONField.contains("tWriteJSONField_");
+
+String virtualTargetCid = node.getOutgoingConnections(EConnectionType.ON_COMPONENT_OK).get(0).getTarget().getUniqueName();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	List< ? extends IConnection> connsOutput = node.getOutgoingSortedConnections();
+		String rowStructNameOutput = null;
+		if (connsOutput != null && connsOutput.size() > 0 && istWriteJSONField) {
+			List< ? extends IConnection> connsTarget = connsOutput.get(0).getTarget().getOutgoingConnections();
+			if(connsTarget != null && connsTarget.size()>0){
+				rowStructNameOutput = connsTarget.get(0).getName();
+				rowStructNameOutput = rowStructNameOutput + "Struct";//row2Struct
+			}
+    	}
+
+		if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		String inputRowName = NodeUtil.getRealConnectionTypeBased(conn).getName();
+    		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){ 
+    			String removeHeader = ElementParameterParser.getValue(node, "__REMOVE_HEADER__"); // add for feature7788
+        		String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+				boolean isAllowEmpty = ("true").equals(ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__"));
+				boolean ignoreServiceAttributes = ("true").equals(ElementParameterParser.getValue(node, "__IGNORE_SERVICE_ATTRIBUTES_FOR_EMPTY__"));
+                boolean expandEmptyElm = ("true").equals(ElementParameterParser.getValue(node, "__EXPAND_EMPTY_ELM__"));
+        		String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+        		List<Map<String, String>> rootTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+                List<Map<String, String>> groupTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+                List<Map<String, String>> loopTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+                boolean storeFlow = ("true").equals(ElementParameterParser.getValue(node, "__STORE_FLOW__"));
+                boolean isCompactFormat = ("true").equals(ElementParameterParser.getValue(node, "__COMPACT_FORMAT__"));
+				%>
+				int nb_line_<%=cid%> = 0;
+				boolean needRoot_<%=cid%>  = true;
+				
+				String  strCompCache_<%=cid %>= null;		
+				<%
+				String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+				if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+				    INode previousNode = conn.getSource();
+				    List<IMetadataTable> previous_metadatas = previousNode.getMetadataList();
+				    if ((previous_metadatas!=null)&&(previous_metadatas.size()>0)) {
+				        IMetadataTable previous_metadata = previous_metadatas.get(0);
+				        if (previous_metadata!=null) {
+						%>
+				            java.util.Map map_<%=cid%> = null;
+						<%
+				        }
+				    }
+				}
+				IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+				if(nextMergeConn == null || nextMergeConn.getInputId()==1){
+				    if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+					%>
+				        java.util.Queue<java.util.Map> listGroupby_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<java.util.Map>();
+					<%
+				    }else{
+						 if(istWriteJSONField){
+							%>
+						        java.util.Queue<<%= rowStructNameOutput %>> listGroupby_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<<%= rowStructNameOutput %>>();
+							<%
+						}else{
+							%>
+						        java.util.Queue<String> listGroupby_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<String>();
+							<%
+						}
+				    }
+					if(storeFlow){
+					%>
+						java.util.List<java.util.Map<String,String>> flows_<%=cid%> = java.util.Collections.synchronizedList(new java.util.ArrayList<java.util.Map<String,String>>());
+						java.util.Map<String,String> flowValues_<%=cid%> = null;
+					<%
+					}
+					%>
+	
+					class ThreadXMLField_<%=cid%> implements java.lang.Runnable {
+						<%
+						if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+						%>
+							java.util.Queue<java.util.Map> queue;
+						<%
+						}else{
+							 if(istWriteJSONField){
+									%>
+									    java.util.Queue<<%= rowStructNameOutput %>> queue;
+									<%
+							}else{
+									%>
+									    java.util.Queue<String> queue;
+									<%
+							}
+						}
+						%>
+						java.util.List<java.util.Map<String,String>> flows;
+						java.lang.Exception lastException;
+						java.lang.Error lastError;
+						String currentComponent;
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q) {
+							this.queue = q;
+							globalMap.put("queue_<%=virtualTargetCid%>", queue);
+							lastException = null;
+						}
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q, java.util.List<java.util.Map<String,String>> l) {
+							this.queue = q;
+							this.flows = l;
+							lastException = null;
+							globalMap.put("queue_<%=virtualTargetCid%>", queue);
+							globalMap.put("flows_<%=virtualTargetCid%>", flows);
+						}
+						
+						public java.lang.Exception getLastException() {
+							return this.lastException;
+						}
+						
+						public java.lang.Error getLastError() {
+							return this.lastError;
+						}
+						
+						public String getCurrentComponent() {
+							return this.currentComponent;
+						}
+	
+						@Override
+						public void run() {
+							try {
+								<%=virtualTargetCid%>Process(globalMap);
+							} catch (TalendException te) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",te.getMessage());
+								this.lastException = te.getException();
+								this.currentComponent = te.getCurrentComponent();
+							} catch (java.lang.Error error) {
+								this.lastError = error;
+							}
+						}
+					}
+					<%if(!storeFlow){%>
+						ThreadXMLField_<%=cid%> txf_<%=cid%> = new ThreadXMLField_<%=cid%>(listGroupby_<%=cid%>);
+					<%} else {%>
+						ThreadXMLField_<%=cid%> txf_<%=cid%> = new ThreadXMLField_<%=cid%>(listGroupby_<%=cid%>, flows_<%=cid%>);
+					<%}%>
+					
+					java.util.concurrent.Future<?> future_<%=cid%> = es.submit(txf_<%=cid%>);
+					globalMap.put("wrtXMLFieldIn_<%=cid%>", future_<%=cid%>);
+				<%
+				}else{
+					if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+					%>
+				        java.util.Queue<java.util.Map> listGroupby_<%=cid%> = (java.util.Queue<java.util.Map>) globalMap.get("queue_<%=cid%>");
+					<%
+				    }else{
+				    	if(istWriteJSONField){
+				    %>
+				    	java.util.Queue<<%= rowStructNameOutput %>> listGroupby_<%=cid%> = (java.util.Queue<<%= rowStructNameOutput %>>) globalMap.get("queue_<%=cid%>");
+				    <%
+				    	} else {
+					%>
+						java.util.Queue<String> listGroupby_<%=cid%> = (java.util.Queue<String>) globalMap.get("queue_<%=cid%>");
+					<%
+						}
+				    }
+					if(storeFlow){
+					%>
+						java.util.List<java.util.Map<String,String>> flows_<%=cid%> = (java.util.List<java.util.Map<String,String>>)globalMap.get("flows_<%=cid%>");
+						java.util.Map<String,String> flowValues_<%=cid%> = null;
+					<%
+					}
+					%>
+				<%
+				}
+				%>
+
+java.util.List<java.util.List<String>> groupbyList_<%=cid%> = new java.util.ArrayList<java.util.List<String>>();
+java.util.Map<String,String> valueMap_<%=cid%> = new java.util.HashMap<String,String>();
+<%
+if(istWriteJSONField){
+%>
+java.util.Map<String,String> arraysValueMap_<%=cid%> = new java.util.HashMap<String,String>();
+<%
+}
+
+				// *** generation mode init ***
+				if(("Dom4j").equals(mode)){
+%>
+
+class NestXMLTool_<%=cid%>{
+<%
+    if (!isAllowEmpty && ignoreServiceAttributes) {
+%>
+        private java.util.Set<String> serviceAttributeNames = new java.util.HashSet<>();
+        {
+            serviceAttributeNames.add("type");
+            serviceAttributeNames.add("class");
+            serviceAttributeNames.add("array");
+        }
+<%
+    }
+%>
+	public void parseAndAdd(org.dom4j.Element nestRoot, String value){
+		try {
+            org.dom4j.Document doc4Str = org.dom4j.DocumentHelper.parseText("<root>"+ value + "</root>");
+    		nestRoot.setContent(doc4Str.getRootElement().content());
+    	} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    		e.printStackTrace();
+    		nestRoot.setText(value);
+        }
+	}
+	
+	public void setText(org.dom4j.Element element, String value){
+		if (value.startsWith("<![CDATA[") && value.endsWith("]]>")) {
+			String text = value.substring(9, value.length()-3);
+			element.addCDATA(text);
+		}else{
+			element.setText(value);
+		}
+	}
+	
+	public void replaceDefaultNameSpace(org.dom4j.Element nestRoot){
+		if (nestRoot!=null) {
+			for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) nestRoot.elements()) {
+        		if (("").equals(tmp.getQName().getNamespace().getURI()) && ("").equals(tmp.getQName().getNamespace().getPrefix())){
+        			tmp.setQName(org.dom4j.DocumentHelper.createQName(tmp.getName(), nestRoot.getQName().getNamespace()));
+	        	}
+    	    	replaceDefaultNameSpace(tmp);
+       		}
+       	}
+	}
+	
+	public void removeEmptyElement(org.dom4j.Element root){
+		if (root!=null) {
+			for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) root.elements()) {
+				removeEmptyElement(tmp);
+			}
+
+            boolean noSignificantDataAnnotationsExist = root.attributes().isEmpty() <%if (!isAllowEmpty && ignoreServiceAttributes) {%>|| isOnlyServiceAttributesDeclared(root.attributes()) <% } %>;
+            if (root.content().isEmpty()
+                && noSignificantDataAnnotationsExist && root.declaredNamespaces().isEmpty()) {
+                if(root.getParent()!=null){
+                    root.getParent().remove(root);
+                }
+            }
+        }
+    }
+<%
+    if (!isAllowEmpty && ignoreServiceAttributes) {
+%>
+        private boolean isOnlyServiceAttributesDeclared(List<org.dom4j.Attribute> attributes) {
+            return attributes.stream().allMatch(a -> serviceAttributeNames.contains(a.getName().toLowerCase()));
+        }
+<%
+    }
+%>
+	public String objectToString(Object value){
+		if(value.getClass().isArray()){
+			StringBuilder sb = new StringBuilder();
+
+			int length = java.lang.reflect.Array.getLength(value);
+			for (int i = 0; i < length; i++) {
+				Object obj = java.lang.reflect.Array.get(value, i);
+				sb.append("<element>");
+				sb.append(obj);
+				sb.append("</element>");
+			}
+			return sb.toString();
+		}else{
+			return value.toString();
+		}
+	}
+}
+NestXMLTool_<%=cid%> nestXMLTool_<%=cid%> = new NestXMLTool_<%=cid%>();
+
+<%= inputRowName %>Struct  rowStructOutput_<%= cid %> = new <%=inputRowName%>Struct();
+// sort group root element for judgement of group
+java.util.List<org.dom4j.Element> groupElementList_<%=cid%> = new java.util.ArrayList<org.dom4j.Element>();
+org.dom4j.Element root4Group_<%=cid%> = null;
+org.dom4j.Document doc_<%=cid%>  = org.dom4j.DocumentHelper.createDocument();
+<%if(isCompactFormat) {%>
+org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createCompactFormat();
+format_<%=cid%>.setNewLineAfterDeclaration(false);
+<%} else {%>
+org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createPrettyPrint();
+<%}%>
+format_<%=cid%>.setTrimText(false);
+format_<%=cid%>.setEncoding(<%=encoding%>);
+<%if(isAllowEmpty && expandEmptyElm){%>format_<%=cid%>.setExpandEmptyElements(true);<%}%>
+<%
+					int groupSize = 0;
+					if(groupTable!=null && groupTable.size()>0){
+						for(java.util.Map<String, String> tmpMap : groupTable){
+							if(tmpMap.get("ATTRIBUTE").equals("main")){
+								groupSize++;
+							}
+						}
+					}
+%>
+int[] orders_<%=cid %> = new int[<%=groupSize + 1%>];
+<%
+				}else if(("Null").equals(mode)){
+				    String whiteSpace = "";
+        			String rowSeparator = "";
+        			if(!isCompactFormat) { // pretty format
+        				whiteSpace = "  ";
+        				rowSeparator = "\\n";
+        			}
+%>
+java.util.List<String> endTabStrs_<%=cid%> = new java.util.ArrayList<String>();
+java.util.List<String> startTabStrs_<%=cid%> = new java.util.ArrayList<String>();
+<%
+            		if(loopTable.size()>0){
+            			String emptyspace = "";
+        				String endPath = loopTable.get(0).get("PATH");
+        				String[] endTabs = endPath.split("/");
+        				for(int len = 1; len<endTabs.length-1;len++){
+%>
+endTabStrs_<%=cid%>.add("<%=emptyspace%></<%=endTabs[len]%>>");
+startTabStrs_<%=cid%>.add("<%=rowSeparator%><%=emptyspace%><<%=endTabs[len]%>>");
+<%
+	         				emptyspace += whiteSpace;
+            			}
+        			}
+%>
+int preUnNullMaxIndex_<%=cid%> = -1;
+int preNewTabIndex_<%=cid%> = -1;
+String[] startTabs_<%=cid%> = new String[endTabStrs_<%=cid%>.size()];
+String[] endTabs_<%=cid %> = new String[endTabStrs_<%=cid%>.size()];
+java.io.StringWriter strWriter_<%=cid%> = new java.io.StringWriter();
+java.io.BufferedWriter out_<%=cid%> = new java.io.BufferedWriter(strWriter_<%=cid%>);
+<%
+					if(!("true").equals(removeHeader)){
+%>
+out_<%=cid%>.write("<?xml version=\"1.0\" encoding=\""+<%=encoding%>+"\"?>");
+out_<%=cid %>.write("<%=rowSeparator%>");
+<%
+					}
+%>
+
+<%
+				}
+			}
+		}
+	}
+}
+%>

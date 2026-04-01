@@ -1,0 +1,90 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    org.talend.core.model.metadata.IMetadataTable
+   	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.EConnectionType
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			%>
+					}
+				}
+				<%
+				INode sourceNode = node.getIncomingConnections(EConnectionType.ON_COMPONENT_OK).get(0).getSource();
+				String virtualSourceCid = sourceNode.getUniqueName();
+				INode startNode = NodeUtil.getSpecificStartNode(sourceNode);
+				String startNodeCid = null; 
+				if(startNode != null){
+					startNodeCid = startNode.getUniqueName();
+				} 
+				IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+				if(nextMergeConn != null && nextMergeConn.getInputId()>1 && startNodeCid != null){
+					%>
+					txf_<%=cid%>.join();
+					
+					if(txf_<%=cid%>.getLastException()!=null) {
+						currentComponent = txf_<%=cid%>.getCurrentComponent();
+						throw txf_<%=cid%>.getLastException();
+					}
+					
+					if(txf_<%=cid%>.getLastError()!=null) {
+						throw txf_<%=cid%>.getLastError();
+					}
+					
+					globalMap.remove("queue_<%=virtualSourceCid%>");
+    			<%
+    			}else{
+				%>
+					String readFinishWithExceptionMarkWithPipeId_<%=cid%> = "<%=cid%>_FINISH_WITH_EXCEPTION"+(queue_<%=cid%>==null?"":queue_<%=cid%>.hashCode());
+					if(globalMap.containsKey(readFinishWithExceptionMarkWithPipeId_<%=cid%>)){
+						if(!(globalMap instanceof java.util.concurrent.ConcurrentHashMap)) {
+							globalMap.put(readFinishWithExceptionMarkWithPipeId_<%=cid%>, null);// syn
+						}
+						globalMap.remove(readFinishWithExceptionMarkWithPipeId_<%=cid%>);
+						return;
+					}
+					globalMap.remove("queue_<%=cid%>");
+				<%
+				}
+				%>
+				if(!(globalMap instanceof java.util.concurrent.ConcurrentHashMap)) {
+					globalMap.put(readFinishMarkWithPipeId_<%=cid%>,null);//syn
+				}
+				globalMap.remove(readFinishMarkWithPipeId_<%=cid%>);
+			<%
+			}
+		}
+	}
+}
+
+String strJobCid="";
+if(destination !=null && !("").equals(destination.trim()))
+	strJobCid=destination;
+else{
+	strJobCid= cid.substring(0,cid.length()-3);
+}
+%>
+globalMap.put("<%=strJobCid %>_NB_LINE",nb_line_<%=cid %>);
+<%
+log4jFileUtil.logDataCountInfo();
+%>

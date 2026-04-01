@@ -1,0 +1,291 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    java.util.List
+" 
+%>
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+		CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+		INode node = (INode)codeGenArgument.getArgument();
+		String cid = node.getUniqueName();
+		
+		String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+		String accessToken = ElementParameterParser.getValue(node, "__ACCESS_TOKEN__");
+		String refreshToken = ElementParameterParser.getValue(node, "__REFRESH_TOKEN__");
+		
+		String clientId = ElementParameterParser.getValue(node, "__CLIENT_ID__");
+		String clientSecret = ElementParameterParser.getValue(node, "__CLIENT_SECRET__");
+		
+		String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	    String connectionKey = "\"conn_" + connection+"\"";
+		
+		String boxPath = ElementParameterParser.getValue(node, "__PATH__");
+		String filePath = ElementParameterParser.getValue(node, "__FILE_PATH__");
+		String fileName = ElementParameterParser.getValue(node, "__FILE_NAME__");
+		String exposeOutput = ElementParameterParser.getValue(node, "__EXPOSE_OUTPUT_STREAM__");
+		String uploadLocalFile = ElementParameterParser.getValue(node, "__UPLOAD_LOCAL_FILE__");
+		String readContentFromInput = ElementParameterParser.getValue(node, "__READ_CONTENT_FROM_INPUT__");
+		String overwrite = ElementParameterParser.getValue(node, "__REPLACE_IF_EXIST__");
+		
+		final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		
+		String dataInputConnection = null;
+        String dataOutputConnection = null;
+        
+        List< ? extends IConnection> inputConnections = node.getIncomingConnections();
+	    for(IConnection conn : inputConnections) {
+	        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	        	dataInputConnection = conn.getName();
+	        	break;
+	        } // if(conn) end
+	    } // for(conns) end
+	    
+	    
+		List< ? extends IConnection> outputConnections = node.getOutgoingSortedConnections();
+	    for(IConnection conn : outputConnections) {
+	        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	        	dataOutputConnection = conn.getName();
+	        	break;
+	        } // if(conn) end
+	    } // for(conns) end
+%>
+
+<%if("true".equals(readContentFromInput)){%>
+
+	<%if(dataInputConnection != null)
+	{%>
+		String <%=cid%>_remotePath = normalizePath(<%=boxPath%>);
+		
+		if(<%=cid%>_remotePath == null || "".equals(<%=cid%>_remotePath.trim()))
+		{
+			throw new Exception("The Box remote path can't be null");
+		}
+		String <%=cid%>_remoteName = getFolderFromPath(<%=cid%>_remotePath);
+		Object <%=cid%>_content = <%=dataInputConnection%>.content;
+		java.io.InputStream <%=cid%>_InputStream = null;
+		try
+		{
+			if(<%=cid%>_content == null){
+				throw new Exception("The Uploaded Box file Content can't be null");
+			}
+			
+			if(<%=cid%>_content instanceof byte[]){
+				<%=cid%>_InputStream = new java.io.ByteArrayInputStream((byte[])<%=cid%>_content);
+			}else if(<%=cid%>_content instanceof java.io.InputStream){
+				<%=cid%>_InputStream = (java.io.InputStream)<%=cid%>_content;
+			}else{
+				<%=cid%>_InputStream = new java.io.ByteArrayInputStream(<%=cid%>_content.toString().getBytes());
+			}
+			com.box.restclientv2.requestsbase.BoxDefaultRequestObject <%=cid%>_requestObject = new com.box.restclientv2.requestsbase.BoxDefaultRequestObject();
+			
+			if(<%=cid%>_remotePath.equals("All Files"))
+			{
+				<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+			}
+			else
+			{
+				if (<%=cid%>_remotePath.startsWith("All Files"))
+				{
+					<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+				}
+				else
+				{
+					throw new Exception("Remote path should start with " + "\"" + "All Files" + "\"");
+				}
+				<%=cid%>_boxFolder = createSubDirectories(<%=cid%>_client, <%=cid%>_boxFolder, <%=cid%>_remotePath.substring("All Files/".length(), <%=cid%>_remotePath.length() - <%=cid%>_remoteName.length()));
+			}
+			
+			if (<%=cid%>_boxFolder == null)
+				throw new Exception("No destination folder found under path " + <%=cid%>_remotePath);
+			com.box.restclientv2.requestsbase.BoxFileUploadRequestObject <%=cid%>_fileUploadObj = com.box.restclientv2.requestsbase.BoxFileUploadRequestObject.uploadFileRequestObject(<%=cid%>_boxFolder.getId(), <%=cid%>_remoteName, <%=cid%>_InputStream);
+			boolean <%=cid%>_exists = false;
+			String <%=cid%>_fileId = null;
+	        for (com.box.boxjavalibv2.dao.BoxTypedObject obj : <%=cid%>_boxFolder.getItemCollection().getEntries())
+	        {
+	        	if (obj.getType().equals("file") && obj.getValue("name").equals(<%=cid%>_remoteName))
+	        	{
+	        		<%=cid%>_exists = true;
+	        		<%=cid%>_fileId = obj.getId();
+	        		break;
+	        	}
+	        }
+	        if (<%=cid%>_exists)
+	        {
+				<% if ("true".equals(overwrite))
+				{ %>
+					<%=cid%>_client.getFilesManager().deleteFile(<%=cid%>_fileId, null);
+					<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+				<%} else {%>
+					throw new Exception("File with the same name already exist");
+				<%}%>
+			}
+			else
+			{
+				<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+			}
+			<%if(dataOutputConnection != null){%>
+			<%=dataOutputConnection%>.content = <%=cid%>_content;
+			<%}%>
+		}
+		finally {
+			if (<%=cid%>_InputStream != null)
+				<%=cid%>_InputStream.close();
+		}
+<%
+	} 
+%>
+<%
+} else if ("true".equals(uploadLocalFile)) {
+%>	
+	String <%=cid%>_remotePath = normalizePath(<%=boxPath%>);
+	
+	if(<%=cid%>_remotePath == null || "".equals(<%=cid%>_remotePath.trim()))
+	{
+		throw new Exception("The Box remote path can't be null");
+	}
+	String <%=cid%>_remoteName = getFolderFromPath(<%=cid%>_remotePath);
+	java.io.InputStream <%=cid%>_InputStream = null;
+	java.nio.file.Path <%=cid%>_path = java.nio.file.FileSystems.getDefault().getPath(<%=filePath%>,
+                new String[] {});
+	java.io.File <%=cid%>_fileToUpload = <%=cid%>_path.toFile();
+	if(!<%=cid%>_fileToUpload.exists())
+	{
+		throw new Exception("Can not find file at " + <%=cid%>_path.toString());
+	}
+	if(<%=cid%>_fileToUpload.isDirectory())
+	{
+		throw new Exception("The specified path is a directory (file expected)");
+	}
+	<%=cid%>_InputStream = new java.io.FileInputStream(<%=cid%>_fileToUpload);
+	if(<%=cid%>_remotePath.equals("All Files"))
+	{
+		<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+	}
+	else
+	{
+		if (<%=cid%>_remotePath.startsWith("All Files"))
+		{
+			<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+		}
+		else
+		{
+			throw new Exception("Remote path should start with " + "\"" + "All Files" + "\"");
+		}
+		<%=cid%>_boxFolder = createSubDirectories(<%=cid%>_client, <%=cid%>_boxFolder, <%=cid%>_remotePath.substring("All Files/".length(), <%=cid%>_remotePath.length() - <%=cid%>_remoteName.length()));
+	}
+	if (<%=cid%>_boxFolder == null)
+		throw new Exception("No destination folder found under path " + <%=cid%>_remotePath);
+	com.box.restclientv2.requestsbase.BoxFileUploadRequestObject <%=cid%>_fileUploadObj = com.box.restclientv2.requestsbase.BoxFileUploadRequestObject.uploadFileRequestObject(<%=cid%>_boxFolder.getId(), <%=cid%>_remoteName, <%=cid%>_InputStream);
+	boolean <%=cid%>_exists = false;
+	String <%=cid%>_fileId = null;
+    for (com.box.boxjavalibv2.dao.BoxTypedObject obj : <%=cid%>_boxFolder.getItemCollection().getEntries())
+    {
+    	if (obj.getType().equals("file") && obj.getValue("name").equals(<%=cid%>_remoteName))
+    	{
+    		<%=cid%>_exists = true;
+    		<%=cid%>_fileId = obj.getId();
+    		break;
+    	}
+    }
+    if (<%=cid%>_exists)
+    {
+		<% if ("true".equals(overwrite))
+		{ %>
+			<%=cid%>_client.getFilesManager().deleteFile(<%=cid%>_fileId, null);
+			<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+		<%} else {%>
+			throw new Exception("File with the same name already exist");
+		<%}%>
+	}
+	else
+	{
+		<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+	}
+	<%if(dataOutputConnection != null) {%>
+	<%=dataOutputConnection%>.content = <%=cid%>_InputStream;
+	<%}%>
+<%} else if("true".equals(exposeOutput)) {%>
+	String <%=cid%>_filePath = normalizePath(<%=filePath%>);
+	String <%=cid%>_remotePath = normalizePath(<%=boxPath%>);
+	
+	if(<%=cid%>_remotePath == null || "".equals(<%=cid%>_remotePath.trim()))
+	{
+		throw new Exception("The Box remote path can't be null");
+	}
+	String <%=cid%>_remoteName = getFolderFromPath(<%=cid%>_remotePath);
+	if(<%=cid%>_remoteName == null || <%=cid%>_remoteName.isEmpty())
+	{
+		throw new Exception("File name can not be empty");
+	}
+	<%=cid%>_uploader_input = new java.io.ByteArrayInputStream(<%=cid%>_uploader_output.toByteArray());
+	if(<%=cid%>_remotePath.equals("All Files"))
+	{
+		<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+	}
+	else
+	{
+		if (<%=cid%>_remotePath.startsWith("All Files"))
+		{
+			<%=cid%>_boxFolder = <%=cid%>_client.getFoldersManager().getFolder("0", null);
+		}
+		else
+		{
+			throw new Exception("Remote path should start with " + "\"" + "All Files" + "\"");
+		}
+		<%=cid%>_boxFolder = createSubDirectories(<%=cid%>_client, <%=cid%>_boxFolder, <%=cid%>_remotePath.substring("All Files/".length(), <%=cid%>_remotePath.length() - <%=cid%>_remoteName.length()));
+	}
+		
+	if (<%=cid%>_boxFolder == null)
+		throw new Exception("No destination folder found under path " + <%=cid%>_remotePath);
+	com.box.restclientv2.requestsbase.BoxFileUploadRequestObject <%=cid%>_fileUploadObj = com.box.restclientv2.requestsbase.BoxFileUploadRequestObject.uploadFileRequestObject(<%=cid%>_boxFolder.getId(), <%=cid%>_remoteName, <%=cid%>_uploader_input);
+	boolean <%=cid%>_exists = false;
+	String <%=cid%>_fileId = null;
+	for (com.box.boxjavalibv2.dao.BoxTypedObject obj : <%=cid%>_boxFolder.getItemCollection().getEntries())
+    {
+    	if (obj.getType().equals("file") && obj.getValue("name").equals(<%=cid%>_remoteName))
+    	{
+    		<%=cid%>_exists = true;
+    		<%=cid%>_fileId = obj.getId();
+    		break;
+    	}
+    }
+    if (<%=cid%>_exists)
+    {
+		<% if ("true".equals(overwrite))
+		{ %>
+			<%=cid%>_client.getFilesManager().deleteFile(<%=cid%>_fileId, null);
+			<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+		<%} else {%>
+			throw new Exception("File with the same name already exist");
+		<%}%>
+	}
+	else
+	{
+		<%=cid%>_boxFile = <%=cid%>_client.getFilesManager().uploadFile(<%=cid%>_fileUploadObj);
+	}
+	if (<%=cid%>_uploader_input != null) {
+		try {
+			<%=cid%>_uploader_input.close();
+		} catch (IOException e){
+            //ignore
+		}
+	}
+	if (<%=cid%>_uploader_output != null) {
+		try {
+			<%=cid%>_uploader_output.close();
+		} catch (IOException e){
+            //ignore
+		}
+	}
+	<%=cid%>_uploader_output = new java.io.ByteArrayOutputStream();
+	globalMap.put("<%=cid%>_OUTPUTSTREAM", <%=cid%>_uploader_output);
+<%}%>

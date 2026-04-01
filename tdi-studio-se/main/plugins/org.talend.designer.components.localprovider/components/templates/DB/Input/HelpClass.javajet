@@ -1,0 +1,268 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%@ include file="../../Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	//this util class use by connection component
+	class DefaultDBInputUtil {
+	
+		protected String cid ;
+		protected String dbproperties ;
+		protected String dbhost;
+		protected String dbport;
+		protected String dbname;
+		protected String dbuser;
+		protected String dbpwd ;
+		protected boolean isLog4jEnabled;
+		protected boolean isDynamic;
+		protected DefaultLog4jCodeGenerateUtil log4jCodeGenerateUtil;
+
+		public void beforeComponentProcess(INode node){
+			cid = node.getUniqueName();
+			List<IMetadataTable> metadatas = node.getMetadataList();
+			if ((metadatas != null) && (metadatas.size()>0)) {
+				IMetadataTable metadata = metadatas.get(0);
+				if (metadata != null) {
+					isDynamic = metadata.isDynamicSchema();
+				}
+			}
+			log4jCodeGenerateUtil = new DefaultLog4jCodeGenerateUtil();
+		}
+
+		public void afterUseExistConnection(INode node) {
+		}
+		
+		public String getDirverClassName(INode node){
+			return "";
+		}
+	    
+	    public void afterUseNewConnection(INode node) {
+	    }
+	    
+	    public void setURL(INode node) {
+	    }
+	    
+		public void createConnection(INode node) {
+			this.createConnection(node, true);
+		}
+
+		public void createConnection(INode node, boolean needUserAndPassword) {
+		    createConnection(node,needUserAndPassword ? 1 : 0);
+
+
+		}
+
+/*
+* mode:
+*        0. Without User and Password
+*        1. need User And Password
+*        2. without connection
+*/
+		public void createConnection(INode node, int mode) {
+
+			cid = node.getUniqueName();
+			dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	    	dbport = ElementParameterParser.getValue(node, "__PORT__");
+	    	dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	    	dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+	 		boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+ 		if(specify_alias){
+%>
+            java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+            if (null != dataSources_<%=cid%>) {
+<%
+                String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+%>
+    			String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+        		if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+           			throw new RuntimeException("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+              	}
+        		conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+            } else {
+<%
+		}
+%>
+				String driverClass_<%=cid%> = "<%=this.getDirverClassName(node) %>";
+			    java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+<%
+				newInstance(node);
+%>
+				String dbUser_<%=cid %> = <%=dbuser%>;
+				<%
+				String passwordFieldName = "__PASS__";
+				%>
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+				
+				String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+				<%this.setURL(node);%>
+				<%
+				log4jCodeGenerateUtil.debugConnectionParams(node);
+				if (mode == 0){
+					log4jCodeGenerateUtil.connect_begin_noUser();
+				} else {
+					log4jCodeGenerateUtil.connect_begin();
+				}
+				%>
+<%
+			if(mode == 1) {
+%>
+				conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+			} else if(mode ==0){
+%>
+				conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>);
+<%
+			}
+			if(mode != 2){
+			log4jCodeGenerateUtil.connect_end();
+			}
+%>
+		        <%this.afterUseNewConnection(node);%>
+<%
+			if(specify_alias){
+%>
+		    }
+<%
+			}
+		}
+		
+		protected void newInstance(INode node) {
+			//do nothing as default
+			//for sybase jdbc in java 11, we have to call jdbcclazz.newInstance method
+		}
+		
+		public String getQueryString(INode node) {
+			String dbquery= ElementParameterParser.getValue(node, "__QUERY__");
+			dbquery = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(dbquery);
+			
+			return dbquery;
+		}
+		
+		public void createStatement(INode node) {
+			boolean setQueryTimeOut = "true".equals(ElementParameterParser.getValue(node,"__SET_QUERY_TIMEOUT__"));
+			String queryTimeOutInSeconds = ElementParameterParser.getValue(node,"__QUERY_TIMEOUT_IN_SECONDS__");
+%>
+			java.sql.Statement stmt_<%=cid %> = conn_<%=cid%>.createStatement();
+<%
+			if(setQueryTimeOut) {
+%>
+				stmt_<%=cid %>.setQueryTimeout(<%= queryTimeOutInSeconds %>);
+<%
+			}
+		}
+		public void createMinValueStatement(INode node){
+%>
+			java.sql.Statement stmt_<%=cid %> = conn_<%=cid%>.createStatement(java.sql.ResultSet.TYPE_FORWARD_ONLY,
+																					java.sql.ResultSet.CONCUR_READ_ONLY);
+			
+<%}
+		public String mappingType(String typeToGenerate) {
+		
+            if(("byte[]").equals(typeToGenerate)) {
+                return "Bytes";
+            } else if(("java.util.Date").equals(typeToGenerate)) {
+                return "Timestamp";
+            } else if(("Integer").equals(typeToGenerate)) {
+               return "Int";
+            } else {
+                return typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+            }
+		}
+		//-----------according schema type to generate ResultSet
+		public void generateStringCharAndCharacterSet(String firstConnName, IMetadataColumn column, int currentColNo,
+					String trimMethod, String typeToGenerate, boolean whetherTrimAllCol, boolean whetherTrimCol) {
+%>
+					tmpContent_<%=cid%> = rs_<%=cid %>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+                    if(whetherTrimAllCol || whetherTrimCol) {
+%>
+                        if(tmpContent_<%=cid%> != null) {
+                            tmpContent_<%=cid%> = tmpContent_<%=cid%><%=trimMethod%>;
+                        }
+<%
+                    }
+%>
+                    if(tmpContent_<%=cid%> != null && tmpContent_<%=cid%>.length() > 0) {			  	
+                        <%=firstConnName%>.<%=column.getLabel()%> = tmpContent_<%=cid%>.charAt(0);			  		
+                    } else {			  	
+<%
+                        if(("Character").equals(typeToGenerate)) {
+%>			  	    
+                            if(tmpContent_<%=cid%> == null) {			  	   	
+                                <%=firstConnName%>.<%=column.getLabel()%> = null;			  			
+                            } else {			  		
+                                <%=firstConnName%>.<%=column.getLabel()%> = '\0';			  			
+                            }
+<%
+                        } else {
+%>			  		
+                            if(("").equals(tmpContent_<%=cid%>)) {			  		
+                                <%=firstConnName%>.<%=column.getLabel()%> = '\0';			  			
+                            } else {
+        			  			throw new RuntimeException(
+        							"Value is empty for column : '<%=column.getLabel()%>' in '<%=firstConnName%>' connection, value is invalid or this column should be nullable or have a default value.");							
+                            }			  		
+<%
+                        }
+%>
+                    }
+<%
+		}
+		
+	    public void generateTimestampResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+%>
+			<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDate(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+	    }
+	    
+	    public void generateStringResultSet(String firstConnName, IMetadataColumn column, int currentColNo, String trimMethod) {
+%>
+        	<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getString(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>, <%if(trimMethod==null||trimMethod.isEmpty()){%>false<%} else {%>true<%}%>);
+<%
+	    }
+	    
+	    public void generateDoubleResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+	    	generateOthersResultSet(firstConnName, column, currentColNo, "Double");
+	    }
+	    
+	    public void generateBooleanResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+	    	generateOthersResultSet(firstConnName, column, currentColNo, "Boolean");
+	    }
+	    
+	    public void generateBytesResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+	    }
+	    
+	    public void generateOthersResultSet(String firstConnName, IMetadataColumn column, int currentColNo, String typeToGenerate) {
+%>
+            <%=firstConnName%>.<%=column.getLabel()%> = rs_<%=cid %>.get<%=typeToGenerate%>(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+            if(rs_<%=cid %>.wasNull()){
+                <%
+                if(column.isNullable()) {
+                    %>
+                    <%=firstConnName%>.<%=column.getLabel()%> = null;
+                    <%
+                } else {
+                    %>
+                    throw new RuntimeException("Null value in non-Nullable column");
+                    <%    
+                }
+                %>
+            }
+<%
+	    }
+	    //---------end according schema type to generate ResultSet
+	    
+		public void afterComponentProcess(INode node){
+	    }
+	}//end DefaultDBInputUtil class
+	
+	DefaultDBInputUtil dbInputBeginUtil = new DefaultDBInputUtil();
+	
+	
+%>

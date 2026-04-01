@@ -1,0 +1,221 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    java.util.List
+    java.util.Map
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+
+String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+String methodTemp = ElementParameterParser.getValue(node,"__METHOD__");
+String method = methodTemp.indexOf("(")!=-1?methodTemp.substring(0,methodTemp.indexOf("(")):methodTemp;
+
+IConnection inputConn = null;
+List<? extends IConnection> incomingConnections = node.getIncomingConnections();
+if (incomingConnections != null && !incomingConnections.isEmpty()) {
+	for (IConnection conn : incomingConnections) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			inputConn = conn;
+			break;
+		}
+	}
+}
+%>
+<%
+	List<Map<String, String>> inputParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__INPUT_PARAMS__");
+	
+	if(inputParams!=null&&!inputParams.isEmpty()){//input params start
+    	String expression;
+    	String element;
+    	String namespace;
+%>
+		inMap_<%=cid%> = new java.util.HashMap<String,Object>();
+		java.util.Map<String,Object> paramMap_<%=cid%> = new java.util.HashMap<String,Object>();
+		Object inputValueObject_<%=cid%>;
+		javax.xml.namespace.QName anyTypeQName_<%=cid%>;
+<%    
+		int elementNum = 0;
+		java.util.regex.Pattern normalizePattern = java.util.regex.Pattern.compile("^normalize\\(.*,\".*\"\\)$"); // normalize(row1.col1,";")
+        java.util.regex.Pattern denormalizePattern = java.util.regex.Pattern.compile("^denormalize\\(.*,\".*\"\\)$"); // denormalize(row1.col1,";")
+		
+		for(Map<String,String> inputParam:inputParams){
+    		elementNum++;
+    		expression = inputParam.get("EXPRESSION");
+        	element = inputParam.get("ELEMENT").trim();
+			if(expression!=null&&!"".equals(expression)&&element!=null&&!"".equals(element)){
+				    		
+        		if(normalizePattern.matcher(expression).matches()||denormalizePattern.matcher(expression).matches()){
+%>	
+    				inputValueObject_<%=cid%> = util_<%=cid%>.<%=expression%>;
+<%    		
+        		}else{
+%>	
+					inputValueObject_<%=cid%> = <%=expression%>;
+<%    		
+        		}
+%>
+				paramMap_<%=cid%>.put(util_<%=cid%>.removePunctuation("<%=element%>"),inputValueObject_<%=cid%>);
+<%
+			}
+    	}
+%>
+		util_<%=cid%>.resolveInputPath(paramMap_<%=cid%>);
+		if(!paramMap_<%=cid%>.isEmpty()){
+			inMap_<%=cid%> = org.talend.webservice.helper.map.MapConverter.mapToDeepMap(paramMap_<%=cid%>);
+		}
+		if(inMap_<%=cid%>.isEmpty()){
+			inMap_<%=cid%> = null;
+		}
+<%
+	}//input params end
+
+%>	
+	 java.util.Map<String, Object> results_<%=cid%> = null;
+	 try{
+	 	<%log.debug(log.str("Invoking the method " + method + " on "), log.var("serviceName"), log.str("."));%>
+	 	results_<%=cid%> = serviceInvokerHelper_<%=cid%>.invoke(serviceName_<%=cid%>, portName_<%=cid%>, "<%=method%>", inMap_<%=cid%>);
+	 	<%log.debug(log.str("Invoke the method " + method + " on "), log.var("serviceName"), log.str(" has succeeded."));%>
+	 }catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+	 if (("true").equals(dieOnError)) {
+%>
+		throw(e);
+<%
+	 } else {
+%>
+		System.err.print(e.getMessage());
+<%
+		log.logPrintedException("e.getMessage()");
+	 }
+%>
+	 }
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+	//IMetadataTable metadata = metadatas.get(0);
+	
+for(IMetadataTable metadata:metadatas){
+		if("OUTPUT".equals(metadata.getTableName())){
+	if (metadata != null) {
+	
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		int nbSchemaColumns = columnList.size();			
+		List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+		if(outgoingConns!=null&&outgoingConns.size()>0){
+		IConnection outgoingConn = outgoingConns.get(0);
+		if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+			if (nbSchemaColumns > 0 && outgoingConns != null && outgoingConns.size() > 0){
+%>
+<%
+				List<Map<String, String>> outputParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__OUTPUT_PARAMS__");	
+				if(outputParams!=null){//retrieve start
+%>            		
+					java.util.Map<String, Object> outMap_<%=cid%>=null;
+					if(results_<%=cid%>!=null&&!results_<%=cid%>.isEmpty()){
+						outMap_<%=cid%> = org.talend.webservice.helper.map.MapConverter.deepMapToMap(results_<%=cid%>);
+					}
+            		java.util.Map<String,Object> returnValuesMap_<%=cid%> = new java.util.HashMap<String,Object>();
+            		Object outputValue_<%=cid%>;
+<%
+            		String realExpression="";
+            		String delimiter;
+            		java.util.regex.Pattern normalizePattern = java.util.regex.Pattern.compile("^normalize\\(.*,\".*\"\\)$"); // normalize(row1.col1,";")
+                    java.util.regex.Pattern denormalizePattern = java.util.regex.Pattern.compile("^denormalize\\(.*,\".*\"\\)$"); // denormalize(row1.col1,";")
+            		for(Map<String,String> outputParam:outputParams){
+                		String expression = outputParam.get("EXPRESSION").trim();
+                		String column = outputParam.get("COLUMN").trim();
+                		if(column!=null&&!"".equals(column)){
+                    		if(normalizePattern.matcher(expression).matches()){ 
+                    			realExpression = expression.substring(expression.indexOf("(")+1,expression.indexOf(",")).trim();
+                    			delimiter = expression.substring(expression.indexOf("\"")+1,expression.lastIndexOf("\""));
+%>
+					outputValue_<%=cid%> = util_<%=cid%>.normalize(util_<%=cid%>.getValue(outMap_<%=cid%>,util_<%=cid%>.removePunctuation("<%=realExpression%>")).toString(),"<%=delimiter%>");
+<%
+                    		}else if(denormalizePattern.matcher(expression).matches()){
+                    			realExpression = expression.substring(expression.indexOf("(")+1,expression.indexOf(",")).trim();
+                    			delimiter = expression.substring(expression.indexOf("\"")+1,expression.lastIndexOf("\""));
+%>    				
+        			outputValue_<%=cid%> = util_<%=cid%>.denormalize((List)util_<%=cid%>.getValue(outMap_<%=cid%>,util_<%=cid%>.removePunctuation("<%=realExpression%>")),"<%=delimiter%>");    				
+<%    		
+                    		}else{
+                    			realExpression=expression.trim();
+%>
+ 					outputValue_<%=cid%> = util_<%=cid%>.getValue(outMap_<%=cid%>,util_<%=cid%>.removePunctuation("<%=realExpression%>"));
+<%
+    						}
+%>
+					returnValuesMap_<%=cid%>.put("<%=column%>",outputValue_<%=cid%>);		
+<%
+                		}
+                	}
+				}//retrieve end
+%>				
+			if(returnValuesMap_<%=cid%>!=null&&!returnValuesMap_<%=cid%>.isEmpty()){
+<%
+    			for( int i = 0; i < columnList.size(); i++) {
+    						
+    			IMetadataColumn column = columnList.get(i);
+    						
+    			String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+    							
+    			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+    							
+    			String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+%>
+
+				if(returnValuesMap_<%=cid%>.get("<%=column.getLabel()%>")!=null){
+<%							
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>				
+					<%=outgoingConn.getName()%>.<%=column.getLabel()%> = returnValuesMap_<%=cid%>.get("<%=column.getLabel()%>").toString();
+<%
+					} else if(javaType == JavaTypesManager.DATE) { // Date
+%>
+					<%=outgoingConn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_Date(returnValuesMap_<%=cid%>.get("<%=column.getLabel()%>").toString(), <%= patternValue %>);
+<%
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY) { //byte[]
+%>
+					if(returnValuesMap_<%=cid %>.get("<%=column.getLabel()%>") instanceof byte[]){
+						<%=outgoingConn.getName() %>.<%=column.getLabel() %> = (byte[])returnValuesMap_<%=cid %>.get("<%=column.getLabel()%>");	
+					}else{
+						<%=outgoingConn.getName() %>.<%=column.getLabel() %> = returnValuesMap_<%=cid %>.get("<%=column.getLabel()%>").toString().getBytes();
+					}
+<%
+					} else if(javaType == JavaTypesManager.LIST){	//List
+%>
+					<%=outgoingConn.getName() %>.<%=column.getLabel() %> = (List<Object>)returnValuesMap_<%=cid %>.get("<%=column.getLabel()%>");
+<%
+					}else{
+%>									
+					<%=outgoingConn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_<%= typeToGenerate %>(returnValuesMap_<%=cid%>.get("<%=column.getLabel()%>").toString());	
+<%
+					}
+%>
+				}else{
+        			<%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate,column.getDefault())%>;
+				}	
+<%			
+			}	
+			
+			}
+		}
+	}
+	}}
+	}
+}
+%>			

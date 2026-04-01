@@ -1,0 +1,330 @@
+<%/*
+  Copyright (C) 2006-2021 Talaxie Inc. - www.deilink.fr
+   Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/%>
+final java.util.Map<String, String> configuration_<%=cid%> = new java.util.HashMap<>();
+final java.util.Map<String, String> registry_metadata_<%=cid%> = new java.util.HashMap<>();
+
+java.net.URL mappings_url_<%=cid %>= this.getClass().getResource("/xmlMappings");
+globalMap.put("<%=cid %>_MAPPINGS_URL", mappings_url_<%=cid %>);
+<%
+    final java.util.Map<String, String> configurationToChange = new java.util.HashMap<String, String>();
+    
+    final List<ElementParameter> params = List.class.cast(node.getElementParametersWithChildrens());
+    
+    //set the datastore parameters when use existed connection for passing the parameter check like @Required and @Pattern 
+    final boolean reuseConnection = "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+    String conn_param_prefix = null;
+    java.util.List<String> passwordKeys = new java.util.ArrayList<String>();
+    
+    //TODO recheck it when uniform tsinglestore and tdeltalake which use jdbc component in background in fact
+    final boolean isJDBC = node.getComponent().getName().contains("JDBC") || "JDBC".equals(family);
+    
+    if (params != null && !params.isEmpty()) {
+        for (final ElementParameter p : params) {
+            Object pluginValue = p.getTaggedValue("org.talend.sdk.component.source");
+            if(pluginValue == null || !String.class.cast(pluginValue).equalsIgnoreCase("tacokit")) {
+                continue;
+            }
+            try {
+                if (!(Boolean) org.talend.core.runtime.IAdditionalInfo.class.cast(p).func("isPersisted")) {
+                    continue;
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+            //TODO: modify this part for Maps and nested lists.
+            if (p.getFieldType() == EParameterFieldType.TABLE || p.getFieldType() == EParameterFieldType.TACOKIT_SUGGESTABLE_TABLE) {
+                if (!p.isShow(params)) {
+                    continue;
+                }
+                java.util.List<java.util.Map<String, String>> tableValues = ElementParameterParser.createTableValues((java.util.List<java.util.Map<String, Object>>) p.getValue(), p);
+                String[] items = p.getListItemsDisplayCodeName();
+                String tableName = p.getName().replace('$', '.');
+                boolean primitiveTable = items.length == 1 && items[0].equals(tableName + "[]");
+                String tableNamePrefix = tableName + "[]";
+                
+                java.util.List<String> changable = java.util.List.class.cast(p.getTaggedValue("org.talend.sdk.component.field.changable"));
+                
+                for (int i = 0; i < tableValues.size(); i++) {
+                    java.util.Map<String, String> lineValues = tableValues.get(i);
+                    for (int j = 0; j < items.length; j++) {
+                        boolean canChange = false;
+                        
+                        String key = tableName + "[" + i + "]";
+                        if (!primitiveTable) {
+                            final String columnName = items[j].substring(tableNamePrefix.length(), items[j].length());
+                            key = key + columnName;
+                            
+                            if(changable!=null && changable.contains(items[j])) {
+                                canChange = true;
+                            }
+                        }
+                        String value = lineValues.get(items[j]);
+                        
+                        if(canChange) {
+                            configurationToChange.put(key, value);
+                        }
+                        
+                        if (!org.talend.core.model.utils.ContextParameterUtils.isDynamic(value)) {
+                            if (org.talend.core.model.utils.TalendTextUtils.isEnclosed(value)) {
+                                value = org.talend.core.model.utils.TalendTextUtils.removeQuotes(value);
+                            }
+                            value = org.talend.core.model.utils.TalendTextUtils.addQuotes(value);
+                        }
+%>
+                        configuration_<%=cid%>.put("<%=key%>",<%=value%>);
+<%
+                    }
+                }
+            } else if (p.getFieldType() == EParameterFieldType.SCHEMA_TYPE || p.getFieldType() == EParameterFieldType.TACOKIT_INPUT_SCHEMA) {
+                final String parameterName = p.getName();
+                IConnection connection = null;
+                final List<? extends IConnection> connections;
+                if (p.getFieldType() == EParameterFieldType.SCHEMA_TYPE) {
+                    connections = NodeUtil.getOutgoingConnections(node, p.getContext());
+                } else {
+                    //TODO may remove this and EParameterFieldType.TACOKIT_INPUT_SCHEMA support
+                    connections = NodeUtil.getIncomingConnections(node, p.getContext());
+                }
+                
+                IMetadataTable metaTable = null;
+                if(connections != null && !connections.isEmpty()) {
+                    connection = connections.get(0);
+                    metaTable = (connection!=null) ? connection.getMetadataTable() : null;
+                } else if("FLOW".equals(p.getContext())) {
+                    //pass the connector schema when no output line case
+                    //for example: tfixedflowinput==>tjdbcoutput, we need the column key/db column name info in studio design schema
+                    List<IMetadataTable> metadataTables = node.getMetadataList();
+                    if(metadataTables!=null && !metadataTables.isEmpty()) {
+                        metaTable = metadataTables.get(0);
+                    }
+                }
+                
+                if(metaTable != null) {
+                    List<IMetadataColumn> columns = metaTable.getListColumns();
+                    boolean hasDynamic = false;
+                    for (int i = 0; i < columns.size(); i++) {
+                        IMetadataColumn col = columns.get(i);
+                        if ("id_Dynamic".equals(col.getTalendType())) {
+                            hasDynamic = true;
+                            int length = col.getLength() == null ? -1 : col.getLength();
+                            int precision = col.getPrecision() == null ? -1 : col.getPrecision();
+                            String pattern = col.getPattern() == null ? "" : col.getPattern();
+                        %>
+                        registry_metadata_<%=cid%>.put("length", "<%=length%>");
+                        registry_metadata_<%=cid%>.put("precision", "<%=precision%>");
+                        registry_metadata_<%=cid%>.put("pattern", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(pattern)%>");
+                        <%
+                        }
+                    }
+                    
+                    String [] columnMetas = java.util.Optional.ofNullable(p.getListItemsDisplayCodeName()).orElse(new String[0]);
+                    List<String> metas = new java.util.ArrayList();
+                    for (String k : columnMetas){
+                        metas.add(k.substring(k.lastIndexOf(".")+1));
+                    }
+                    
+                    final boolean isFullSchema = metas.contains("talendType");
+                    
+                    if (isFullSchema || !hasDynamic){
+                        for(int i = 0; i < columns.size(); i++) {
+                            IMetadataColumn column = columns.get(i);
+                            for (String meta : metas){
+                                if (meta.equals("label")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].label", "<%=column.getLabel()%>");
+                                <%
+                                }
+                                if (meta.equals("originalDbColumnName")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].originalDbColumnName", "<%=org.talend.core.model.utils.TalendTextUtils.escapeJavaText(column.getOriginalDbColumnName())%>");
+                                <%
+                                }
+                                if (meta.equals("pattern")){
+                                String pattern = column.getPattern() == null ? "" : column.getPattern();
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].pattern", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(pattern)%>");
+                                <%
+                                }
+                                if (meta.equals("defaultValue")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].defaultValue", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getDefault())%>");
+                                <%
+                                }
+                                if (meta.equals("key")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].key", "<%=column.isKey()%>");
+                                <%
+                                }
+                                if (meta.equals("nullable")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].nullable", "<%=column.isNullable()%>");
+                                <%
+                                }
+                                if (meta.equals("talendType")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].talendType", "<%=column.getTalendType()%>");
+                                <%
+                                }
+                                if (meta.equals("type")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].type", "<%=column.getType()%>");
+                                <%
+                                }
+                                if (meta.equals("length")){
+                                int length = column.getLength() == null ? -1 : column.getLength();
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].length", "<%=length%>");
+                                <%
+                                }
+                                if (meta.equals("precision")){
+                                int precision = column.getPrecision() == null ? -1 : column.getPrecision();
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].precision", "<%=precision%>");
+                                <%
+                                }
+                                if (meta.equals("comment")){
+                                %>
+                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].comment", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getComment())%>");
+                                <%
+                                }
+                            }
+                            if (metas.size() == 0){
+                            %>
+                            configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>]", "<%=column.getLabel()%>");
+                            <%
+                            }
+                        }
+                    }
+                }
+            } else {
+                final String key;
+                if(!p.getName().contains("$")){
+                    key = p.getName();
+                }else{
+                    final StringBuilder keyBuilder = new StringBuilder();
+                    for (String part : p.getName().split("\\.")) {
+                        if (keyBuilder.length() != 0) {
+                            keyBuilder.append(".");
+                        }
+                        if (part.contains("$") && !part.startsWith("$")) {
+                            keyBuilder.append(part.replace("$", "."));
+                        } else {
+                            keyBuilder.append(part);
+                        }
+                    }
+                    key = keyBuilder.toString();
+                }
+                // Do not put in configuration hidden parameters
+                if (!p.isShow(params) && !key.endsWith("__version")) {
+                %>
+                // <%=key%> is hidden, skipping.
+                <%
+                    continue;
+                }
+                String value = null;
+                if(p.getFieldType() == EParameterFieldType.PASSWORD) {
+                    value = ElementParameterParser.getPasswordValue(node, p.getVariableName());
+                    if (value == null || value.trim().isEmpty()) {
+                        value = null;
+                    } else {
+                        passwordKeys.add(key);
+                    }
+                } else {
+                    value = ElementParameterParser.getStringElementParameterValue(p);
+                    
+                    if(isJDBC && p.getFieldType() == EParameterFieldType.MEMO_SQL && (value.contains("+") || org.talend.core.model.utils.TalendTextUtils.isEnclosed(value))) {
+                        value = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(value).trim();
+                        value = value.endsWith(";") ? value.substring(0, value.length() -1) : value;
+                    } else if(isJDBC && key.contains("tableName") && (value.contains("+") || value.contains(".") || "pid".equals(value.trim()))) {
+                        //as common, should no database table is named with "+" or ".", and "+" and "." should appear for java var or expression or database full table name with catalog/schema, so do the "if" check above
+                        //user may use var : pid, which we have no way to know that is a var or not a var for user, here treat it as a var here, not wrap by double quote
+                        //not change value, keep origin one
+                        value = "String.valueOf(" + value + ")";
+                    } else {
+                        // fix MEMO Types: behave now as TEXT_AREA
+                        if (p.getFieldType().toString().startsWith("MEMO")){
+                            value = value.replace("\n", " ").replace("\r", " ");
+                        }
+                        if (org.talend.core.model.utils.ContextParameterUtils.isDynamic(value)) {
+                            value = "String.valueOf(" + value + ")";
+                        } else {
+                            if (org.talend.core.model.utils.TalendTextUtils.isEnclosed(value)) {
+                                value = org.talend.core.model.utils.TalendTextUtils.removeQuotes(value);
+                            }
+                            
+                            Object sourceName = p.getTaggedValue("org.talend.sdk.component.source");
+                            boolean isTacokit = "tacokit".equalsIgnoreCase(String.valueOf(sourceName));
+                            if(isTacokit && !"\\n".equals(value) && !"\\r".equals(value) && !"\\r\\n".equals(value)) {
+                                value = org.talend.core.model.utils.TalendTextUtils.addQuotes(org.talend.core.utils.TalendQuoteUtils.checkAndAddBackslashes(value));
+                            } else {
+                                value = org.talend.core.model.utils.TalendTextUtils.addQuotes(value);
+                            }
+                            
+                        }
+                    }
+                }
+                if (value != null) {
+                 if(key.endsWith("$maxBatchSize")){
+                  %>
+                    globalMap.putIfAbsent("MAX_BATCH_SIZE_<%=cid%>", Integer.parseInt(<%=value%>));
+                  <%
+                 } else if(p.getFieldType() == EParameterFieldType.CLOSED_LIST) {
+                   String valueTemp = org.talend.core.model.utils.TalendTextUtils.removeQuotes(value);
+                    if ("".equals(valueTemp)) {
+                       String[] listItemsDisplayCodeValue = p.getListItemsDisplayCodeName();
+                       if(listItemsDisplayCodeValue != null && listItemsDisplayCodeValue.length > 0){
+                          valueTemp = listItemsDisplayCodeValue[0];
+                          value = org.talend.core.model.utils.TalendTextUtils.addQuotes(valueTemp);
+                       }
+                    }
+                }
+                
+                //need to get the common prefix for datastore
+                if (reuseConnection && key.matches("\\w+\\.\\w+\\.\\w+\\.__version") && !p.isShow(params)) {
+                    conn_param_prefix = key.substring(0, key.lastIndexOf(".__version"));
+                }
+%>
+                    configuration_<%=cid%>.put("<%=key%>", <%=value%>);
+<%
+                } // else do not put value in configuration
+            }
+        }
+        String datastorePath = ElementParameterParser.getValue(node,"__DATASTORE_PATH__");
+        if (reuseConnection && datastorePath != null && !datastorePath.isEmpty()) {
+            conn_param_prefix = datastorePath;
+        }
+
+        if (reuseConnection && conn_param_prefix!=null) {
+            final String connectionKey = ElementParameterParser.getValue(node,"__CONNECTION__");
+%>
+            final java.util.Map<String, String> config_from_connection_<%=cid%> = (java.util.Map<String, String>)globalMap.get("configuration_<%=connectionKey%>");
+            final String conn_param_prefix_<%=cid%> = "<%=conn_param_prefix%>";
+            if(config_from_connection_<%=cid%>!=null && conn_param_prefix_<%=cid%>!=null) {
+                final String prefix_<%=cid%> = config_from_connection_<%=cid%>.keySet().stream()
+                    .filter(key_<%=cid%> -> key_<%=cid%>.endsWith(".__version"))
+                    .findFirst()
+                    .map(key_<%=cid%> -> key_<%=cid%>.substring(0, key_<%=cid%>.lastIndexOf(".__version")))
+                    .orElse(null);
+                    
+                if(prefix_<%=cid%>!=null) {
+                    config_from_connection_<%=cid%>.entrySet().stream().filter(entry_<%=cid%>->entry_<%=cid%>.getKey().startsWith(prefix_<%=cid%>)).forEach(entry_<%=cid%>->{
+                        configuration_<%=cid%>.put(entry_<%=cid%>.getKey().replaceFirst(prefix_<%=cid%>, conn_param_prefix_<%=cid%>), entry_<%=cid%>.getValue());
+                    });
+                }
+            }
+<%
+        }
+    }
+%>

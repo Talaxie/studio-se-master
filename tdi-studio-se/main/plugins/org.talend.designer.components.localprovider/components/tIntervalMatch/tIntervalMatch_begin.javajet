@@ -1,0 +1,372 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType			
+		java.util.List
+" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {//2
+    
+        String cid = node.getUniqueName();
+
+        //get the input Main and Lookup connection
+        IConnection inMainCon = null;
+        IConnection inRefCon = null;   
+        List< ? extends IConnection> connsIn = node.getIncomingConnections();     
+        for (IConnection conn : connsIn) {//3
+        	if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+        		inMainCon = conn;
+        	}
+        	else if(conn.getLineStyle().equals(EConnectionType.FLOW_REF))
+        	{
+        		inRefCon = conn;
+        	}
+        }//3
+
+
+        String minNameOrigi = ElementParameterParser.getValue(node, "__LOOKUP_MIN__");
+        String maxNameOrigi = ElementParameterParser.getValue(node, "__LOOKUP_MAX__");
+        boolean minBounds = ("true").equals(ElementParameterParser.getValue(node, "__LOOKUP_MIN_BOUNDS__"));
+        boolean maxBounds = ("true").equals(ElementParameterParser.getValue(node, "__LOOKUP_MAX_BOUNDS__"));
+        String mainName = ElementParameterParser.getValue(node, "__MAIN_COLUMN__");
+        String minName = minNameOrigi.substring(minNameOrigi.lastIndexOf('.')+1);
+        String maxName = maxNameOrigi.substring(maxNameOrigi.lastIndexOf('.')+1);
+        String lookupName = ElementParameterParser.getValue(node, "__LOOKUP_COLUMN__");
+        String lookupConName = inRefCon.getName();
+        String mainConName = inMainCon.getName();
+
+
+        String returnClassName = "Object";
+        JavaType mainjavaType = JavaTypesManager.STRING;
+        String mainTypeName = null;
+        String mainCanonicalTypeName = null;
+        List<IMetadataColumn> columns = metadata.getListColumns();
+        int sizeColumns = columns.size();			
+        for (int i = 0; i < sizeColumns; i++) {//5
+        
+        	IMetadataColumn column = columns.get(i);
+        	if(("LOOKUP").equals(column.getLabel())) 
+        	{
+            	returnClassName = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());    	
+        	}
+        	
+        	if(column.getLabel().equals(mainName)) 
+        	{
+            	mainjavaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+            	mainTypeName = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+        	}
+        }//5	
+        %> 
+
+        int nb_line_<%= cid %> = 0; 
+        final java.util.List<<%=lookupConName %>Struct> list_<%=cid %> = new java.util.ArrayList(((java.util.Map<<%=lookupConName %>Struct, <%=lookupConName %>Struct>) globalMap.get("tHash_<%=lookupConName %>")).keySet());
+        java.util.Collections.sort((java.util.List<<%=lookupConName %>Struct>) list_<%=cid%>, new java.util.Comparator<<%=lookupConName %>Struct>(){
+
+            public int compare(<%=lookupConName %>Struct o1, <%=lookupConName %>Struct o2) {
+                <%
+                if(mainjavaType == JavaTypesManager.DATE) {
+                    %>
+                    Long o1_min = o1.<%=minName%> == null ? null : new Long(o1.<%=minName%>.getTime());
+                    Long o1_max = o1.<%=maxName%> == null ? null : new Long(o1.<%=maxName%>.getTime());
+                    Long o2_min = o2.<%=minName%> == null ? null : new Long(o2.<%=minName%>.getTime());
+                    Long o2_max = o2.<%=maxName%> == null ? null : new Long(o2.<%=maxName%>.getTime());
+                    <%
+                } else if(mainjavaType == JavaTypesManager.BYTE || 
+                        mainjavaType == JavaTypesManager.SHORT || 
+                        mainjavaType == JavaTypesManager.FLOAT ||
+                        mainjavaType == JavaTypesManager.DOUBLE ||
+                        mainjavaType == JavaTypesManager.LONG ||
+                        mainjavaType == JavaTypesManager.INTEGER){
+                    %>
+                    <%=mainTypeName%> o1_min = o1.<%=minName%>;
+                    <%=mainTypeName%> o1_max = o1.<%=maxName%>;
+                    <%=mainTypeName%> o2_min = o2.<%=minName%>;
+                    <%=mainTypeName%> o2_max = o2.<%=maxName%>;
+                    <%
+                } else if(mainjavaType == JavaTypesManager.BYTE_ARRAY) {
+                    %>
+                    String o1_min = o1.<%=minName%> == null ? null : new String(o1.<%=minName%>);
+                    String o1_max = o1.<%=maxName%> == null ? null : new String(o1.<%=maxName%>);
+                    String o2_min = o2.<%=minName%> == null ? null : new String(o2.<%=minName%>);
+                    String o2_max = o2.<%=maxName%> == null ? null : new String(o2.<%=maxName%>);
+                    <%
+                } else if(mainjavaType == JavaTypesManager.STRING) {
+                    %>
+                    String o1_min = o1.<%=minName%>;
+                    String o1_max = o1.<%=maxName%>;
+                    String o2_min = o2.<%=minName%>;
+                    String o2_max = o2.<%=maxName%>;                    
+                    <%
+                } else {
+                    %>
+                    String o1_min = String.valueOf(o1.<%=minName%>);
+                    String o1_max = String.valueOf(o1.<%=maxName%>);
+                    String o2_min = String.valueOf(o2.<%=minName%>);
+                    String o2_max = String.valueOf(o2.<%=maxName%>);
+                    <%
+                }
+                %>
+                
+                <% 
+                if(mainjavaType == JavaTypesManager.DATE || 
+                        mainjavaType == JavaTypesManager.BYTE || 
+                        mainjavaType == JavaTypesManager.SHORT || 
+                        mainjavaType == JavaTypesManager.FLOAT ||
+                        mainjavaType == JavaTypesManager.DOUBLE ||
+                        mainjavaType == JavaTypesManager.LONG ||
+                        mainjavaType == JavaTypesManager.INTEGER){
+                    if(("java.util.Date").equals(mainTypeName) || 
+                            ("Byte").equals(mainTypeName) || 
+                            ("Short").equals(mainTypeName) || 
+                            ("Float").equals(mainTypeName) || 
+                            ("Double").equals(mainTypeName) || 
+                            ("Long").equals(mainTypeName) || 
+                            ("Integer").equals(mainTypeName)) {
+                        %>
+                        if(o1_min == null && o2_min != null) {
+                            return -1;
+                        } else if(o1_min != null && o2_min == null) {
+                            return 1;
+                        } else if(o1_min != null && o2_min != null && o1_min != o2_min) {
+                            if(o1_min < o2_min) {
+                                return -1;
+                            } else {
+                                return 1;
+                            }
+                        } else {
+                            if(o1_max == null && o2_max != null) {
+                                return -1;
+                            } else if(o1_max != null && o2_max == null) {
+                                return 1;
+                            } else if(o1_max != null && o2_max != null && o1_max != o2_max) {
+                                if(o1_max < o2_max) {
+                                    return -1;
+                                } else {
+                                    return 1;
+                                }
+                            } else {
+                                return 0;
+                            }
+                        }
+                        <%
+                    } else {
+                        %>
+                        if(o1_min < o2_min) {
+                            return -1;
+                        } else if(o1_min > o2_min) {
+                            return 1;
+                        } else {
+                            if(o1_max < o2_max) {
+                                return -1;
+                            } else if(o1_max > o2_max) {
+                                return 1;
+                            } else {
+                                return 0;
+                            }
+                        }
+                        <%
+                    }
+                } else {    
+                    %>
+                    if(o1_min == null && o2_min != null) {
+                        return -1;
+                    } else if(o1_min != null && o2_min == null) {
+                        return 1;
+                    } else if(o1_min != null && o2_min != null && o1_min.compareTo(o2_min) != 0) {
+                        if(o1_min.compareTo(o2_min) < 0) {
+                            return -1;
+                        } else {
+                            return 1;
+                        }
+                    } else {
+                        if(o1_max == null && o2_max != null) {
+                            return -1;
+                        } else if(o1_max != null && o2_max == null) {
+                            return 1;
+                        } else if(o1_max != null && o2_max != null && o1_max.compareTo(o2_max) != 0) {
+                            if(o1_max.compareTo(o2_max) < 0) {
+                                return -1;
+                            } else {
+                                return 1;
+                            }
+                        } else {
+                            return 0;
+                        }
+                    }                    
+                    <%
+                }
+                %>         	
+            }
+	
+        });
+
+        final <%=lookupConName %>Struct[] array_<%=cid %> = (<%=lookupConName %>Struct[])list_<%=cid %>.toArray(new <%=lookupConName %>Struct[list_<%=cid %>.size()]);
+
+        class Util_<%= cid %> {
+        
+            public <%=returnClassName%> getLookup(<%=mainConName %>Struct row_Main) {
+
+                int lowerBound = 0;
+                int upperBound = array_<%=cid%>.length - 1;
+                <%
+                String minEqual = minBounds ? "=" : "";
+                String maxEqual = maxBounds ? "=" : "";
+                %>               
+                while(true) {
+                    int currentIndex = (lowerBound + upperBound)/2;
+                    <%
+                    if(mainjavaType == JavaTypesManager.DATE) {
+                        %>
+                        Long tmpMain = row_Main.<%=mainName%> == null ? null : new Long(row_Main.<%=mainName%>.getTime());
+                        Long tmpMin = array_<%=cid%>[currentIndex].<%=minName%> == null ? null : new Long(array_<%=cid%>[currentIndex].<%=minName%>.getTime());
+                        Long tmpMax = array_<%=cid%>[currentIndex].<%=maxName%> == null ? null : new Long(array_<%=cid%>[currentIndex].<%=maxName%>.getTime());
+                        <%
+                    } else if(mainjavaType == JavaTypesManager.BYTE || 
+                            mainjavaType == JavaTypesManager.SHORT || 
+                            mainjavaType == JavaTypesManager.FLOAT ||
+                            
+                            mainjavaType == JavaTypesManager.DOUBLE ||
+                            mainjavaType == JavaTypesManager.LONG ||
+                            mainjavaType == JavaTypesManager.INTEGER) {
+                        %>
+                        <%=mainTypeName%> tmpMain = row_Main.<%=mainName%>;
+                        <%=mainTypeName%> tmpMin = array_<%=cid%>[currentIndex].<%=minName%>;
+                        <%=mainTypeName%> tmpMax = array_<%=cid%>[currentIndex].<%=maxName%>;
+                        <%
+                    } else if(mainjavaType == JavaTypesManager.BYTE_ARRAY) {
+                        %>
+                        String tmpMain = row_Main.<%=mainName%> == null ? null : new String(row_Main.<%=mainName%>);
+                        String tmpMin = array_<%=cid%>[currentIndex].<%=minName%> == null ? null : new String(array_<%=cid%>[currentIndex].<%=minName%>);
+                        String tmpMax = array_<%=cid%>[currentIndex].<%=maxName%> == null ? null : new String(array_<%=cid%>[currentIndex].<%=maxName%>);
+                        <%
+                    } else if(mainjavaType == JavaTypesManager.STRING) {
+                        %>
+                        String tmpMain = row_Main.<%=mainName%>;
+                        String tmpMin = array_<%=cid%>[currentIndex].<%=minName%>;
+                        String tmpMax = array_<%=cid%>[currentIndex].<%=maxName%>;
+                        <%
+                    } else {
+                        %>
+                        String tmpMain = String.valueOf(row_Main.<%=mainName%>);
+                        String tmpMin = String.valueOf(array_<%=cid%>[currentIndex].<%=minName%>);
+                        String tmpMax = String.valueOf(array_<%=cid%>[currentIndex].<%=maxName%>);
+                        <%
+                    }
+                    
+                    if (mainjavaType == JavaTypesManager.DATE || 
+                            mainjavaType == JavaTypesManager.BYTE || 
+                            mainjavaType == JavaTypesManager.SHORT || 
+                            mainjavaType == JavaTypesManager.FLOAT ||
+                            mainjavaType == JavaTypesManager.DOUBLE ||
+                            mainjavaType == JavaTypesManager.LONG ||
+                            mainjavaType == JavaTypesManager.INTEGER) {
+                        if(("java.util.Date").equals(mainTypeName) || 
+                                ("Byte").equals(mainTypeName) || 
+                                ("Short").equals(mainTypeName) || 
+                                ("Float").equals(mainTypeName) || 
+                                ("Double").equals(mainTypeName) || 
+                                ("Long").equals(mainTypeName) || 
+                                ("Integer").equals(mainTypeName)) {
+                            %>
+                            if(tmpMain == null) {
+                                return <%=JavaTypesManager.getDefaultValueFromJavaType(returnClassName)%>;
+                            }                            
+                            if((tmpMin == null && tmpMax != null && tmpMain <<%=maxEqual%> tmpMax) || 
+                                    (tmpMin != null && tmpMax == null && tmpMain ><%=minEqual%> tmpMin) || 
+                                    (tmpMin != null && tmpMax != null && tmpMain ><%=minEqual%> tmpMin && tmpMain <<%=maxEqual%> tmpMax)) {
+                            <%
+                        } else {
+                            %>
+                            if(tmpMain ><%=minEqual%> tmpMin && tmpMain <<%=maxEqual%> tmpMax) {
+                            <%
+                        }
+                        %>
+                        return array_<%=cid%>[currentIndex].<%=lookupName %>;
+                        <%
+                    } else {
+                        %>
+                        if(tmpMain == null) {
+                            return <%=JavaTypesManager.getDefaultValueFromJavaType(returnClassName)%>;
+                        }                        
+                        if((tmpMin == null && tmpMax != null && tmpMain.compareTo(tmpMax) <<%=maxEqual%> 0) ||
+                                (tmpMin != null && tmpMax == null && tmpMain.compareTo(tmpMin) ><%=minEqual%> 0) || 
+                                (tmpMin != null && tmpMax != null && tmpMain.compareTo(tmpMin) ><%=minEqual%> 0 && tmpMain.compareTo(tmpMax) <<%=maxEqual%> 0)) {
+                            return array_<%=cid%>[currentIndex].<%=lookupName %>;
+                        <%
+                    }
+                    %>
+                    } else if (lowerBound > upperBound) {
+                        return <%=JavaTypesManager.getDefaultValueFromJavaType(returnClassName)%>;
+                    } else {
+                        <%
+                        if (mainjavaType == JavaTypesManager.DATE || 
+                                mainjavaType == JavaTypesManager.BYTE || 
+                                mainjavaType == JavaTypesManager.SHORT || 
+                                mainjavaType == JavaTypesManager.FLOAT ||
+                                mainjavaType == JavaTypesManager.DOUBLE ||
+                                mainjavaType == JavaTypesManager.LONG ||
+                                mainjavaType == JavaTypesManager.INTEGER) {
+                            if(("java.util.Date").equals(mainTypeName) || 
+                                    ("Byte").equals(mainTypeName) || 
+                                    ("Short").equals(mainTypeName) || 
+                                    ("Float").equals(mainTypeName) || 
+                                    ("Double").equals(mainTypeName) || 
+                                    ("Long").equals(mainTypeName) || 
+                                    ("Integer").equals(mainTypeName)) {
+                                %>
+                                if(tmpMin != null && tmpMain < tmpMin) {
+                                    upperBound = currentIndex - 1;
+                                } else if(tmpMin != null && tmpMain > tmpMin) {
+                                    lowerBound = currentIndex + 1;
+                                } else {
+                                    upperBound = currentIndex - 1;
+                                }
+                                <%
+                            } else {
+                                %>
+                                if(tmpMain < tmpMin) {
+                                    upperBound = currentIndex - 1;
+                                } else if(tmpMain > tmpMin) {
+                                    lowerBound = currentIndex + 1;
+                                } else {
+                                    upperBound = currentIndex - 1;
+                                }
+                                <%
+                            }
+                        } else {
+                            %>
+                            if(tmpMin != null && tmpMain.compareTo(tmpMin) < 0) {
+                                upperBound = currentIndex - 1;
+                            } else if(tmpMin != null && tmpMain.compareTo(tmpMin) > 0) {
+                                lowerBound = currentIndex + 1;
+                            } else {
+                                upperBound = currentIndex - 1;
+                            }
+                            <%
+                        }
+                        %>
+                    }
+                }
+            }
+        }
+        
+        Util_<%= cid %> util_<%= cid %> = new Util_<%= cid %>();
+
+<%
+    }//2
+}//1
+%>

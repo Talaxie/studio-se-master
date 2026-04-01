@@ -1,0 +1,118 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+		
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    
+	java.util.List<IMetadataColumn> columnList = null;
+	java.util.List<IMetadataTable> metadatas = node.getMetadataList();
+	if(metadatas != null && metadatas.size() > 0) {
+		IMetadataTable metadata = metadatas.get(0);
+		if(metadata != null) {
+		    columnList = metadata.getListColumns();
+		}
+	}
+	java.util.List< ? extends IConnection> incomingConns = node.getIncomingConnections();
+	if(columnList!=null && incomingConns!=null && incomingConns.size()>0) {
+		for(IConnection incomingConn : incomingConns) {
+			if(incomingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+				java.io.InputStream fis_<%=cid%> = null;
+				java.io.FileOutputStream fos_<%=cid%> = null;
+				try {
+					Object content_<%=cid%> = <%=incomingConn.getName()%>.<%=columnList.get(0).getLabel()%>;
+
+					if(content_<%=cid%> != null) {
+						java.io.File file_<%=cid%>=new java.io.File(fileName_<%=cid%>);
+						java.io.File parentFile_<%=cid%>=file_<%=cid%>.getParentFile();
+						if(parentFile_<%=cid%>!=null && !parentFile_<%=cid%>.exists()){
+							parentFile_<%=cid%>.mkdirs();
+						}
+						if(content_<%=cid%> instanceof String) {
+							org.apache.commons.io.FileUtils.writeStringToFile(file_<%=cid%>, content_<%=cid%>.toString(), <%=encoding%>);
+						} else if(content_<%=cid%> instanceof byte[]) {
+							org.apache.commons.io.FileUtils.writeByteArrayToFile(file_<%=cid%>, (byte[])content_<%=cid%>);
+						} else if(content_<%=cid%> instanceof java.io.InputStream) {
+							fis_<%=cid%> = (java.io.InputStream) content_<%=cid%>;
+							fos_<%=cid%> = new java.io.FileOutputStream(file_<%=cid%>);
+							byte[] buffer_<%=cid%> = new byte[65536];
+							int nb_<%=cid%> = 0;
+							while (true) {
+							      nb_<%=cid%> = fis_<%=cid%>.read(buffer_<%=cid%>);
+							      if (nb_<%=cid%> == -1) {
+							      	 break;
+							      }		 
+							      fos_<%=cid%>.write(buffer_<%=cid%>, 0, nb_<%=cid%>);
+							}
+						} else {
+						    org.apache.commons.io.FileUtils.writeStringToFile(file_<%=cid%>, content_<%=cid%>.toString(), <%=encoding%>);
+						}
+					}
+				} catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+					if(dieOnError) {
+%>
+						throw e_<%=cid%>;
+<%
+					} else {
+%>
+						System.err.println(e_<%=cid%>);
+<%
+						if(isLog4jEnabled) {
+%>
+						log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+<%
+						}
+					}
+%>
+				} finally {
+					if(fis_<%=cid%> != null) {
+						try {
+							fis_<%=cid%>.close();
+						} catch (java.io.IOException fisIOE_<%=cid%>) {
+<%
+							if(isLog4jEnabled) {
+%>
+								log.warn("<%=cid%> - " + fisIOE_<%=cid%>.getMessage());
+<%
+							}
+%>
+						}
+					}
+					if(fos_<%=cid%> != null) {
+						try {
+							fos_<%=cid%>.close();
+						} catch (java.io.IOException fosIOE_<%=cid%>) {
+<%
+							if(isLog4jEnabled) {
+%>
+								log.warn("<%=cid%> - " + fosIOE_<%=cid%>.getMessage());
+<%
+							}
+%>
+						}
+					}
+				}
+<%
+			}
+		}
+	}
+%>

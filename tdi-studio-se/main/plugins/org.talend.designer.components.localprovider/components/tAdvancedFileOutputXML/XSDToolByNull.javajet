@@ -1,0 +1,69 @@
+<%
+// ------------------- *** Null generation mode start *** ------------------- //
+class XSDToolByNull{
+	String cid = null;
+    public void generateXSD(String emptyspace, XMLNode root){
+    	if(("ELEMENT").equals(root.type)){
+    		createElement(emptyspace, root);
+			
+			if(root.elements!=null && root.elements.size()>0
+			  || root.attributes!=null && root.attributes.size()>0){
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%>  <xsd:complexType>");
+		out_xsd_<%=cid%>.newLine();
+		out_xsd_<%=cid%>.write("<%=emptyspace%>    <xsd:sequence>");
+		out_xsd_<%=cid%>.newLine();
+<%
+				XMLNode mainNode = null;
+        		for(XMLNode child:root.elements){
+        			if( 1==(child.special & 4)){
+        				mainNode = child;
+        			}else{
+        				generateXSD(emptyspace+"      ", child);
+        			}
+        		}
+        		if(mainNode!= null){
+        			generateXSD(emptyspace+"      ", mainNode);
+        		}
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%>    </xsd:sequence>");
+		out_xsd_<%=cid%>.newLine();
+<%
+        		for(XMLNode attri:root.attributes){
+        			createAttribute(emptyspace+"    ",attri);
+        		}
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%>  </xsd:complexType>");
+		out_xsd_<%=cid%>.newLine();
+<%
+			}
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%></xsd:element>");
+		out_xsd_<%=cid%>.newLine();
+<%
+    	}
+    }
+    
+    private void createElement(String emptyspace, XMLNode node){
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%><xsd:element name=\"<%=node.name%>\" nillable=\"true\" "+
+<%
+		if(node.parent != null){
+%>
+		"minOccurs=\"0\" maxOccurs=\"unbounded\""+
+<%
+		}
+%>
+		">");
+		out_xsd_<%=cid%>.newLine();
+<%
+    }
+    
+    private void createAttribute(String emptyspace, XMLNode node){
+%>
+		out_xsd_<%=cid%>.write("<%=emptyspace%><xsd:attribute name= \"<%=node.name%>\"/>");
+		out_xsd_<%=cid%>.newLine();
+<%
+    }
+}
+%>

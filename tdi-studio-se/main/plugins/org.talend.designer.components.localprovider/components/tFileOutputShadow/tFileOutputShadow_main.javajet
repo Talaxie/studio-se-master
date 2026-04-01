@@ -1,0 +1,48 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataColumn
+    		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null && conns.size()>0){
+	IConnection conn = conns.get(0);
+	IMetadataTable metadata = conn.getMetadataTable();
+	if (metadata!=null) {
+		for(IMetadataColumn column:metadata.getListColumns()) {
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+%>if(<%=conn.getName() %>.<%=column.getLabel() %> != null){
+	<%=conn.getName() %>.<%=column.getLabel() %> = TalendString.replaceSpecialCharForXML(<%=conn.getName() %>.<%=column.getLabel() %>);
+}else{
+	<%=conn.getName() %>.<%=column.getLabel() %> = "";
+}
+<%
+			}
+		}
+%>out_<%=cid %>.write("<row>");
+out_<%=cid %>.newLine();
+<%		
+		for(IMetadataColumn column:metadata.getListColumns()) {
+%>out_<%=cid %>.write("<field>"+<%=conn.getName() %>.<%=column.getLabel() %>+"</field>");
+out_<%=cid %>.newLine();
+<%		
+		}
+%>out_<%=cid %>.write("</row>");
+out_<%=cid %>.newLine();
+nb_line_<%=cid %>++;
+<%
+	}
+}
+	%>

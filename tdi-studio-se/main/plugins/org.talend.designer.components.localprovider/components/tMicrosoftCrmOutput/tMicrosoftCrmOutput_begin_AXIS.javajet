@@ -1,0 +1,108 @@
+<%@ jet
+imports="
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+		"
+%>
+<%
+	String authType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+	String endpointURL = ElementParameterParser.getValue(node, "__ENDPOINTURL__");
+	String orgName = ElementParameterParser.getValue(node, "__ORGNAME__");
+	String username = ElementParameterParser.getValue(node, "__USERNAME__");
+
+	String domain = ElementParameterParser.getValue(node, "__DOMAIN__");
+	String host = ElementParameterParser.getValue(node, "__HOST__");
+	String port = ElementParameterParser.getValue(node, "__PORT__");
+	String timeoutSecTemp = ElementParameterParser.getValue(node, "__TIMEOUT__");
+	String timeoutSec = (timeoutSecTemp!=null&&!("").equals(timeoutSecTemp))?timeoutSecTemp:"2";
+	int timeout = (int)(Double.valueOf(timeoutSec) * 1000);
+	boolean reuseHttpClient = ("true").equals(ElementParameterParser.getValue(node,"__REUSE_HTTP_CLIENT__"));
+	boolean debug = ("true").equals(ElementParameterParser.getValue(node,"__DEBUG__"));
+	boolean isAPI2011 = ("API_2011").equals(ElementParameterParser.getValue(node,"__API_VERSION__"));
+	String discWSDL = ElementParameterParser.getValue(node, "__DISC_WSDL__");
+	String applicationId = ElementParameterParser.getValue(node, "__APPLICATION_ID__");
+	String authority = ElementParameterParser.getValue(node, "__AUTHORITY__");
+	%>
+	int nb_line_<%=cid%> = 0;
+	<%if(debug){%>
+	System.setProperty("org.apache.commons.logging.Log", "org.apache.commons.logging.impl.SimpleLog");
+    System.setProperty("org.apache.commons.logging.simplelog.showdatetime", "true");
+    System.setProperty("org.apache.commons.logging.simplelog.log.httpclient.wire", "debug");
+    System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.commons.httpclient", "debug");
+	<%}else{%>
+	System.setProperty("org.apache.commons.logging.Log", "org.apache.commons.logging.impl.NoOpLog");
+	<%}
+
+	String passwordFieldName = "__PASSWORD__";
+	%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+	<%
+	if(!isAPI2011 || ("ON_PREMISE").equals(authType)){
+		if(("ON_PREMISE").equals(authType)){%>
+			org.apache.commons.httpclient.auth.AuthPolicy.registerAuthScheme(org.apache.commons.httpclient.auth.AuthPolicy.NTLM, org.talend.mscrm.login.ntlm.JCIFS_NTLMScheme.class);
+
+			com.microsoft.crm4.webserviceTest.CrmServiceStub service_<%=cid%> = new com.microsoft.crm4.webserviceTest.CrmServiceStub(<%=endpointURL%>);
+			org.apache.axis2.client.Options options_<%=cid%> = service_<%=cid%>._getServiceClient().getOptions();
+			org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator auth_<%=cid%> = new org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator();
+
+			List<String> authSchemes_<%=cid%> = new java.util.ArrayList<String>();
+			authSchemes_<%=cid%>.add(org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator.NTLM);
+			auth_<%=cid%> .setAuthSchemes(authSchemes_<%=cid%>);
+
+            auth_<%=cid%> .setUsername(<%=username%>);
+            auth_<%=cid%> .setPassword(decryptedPassword_<%=cid%>);
+            auth_<%=cid%> .setHost(<%=host%>);
+            auth_<%=cid%> .setPort(<%=port%>);
+            auth_<%=cid%> .setDomain(<%=domain%>);
+            auth_<%=cid%> .setPreemptiveAuthentication(false);
+
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.AUTHENTICATE, auth_<%=cid%>);
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.REUSE_HTTP_CLIENT, "<%=reuseHttpClient%>");
+
+            options_<%=cid%> .setUserName(<%=username%>);
+            options_<%=cid%> .setPassword(decryptedPassword_<%=cid%>);
+            options_<%=cid%> .setTimeOutInMilliSeconds(Long.valueOf(<%=timeout%>));
+
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.SO_TIMEOUT,new Integer(<%=timeout%>));
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.CONNECTION_TIMEOUT, new Integer(<%=timeout%>));
+
+            com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument catd_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument.Factory.newInstance();
+            com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken token_<%=cid%> = com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken.Factory.newInstance();
+            token_<%=cid%>.setAuthenticationType(0);
+            token_<%=cid%>.setOrganizationName(<%=orgName%>);
+            catd_<%=cid%>.setCrmAuthenticationToken(token_<%=cid%>);
+        <%}else if(("ONLINE").equals(authType)){%>
+        	com.microsoft.crm4.webserviceTest.CrmServiceStub service_<%=cid%> = new com.microsoft.crm4.webserviceTest.CrmServiceStub("https://" + <%=host%> + "/MSCrmServices/2007/CrmService.asmx");
+			org.apache.axis2.client.Options options_<%=cid%> = service_<%=cid%>._getServiceClient().getOptions();
+        	org.talend.mscrm.login.passport.MsDynamicsWrapper msDynamicsWrapper_<%=cid%> = new org.talend.mscrm.login.passport.MsDynamicsWrapper(<%=host%>,<%=orgName%>,<%=username%>,decryptedPassword_<%=cid%>);
+			msDynamicsWrapper_<%=cid%>.connect();
+			String crmTicket_<%=cid%> = msDynamicsWrapper_<%=cid%>.getCrmTicket();
+
+        	options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.REUSE_HTTP_CLIENT, "<%=reuseHttpClient%>");
+        	options_<%=cid%> .setTimeOutInMilliSeconds(Long.valueOf(<%=timeout%>));
+
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.SO_TIMEOUT,new Integer(<%=timeout%>));
+            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.CONNECTION_TIMEOUT, new Integer(<%=timeout%>));
+
+        	com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument catd_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument.Factory.newInstance();
+            com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken token_<%=cid%> = com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken.Factory.newInstance();
+            token_<%=cid%>.setAuthenticationType(1);
+            token_<%=cid%>.setOrganizationName(<%=orgName%>);
+            token_<%=cid%>.setCrmTicket(crmTicket_<%=cid%>);
+            catd_<%=cid%>.setCrmAuthenticationToken(token_<%=cid%>);
+    	<%}
+    }else{
+    %>
+        org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+                                .buildOAuthNativeClientConfiguration(<%=applicationId%>, <%=username%>, decryptedPassword_<%=cid%>, <%=authority%>);
+        clientConfig_<%=cid%>.setTimeout(<%=timeout%>);
+        clientConfig_<%=cid%>.setReuseHttpClient(<%=reuseHttpClient%>);
+        clientConfig_<%=cid%>.setMaxRetry(reConnMaxNum_<%=cid%>,<%=attemptsInterval%>);
+        org.talend.ms.crm.MSCRMClient client_<%=cid%> = new org.talend.ms.crm.MSCRMClient(clientConfig_<%=cid%>, <%=orgName%>,<%=discWSDL%> );
+
+        com.microsoft.schemas.xrm._2011.contracts.OrganizationServiceStub serviceStub_<%=cid%> = client_<%=cid%>.getOnlineConnection();
+    <%
+    }%>

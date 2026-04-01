@@ -1,0 +1,696 @@
+<COMPONENT>
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="200903"
+    STARTABLE="true"
+    LOG4J_ENABLED="true"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Databases/DB Specifics/DB2</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0"/>
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="RUN_IF" MAX_OUTPUT="1"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+    <PARAMETER
+      NAME="PROPERTY"
+      FIELD="PROPERTY_TYPE"
+      SHOW="true"
+      NUM_ROW="5"
+      REPOSITORY_VALUE="DATABASE:IBM_DB2"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    />
+
+    <PARAMETER
+      NAME="USE_EXISTING_CONNECTION"
+      FIELD="CHECK"
+      NUM_ROW="10">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="CONNECTION"
+      FIELD="COMPONENT_LIST"
+      FILTER="tDB2Connection"
+      REQUIRED="true"
+      NUM_ROW="10"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'true'"
+      DYNAMIC_SETTINGS="true"
+    />
+
+    <PARAMETER
+      NAME="HOST"
+      FIELD="TEXT"
+      NUM_ROW="15"
+      REQUIRED="true"
+      REPOSITORY_VALUE="SERVER_NAME"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TYPE"
+      FIELD="TEXT"
+      NUM_ROW="3"
+      SHOW="false"
+      REPOSITORY_VALUE="TYPE"
+    >
+      <DEFAULT>IBM DB2</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="PORT"
+      FIELD="TEXT"
+      NUM_ROW="15"
+      REQUIRED="true"
+      REPOSITORY_VALUE="PORT"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>"50000"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DBNAME"
+      FIELD="TEXT"
+      NUM_ROW="20"
+      REPOSITORY_VALUE="SID"
+      REQUIRED="true"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TABLESCHEMA"
+      FIELD="TEXT"
+      NUM_ROW="20"
+      REPOSITORY_VALUE="SCHEMA"
+      REQUIRED="true"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="USER"
+      FIELD="TEXT"
+      NUM_ROW="25"
+      REPOSITORY_VALUE="USERNAME"
+      REQUIRED="true"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="PASS"
+      FIELD="PASSWORD"
+      NUM_ROW="25"
+      REPOSITORY_VALUE="PASSWORD"
+      REQUIRED="true"
+      SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TABLE"
+      FIELD="DBTABLE"
+      NUM_ROW="30"
+      REQUIRED="true"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TABLE_ACTION"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="31"
+      NOT_SHOW_IF="PARALLELIZE == 'true'"
+    >
+      <ITEMS DEFAULT="NONE">
+        <ITEM NAME="NONE" VALUE="NONE" />
+        <ITEM NAME="DROP_CREATE" VALUE="DROP_CREATE"/>
+        <ITEM NAME="CREATE" VALUE="CREATE"/>
+        <ITEM NAME="CREATE_IF_NOT_EXISTS" VALUE="CREATE_IF_NOT_EXISTS"/>
+        <ITEM NAME="DROP_IF_EXISTS_AND_CREATE" VALUE="DROP_IF_EXISTS_AND_CREATE" />
+        <ITEM NAME="CLEAR" VALUE="CLEAR"/>
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="NOTE" FIELD="LABEL" NUM_ROW="31"
+            NOT_SHOW_IF="(TABLE_ACTION == 'NONE') OR (USE_EXISTING_CONNECTION == 'false')"
+        >
+        <DEFAULT>Warning : this component configuration will automatically generate a commit before bulk insert</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="35">
+      <DEFAULT/>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="USE_INGEST_COMMAND"
+      FIELD="CHECK"
+      NUM_ROW="37"
+    >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="LOAD_FROM"
+        FIELD="CLOSED_LIST"
+        NUM_ROW="38"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <ITEMS DEFAULT="FILE">
+            <ITEM NAME="FILE" VALUE="file" />
+            <ITEM NAME="PIPE" VALUE="pipe" />
+            <ITEM NAME="FOLDER" VALUE="folder" />
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="DATA"
+        FIELD="FILE"
+        NUM_ROW="40"
+        REQUIRED="true"
+        NOT_SHOW_IF="(USE_INGEST_COMMAND == 'true') AND ((LOAD_FROM == 'FOLDER') OR (LOAD_FROM == 'PIPE'))"
+    >
+      <DEFAULT>"__COMP_DEFAULT_FILE_DIR__/out.csv"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TARGET_FOLDER"
+      FIELD="DIRECTORY"
+      NUM_ROW="40"
+      REQUIRED="true"
+      SHOW_IF="(USE_INGEST_COMMAND == 'true')
+           AND (LOAD_FROM == 'FOLDER')"
+    >
+    <DEFAULT>"__COMP_DEFAULT_FILE_DIR__"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="FILE_INCLUDE_FILTER"
+        NUM_ROW="41"
+        FIELD="TEXT"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true')
+             AND (LOAD_FROM == 'FOLDER')"
+    >
+        <DEFAULT>"*.txt"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="PIPE_NAME"
+        FIELD="TEXT"
+        NUM_ROW="40"
+        SHOW_IF="(LOAD_FROM == 'PIPE') AND (USE_INGEST_COMMAND == 'true')"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="DATA_ACTION_TYPE"
+        FIELD="CLOSED_LIST"
+        NUM_ROW="40"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <ITEMS DEFAULT="INSERT">
+            <ITEM NAME="INSERT" VALUE="INSERT" />
+            <ITEM NAME="UPDATE" VALUE="UPDATE" />
+            <ITEM NAME="DELETE" VALUE="DELETE" />
+            <ITEM NAME="REPLACE" VALUE="REPLACE" />
+            <ITEM NAME="MERGE" VALUE="MERGE" />
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DATA_ACTION"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="40"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <ITEMS DEFAULT="INSERT">
+        <ITEM NAME="INSERT"    VALUE="INSERT" />
+        <ITEM NAME="REPLACE"   VALUE="REPLACE"/>
+        <ITEM NAME="UPDATE"    VALUE="UPDATE"/>
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="WHERE_CLAUSE"
+        FIELD="TEXT"
+        NUM_ROW="42"
+        REQUIRED="true"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true')
+        AND (
+             (DATA_ACTION_TYPE == 'UPDATE') OR (DATA_ACTION_TYPE == 'DELETE')
+            )"
+    >
+        <DEFAULT>"where 1=1"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="CUSTOM_INSERT_VALUES_CLAUSE"
+        FIELD="CHECK"
+        NUM_ROW="43"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (DATA_ACTION_TYPE == 'INSERT')"
+    >
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="INSERT_VALUES_CLAUSE"
+        FIELD="TEXT"
+        NUM_ROW="47"
+        REQUIRED="true"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CUSTOM_INSERT_VALUES_CLAUSE == 'true') AND (DATA_ACTION_TYPE == 'INSERT')"
+    >
+        <DEFAULT>"values ()"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="MERGE_CLAUSE"
+        FIELD="TEXT"
+        NUM_ROW="48"
+        REQUIRED="true"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true')
+        AND (DATA_ACTION_TYPE == 'MERGE')"
+    >
+        <DEFAULT>"merge into "</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="CUSTOM_SET_MAPPING"
+        FIELD="CHECK"
+        NUM_ROW="48"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (DATA_ACTION_TYPE == 'UPDATE')"
+    >
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SET_MAPPING" FIELD="TABLE" NUM_ROW="49" NB_LINES="6"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (DATA_ACTION_TYPE == 'UPDATE') AND (CUSTOM_SET_MAPPING == 'true')"
+    >
+        <ITEMS BASED_ON_SCHEMA="true">
+            <ITEM NAME="EXPRESSION" FIELD="TEXT"/>
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="CONTENT_FORMAT"
+        FIELD="CLOSED_LIST"
+        NUM_ROW="50"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <ITEMS DEFAULT="DELIMITED">
+            <ITEM NAME="DELIMITED" VALUE="delimited" />
+            <ITEM NAME="POSITIONAL" VALUE="positional" />
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="FIELD_DELIMITED_BY"
+        FIELD="TEXT"
+        NUM_ROW="50"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'DELIMITED')"
+    >
+        <DEFAULT>","</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="OPTIONALLY_ENCLOSED_BY"
+        FIELD="TEXT"
+        NUM_ROW="50"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'DELIMITED')"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="RECORDLEN"
+        FIELD="TEXT"
+        NUM_ROW="50"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'POSITIONAL')"
+    >
+        <DEFAULT></DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="EXISTS_IN_TABLE_COLUMN" FIELD="TABLE" NUM_ROW="65" NB_LINES="6"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (DATA_ACTION_TYPE != 'DELETE')">
+        <ITEMS BASED_ON_SCHEMA="true">
+            <ITEM NAME="CORRESPOND_TO_THE_TABLE_COLUMN" FIELD="CHECK" VALUE='true'/>
+            <ITEM NAME="START" FIELD="TEXT" VALUE='' SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'POSITIONAL')"/>
+            <ITEM NAME="END" FIELD="TEXT" VALUE='' SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'POSITIONAL')"/>
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="SCRIPT_STORAGE_FOLDER"
+        FIELD="DIRECTORY"
+        NUM_ROW="100"
+        REQUIRED="true"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <DEFAULT>"__COMP_DEFAULT_FILE_DIR__/"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="MAPPING"
+      FIELD="MAPPING_TYPE"
+      NUM_ROW="55"
+      SHOW="false"
+    >
+      <DEFAULT>ibmdb2_id</DEFAULT>
+    </PARAMETER>
+
+  </PARAMETERS>
+
+  <ADVANCED_PARAMETERS>
+
+    <PARAMETER
+        NAME="PROPERTIES"
+        FIELD="TEXT"
+        NUM_ROW="5"
+        SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+        REPOSITORY_VALUE="PROPERTIES_STRING">
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="NOTE"
+        FIELD="LABEL"
+        SHOW_IF="USE_EXISTING_CONNECTION == 'false'"
+        NUM_ROW="6">
+        <DEFAULT>*Note: Example for Additional JDBC Parameters: "parameterName1=value1;parameterName2=value2;"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="FIELDS_TERMINATED_BY"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      MAX_LENGTH="1"
+      REQUIRED="true"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>";"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DATE_FORMAT"
+      FIELD="TEXT"
+      NUM_ROW="20"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>"YYYYDDD"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TIME_FORMAT"
+      FIELD="TEXT"
+      NUM_ROW="20"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>"HH:MM:SS"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TIMESTAMP_FORMAT"
+      FIELD="TEXT"
+      NUM_ROW="20"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>"YYYY-MM-DD-HH.MM.SS"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="REMOVE_LODA_PENDING"
+      FIELD="CHECK"
+      NUM_ROW="30"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="OPTIONS"
+      FIELD="TABLE"
+      NUM_ROW="40"
+      NB_LINES="5"
+      NOT_SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+    <!-- VALUE ="LOBS FROM,1"  1.LOBS FROM is load from command parameter
+                    2.'1' is 'LOBS FROM' Load from position
+                    ps: LOAD FROM OF (1) DEL MODIFIED BY (2) INTO (3)    -->
+      <ITEMS>
+        <ITEM NAME="KEY" FIELD="CLOSED_LIST" >
+          <ITEMS DEFAULT="LOBS_FROM">
+            <ITEM NAME="LOBS_FROM"  VALUE="LOBS FROM,1"/>
+
+            <ITEM NAME="MODIFIED_BY"    VALUE="MODIFIED BY,2"/>
+            <ITEM NAME="METHOD"    VALUE="METHOD,2"/>
+            <ITEM NAME="SAVECOUNT"    VALUE="SAVECOUNT,2"/>
+            <ITEM NAME="ROWCOUNT"    VALUE="ROWCOUNT,2"/>
+            <ITEM NAME="WARNINGCOUNT"    VALUE="WARNINGCOUNT,2"/>
+            <ITEM NAME="MESSAGES"    VALUE="MESSAGES,2"/>
+            <ITEM NAME="TEMPFILES_PATH"    VALUE="TEMPFILES PATH,2"/>
+
+            <ITEM NAME="DATALINK_SPECIFICATION"    VALUE="DATALINK SPECIFICATION,3"/>
+            <ITEM NAME="FOR_EXCEPTION"  VALUE="FOR EXCEPTION,3"/>
+            <ITEM NAME="STATISTICS"  VALUE="STATISTICS,3"/>
+            <ITEM NAME="COPY"    VALUE="COPY,3"/>
+            <ITEM NAME="NONRECOVERABLE"    VALUE="NONRECOVERABLE,3"/>
+            <ITEM NAME="WITHOUT_PROMPTING"    VALUE="WITHOUT PROMPTING,3"/>
+            <ITEM NAME="DATA_BUFFER"    VALUE="DATA BUFFER,3"/>
+            <ITEM NAME="SORT_BUFFER"    VALUE="SORT BUFFER,3"/>
+            <ITEM NAME="CPU_PARALLELISM"    VALUE="CPU_PARALLELISM,3"/>
+            <ITEM NAME="DISK_PARALLELISM"    VALUE="DISK_PARALLELISM,3"/>
+            <ITEM NAME="INDEXING_MODE"    VALUE="INDEXING MODE,3"/>
+            <ITEM NAME="ALLOW_NO_ACCESS"    VALUE="ALLOW NO ACCESS,3"/>
+            <ITEM NAME="ALLOW_READ_ACCESS"    VALUE="ALLOW READ ACCESS,3"/>
+            <ITEM NAME="CHECK_PENDING_CASCADE"    VALUE="CHECK PENDING CASCADE,3"/>
+            <ITEM NAME="LOCK_WITH_FORCE"    VALUE="LOCK WITH FORCE,3"/>
+          </ITEMS>
+        </ITEM>
+        <ITEM NAME="VALUE" FIELD="TEXT"
+            READONLY_IF="(OPTIONS.KEY =='NONRECOVERABLE') OR (OPTIONS.KEY =='ALLOW_NO_ACCESS') OR (OPTIONS.KEY =='LOCK_WITH_FORCE')"/>
+      </ITEMS>
+    </PARAMETER>
+<!--
+    <PARAMETER
+        NAME="HAS_EXTERNAL_COLUMNS"
+        FIELD="CHECK"
+        NUM_ROW="49"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="EXTERNAL_COLUMNS"
+      FIELD="TABLE"
+      REQUIRED="false"
+      NUM_ROW="50"
+      NB_LINES="5"
+      SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (HAS_EXTERNAL_COLUMNS == 'true')"
+    >
+      <ITEMS>
+        <ITEM NAME="COLUMN_NAME" VALUE='' />
+        <ITEM NAME="DATA_TYPE" FIELD="CLOSED_LIST">
+            <ITEMS DEFAULT="CHARACTER">
+                <ITEM NAME="CHAR" VALUE="CHAR"/>
+                <ITEM NAME="CHARACTER" VALUE="CHARACTER"/>
+                <ITEM NAME="DEC" VALUE="DEC"/>
+                <ITEM NAME="DECIMAL" VALUE="DECIMAL"/>
+                <ITEM NAME="INT" VALUE="INT"/>
+                <ITEM NAME="INTEGER" VALUE="INTEGER"/>
+                <ITEM NAME="SMALLINT" VALUE="SMALLINT"/>
+                <ITEM NAME="BIGINT" VALUE="BIGINT"/>
+                <ITEM NAME="DECFLOAT" VALUE="DECFLOAT"/>
+                <ITEM NAME="FLOAT" VALUE="FLOAT"/>
+                <ITEM NAME="REAL" VALUE="REAL"/>
+                <ITEM NAME="DOUBLE" VALUE="DOUBLE"/>
+                <ITEM NAME="DATE" VALUE="DATE"/>
+                <ITEM NAME="TIME" VALUE="TIME"/>
+                <ITEM NAME="TIMESTAMP" VALUE="TIMESTAMP"/>
+            </ITEMS>
+        </ITEM>
+        <ITEM NAME="LENGTH" VALUE=''/>
+        <ITEM NAME="PRECISION" VALUE=''/>
+        <ITEM NAME="SCALE" VALUE=''/>
+        <ITEM NAME="DATE_PATTERN" VALUE='yyyy-mm-dd'/>
+    </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="VALUES_CLAUSE"
+        FIELD="TEXT"
+        NUM_ROW="55"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (HAS_EXTERNAL_COLUMNS == 'true')"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+ -->
+
+     <PARAMETER
+         NAME="RECURSE_DIRECTORY"
+         NUM_ROW="41"
+         FIELD="CHECK"
+         SHOW_IF="(USE_INGEST_COMMAND == 'true')
+              AND (LOAD_FROM == 'FOLDER')"
+     >
+         <DEFAULT>false</DEFAULT>
+     </PARAMETER>
+
+     <PARAMETER
+         NAME="NUMERIC_REPRESENT_IN_BINARY"
+         FIELD="CHECK"
+         NUM_ROW="50"
+         SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (CONTENT_FORMAT == 'POSITIONAL')">
+         <DEFAULT>false</DEFAULT>
+     </PARAMETER>
+
+    <PARAMETER
+        NAME="INPUT_CODE_PAGE"
+        FIELD="TEXT"
+        NUM_ROW="60"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'">
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="ERROR_HANDLING_OPTIONS"
+        FIELD="CHECK"
+        NUM_ROW="70"
+        GROUP="GROUP_ERROR_HANDLING_OPTIONS"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'">
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="ERR_FILE_TYPE"
+        FIELD="CLOSED_LIST"
+        NUM_ROW="80"
+        GROUP="GROUP_ERROR_HANDLING_OPTIONS"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (ERROR_HANDLING_OPTIONS == 'true')"
+    >
+        <ITEMS DEFAULT="DUMPFILE">
+            <ITEM NAME="DUMPFILE" VALUE="dumpfile" />
+            <ITEM NAME="BADFILE" VALUE="badfile" />
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="ERR_FILE_NAME"
+        FIELD="TEXT"
+        NUM_ROW="80"
+        GROUP="GROUP_ERROR_HANDLING_OPTIONS"
+        REQUIRED="true"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (ERROR_HANDLING_OPTIONS == 'true')"
+    >
+      <DEFAULT>"error.log"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="EXCEPTION_TABLE"
+        FIELD="TEXT"
+        NUM_ROW="82"
+        SHOW_IF="USE_INGEST_COMMAND == 'true' AND ((DATA_ACTION_TYPE == 'INSERT') OR (DATA_ACTION_TYPE == 'REPLACE'))"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="WARNINGCOUNT"
+        FIELD="TEXT"
+        NUM_ROW="83"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <DEFAULT></DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="MSG_FILE_NAME"
+        FIELD="TEXT"
+        NUM_ROW="85"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+      <DEFAULT>"message.log"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="WILL_RESTART_JOB"
+        FIELD="CHECK"
+        NUM_ROW="90"
+        SHOW_IF="USE_INGEST_COMMAND == 'true'"
+    >
+        <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="RESTART_JOB_TYPE"
+        FIELD="CLOSED_LIST"
+        NUM_ROW="90"
+        SHOW_IF="(USE_INGEST_COMMAND == 'true') AND (WILL_RESTART_JOB == 'true')"
+    >
+        <ITEMS DEFAULT="OFF">
+            <ITEM NAME="OFF" VALUE="OFF" />
+            <ITEM NAME="NEW" VALUE="NEW" />
+            <ITEM NAME="CONTINUE" VALUE="CONTINUE" />
+            <ITEM NAME="TERMINATE" VALUE="TERMINATE" />
+        </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="JOB_ID"
+        FIELD="TEXT"
+        NUM_ROW="90"
+        REQUIRED="true"
+        NOT_SHOW_IF="(USE_INGEST_COMMAND == 'false')
+             OR (RESTART_JOB_TYPE == 'OFF')
+             OR (WILL_RESTART_JOB == 'false')"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+  </ADVANCED_PARAMETERS>
+
+  <CODEGENERATION>
+    <IMPORTS>
+        <IMPORT NAME="Driver-DB2" MODULE="db2jcc4.jar" MVN="mvn:org.talend.libraries/db2jcc4/6.0.0"  REQUIRED="true" />
+        <IMPORT NAME="Driver-DB2" MODULE="db2jcc_license_cu.jar" MVN="mvn:org.talend.libraries/db2jcc_license_cu/6.0.0"  REQUIRED="true" />
+        <IMPORT NAME="Driver-DB2" MODULE="db2jcc_license_cisuz.jar" MVN="mvn:org.talend.libraries/db2jcc_license_cisuz/6.0.0"  REQUIRED="true" />
+        <IMPORT NAME="commons-io-2.8.0" MODULE="commons-io-2.8.0.jar" MVN="mvn:commons-io/commons-io/2.8.0" REQUIRED="true" />
+    </IMPORTS>
+  </CODEGENERATION>
+
+  <RETURNS>
+    <RETURN NAME="NB_LINE"          TYPE="id_Integer" AVAILABILITY="AFTER"/>
+    <RETURN NAME="NB_LINE_UPDATED"  TYPE="id_Integer" AVAILABILITY="AFTER"/>
+    <RETURN NAME="NB_LINE_INSERTED" TYPE="id_Integer" AVAILABILITY="AFTER"/>
+    <RETURN NAME="NB_LINE_DELETED"  TYPE="id_Integer" AVAILABILITY="AFTER"/>
+    <RETURN NAME="QUERY" TYPE="id_String" AVAILABILITY="AFTER" />
+  </RETURNS>
+
+</COMPONENT>

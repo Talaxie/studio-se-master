@@ -1,0 +1,230 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever 
+    org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+    java.util.List
+    java.util.ArrayList    
+    java.lang.StringBuilder
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbuser = ElementParameterParser.getValue(node, "__USER__");
+	String dbtable = ElementParameterParser.getValue(node, "__TABLE__");
+	String tableAction = ElementParameterParser.getValue(node, "__TABLE_ACTION__");
+	String dataFile = ElementParameterParser.getValue(node, "__DATA_FILE__");
+	boolean useNamedPiped = ElementParameterParser.getValue(node, "__USE_NAMED_PIPE__").equals("true");
+	String namedPipeName = ElementParameterParser.getValue(node, "__NAMED_PIPE__");
+	boolean useExistingCtrlFile = ElementParameterParser.getValue(node, "__USE_EXISTING_CLT_FILE__").equals("true");
+	String ctrlFile = ElementParameterParser.getValue(node, "__CLT_FILE__");
+	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELD_SEPARATOR__");
+	String quoteFields = ElementParameterParser.getValue(node, "__QUOTE_FIELDS__");
+	List<Map<String, String>> options = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OPTIONS__");
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	String nzloadExePath = ElementParameterParser.getValue(node, "__NZLOAD_PATH__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	List<IMetadataColumn> columnList = getColumnList(node);
+	List<Column> stmtStructure = null;
+	if (columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+	
+	List< ? extends IConnection> inputConns = node.getIncomingConnections();
+	List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+	boolean hasInputRow = false;
+	boolean hasOutputRow = false;
+	if (inputConns != null || inputConns.size() > 0) {
+		for(IConnection conn : inputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasInputRow)
+					hasInputRow = true;
+		}
+	}
+	if (outputConns != null || outputConns.size() > 0) {
+		for(IConnection conn : outputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasOutputRow)
+					hasOutputRow = true;
+		}
+	}
+	String inputRowName = (hasInputRow) ? inputConns.get(0).getName() : null;
+	String outputRowName = (hasOutputRow) ? outputConns.get(0).getName() : null;
+	
+	// find null value token, boolean style and other options (if specified)
+	String booleanStyle = "1_0";
+	String nullValue = "NULL";
+	boolean requireQuotes = false;
+	for(Map<String, String> option : options) {
+		if ("-boolStyle".equals(option.get("KEY"))) {
+			booleanStyle = option.get("VALUE");
+		}
+		if ("-requireQuotes".equals(option.get("KEY"))) {
+			requireQuotes = true;
+		}
+		if ("-nullValue".equals(option.get("KEY"))) {
+			if ("''".equals(option.get("VALUE")) || "\"\"".equals(option.get("VALUE"))) {
+				nullValue = "\"\"";
+			} else {
+				nullValue = option.get("VALUE");
+			}
+		}
+	}
+%>
+
+<%
+	if (hasInputRow) {
+		%>
+		StringBuilder sb_<%=cid%> = new StringBuilder(1000);
+		<%
+		for (int i=0; i < columnList.size(); i++) {
+			IMetadataColumn column = columnList.get(i);
+			//String columnType = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType(javaType, column.isNullable());
+			String datePattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? "\"yyyy-MM-dd\"" : column.getPattern();
+			String length = (column.getLength() == null ? "1" : String.valueOf(column.getLength()));
+			String precision = (column.getPrecision() == null ? "6" : String.valueOf(column.getPrecision()));
+			
+			
+			//------------------------------------------------------------------
+			// if NO quoted values
+			//------------------------------------------------------------------
+			if ("NO".equals(quoteFields)) {
+				if (!isPrimitive) {
+					%>
+					if (<%=inputRowName%>.<%=column.getLabel()%> == null)
+						sb_<%=cid%>.append("<%=nullValue%>");
+					else {
+					<%
+				}
+				if (javaType == JavaTypesManager.DATE) {
+					%> sb_<%=cid %>.append(TalendDate.formatDate(<%=datePattern%>,<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.BIGDECIMAL) {
+					%> sb_<%=cid %>.append(String.format("%-<%=length%>.<%=precision%>f",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.LONG) {
+					%> sb_<%=cid %>.append(String.format("%-<%=length%>d",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.INTEGER) {
+					%> sb_<%=cid %>.append(String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.STRING) {
+					%> sb_<%=cid %>.append(<%=inputRowName%>.<%=column.getLabel()%>); <%
+				} else if (javaType == JavaTypesManager.BOOLEAN) {
+					if (booleanStyle.equals("1_0")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+					} else if (booleanStyle.equals("T_F")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "T" : "F")); <%
+					} else if (booleanStyle.equals("Y_N")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "Y" : "N")); <%
+					} else if (booleanStyle.equals("TRUE_FALSE")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "TRUE" : "FALSE")); <%
+					} else if (booleanStyle.equals("YES_NO")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "YES" : "NO")); <%
+					} else {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+					}
+				} else {
+					%> sb_<%=cid %>.append(String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				}
+				if (!isPrimitive) {
+					%>
+					} // close if equals to null
+					<%
+				}
+			}
+			
+			
+			//------------------------------------------------------------------
+			// if quoted values and NOT require quotes
+			//------------------------------------------------------------------
+			if (("SINGLE".equals(quoteFields) || "DOUBLE".equals(quoteFields)) && !requireQuotes) {
+				String quoteStr = "SINGLE".equals(quoteFields) ? "'" : "\\\"";
+				String quoteReplStr = "SINGLE".equals(quoteFields) ? "\\\\'" : "\\\\\\\"";
+
+				if (!isPrimitive) {
+					%>
+					if (<%=inputRowName%>.<%=column.getLabel()%> == null)
+						sb_<%=cid%>.append("<%=nullValue%>");
+					else {
+					<%
+				}
+				if (javaType == JavaTypesManager.DATE) {
+					%> sb_<%=cid %>.append(TalendDate.formatDate(<%=datePattern%>,<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.BIGDECIMAL) {
+					%> sb_<%=cid %>.append(String.format("%-<%=length%>.<%=precision%>f",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.LONG) {
+					%> sb_<%=cid %>.append(String.format("%-<%=length%>d",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.INTEGER) {
+					%> sb_<%=cid %>.append(String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>)); <%
+				} else if (javaType == JavaTypesManager.STRING) {
+					%> sb_<%=cid %>.append("<%=quoteStr%>" + <%=inputRowName%>.<%=column.getLabel()%>.replace("\\","\\\\").replace("<%=quoteStr%>","<%=quoteReplStr%>") + "<%=quoteStr%>"); <%
+				} else if (javaType == JavaTypesManager.BOOLEAN) {
+					if (booleanStyle.equals("1_0")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+					} else if (booleanStyle.equals("T_F")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "T" : "F")); <%
+					} else if (booleanStyle.equals("Y_N")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "Y" : "N")); <%
+					} else if (booleanStyle.equals("TRUE_FALSE")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "TRUE" : "FALSE")); <%
+					} else if (booleanStyle.equals("YES_NO")) {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "YES" : "NO")); <%
+					} else {
+						%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+					}
+				} else {
+					%> sb_<%=cid %>.append("<%=quoteStr%>" + String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>).replace("\\","\\\\").replace("<%=quoteStr%>","<%=quoteReplStr%>") + "<%=quoteStr%>"); <%
+				}
+				if (!isPrimitive) {
+					%>
+					} // close if equals to null
+					<%
+				}
+			}
+			
+			if (i == (columnList.size() -1)) {
+				%>
+				sb_<%=cid%>.append("\n");
+				<%
+			} else {
+				%>
+				sb_<%=cid%>.append(<%=fieldSeparator%>);
+				<%
+			}
+		}
+
+		// ------------------------------------------
+		// write the output to the outputstream
+		// -------------------------------------------
+		%>
+		outputStream_<%=cid%>.write(sb_<%=cid%>.toString().getBytes());
+		<%
+		//----------------------------------------------
+		// assign output row to input row
+		//----------------------------------------------
+		if (hasOutputRow) {
+			for (IMetadataColumn column : columnList) {
+				%>
+				<%=outputRowName%>.<%=column.getLabel()%> = <%=inputRowName%>.<%=column.getLabel()%>;
+				<%
+			}
+		}
+		
+	} // end of hasInputRow
+%>

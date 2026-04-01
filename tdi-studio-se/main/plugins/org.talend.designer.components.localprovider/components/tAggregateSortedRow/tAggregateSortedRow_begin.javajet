@@ -1,0 +1,191 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    java.util.List
+    java.util.Map
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+
+    IMetadataTable metadata = metadatas.get(0);
+    List< ? extends IConnection> conns = node.getIncomingConnections();
+    IMetadataTable inMetadata = null;
+    if(conns != null){ 
+    for (IConnection conn : conns) { 
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+			inMetadata = conn.getMetadataTable();
+    		break;
+		}
+	}
+    if (metadata != null && inMetadata != null) { 
+    	List<IMetadataColumn> inColumns = inMetadata.getListColumns();
+		List<Map<String, String>> operations = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OPERATIONS__");
+		IMetadataColumn[] column_op = new IMetadataColumn[operations.size()];
+		String[] functions = new String[operations.size()];
+		boolean[] needTestForNull = new boolean[operations.size()];
+		List<Map<String, String>> groupbys = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUPBYS__");
+		IMetadataColumn[] column_gr = new IMetadataColumn[groupbys.size()];
+		for(int i = 0; i < column_op.length; i++){
+			Map<String, String> operation = operations.get(i);
+			String in = operation.get("INPUT_COLUMN");
+			functions[i] = operation.get("FUNCTION");
+			for (IMetadataColumn column: inColumns) {
+				if(column.getLabel().equals(in)){
+					column_op[i] = column;
+					JavaType inputJavaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					needTestForNull[i] = !(JavaTypesManager.isJavaPrimitiveType(inputJavaType, column.isNullable())) && (operation.get("IGNORE_NULL").equals("true"));
+					break;
+				}
+			}
+		}
+		for(int i = 0; i < column_gr.length; i++){
+			Map<String, String> groupby = groupbys.get(i);
+			String in = groupby.get("INPUT_COLUMN");
+			for (IMetadataColumn column: inColumns) {
+				if(column.getLabel().equals(in)){
+					column_gr[i] = column;
+					break;
+				}
+			}
+		}
+		conns = null;
+		conns = node.getOutgoingSortedConnections();
+		if (conns!=null) {
+			if (conns.size()>0) {
+				IConnection conn = conns.get(0);
+%>final <%=conn.getName() %>Struct[] emmitArray_<%=cid %> = new <%=conn.getName() %>Struct[2];
+emmitArray_<%=cid %>[0] = new <%=conn.getName() %>Struct();
+emmitArray_<%=cid %>[1] = new <%=conn.getName() %>Struct();
+<%
+			}
+		}
+%>
+int nb_line_<%=cid%> = 0;
+int currentRowIndex_<%=cid%> = 0;
+boolean  flag_<%=cid%> = true;//flag for the encounter of first row.
+
+<%
+	//gen groups variable
+	for(int i = 0; i < column_gr.length; i++){
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column_gr[i].getTalendType());
+%><%= JavaTypesManager.getTypeToGenerate(column_gr[i].getTalendType(), column_gr[i].isNullable()) %> group_<%=column_gr[i].getLabel() %>_<%=cid %><%
+if(javaType == JavaTypesManager.BOOLEAN){%>=false<%}else if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.SHORT || 
+	javaType == JavaTypesManager.CHARACTER || javaType == JavaTypesManager.INTEGER || javaType == JavaTypesManager.LONG || 
+	javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.DOUBLE){
+	%>=(<%= JavaTypesManager.getTypeToGenerate(column_gr[i].getTalendType(), false) %>)0<%}else{%>=null<%}%>;
+<%	}
+	//gen aggre variable
+	for(int i = 0; i < column_op.length; i++){
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column_op[i].getTalendType());
+		boolean duplicate = false;
+		for(int j = 0; j < i; j++){
+			if(functions[j].equals(functions[i]) && column_op[j].getLabel().equals(column_op[i].getLabel()) && needTestForNull[i] == needTestForNull[j]){
+				duplicate = true;
+				break;
+			}
+		}
+		if(duplicate){
+			continue;
+		}
+		if(("min").equals(functions[i]) || ("max").equals(functions[i]) || ("first").equals(functions[i]) || ("last").equals(functions[i])){
+			if((javaType == JavaTypesManager.LIST || javaType == JavaTypesManager.OBJECT || javaType == JavaTypesManager.BYTE_ARRAY) && (("min").equals(functions[i]) || ("max").equals(functions[i]))){
+%>
+if(true){
+	throw new RuntimeException("Job Error: can't use function \"<%=functions[i] %>\" on column \"<%=column_op[i].getLabel() %>\", the data type is \"<%=JavaTypesManager.getTypeToGenerate(column_op[i].getTalendType(), column_op[i].isNullable()) %>\"");
+}
+<%
+			}else{
+%>
+<%= JavaTypesManager.getTypeToGenerate(column_op[i].getTalendType(), column_op[i].isNullable()) %> <%=functions[i] %>_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = <%
+if(column_op[i].isNullable()){%>null<%
+}else{
+	if(javaType == JavaTypesManager.BOOLEAN){%>false<%
+	}else if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.SHORT || 
+	javaType == JavaTypesManager.CHARACTER || javaType == JavaTypesManager.INTEGER || javaType == JavaTypesManager.LONG || 
+	javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.DOUBLE){
+	%>(<%=JavaTypesManager.getTypeToGenerate(column_op[i].getTalendType(), false) %>)0<%
+	}else{%>null<%
+	}
+}%>;
+<%
+			}
+		}else if(("count").equals(functions[i])){
+			boolean countHasAvg = false;
+			for(int j = 0; j < functions.length; j++){
+				if(("avg").equals(functions[j]) && column_op[j].getLabel().equals(column_op[i].getLabel()) && needTestForNull[i] == needTestForNull[j]){
+					countHasAvg = true;
+					break;
+				}
+			}
+			if(!countHasAvg){
+%>int count_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %>=0;
+<%			}
+		}else if(("sum").equals(functions[i])){
+			boolean sumHasAvg = false;
+			for(int j = 0; j < functions.length; j++){
+				if(("avg").equals(functions[j]) && column_op[j].getLabel().equals(column_op[i].getLabel()) && needTestForNull[i] == needTestForNull[j]){
+					sumHasAvg = true;
+					break;
+				}
+			}
+			if(!sumHasAvg){
+				if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.SHORT || javaType == JavaTypesManager.CHARACTER || 
+					javaType == JavaTypesManager.INTEGER || javaType == JavaTypesManager.LONG || javaType == JavaTypesManager.FLOAT || 
+					javaType == JavaTypesManager.DOUBLE){
+%>double sum_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = 0d;
+<%
+				}else if(javaType == JavaTypesManager.BIGDECIMAL){
+%>BigDecimal sum_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = new BigDecimal("0.0");
+<%
+				}else{
+%>
+if(true){
+	throw new RuntimeException("Job Error: can't use function \"<%=functions[i] %>\" on column \"<%=column_op[i].getLabel() %>\", the data type is \"<%=JavaTypesManager.getTypeToGenerate(column_op[i].getTalendType(), column_op[i].isNullable()) %>\"");
+}
+<%
+				}
+			}
+		}else if(("avg").equals(functions[i])){
+			if(javaType == JavaTypesManager.BYTE || javaType == JavaTypesManager.SHORT || javaType == JavaTypesManager.CHARACTER || 
+				javaType == JavaTypesManager.INTEGER || javaType == JavaTypesManager.LONG || javaType == JavaTypesManager.FLOAT || 
+				javaType == JavaTypesManager.DOUBLE){
+%>double sum_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = 0d;
+<%
+			}else if(javaType == JavaTypesManager.BIGDECIMAL){
+%>BigDecimal sum_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = new BigDecimal("0.0");
+<%
+			}else{
+%>
+if(true){
+	throw new RuntimeException("Job Error: can't use function \"<%=functions[i] %>\" on column \"<%=column_op[i].getLabel() %>\", the data type is \"<%=JavaTypesManager.getTypeToGenerate(column_op[i].getTalendType(), column_op[i].isNullable()) %>\"");
+}
+<%
+			}
+%>int count_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %>=0;
+<%		}else if(("distinct").equals(functions[i])){
+%>java.util.Set set_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %> = null;
+<%		}else if(functions[i].equals("list")){
+%>StringBuilder list_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %>=null;
+<%		}else {
+%>java.util.List list_object_<%=column_op[i].getLabel() %>_<%=needTestForNull[i] %>_<%=cid %>=null;
+<%		}
+	}
+	%><%
+	}
+	}
+}
+%>

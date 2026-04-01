@@ -1,0 +1,213 @@
+<COMPONENT>
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20130105A"
+    STARTABLE="false"
+    SCHEMA_AUTO_PROPAGATE="false"
+    DATA_AUTO_PROPAGATE="false"
+    HAS_CONDITIONAL_OUTPUTS="true"
+    IS_MULTIPLYING_OUTPUTS="true"
+	PARTITIONING="AUTO"
+  LOG4J_ENABLED="true"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Processing/Fields</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1" MIN_OUTPUT="1"/>
+    <CONNECTOR NAME="REJECT" NOT_SHOW_IF="(DIE_ON_ERROR == 'true')" CTYPE="FLOW" MAX_INPUT="1"
+            MAX_OUTPUT="1" LINE_STYLE="2" COLOR="FF0000" BASE_SCHEMA="FLOW" />
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+    <CONNECTOR CTYPE="RUN_IF"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+    <PARAMETER
+      NAME="PROPERTY"
+      FIELD="PROPERTY_TYPE"
+      SHOW="true"
+      NUM_ROW="10"
+      REPOSITORY_VALUE="JSON"
+    />
+
+    <PARAMETER
+      NAME="SCHEMA"
+      FIELD="SCHEMA_TYPE"
+      REQUIRED="true"
+      NUM_ROW="20"
+    >
+      <DEFAULT/>
+    </PARAMETER>
+	
+	<PARAMETER
+		NAME="READ_BY"
+		FIELD="CLOSED_LIST"
+		NUM_ROW="25"
+		REPOSITORY_VALUE="READ_BY"
+		>
+		<ITEMS DEFAULT="JSONPATH">
+			<ITEM NAME="JSONPATH" VALUE="JSONPATH" />
+			<ITEM NAME="XPATH" VALUE="XPATH" />
+		</ITEMS>
+	</PARAMETER>
+	
+	<PARAMETER
+        NAME="JSON_PATH_VERSION"
+        FIELD="CLOSED_LIST"
+        SHOW_IF="READ_BY=='JSONPATH'"
+        NUM_ROW="25"
+        >
+        <ITEMS DEFAULT="2_1_0">
+            <ITEM NAME="2_1_0" VALUE="2_1_0" />
+            <ITEM NAME="1_2_0" VALUE="1_2_0" />
+        </ITEMS>
+    </PARAMETER>
+	
+    <PARAMETER
+      NAME="JSONFIELD"
+      FIELD="PREV_COLUMN_LIST"
+      NUM_ROW="30"
+    >
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="LOOP_QUERY"
+      FIELD="TEXT"
+      NUM_ROW="40"
+      SHOW_IF="READ_BY=='XPATH'"
+      REPOSITORY_VALUE="XPATH_QUERY"
+    >
+      <DEFAULT>"/bills/bill/line"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER
+      NAME="JSON_LOOP_QUERY"
+      FIELD="TEXT"
+      NUM_ROW="40"
+      SHOW_IF="READ_BY=='JSONPATH'"
+      REPOSITORY_VALUE="XPATH_QUERY"
+    >
+      <DEFAULT>"$.bills.bill.line[*]"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="MAPPING"
+      FIELD="TABLE"
+      REQUIRED="true"
+      NUM_ROW="50"
+      NB_LINES="5"
+      SHOW_IF="READ_BY=='XPATH'"
+      REPOSITORY_VALUE="JSON_MAPPING"
+    >
+      <ITEMS BASED_ON_SCHEMA="true">
+        <ITEM NAME="QUERY" REPOSITORY_ITEM="XML_QUERY" />
+        <ITEM NAME="NODECHECK" FIELD="CHECK" VALUE="false"/>
+        <ITEM NAME="ISARRAY" FIELD="CHECK" VALUE="false"/>
+      </ITEMS>
+    </PARAMETER>
+    
+	<PARAMETER NAME="MAPPING_4_JSONPATH" FIELD="TABLE" REQUIRED="true"
+		SHOW_IF="READ_BY=='JSONPATH'" NUM_ROW="50" NB_LINES="5" REPOSITORY_VALUE="JSON_MAPPING">
+		<ITEMS BASED_ON_SCHEMA="true">
+			<ITEM NAME="QUERY" />
+		</ITEMS>
+	</PARAMETER>
+
+    <PARAMETER NAME="DIE_ON_ERROR" FIELD="CHECK" NUM_ROW="60">
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SCHEMA_REJECT" FIELD="SCHEMA_TYPE"
+        REQUIRED="true" NUM_ROW="70" CONTEXT="REJECT" SHOW="true">
+        <TABLE READONLY="true">
+            <COLUMN NAME="errorJSONField" TYPE="id_String" LENGTH="255"
+                READONLY="false" CUSTOM="true" />
+            <COLUMN NAME="errorCode" TYPE="id_String" LENGTH="255"
+                READONLY="false" CUSTOM="true" />
+            <COLUMN NAME="errorMessage" TYPE="id_String"
+                LENGTH="255" READONLY="false" CUSTOM="true" />
+        </TABLE>
+    </PARAMETER>
+
+    <PARAMETER NAME="SCHEMA_OPT_NUM" FIELD="TEXT" NUM_ROW="80"
+            REQUIRED="true" SHOW="false">
+        <DEFAULT>100</DEFAULT>
+    </PARAMETER>
+  </PARAMETERS>
+
+	<ADVANCED_PARAMETERS>
+		<PARAMETER NAME="JDK_VERSION" FIELD="CLOSED_LIST" SHOW_IF = "( READ_BY == 'XPATH')" NUM_ROW="1">
+			<ITEMS DEFAULT="JDK_8">
+				<ITEM NAME="JDK_8" VALUE="JDK_8"/>
+				<ITEM NAME="JDK_15" VALUE="JDK_15"/>
+			</ITEMS>
+		</PARAMETER>
+    
+		<PARAMETER NAME="ENCODING" FIELD="ENCODING_TYPE" NUM_ROW="10"
+			REQUIRED="true" SHOW_IF="READ_BY=='XPATH'">
+			<DEFAULT>"UTF-8"</DEFAULT>
+		</PARAMETER>
+		
+        <PARAMETER NAME="USE_LOOP_AS_ROOT" FIELD="CHECK" NUM_ROW="25" SHOW_IF="READ_BY=='JSONPATH'" REPOSITORY_VALUE="USE_LOOP_AS_ROOT">
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+		
+		<!-- For migration only -->
+		<PARAMETER NAME="SPLIT_LIST" FIELD="CHECK" NUM_ROW="100" SHOW="false">
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+        
+	</ADVANCED_PARAMETERS>
+
+    <CODEGENERATION>
+    <IMPORTS>
+    		<IMPORT NAME="Java_DOM4J2" MODULE="dom4j-2.1.3.jar" MVN="mvn:org.dom4j/dom4j/2.1.3" REQUIRED_IF="READ_BY == 'XPATH'" BundleID="" />
+            <IMPORT NAME="Java_JAXEN_1.1.6" MODULE="jaxen-1.1.6.jar" MVN="mvn:jaxen/jaxen/1.1.6" REQUIRED_IF="READ_BY == 'XPATH'" BundleID="" />
+            <IMPORT NAME="json-lib" MODULE="json-lib-2.4.8-talend.jar" MVN="mvn:net.sf.json-lib/json-lib/2.4.8-talend" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="commons_lang" MODULE="commons-lang-2.6.jar" MVN="mvn:commons-lang/commons-lang/2.6"  UrlPath="platform:/plugin/org.talend.libraries.apache.common/lib/commons-lang-2.6.jar" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="commons_logging" MODULE="commons-logging-1.1.1.jar" MVN="mvn:commons-logging/commons-logging/1.1.1"  UrlPath="platform:/base/plugins/org.apache.commons.logging_1.1.1.v201101211721.jar" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="ezmorph" MODULE="ezmorph-1.0.6.jar" MVN="mvn:net.sf.ezmorph/ezmorph/1.0.6"  UrlPath="platform:/plugin/org.talend.libraries.jackson/lib/ezmorph-1.0.6.jar" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="xom" MODULE="xom-1.2.7.jar" MVN="mvn:org.talend.libraries/xom-1.2.7/6.0.0"  REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="commons_beanutils" MODULE="commons-beanutils-1.9.4.jar" MVN="mvn:commons-beanutils/commons-beanutils/1.9.4" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="commons_collections" MODULE="commons-collections-3.2.2.jar" MVN="mvn:commons-collections/commons-collections/3.2.2"  UrlPath="platform:/plugin/org.talend.libraries.apache.common/lib/commons-collections-3.2.2.jar" REQUIRED_IF="READ_BY == 'XPATH'" />
+            <IMPORT NAME="staxon" MODULE="staxon-1.2.jar" MVN="mvn:de.odysseus.staxon/staxon/1.2" UrlPath="platform:/plugin/org.talend.libraries.json/lib/staxon-1.2.jar" REQUIRED_IF="READ_BY == 'XPATH'" />
+            
+            <IMPORT NAME="json-path-2.1.0.jar" MODULE="json-path-2.1.0.jar" MVN="mvn:com.jayway.jsonpath/json-path/2.1.0" UrlPath="platform:/plugin/org.talend.libraries.json/lib/json-path-2.1.0.jar" REQUIRED_IF="(READ_BY == 'JSONPATH') AND (JSON_PATH_VERSION == '2_1_0')" />
+            <IMPORT NAME="json-path-1.2.0.jar" MODULE="json-path-1.2.0.jar" MVN="mvn:com.jayway.jsonpath/json-path/1.2.0" UrlPath="platform:/plugin/org.talend.libraries.json/lib/json-path-1.2.0.jar" REQUIRED_IF="(READ_BY == 'JSONPATH') AND (JSON_PATH_VERSION == '1_2_0')" />
+            
+            <IMPORT NAME="json-smart-2.4.11.jar" MODULE="json-smart-2.4.11.jar" MVN="mvn:net.minidev/json-smart/2.4.11"  REQUIRED_IF="READ_BY == 'JSONPATH'" />
+            <IMPORT NAME="accessors-smart-2.4.11.jar" MODULE="accessors-smart-2.4.11.jar" MVN="mvn:net.minidev/accessors-smart/2.4.11"  REQUIRED_IF="READ_BY == 'JSONPATH'" />
+            <IMPORT NAME="slf4j-api-1.7.34.jar" MODULE="slf4j-api-1.7.34.jar" MVN="mvn:org.slf4j/slf4j-api/1.7.34" REQUIRED_IF="READ_BY == 'JSONPATH'" />
+            <IMPORT NAME="slf4j-reload4j-1.7.34.jar" MODULE="slf4j-reload4j-1.7.34.jar" MVN="mvn:org.slf4j/slf4j-reload4j/1.7.34" REQUIRED_IF="READ_BY == 'JSONPATH'" />
+            <!-- nashorn for Java 15 and later -->
+            <IMPORT NAME="nashorn-core-15.4.jar" MODULE="nashorn-core-15.4.jar" MVN="mvn:org.openjdk.nashorn/nashorn-core/15.4"  REQUIRED_IF="(JDK_VERSION == 'JDK_15') AND ( READ_BY == 'XPATH')"/>
+            <IMPORT NAME="asm-9.5.jar" MODULE="asm-9.5.jar" MVN="mvn:org.ow2.asm/asm/9.5" REQUIRED_IF="(JDK_VERSION == 'JDK_15') AND ( READ_BY == 'XPATH')"/>
+            <IMPORT NAME="asm-commons-9.5.jar" MODULE="asm-commons-9.5.jar" MVN="mvn:org.ow2.asm/asm-commons/9.5"  REQUIRED_IF="(JDK_VERSION == 'JDK_15') AND ( READ_BY == 'XPATH')"/>
+            <IMPORT NAME="asm-tree-9.5.jar" MODULE="asm-tree-9.5.jar" MVN="mvn:org.ow2.asm/asm-tree/9.5"  REQUIRED_IF="(JDK_VERSION == 'JDK_15') AND ( READ_BY == 'XPATH')"/>
+            <IMPORT NAME="asm-util-9.5.jar" MODULE="asm-util-9.5.jar" MVN="mvn:org.ow2.asm/asm-util/9.5"  REQUIRED_IF="(JDK_VERSION == 'JDK_15') AND ( READ_BY == 'XPATH')"/> 
+    </IMPORTS>
+  </CODEGENERATION>
+
+  <RETURNS>
+    <RETURN NAME="NB_LINE" TYPE="id_Integer" AVAILABILITY="AFTER"/>
+  </RETURNS>
+</COMPONENT>

@@ -1,0 +1,124 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever	
+    java.util.List
+    java.util.ArrayList
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String file = ElementParameterParser.getValue(node,"__FILENAME__");
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+String escapeChar = ElementParameterParser.getValue(node,"__ESCAPE_CHAR__");
+String dateFormat = ElementParameterParser.getValue(node,"__DATE_FORMAT__");
+String dateDelim = ElementParameterParser.getValue(node,"__DATE_DELIM__");
+String timeFormat = ElementParameterParser.getValue(node,"__TIME_FORMAT__");
+String timeDelim = ElementParameterParser.getValue(node,"__TIME_DELIM__");
+boolean setEncoding = "true".equals(ElementParameterParser.getValue(node,"__SET_ENCODING__"));
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+boolean convertToUppercase = false; // not active this function
+boolean useExistingConnection= "true".equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+List<IMetadataColumn> columnList = getColumnList(node);
+StringBuilder copyColumns = new StringBuilder("");
+if(columnList != null && columnList.size() > 0) {
+    copyColumns.append(" (");
+    int count = 0;
+    for(IMetadataColumn column : columnList) {
+        copyColumns.append("\\\"" + column.getOriginalDbColumnName() + "\\\"");
+        if(count != columnList.size() - 1) {
+            copyColumns.append(",");
+        }
+        count++;
+    }
+    copyColumns.append(") ");
+}
+%>
+	String bulkSQL_<%=cid%>="";
+<%
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String dbName = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String userName = ElementParameterParser.getValue(node, "__USER__");
+
+String maxerrors = ElementParameterParser.getValue(node, "__MAXERRORS__");
+String skiprows = ElementParameterParser.getValue(node, "__SKIPROWS__");
+%>
+	Character OUT_DELIM_<%=cid %> = (<%=fieldSeparator%>).charAt(0); 
+	bulkSQL_<%=cid%> += "INSERT INTO " + <%= table %> + " "  
+            + " SELECT * FROM EXTERNAL '"+ <%= file %> + "'"
+            + " USING (DELIM '"+OUT_DELIM_<%=cid %>+"' REMOTESOURCE 'JDBC' "
+			+ " DATESTYLE '"+<%= dateFormat %>+"' DATEDELIM '"+<%= dateDelim %>+"' "
+			+ " TIMESTYLE '<%= timeFormat %>' TIMEDELIM '"+<%= timeDelim %>+"' "
+			<%if(!"UN_DEFINED".equals(escapeChar)){
+			%>
+			+ " ESCAPECHAR '"+<%= escapeChar %>+"' "
+			<%
+			}%>
+			+ "	MAXERRORS <%=maxerrors%> SKIPROWS <%=skiprows%> LOGDIR '' <%=setEncoding? "encoding '" + encoding +"'":""%>)";
+
+<%
+    if(useExistingConnection) {
+        String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+        String connectionName = "conn_" + connection;
+%>
+        java.sql.Connection conn_<%=cid %> = (java.sql.Connection) globalMap.get("<%=connectionName%>");
+<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+    } else {
+%>
+		String driverClass_<%=cid%> = "org.netezza.Driver";
+		java.lang.Class.forName(driverClass_<%=cid%>).newInstance();
+		<%
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+		%>
+			String url_<%=cid%> = "jdbc:netezza://" + <%=host%> + ":" + <%=port%> + "/" + <%=dbName%>;
+		<%
+		} else {
+		%>
+			String url_<%=cid%> = "jdbc:netezza://" + <%=host%> + ":" + <%=port%> + "/" + <%=dbName%> + "?" + <%=dbproperties%>;
+		<%
+		}
+		%>
+		String dbUser_<%=cid%> = <%=userName%>;
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+		java.sql.Connection conn_<%=cid %> = null;
+<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect(node);
+    }
+%>
+	<%if(isLog4jEnabled){%>
+		log.debug("<%=cid%> - Bulk SQL:"+bulkSQL_<%=cid%>+".");
+		log.info("<%=cid%> - Bulk inserting data into " + <%= table %> + "." );
+	<%}%>
+    java.sql.Statement stmtBulk_<%=cid %> = conn_<%=cid %>.createStatement();
+    stmtBulk_<%=cid %>.execute(bulkSQL_<%=cid%>);
+    stmtBulk_<%=cid %>.close();
+    <%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Bulk insert data into " + <%= table %> + " has finished.");
+	<%}%>
+<%
+if(!useExistingConnection) {
+log4jCodeGenerateUtil.close(node);
+}
+%>

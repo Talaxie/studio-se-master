@@ -1,0 +1,307 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	    org.talend.core.model.metadata.IMetadataTable 
+	    org.talend.core.model.metadata.MetadataTalendType    
+	    org.talend.core.model.metadata.MappingTypeRetriever
+	    java.util.List
+	    java.util.ArrayList
+	    java.util.Map
+	    java.util.HashMap
+	"
+    skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String host=ElementParameterParser.getValue(node, "__SERVER__");
+String batchRow=ElementParameterParser.getValue(node,"__BATCHROW__");
+
+String bcpUtility  = ElementParameterParser.getValue(node, "__BCP_UTILITY__");
+String server = ElementParameterParser.getValue(node, "__SERVERNAME__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String database = ElementParameterParser.getValue(node, "__DBNAME__");
+String user = ElementParameterParser.getValue(node, "__USER__");
+
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String dataFile  = ElementParameterParser.getValue(node, "__FILENAME__");
+String fieldTerminator = ElementParameterParser.getValue(node, "__FIELDS_TERMINATOR__");
+String rowTerminator =  ElementParameterParser.getValue(node, "__ROW_TERMINATOR__");
+String headRow =  ElementParameterParser.getValue(node, "__HEAD__");
+boolean useExistingConnection = ("true").equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+boolean useInterfaceFile = ("true").equals(ElementParameterParser.getValue(node,"__USE_INTERFACE_FILE__"));
+String interfacefilename = ElementParameterParser.getValue(node, "__INTERFACE_FILE__");
+List<IMetadataColumn> columnList = getColumnList(node);
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+String dbschema = ElementParameterParser.getValue(node, "__DB_SCHEMA__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+boolean convertToUppercase = false; // not active this function
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__") ;
+%>
+int deletedCount_<%=cid%>=0;
+String dbschema_<%=cid%>= <%=dbschema%>; 
+String tableName_<%=cid%> = <%=table%>;
+<%
+if(("UPDATE").equals(dataAction)) {
+    if(columnList != null && columnList.size() > 0) {
+        int keyCount = 0;
+        for(IMetadataColumn column : columnList) {
+            if(column.isKey()) {
+                keyCount++;
+            }
+        }
+        %>
+        int keyCount_<%=cid%> = <%=keyCount%>;
+        if(keyCount_<%=cid%> == 0) {
+            throw new RuntimeException("For bulk update, Schema must have a key at least."); 
+        }
+        <%
+    }
+}
+%>
+<%
+if(useExistingConnection) {
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String conn = "conn_" + connection;
+	String schema = "dbschema_" + connection;
+	%>
+    String host_<%=cid%> = (String)globalMap.get("host_<%=connection%>");
+    String port_<%=cid%> = (String)globalMap.get("port_<%=connection%>");
+    String db_<%=cid%> = (String)globalMap.get("db_<%=connection%>");
+    String dbUser_<%=cid%> = (String)globalMap.get("user_<%=connection%>");
+    String dbPwd_<%=cid%> = (String)globalMap.get("pass_<%=connection%>");
+    dbschema_<%=cid%>= (String)globalMap.get("<%=schema%>");		
+	java.sql.Connection conn_<%=cid %> = (java.sql.Connection)globalMap.get("<%=conn %>");
+	<%
+	log4jCodeGenerateUtil.useExistConnection(node);
+} else {       
+    %>
+    String db_<%=cid%> = <%=database%>;
+    String dbUser_<%=cid%> = <%=user%>;
+	<%
+	String passwordFieldName = "__PASS__";
+	%>
+	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+    String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+    String host_<%=cid%> = <%=host%>;
+<%	if(!"NONE".equals(tableAction) || ("UPDATE").equals(dataAction)){%>
+    	String port_<%=cid%> = <%=port%>;
+<%		
+            	if("SYBSEIQ_16_SA".equals(dbVersion)){
+			if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + host_<%=cid%> + ":" + port_<%=cid%> + ";DatabaseName=" + db_<%=cid%>; 
+<%
+			}
+			else {
+%>
+			String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + host_<%=cid%> + ":" + port_<%=cid%> + ";DatabaseName=" + db_<%=cid%> + ";" + <%=dbproperties%>;
+<%
+			}
+		}
+		else {
+			if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			String url_<%=cid %> = "jdbc:sybase:Tds:" + host_<%=cid%> + ":" + port_<%=cid%> + "/" + db_<%=cid%>;
+<%
+			} else {
+%>
+			String url_<%=cid %> = "jdbc:sybase:Tds:" + host_<%=cid%> + ":" + port_<%=cid%> + "/" + db_<%=cid%> + "?" + <%=dbproperties%>;
+<%
+			}
+		}
+%>
+		<%if("SYBSEIQ_16_SA".equals(dbVersion)){%>
+			 String driverClass_<%=cid%> = "sap.jdbc4.sqlanywhere.IDriver";
+		<%} else if("SYBSEIQ_16".equals(dbVersion)){%>
+			 String driverClass_<%=cid%> = "com.sybase.jdbc4.jdbc.SybDriver";
+		<%}else{%>
+			 String driverClass_<%=cid%> = "com.sybase.jdbc3.jdbc.SybDriver";
+	    <%}%>
+   	 	java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+	   	<%if("SYBSEIQ_16".equals(dbVersion)){%>
+		jdbcclazz_<%=cid%>.newInstance();
+		<%}%>
+		
+    	java.sql.Connection conn_<%=cid %> = null;
+    	
+		<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect(node);
+	}
+}
+%>
+if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+	tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;
+} 
+<%
+Manager manager = null;
+List<Column> stmtStructure = null;
+if(columnList != null && columnList.size() > 0) {
+	stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+%>
+<%@ include file="../templates/_tableActionForBulk.javajet"%>	
+<%   
+}
+String encoding  = ElementParameterParser.getValue(node, "__ENCODING__");
+String outputAction  = ElementParameterParser.getValue(node, "__OUTPUT__");		
+%>
+
+StringBuilder command_<%=cid %> =  new StringBuilder();
+command_<%=cid %>.append(<%=bcpUtility%> + " ");
+<%
+if(("UPDATE").equals(dataAction)) {
+    %>
+    String tmpTableName_<%=cid%> = tableName_<%=cid%>;
+    tableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+    if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+    	tableName_<%=cid%>=dbschema_<%=cid%> + "." + tableName_<%=cid%>;
+    }
+    <%
+}
+%>
+if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() > 0) {
+    command_<%=cid %>.append(db_<%=cid%> + "." + tableName_<%=cid%>);
+} else {
+    command_<%=cid %>.append(db_<%=cid%> + ".." + tableName_<%=cid%>);
+}
+command_<%=cid %>.append(" in " + <%=dataFile%>);
+String headRow_<%=cid%> = <%=headRow%>;
+if(headRow_<%=cid%> != null && headRow_<%=cid%>.trim().length() > 0) {
+    command_<%=cid %>.append(" -F " + headRow_<%=cid%>);
+}
+
+<%if(batchRow!=null && !("").equals(batchRow.trim())){%>
+	command_<%=cid %>.append(" -b " + <%=batchRow %>);
+<%
+}
+%>
+
+command_<%=cid %>.append(" -t " + <%=fieldTerminator%>);
+command_<%=cid %>.append(" -r " + <%=rowTerminator%>);
+command_<%=cid %>.append(" -c -U " + dbUser_<%=cid%> + " -P " + dbPwd_<%=cid%>);
+<%if(useInterfaceFile){%>
+command_<%=cid %>.append(" -I " + <%=interfacefilename%>);
+<%}
+if(server != null && !"\"\"".equals(server.trim()) && !("").equals(server.trim())) {%>
+    command_<%=cid %>.append(" -S " + <%=server %>);
+<%}else{%>
+	command_<%=cid %>.append(" -S " + host_<%=cid %>);
+<%}%>
+String encoding_<%=cid%> = <%=encoding%>;
+if(encoding_<%=cid%> != null && encoding_<%=cid%>.trim().length() > 0) {
+    command_<%=cid %>.append(" -J " + encoding_<%=cid%>);
+}
+
+<%
+if(isLog4jEnabled){
+%>
+	log.info("<%=cid%> - Executing command:'" + command_<%=cid %> + "'.");
+<%
+}
+if(("INSERT").equals(dataAction)) {
+    %>
+    Runtime runtime_<%=cid%> = Runtime.getRuntime();
+    final Process ps_<%=cid %> = runtime_<%=cid%>.exec(command_<%=cid %>.toString());
+    <%
+} else if(("UPDATE").equals(dataAction)) {
+    if(columnList != null && columnList.size() > 0) {
+        %>
+        java.sql.Statement stmtCreateTmp_<%=cid%> = conn_<%=cid%>.createStatement();
+        <%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Creating temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+		<%}%>
+        stmtCreateTmp_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+        stmtCreateTmp_<%=cid%>.close();            
+        <%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Create temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has succeeded.");
+		<%}%>
+        Runtime runtime_<%=cid%> = Runtime.getRuntime();
+        final Process ps_<%=cid %> = runtime_<%=cid%>.exec(command_<%=cid %>.toString());       
+        <%        
+    }
+}
+%>
+
+Thread normal_<%=cid %> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+				    <%
+				    if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+				        %>
+				        System.out.println(line);
+				        <%
+				    } else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+				        %>
+				        globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+				        <%
+				    }
+				    %>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+			ioe.printStackTrace();
+		}
+	}
+};
+normal_<%=cid%>.start();
+
+Thread error_<%=cid%> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+				    <%
+				    if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+				        %>
+				        System.err.println(line);
+				        <%
+				    } else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+				        %>
+				        globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+				        <%
+				    }
+				    %>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+			ioe.printStackTrace();
+		}
+	}
+};
+error_<%=cid%>.start();
+ps_<%=cid %>.waitFor();
+normal_<%=cid%>.join();
+error_<%=cid%>.join();
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Excute command: '" + command_<%=cid %> + "' has finished.");
+<%
+}
+%>
+

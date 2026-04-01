@@ -1,0 +1,344 @@
+<COMPONENT>
+
+  <HEADER
+      PLATEFORM="ALL"
+      SERIAL=""
+      VERSION="0.102"
+      STATUS="ALPHA"
+
+      COMPATIBILITY="ALL"
+      AUTHOR="Talaxie"
+      RELEASE_DATE="20050320A"
+      STARTABLE="true"
+      TECHNICAL="true"
+      LOG4J_ENABLED="true"
+      >
+    <SIGNATURE />
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Technical</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL />
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0" />
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" MAX_OUTPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK" />
+    <CONNECTOR CTYPE="COMPONENT_ERROR" />
+    <CONNECTOR CTYPE="RUN_IF" />
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+    <PARAMETER NAME="KEEPLISTENING" FIELD="CHECK" SHOW="true" NUM_ROW="10"
+        SHOW_IF="(SERVER == 'JBOSS') OR (SERVER == 'WEBSPHERE') OR (SERVER == 'ACTIVEMQ' AND USEMAX == 'false')">
+      <DEFAULT IF="(SERVER == 'JBOSS')">true</DEFAULT>
+      <DEFAULT IF="(SERVER == 'WEBSPHERE')">false</DEFAULT>
+      <DEFAULT IF="(SERVER == 'ACTIVEMQ')">false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="USE_CONNECTION" FIELD="CHECK" NUM_ROW="1">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="CONNECTION" FIELD="COMPONENT_LIST" REQUIRED="true" FILTER="tMomConnection" NUM_ROW="1"
+        SHOW_IF="USE_CONNECTION == 'true'" DYNAMIC_SETTINGS="true" />
+
+    <PARAMETER NAME="STARTSERVER" FIELD="CHECK" NUM_ROW="60"
+        SHOW_IF="SERVER == 'ACTIVEMQ'">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="USEMAX" FIELD="CHECK" NUM_ROW="15"
+        SHOW_IF="((USE_CONNECTION == 'true') or (SERVER == 'ACTIVEMQ')) AND (KEEPLISTENING == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <!--npruss start: changes for static discovery and custom connection parameters and timeout in max message operation-->
+	<PARAMETER NAME="USEMAX_WITH_TIMEOUT" FIELD="CHECK" NUM_ROW="15"
+        SHOW_IF="((USE_CONNECTION == 'true') or (SERVER == 'ACTIVEMQ')) AND (KEEPLISTENING == 'false') AND (USEMAX == 'true')">
+      <DEFAULT >false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="FAILOVER" FIELD="CHECK" NUM_ROW="16"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'ACTIVEMQ') and (STATIC == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+	<PARAMETER NAME="STATIC" FIELD="CHECK" NUM_ROW="16"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'ACTIVEMQ') and (FAILOVER == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+	
+	<PARAMETER NAME="CONNECTION_PARAM_FAILOVER" FIELD="TEXT" NUM_ROW="17"
+		SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'ACTIVEMQ') and (FAILOVER == 'true')" >
+      <DEFAULT >"?randomize=false"</DEFAULT>
+    </PARAMETER>
+	<PARAMETER NAME="CONNECTION_PARAM_STATIC" FIELD="TEXT" NUM_ROW="17"
+		SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'ACTIVEMQ') and (STATIC == 'true')" >
+      <DEFAULT >"?transport.maxReconnectDelay=5000&amp;transport.useExponentialBackOff=false"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="TIMEOUT" FIELD="TEXT" NUM_ROW="12"
+        SHOW_IF="(USE_CONNECTION == 'false' and SERVER == 'JBOSS' and KEEPLISTENING == 'TRUE') or (((USE_CONNECTION == 'false' and SERVER == 'ACTIVEMQ') or (USE_CONNECTION == 'true' and (#LINK@NODE.CONNECTION.SERVER== 'ACTIVEMQ'))) and KEEPLISTENING == 'false') or (isShow[USEMAX] and USEMAX == 'true' and USEMAX_WITH_TIMEOUT == 'true')">
+      <DEFAULT>1</DEFAULT>
+    </PARAMETER>
+	<!--npruss end: changes for static discovery and custom connection parameters and timeout in max message operation-->
+
+    <PARAMETER NAME="MAXMSG" FIELD="TEXT" NUM_ROW="18"
+        SHOW_IF="((SERVER == 'ACTIVEMQ' or (USE_CONNECTION == 'true')) and KEEPLISTENING == 'false' and USEMAX == 'true')">
+      <DEFAULT>1000</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SERVER" FIELD="CLOSED_LIST" NUM_ROW="20"
+        SHOW_IF="(USE_CONNECTION == 'false')">
+      <ITEMS DEFAULT="WEBSPHERE">
+        <ITEM NAME="WEBSPHERE" VALUE="WebSphere" />
+        <ITEM NAME="JBOSS" VALUE="JBoss" />
+        <ITEM NAME="ACTIVEMQ" VALUE="ActiveMQ" />
+      </ITEMS>
+    </PARAMETER>
+   
+    <PARAMETER NAME="USE_SSL" FIELD="CHECK" REQUIRED="false" NUM_ROW="21" SHOW_IF="(USE_CONNECTION == 'false') AND (SERVER == 'ACTIVEMQ')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="USE_SSL_NOTE" FIELD="LABEL" REQUIRED="false" NUM_ROW="21" COLOR="255;0;0" SHOW_IF="(USE_CONNECTION == 'false') AND (SERVER == 'ACTIVEMQ') AND (USE_SSL == 'true')">
+      <DEFAULT><![CDATA[Notice: You should use tSetKeysore or JVM arguments to specify keystore or truststore]]></DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SERVERADDRESS" FIELD="TEXT" NUM_ROW="25"
+        SHOW_IF="(USE_CONNECTION == 'false')">
+      <DEFAULT>"localhost"</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="SERVERPORT" FIELD="TEXT" NUM_ROW="25"
+        SHOW_IF="(USE_CONNECTION == 'false')">
+      <DEFAULT IF="(SERVER == 'JBOSS')">"1099"</DEFAULT>
+      <DEFAULT IF="(SERVER == 'WEBSPHERE')">"1414"</DEFAULT>
+      <DEFAULT IF="(SERVER == 'ACTIVEMQ')">"61616"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SERVERS" FIELD="TABLE" NB_LINES="5" NUM_ROW="27"
+        SHOW_IF="(SERVER == 'ACTIVEMQ' and FAILOVER == 'true')">
+      <ITEMS>
+        <ITEM NAME="SERVERS_HOST" FIELD="String" />
+        <ITEM NAME="SERVERS_PORT" FIELD="String" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="USER" FIELD="TEXT" REQUIRED="false" NUM_ROW="30">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+    <PARAMETER NAME="PASS" FIELD="PASSWORD" REQUIRED="false" NUM_ROW="30">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="FROM" FIELD="TEXT" SHOW="true" NUM_ROW="35"
+        SHOW_IF="(SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ') or (USE_CONNECTION == 'true')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MSGTYPE" FIELD="CLOSED_LIST" NUM_ROW="35"
+        SHOW_IF="(SERVER == 'JBOSS')or (SERVER == 'ACTIVEMQ') or (USE_CONNECTION == 'true')">
+      <ITEMS DEFAULT="TOPIC">
+        <ITEM NAME="TOPIC" VALUE="Topic" />
+        <ITEM NAME="QUEUE" VALUE="Queue" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="CHANNEL" FIELD="TEXT" NUM_ROW="35"
+        SHOW_IF="(SERVER == 'WEBSPHERE') and (USE_CONNECTION == 'false')">
+      <DEFAULT>"DC.SVRCONN"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MESSAGE_BODY_TYPE" FIELD="CLOSED_LIST" NUM_ROW="40">
+      <ITEMS DEFAULT="TEXT">
+        <ITEM NAME="TEXT" VALUE="Text" />
+        <ITEM NAME="BYTES" VALUE="Bytes" />
+        <ITEM NAME="MAP" VALUE="Map" />
+      </ITEMS>
+    </PARAMETER>
+
+    <!--PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="45">
+      <TABLE IF="((SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ')) AND (IS_USE_MESSAGE_ID == 'false')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="((SERVER == 'JBOSS') or (SERVER == 'ACTIVEMQ')) AND (IS_USE_MESSAGE_ID == 'true')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="messageid" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(SERVER == 'WEBSPHERE') and (IS_USE_MESSAGE_ID == 'true')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="messageid" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(SERVER == 'WEBSPHERE') and (IS_USE_MESSAGE_ID == 'false')" READONLY="false">
+        <COLUMN NAME="from" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+        <COLUMN NAME="message" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true" />
+      </TABLE>
+      <TABLE IF="(MESSAGE_BODY_TYPE == 'MAP')" READONLY="false">
+      </TABLE>
+    </PARAMETER-->
+
+    <PARAMETER NAME="IS_TRANSACTED" FIELD="CHECK" REQUIRED="false" NUM_ROW="45" SHOW="false">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="QM" FIELD="TEXT" NUM_ROW="50"
+        SHOW_IF="(SERVER == 'WEBSPHERE') and (USE_CONNECTION == 'false')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="QUEUE" FIELD="TEXT" NUM_ROW="50"
+        SHOW_IF="(SERVER == 'WEBSPHERE') and (USE_CONNECTION == 'false')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="IS_USE_MESSAGE_ID" FIELD="CHECK" REQUIRED="true" NUM_ROW="60"
+        SHOW_IF="(SERVER == 'WEBSPHERE') AND (MESSAGE_BODY_TYPE != 'MAP') and (USE_CONNECTION == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MSG_ID" FIELD="TEXT" NUM_ROW="70"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE') AND (IS_USE_MESSAGE_ID == 'true') AND (MESSAGE_BODY_TYPE != 'MAP')">
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="COMMIT" FIELD="CHECK" REQUIRED="true" NUM_ROW="80"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE') AND (BROWSE == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="ROLLBACK" FIELD="CHECK" REQUIRED="true" NUM_ROW="90"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE') AND (KEEPLISTENING == 'false') AND (COMMIT == 'false') AND (BROWSE == 'false') AND (AUTO_BACKOUT == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="AUTO_BACKOUT" FIELD="CHECK" REQUIRED="true" NUM_ROW="95"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE') AND (COMMIT == 'false') AND (BROWSE == 'false') AND (ROLLBACK == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+  </PARAMETERS>
+
+  <ADVANCED_PARAMETERS>
+  
+  	<PARAMETER NAME="ADDITIONAL_OPTIONS" FIELD="TABLE" NB_LINES="5" NUM_ROW="5"
+        SHOW_IF="(USE_CONNECTION == 'false') AND (SERVER == 'ACTIVEMQ') AND (FAILOVER == 'true' OR STATIC == 'true')">
+      <ITEMS>
+        <ITEM NAME="OPTION_NAME" FIELD="String"/>
+        <ITEM NAME="OPTION_VALUE" FIELD="String"/>
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="BROWSE" FIELD="CHECK" REQUIRED="true" NUM_ROW="10"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE') AND (ROLLBACK == 'false') AND (COMMIT == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="ACKNOWLEDGMENT_MODE" FIELD="CLOSED_LIST" NUM_ROW="30"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER != 'WEBSPHERE')">
+      <ITEMS DEFAULT="AUTO_ACKNOWLEDGE">
+        <ITEM NAME="AUTO_ACKNOWLEDGE" VALUE="AUTO_ACKNOWLEDGE" />
+        <ITEM NAME="CLIENT_ACKNOWLEDGE" VALUE="CLIENT_ACKNOWLEDGE" />
+        <ITEM NAME="DUPS_OK_ACKNOWLEDGE" VALUE="DUPS_OK_ACKNOWLEDGE" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="USE_MQ_HEADER" FIELD="CHECK" REQUIRED="false" NUM_ROW="40"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SET_MQ_SSL_CIPHER" FIELD="CHECK" REQUIRED="false" NUM_ROW="50"
+        SHOW_IF="(USE_CONNECTION == 'false') and (SERVER == 'WEBSPHERE')">
+      <DEFAULT>"false"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="MQ_SSL_CIPHER" FIELD="CLOSED_LIST" REQUIRED="false" NUM_ROW="60"
+        SHOW_IF="(isShow[SET_MQ_SSL_CIPHER] AND SET_MQ_SSL_CIPHER == 'true') AND CUSTOM_CIPHER == 'false'">
+      <ITEMS DEFAULT="SSL_RSA_WITH_NULL_MD5">
+        <ITEM NAME="SSL_RSA_WITH_NULL_MD5" VALUE="SSL_RSA_WITH_NULL_MD5" />
+        <ITEM NAME="SSL_RSA_WITH_NULL_SHA" VALUE="SSL_RSA_WITH_NULL_SHA" />
+        <ITEM NAME="SSL_RSA_EXPORT_WITH_RC4_40_MD5" VALUE="SSL_RSA_EXPORT_WITH_RC4_40_MD5" />
+        <ITEM NAME="SSL_RSA_WITH_RC4_128_MD5" VALUE="SSL_RSA_WITH_RC4_128_MD5" />
+        <ITEM NAME="SSL_RSA_WITH_RC4_128_SHA" VALUE="SSL_RSA_WITH_RC4_128_SHA" />
+        <ITEM NAME="SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5" VALUE="SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5" />
+        <ITEM NAME="SSL_RSA_WITH_DES_CBC_SHA" VALUE="SSL_RSA_WITH_DES_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_EXPORT1024_WITH_RC4_56_SHA" VALUE="SSL_RSA_EXPORT1024_WITH_RC4_56_SHA" />
+        <ITEM NAME="SSL_RSA_EXPORT1024_WITH_DES_CBC_SHA" VALUE="SSL_RSA_EXPORT1024_WITH_DES_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_WITH_3DES_EDE_CBC_SHA" VALUE="SSL_RSA_WITH_3DES_EDE_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_WITH_AES_128_CBC_SHA" VALUE="SSL_RSA_WITH_AES_128_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_WITH_AES_256_CBC_SHA" VALUE="SSL_RSA_WITH_AES_256_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_FIPS_WITH_DES_CBC_SHA" VALUE="SSL_RSA_FIPS_WITH_DES_CBC_SHA" />
+        <ITEM NAME="SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA" VALUE="SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA" />
+      </ITEMS>
+    </PARAMETER>
+    
+    <PARAMETER NAME="CUSTOM_CIPHER" FIELD="CHECK" REQUIRED="false" NUM_ROW="70" GROUP="SSL"
+        SHOW_IF="(isShow[SET_MQ_SSL_CIPHER] AND SET_MQ_SSL_CIPHER == 'true')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="USE_IBM_MAPPING" FIELD="RADIO" REQUIRED="false" NUM_ROW="75" GROUP="SSL"
+        SHOW_IF="(isShow[CUSTOM_CIPHER] AND CUSTOM_CIPHER == 'true')">
+      <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+    
+        <PARAMETER NAME="USE_ORACLE_MAPPING" FIELD="RADIO" REQUIRED="false" NUM_ROW="80" GROUP="SSL"
+        SHOW_IF="(isShow[CUSTOM_CIPHER] AND CUSTOM_CIPHER == 'true')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="CUSTOM_CIPHER_SUITE" FIELD="TEXT" REQUIRED="true" NUM_ROW="85" GROUP="SSL"
+        SHOW_IF="(isShow[CUSTOM_CIPHER] AND CUSTOM_CIPHER == 'true') AND ((USE_IBM_MAPPING == 'true') OR (USE_ORACLE_MAPPING == 'true'))">
+        <DEFAULT IF="USE_IBM_MAPPING == 'true'">"SSL_RSA_WITH_AES_256_CBC_SHA"</DEFAULT>
+        <DEFAULT IF="USE_ORACLE_MAPPING == 'true'">"TLS_RSA_WITH_AES_256_CBC_SHA"</DEFAULT>
+    </PARAMETER>
+  </ADVANCED_PARAMETERS>
+
+  <CODEGENERATION>
+    <IMPORTS>
+      
+      <!-- ActiveMQ -->
+      <IMPORT NAME="activemq-client-5.18.3.jar" MODULE="activemq-client-5.18.3.jar" MVN="mvn:org.apache.activemq/activemq-client/5.18.3" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'ACTIVEMQ')"/>
+      <IMPORT NAME="jakarta.jms-api-2.0.3.jar" MODULE="jakarta.jms-api-2.0.3.jar" MVN="mvn:jakarta.jms/jakarta.jms-api/2.0.3" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'ACTIVEMQ')" />
+      <IMPORT NAME="hawtbuf-1.11.jar" MODULE="hawtbuf-1.11.jar" MVN="mvn:org.fusesource.hawtbuf/hawtbuf/1.11" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'ACTIVEMQ')" />
+      <IMPORT NAME="slf4j-api-1.7.34.jar" MODULE="slf4j-api-1.7.34.jar" MVN="mvn:org.slf4j/slf4j-api/1.7.34" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'ACTIVEMQ')" />
+      <IMPORT NAME="slf4j-reload4j-1.7.34.jar" MODULE="slf4j-reload4j-1.7.34.jar" MVN="mvn:org.slf4j/slf4j-reload4j/1.7.34" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'ACTIVEMQ')" />
+      <!-- JBOSS -->
+      <IMPORT NAME="JAVA_SSIST" MODULE="javassist-3.10.0.GA.jar" MVN="mvn:javassist/javassist/3.10.0.GA"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="TROVE" MODULE="trove-1.0.2.jar" MVN="mvn:trove/trove/1.0.2"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS MDR" MODULE="jboss-mdr-2.0.1.GA.jar" MVN="mvn:org.jboss/jboss-mdr/2.0.1.GA"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jboss-mdr.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JNP-CLIENT" MODULE="jnp-client.jar" MVN="mvn:org.talend.libraries/jnp-client/6.0.0"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS COMMON" MODULE="jboss-common-core-2.2.11.GA.jar" MVN="mvn:org.jboss/jboss-common-core/2.2.11.GA"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jboss-common-core.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS AOP" MODULE="jboss-aop-2.1.3.GA.jar" MVN="mvn:org.jboss.aop/jboss-aop/2.1.3.GA"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jboss-aop.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS REMOTING" MODULE="jboss-remoting.jar" MVN="mvn:org.talend.libraries/jboss-remoting/6.0.0"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jboss-remoting.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS MESSAGING CLIENT" MODULE="jboss-messaging-client.jar" MVN="mvn:org.talend.libraries/jboss-messaging-client/6.0.0"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jboss-messaging-client.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="JBOSS MQ LIB" MODULE="jbossall-client.jar" MVN="mvn:org.talend.libraries/jbossall-client/6.0.0"  UrlPath="platform:/plugin/org.talend.libraries.jboss/lib/jbossall-client.jar" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+      <IMPORT NAME="reload4j-1.2.22" MODULE="reload4j-1.2.22.jar" MVN="mvn:ch.qos.reload4j/reload4j/1.2.22" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'JBOSS')" />
+
+	  <!-- Websphere MQ -->
+      <IMPORT NAME="WEBSPHERE MQ LIB" MODULE="com.ibm.mq.allclient-9.2.5.0.jar" MVN="mvn:com.ibm.mq/com.ibm.mq.allclient/9.2.5.0"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="JSON In Java " MODULE="json-20231013.jar" MVN="mvn:org.json/json/20231013" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="bcprov-jdk15on-1.70" MODULE="bcprov-jdk15on-1.70.jar" MVN="mvn:org.bouncycastle/bcprov-jdk15on/1.70" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="bcpkix-jdk15on-1.70" MODULE="bcpkix-jdk15on-1.70.jar" MVN="mvn:org.bouncycastle/bcpkix-jdk15on/1.70" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="bcutil-jdk15on-1.70" MODULE="bcutil-jdk15on-1.70.jar" MVN="mvn:org.bouncycastle/bcutil-jdk15on/1.70" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="WEBSPHERE CONNECTOR" MODULE="websphere-connector-1_5.jar" MVN="mvn:org.talend.libraries/websphere-connector-1_5/6.0.0"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="TALENDMQRFH2" MODULE="talendMQRFH2-1.3.0-20220912.jar" MVN="mvn:org.talend/talendMQRFH2/1.3.0-20220912"  REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+      <IMPORT NAME="Java Message Service" MODULE="javax.jms-api-2.0.1.jar" MVN="mvn:javax.jms/javax.jms-api/2.0.1" REQUIRED_IF="(USE_CONNECTION=='false' AND SERVER == 'WEBSPHERE')" />
+    </IMPORTS>
+  </CODEGENERATION>
+
+  <RETURNS>
+    <RETURN NAME="NB_LINE" TYPE="id_Integer" AVAILABILITY="AFTER" />
+  </RETURNS>
+
+</COMPONENT>

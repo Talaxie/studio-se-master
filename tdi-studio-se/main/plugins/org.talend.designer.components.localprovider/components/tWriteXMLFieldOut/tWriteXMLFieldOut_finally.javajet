@@ -1,0 +1,49 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.IConnection 
+"
+%>
+
+<%
+
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+
+String virtualTargetCid = node.getOutgoingConnections(EConnectionType.ON_COMPONENT_OK).get(0).getTarget().getUniqueName();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+	if(nextMergeConn == null || nextMergeConn.getInputId()==1){
+	%>
+		java.util.Queue listGroupby_<%=cid%> = (java.util.Queue)globalMap.get("queue_<%=virtualTargetCid%>");
+		if(resourceMap.get("finish_<%=cid%>") == null){
+			globalMap.put("<%=virtualTargetCid%>_FINISH_WITH_EXCEPTION" + (listGroupby_<%=cid%>==null?"":listGroupby_<%=cid%>.hashCode()), "true");
+		}
+	<%
+	}else{
+	%>
+		java.util.Queue listGroupby_<%=cid%> = (java.util.Queue)globalMap.get("queue_<%=cid%>");
+	<%
+	}
+	%>
+	if (listGroupby_<%=cid%> != null) {
+		globalMap.put("<%=virtualTargetCid%>_FINISH" + (listGroupby_<%=cid%>==null?"":listGroupby_<%=cid%>.hashCode()), "true");
+	}
+	// workaround for 37349 - in case of normal execution it will pass normally
+	// in case it fails and handle by catch - it will wait for child thread finish
+	java.util.concurrent.Future<?> future_<%=cid%> = (java.util.concurrent.Future) globalMap.get("wrtXMLFieldIn_<%=cid%>");
+	if (future_<%=cid%> != null) {
+		future_<%=cid%>.get();
+	}
+<%
+}
+%>

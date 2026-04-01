@@ -1,0 +1,88 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String filename = ElementParameterParser.getValue(node,"__JRXML_FILE__");
+String reportType = ElementParameterParser.getValue(node,"__REPORT_TYPE__");
+String recordDelimiter = ElementParameterParser.getValue(node, "__RECORD_DELIMITER__");
+boolean isSpecifyLocale="true".equals(ElementParameterParser.getValue(node,"__SPECIFY_LOCALE__"));
+String reportLocale=ElementParameterParser.getValue(node,"__REPORT_LOCALE__");
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+%>	
+    net.sf.jasperreports.engine.xml.JRXmlDigester digester_<%=cid%> = new net.sf.jasperreports.engine.xml.JRXmlDigester();
+    net.sf.jasperreports.engine.xml.JRXmlDigesterFactory.configureDigester(digester_<%=cid%>);
+    net.sf.jasperreports.engine.xml.JRXmlLoader xmlLoader_<%=cid%> = new net.sf.jasperreports.engine.xml.JRXmlLoader(
+            digester_<%=cid%>);
+    net.sf.jasperreports.engine.design.JasperDesign jasperDesign_<%=cid%> = xmlLoader_<%=cid%>
+            .loadXML(new java.io.FileInputStream(<%=filename%>));
+    jasperDesign_<%=cid%>.setLanguage(net.sf.jasperreports.engine.design.JasperDesign.LANGUAGE_JAVA);
+    net.sf.jasperreports.engine.JasperCompileManager.compileReportToFile(jasperDesign_<%=cid%>, jasperFile_<%=cid%>);
+
+    java.util.Map<String, Object> hm_<%=cid%> = new java.util.HashMap<String, Object>();
+    
+        java.util.Locale reportLocale_<%=cid%>=null;
+<%
+	if(isSpecifyLocale){
+%>
+		reportLocale_<%=cid%>=java.util.Locale.<%=reportLocale%>;
+<%
+	}else{
+%>
+		reportLocale_<%=cid%>=java.util.Locale.getDefault();
+<%
+	}
+%>
+    hm_<%=cid%>.put(net.sf.jasperreports.engine.JRParameter.REPORT_LOCALE, reportLocale_<%=cid%>);
+
+    net.sf.jasperreports.engine.data.JRCsvDataSource ds_<%=cid%> = new net.sf.jasperreports.engine.data.JRCsvDataSource(
+            new java.io.File(sourceFile_<%=cid%>),<%=encoding%>);
+
+    ds_<%=cid%>.setFieldDelimiter(',');
+    ds_<%=cid%>.setRecordDelimiter(<%=recordDelimiter%>);
+    ds_<%=cid%>.setUseFirstRowAsHeader(true);
+    net.sf.jasperreports.engine.JasperPrint print_<%=cid%> = net.sf.jasperreports.engine.JasperFillManager.fillReport(
+            jasperFile_<%=cid%>, hm_<%=cid%>, ds_<%=cid%>);
+
+<%
+			if(reportType.equalsIgnoreCase("html")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.HtmlExporter();		
+<%
+			}else if(reportType.equalsIgnoreCase("pdf")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.JRPdfExporter();		
+<%
+			}else if(reportType.equalsIgnoreCase("xls")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.JRXlsExporter();		
+<%
+			}else if(reportType.equalsIgnoreCase("rtf")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.JRRtfExporter();		
+<%
+			}else if(reportType.equalsIgnoreCase("txt")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.JRTextExporter();		
+	exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.export.JRTextExporterParameter.PAGE_WIDTH, new Float("255"));
+    exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.export.JRTextExporterParameter.CHARACTER_WIDTH, new Float("10"));
+    exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.export.JRTextExporterParameter.PAGE_HEIGHT, new Float("61"));
+    exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.export.JRTextExporterParameter.CHARACTER_HEIGHT, new Float("20"));        
+<%
+			}else if(reportType.equalsIgnoreCase("odt")){
+%>
+	net.sf.jasperreports.engine.JRExporter exporter_<%=cid%> = new net.sf.jasperreports.engine.export.oasis.JROdtExporter();		
+<%
+			}
+%>
+	exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.JRExporterParameter.CHARACTER_ENCODING, <%=encoding%>);
+    exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.JRExporterParameter.OUTPUT_FILE_NAME, reportFile_<%=cid%>);
+    exporter_<%=cid%>.setParameter(net.sf.jasperreports.engine.JRExporterParameter.JASPER_PRINT, print_<%=cid%>);
+    exporter_<%=cid%>.exportReport();

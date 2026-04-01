@@ -1,0 +1,79 @@
+<%@ jet 
+imports="
+org.talend.core.model.process.INode 
+org.talend.core.model.process.ElementParameterParser 
+org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+
+String serviceNowURL = ElementParameterParser.getValue(node, "__SERVICENOWURL__").trim();
+String username = ElementParameterParser.getValue(node, "__USERNAME__").trim();
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+String serviceNowURL_<%=cid%> = <%=serviceNowURL%>.replaceAll("(/$)", "");
+String domain_<%=cid%> = serviceNowURL_<%=cid%>.replaceAll("https?://", "");
+
+Integer <%=cid%>_executionCode = null;
+String <%=cid%>_responsePhrase = null;
+
+<%
+String passwordFieldName = "__PASSWORD__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+org.apache.http.client.CredentialsProvider <%=cid%>_credsProvider = new org.apache.http.impl.client.BasicCredentialsProvider();
+<%=cid%>_credsProvider.setCredentials(
+	new org.apache.http.auth.AuthScope(new org.apache.http.HttpHost(domain_<%=cid%>)), 
+	new org.apache.http.auth.UsernamePasswordCredentials(<%=username%>, decryptedPassword_<%=cid%>)
+);
+org.apache.http.impl.client.CloseableHttpClient <%=cid%>_httpclient = org.apache.http.impl.client.HttpClients.custom()
+	.setDefaultCredentialsProvider(<%=cid%>_credsProvider)
+	.useSystemProperties() 
+	.build();
+
+try {//B
+	org.apache.http.client.methods.HttpGet <%=cid%>_httpget = new org.apache.http.client.methods.HttpGet(serviceNowURL_<%=cid%> + "/api/now/table/incident");
+	<%=cid%>_httpget.setHeader("Accept", "application/json");
+	org.apache.http.client.methods.CloseableHttpResponse <%=cid%>_response = <%=cid%>_httpclient.execute(<%=cid%>_httpget);
+	try {
+		<%=cid%>_executionCode = <%=cid%>_response.getStatusLine().getStatusCode();
+		<%=cid%>_responsePhrase = <%=cid%>_response.getStatusLine().getReasonPhrase();
+		if(<%=cid%>_executionCode == 200) {
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Executing request '" + <%=cid%>_httpget.getRequestLine() + "'");
+  				log.info("<%=cid%> - Execution code '" + <%=cid%>_executionCode + "'");
+  			<%}%>
+		}
+		globalMap.put("httpHost_conn_<%=cid%>", serviceNowURL_<%=cid%>);
+		globalMap.put("username_conn_<%=cid%>", <%=username%>);
+		globalMap.put("password_conn_<%=cid%>", decryptedPassword_<%=cid%>);
+	} catch (Exception e1_<%=cid%>) { //Connection errors
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e1_<%=cid%>.getMessage());
+		e1_<%=cid%>.printStackTrace();
+	} finally {
+		try {
+			<%=cid%>_response.close();
+		} catch (Exception e2_<%=cid%>) { //Response close errors
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e2_<%=cid%>.getMessage());
+			throw new RuntimeException("Could not close response " + e2_<%=cid%>);
+		}
+	}
+} finally { //B
+	try {
+		<%=cid%>_httpclient.close();
+	} catch (Exception e3_<%=cid%>) { //Client close errors
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e3_<%=cid%>.getMessage());
+		throw new RuntimeException("Could not close httpclient " + e3_<%=cid%>);
+	}
+}
+if(<%=cid%>_executionCode != 200) {
+	throw new org.apache.http.HttpException("Return code '" + <%=cid%>_executionCode + "' - '" + <%=cid%>_responsePhrase + "'");
+}

@@ -1,0 +1,1884 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = ElementParameterParser.getValue(node, "__CID__");
+
+int UNIQUE = 1;
+int UNIQUE_AND_DUPLICATE = 2;
+int UNIQUE_AND_DUPLICATE_ONCE = 3;
+int DUPLICATE = 4;
+int DUPLICATE_ONCE = 5;
+
+int mode = 0;
+String connUniqName = null;
+String connDuplicateName = null;
+boolean onlyOnceEachDuplicatedKey = ("true").equals(ElementParameterParser.getValue(node, "__ONLY_ONCE_EACH_DUPLICATED_KEY__"));
+List<? extends IConnection> connsUnique = node.getOutgoingConnections("UNIQUE");
+List<? extends IConnection> connsDuplicate = node.getOutgoingConnections("DUPLICATE");
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(connsUnique.size() > 0){
+	connUniqName = connsUnique.get(0).getName();
+	if(connsDuplicate.size() > 0){
+		connDuplicateName = connsDuplicate.get(0).getName();
+		if(onlyOnceEachDuplicatedKey){
+			mode =3;
+		}else{
+			mode = 2;
+		}
+	}else{
+		mode = 1;
+	}
+}else{
+	if(connsDuplicate.size() > 0){
+		connDuplicateName = connsDuplicate.get(0).getName();
+		if(onlyOnceEachDuplicatedKey){
+			mode =5;
+		}else{
+			mode = 4;
+		}
+	}
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+IMetadataTable metadata = null;
+List<IMetadataColumn> columnList = null;
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    metadata = metadatas.get(0);
+    columnList = metadata.getListColumns();
+}else{
+	mode = 0;
+}
+
+if(mode == UNIQUE){//HSS_____0
+%>
+            int bufferSizePerFile_<%=cid %> = 10000;
+            
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_1_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_1_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_1_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file, bufferSizePerFile_<%=cid %>);
+                rowFileList_1_<%=cid %>.add(fri);
+                rowList_1_<%=cid %>.add(fri.next());
+            }
+            
+            // comparator for second sort
+			class Comparator_2_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+    			public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+        			return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+    			}
+
+			}
+			
+            //For second sort init begin
+            int bufferSize_2_<%=cid %> = bufferSize_<%=cid %>;
+            rowStruct_<%=cid %>[] buffer_2_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_1_<%=cid %>];
+            int rowsInBuffer_2_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_2_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_2_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            //For second sort init end
+
+            while (rowList_1_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_1_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_1_<%=cid %>.size(); i++) {
+                        if (comparator_1_<%=cid %>.compare(rowList_1_<%=cid %>.get(minIndex_<%=cid %>), rowList_1_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+                if (rowsInBuffer_2_<%=cid %> >= bufferSize_2_<%=cid %>) {// buffer is full do sort and
+
+                    java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0, bufferSize_2_<%=cid %>, comparator_2_<%=cid %>);
+                    java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "uniq_" + files_2_<%=cid %>.size());
+                    <%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+					<%
+					}
+					%>
+                    file.deleteOnExit();
+                    java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                            new java.io.FileOutputStream(file)));
+                	<%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+					<%
+					}
+					%>
+                    for (int i = 0; i < bufferSize_2_<%=cid %>; i++) {
+                        buffer_2_<%=cid %>[i].writeData(rw);
+                    }
+                    rw.close();
+					<%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Wrote successfully.");
+					<%
+					}
+					%>
+
+                    files_2_<%=cid %>.add(file);
+
+                    rowsInBuffer_2_<%=cid %> = 0;
+                }
+                rowStruct_<%=cid %> minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                buffer_2_<%=cid %>[rowsInBuffer_2_<%=cid %>++] = minItem;
+                FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+
+                //skip duplicates....begin-->this case is suitable for no duplicate connection
+                for (int i = 0; i < rowList_1_<%=cid %>.size(); ) {
+                    if (rowList_1_<%=cid %>.get(i).duplicateTo(minItem)) {
+                        rowStruct_<%=cid %> noDuplicateItem = null;
+                        FileRowIterator_<%=cid %> fri2 = rowFileList_1_<%=cid %>.get(i);
+                        while (fri2.hasNext()) {
+                            rowStruct_<%=cid %> current = fri2.next();
+                            if (!minItem.duplicateTo(current)) {
+                                noDuplicateItem = current;
+                                break;
+                            }
+                        }
+                        if (noDuplicateItem == null) {
+                            fri2.close();
+                            rowFileList_1_<%=cid %>.remove(i);
+                            rowList_1_<%=cid %>.remove(i);
+                        } else {
+                            rowList_1_<%=cid %>.set(i, noDuplicateItem);
+                            i++;
+                        }
+                    }else{
+                        i++;
+                    }
+                }
+                //skip duplicates....end
+            }
+
+
+            if (rowsInBuffer_2_<%=cid %> > 0) {
+                
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0, rowsInBuffer_2_<%=cid %>, comparator_2_<%=cid %>);
+                
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "uniq_" + files_2_<%=cid %>.size());
+                
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                
+                file.deleteOnExit();
+                
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+                        
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+                
+                for (int i = 0; i < rowsInBuffer_2_<%=cid %>; i++) {
+                    buffer_2_<%=cid %>[i].writeData(rw);
+                }
+                
+                rw.close();
+                
+             	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_2_<%=cid %>.add(file);
+
+                rowsInBuffer_2_<%=cid %> = 0;
+            }
+            buffer_2_<%=cid %> = null;
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_2_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_2_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_2_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file, bufferSizePerFile_<%=cid %>);
+                rowFileList_2_<%=cid %>.add(fri);
+                rowList_2_<%=cid %>.add(fri.next());
+            }
+
+            int nb_uniq_<%=cid %> = 0;
+            while (rowList_2_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_2_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                        if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>), rowList_2_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+
+                rowStruct_<%=cid %> current = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+
+                // ////////////
+                FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniq_<%=cid %>+1) + " into <%=connUniqName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connUniqName %>.<%=column.getLabel() %> = current.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                
+                nb_uniq_<%=cid %>++;
+<%
+}else if(mode == UNIQUE_AND_DUPLICATE){//HSS_____0
+%>
+            int bufferSizePerFile_<%=cid %> = 10000;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_1_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_1_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_1_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_1_<%=cid %>.add(fri);
+                rowList_1_<%=cid %>.add(fri.next());
+            }
+
+            // comparator for second sort
+            class Comparator_2_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+                public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+                    return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+                }
+
+            }
+
+            // For second sort init begin
+            int bufferSize_2_<%=cid %> = bufferSize_<%=cid %>/2;
+            rowStruct_<%=cid %>[] buffer_2_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_1_<%=cid %>];
+            int rowsInBuffer_2_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_2_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_2_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort init end
+
+            // For second sort duplicate init begin
+            int bufferSize_3_<%=cid %> = bufferSize_<%=cid %>/2;
+            rowStruct_<%=cid %>[] buffer_3_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_3_<%=cid %>];
+            int rowsInBuffer_3_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_3_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_3_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort duplicate init end
+
+            while (rowList_1_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_1_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_1_<%=cid %>.size(); i++) {
+                        if (comparator_1_<%=cid %>.compare(rowList_1_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_1_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+                if (rowsInBuffer_2_<%=cid %> >= bufferSize_2_<%=cid %>) {
+
+                    java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0,
+                            bufferSize_2_<%=cid %>, comparator_2_<%=cid %>);
+                    java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "uniq_"
+                            + files_2_<%=cid %>.size());
+                   	<%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+					<%
+					}
+					%>
+                    file.deleteOnExit();
+                    java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                            new java.io.FileOutputStream(file)));
+                	<%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+					<%
+					}
+					%>
+                    for (int i = 0; i < bufferSize_2_<%=cid %>; i++) {
+                        buffer_2_<%=cid %>[i].writeData(rw);
+                    }
+                    rw.close();
+	             	<%
+					if (isLog4jEnabled) {
+					%>
+						log.debug("<%=cid%> - Wrote successfully.");
+					<%
+					}
+					%>
+
+                    files_2_<%=cid %>.add(file);
+
+                    rowsInBuffer_2_<%=cid %> = 0;
+                }
+                rowStruct_<%=cid %> minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                buffer_2_<%=cid %>[rowsInBuffer_2_<%=cid %>++] = minItem;
+                FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+
+                // get duplicates....begin
+                for (int i = 0; i < rowList_1_<%=cid %>.size();) {
+                    rowStruct_<%=cid %> current = rowList_1_<%=cid %>.get(i);
+                    if (current.duplicateTo(minItem)) {
+                        // current is duplicate....
+                        if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+
+                            java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                                    bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+                            java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                                    + files_3_<%=cid %>.size());
+                            <%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+							<%
+							}
+							%>
+                            file.deleteOnExit();
+                            java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                                    new java.io.FileOutputStream(file)));
+                        	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+							<%
+							}
+							%>
+                            for (int j = 0; j < bufferSize_3_<%=cid %>; j++) {
+                                buffer_3_<%=cid %>[j].writeData(rw);
+                            }
+                            rw.close();
+			             	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Wrote successfully.");
+							<%
+							}
+							%>
+
+                            files_3_<%=cid %>.add(file);
+
+                            rowsInBuffer_3_<%=cid %> = 0;
+                        }
+
+                        buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = current;
+                        rowStruct_<%=cid %> noDuplicateItem = null;
+                        FileRowIterator_<%=cid %> fri2 = rowFileList_1_<%=cid %>.get(i);
+                        while (fri2.hasNext()) {
+                            current = fri2.next();
+                            if (!minItem.duplicateTo(current)) {
+                                noDuplicateItem = current;
+                                break;
+                            } else {
+                                // current is duplicate....
+                                if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+
+                                    java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                                            bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+                                    java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                                            + files_3_<%=cid %>.size());
+                                    <%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+									<%
+									}
+									%>
+                                    file.deleteOnExit();
+                                    java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(
+                                            new java.io.BufferedOutputStream(new java.io.FileOutputStream(file)));
+		                        	<%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+									<%
+									}
+									%>
+                                    for (int j = 0; j < bufferSize_3_<%=cid %>; j++) {
+                                        buffer_3_<%=cid %>[j].writeData(rw);
+                                    }
+                                    rw.close();
+					             	<%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Wrote successfully.");
+									<%
+									}
+									%>
+
+                                    files_3_<%=cid %>.add(file);
+
+                                    rowsInBuffer_3_<%=cid %> = 0;
+                                }
+
+                                buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = current;
+                            }
+                        }
+                        if (noDuplicateItem == null) {
+                            fri2.close();
+                            rowFileList_1_<%=cid %>.remove(i);
+                            rowList_1_<%=cid %>.remove(i);
+                        } else {
+                            rowList_1_<%=cid %>.set(i, noDuplicateItem);
+                            i++;
+                        }
+                    } else {
+                        i++;
+                    }
+                }
+                // get duplicates....
+            }
+
+            if (rowsInBuffer_2_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0,
+                        rowsInBuffer_2_<%=cid %>, comparator_2_<%=cid %>);
+
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "uniq_"
+                        + files_2_<%=cid %>.size());
+
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                file.deleteOnExit();
+
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+                        
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+
+                for (int i = 0; i < rowsInBuffer_2_<%=cid %>; i++) {
+                    buffer_2_<%=cid %>[i].writeData(rw);
+                }
+
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_2_<%=cid %>.add(file);
+
+                rowsInBuffer_2_<%=cid %> = 0;
+            }
+            buffer_2_<%=cid %> = null;
+
+            // current is duplicate....
+            if (rowsInBuffer_3_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                        rowsInBuffer_3_<%=cid %>, comparator_3_<%=cid %>);
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                        + files_3_<%=cid %>.size());
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                file.deleteOnExit();
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+                for (int j = 0; j < rowsInBuffer_3_<%=cid %>; j++) {
+                    buffer_3_<%=cid %>[j].writeData(rw);
+                }
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+                files_3_<%=cid %>.add(file);
+
+                rowsInBuffer_3_<%=cid %> = 0;
+            }
+            buffer_3_<%=cid %> = null;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_2_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_2_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_2_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_2_<%=cid %>.add(fri);
+                rowList_2_<%=cid %>.add(fri.next());
+            }
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_3_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_3_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_3_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_3_<%=cid %>.add(fri);
+                rowList_3_<%=cid %>.add(fri.next());
+            }
+
+            int nb_uniq_<%=cid %> = 0;
+            int nb_duplicate_<%=cid %> = 0;
+            rowStruct_<%=cid %> uniq_<%=cid %> = null;
+            rowStruct_<%=cid %> duplicate_<%=cid %> = null;
+            int minIndex_<%=cid %> = 0;
+            /////////////////////
+            if(rowList_2_<%=cid %>.size() > 0){
+                minIndex_<%=cid %> = 0;
+                if (rowList_2_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                        if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_2_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+                uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+            }
+            if(rowList_3_<%=cid %>.size() > 0){
+                minIndex_<%=cid %> = 0;
+                if (rowList_3_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_3_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+                duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+            }
+            while (true) {
+                <%=connUniqName %> = null;
+                <%=connDuplicateName %> = null;
+                
+                if(uniq_<%=cid %> == null){
+                    if(duplicate_<%=cid %> == null){
+                        break;
+                    }else{
+                        <%=connDuplicateName %> = new <%=connDuplicateName %>Struct();
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = duplicate_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                    	nb_duplicate_<%=cid %>++;
+                        duplicate_<%=cid %> = null;
+                        if(rowList_3_<%=cid %>.size() > 0){
+                            minIndex_<%=cid %> = 0;
+                            if (rowList_3_<%=cid %>.size() > 1) {
+                                for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                                    if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                            rowList_3_<%=cid %>.get(i)) > 0) {
+                                        minIndex_<%=cid %> = i;
+                                    }
+                                }
+                            }
+                            duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                            FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                            if (fri.hasNext()) {
+                                rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                            } else {
+                                fri.close();
+                                rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                            }
+                        }
+                    }
+                }else{
+                    if(duplicate_<%=cid %> == null){
+                        <%=connUniqName %> = new <%=connUniqName %>Struct();
+                        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniq_<%=cid %>+1) + " into <%=connUniqName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connUniqName %>.<%=column.getLabel() %> = uniq_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                        nb_uniq_<%=cid %>++;
+                        
+                        uniq_<%=cid %> = null;
+                        
+                        if(rowList_2_<%=cid %>.size() > 0){
+                            minIndex_<%=cid %> = 0;
+                            if (rowList_2_<%=cid %>.size() > 1) {
+                                for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                                    if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                            rowList_2_<%=cid %>.get(i)) > 0) {
+                                        minIndex_<%=cid %> = i;
+                                    }
+                                }
+                            }
+                            uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                            FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                            if (fri.hasNext()) {
+                                rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                            } else {
+                                fri.close();
+                                rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                            }
+                        }
+                        
+                    }else{
+                        if(uniq_<%=cid %>.id_<%=cid %> < duplicate_<%=cid %>.id_<%=cid %>){
+                        <%=connUniqName %> = new <%=connUniqName %>Struct();
+                        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniq_<%=cid %>+1) + " into <%=connUniqName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connUniqName %>.<%=column.getLabel() %> = uniq_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                            
+                            nb_uniq_<%=cid %>++;
+                            
+                            uniq_<%=cid %> = null;
+                            
+                            if(rowList_2_<%=cid %>.size() > 0){
+                                minIndex_<%=cid %> = 0;
+                                if (rowList_2_<%=cid %>.size() > 1) {
+                                    for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                                        if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                                rowList_2_<%=cid %>.get(i)) > 0) {
+                                            minIndex_<%=cid %> = i;
+                                        }
+                                    }
+                                }
+                                uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                                FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                                if (fri.hasNext()) {
+                                    rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                                } else {
+                                    fri.close();
+                                    rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                    rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                }
+                            }
+                        }else{
+                        <%=connDuplicateName %> = new <%=connDuplicateName %>Struct();
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = duplicate_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+							nb_duplicate_<%=cid %>++;
+                            duplicate_<%=cid %> = null;
+                            if(rowList_3_<%=cid %>.size() > 0){
+                                minIndex_<%=cid %> = 0;
+                                if (rowList_3_<%=cid %>.size() > 1) {
+                                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                                rowList_3_<%=cid %>.get(i)) > 0) {
+                                            minIndex_<%=cid %> = i;
+                                        }
+                                    }
+                                }
+                                duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                                if (fri.hasNext()) {
+                                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                                } else {
+                                    fri.close();
+                                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                }
+                            }
+                        }
+                        
+                    }
+                }
+
+<%
+}else if(mode == UNIQUE_AND_DUPLICATE_ONCE){//HSS_____0
+%>
+            int bufferSizePerFile_<%=cid %> = 10000;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_1_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_1_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_1_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_1_<%=cid %>.add(fri);
+                rowList_1_<%=cid %>.add(fri.next());
+            }
+
+            // comparator for second sort
+            class Comparator_2_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+                public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+                    return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+                }
+
+            }
+
+            // For second sort init begin
+            int bufferSize_2_<%=cid %> = bufferSize_<%=cid %>/2;
+            rowStruct_<%=cid %>[] buffer_2_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_1_<%=cid %>];
+            int rowsInBuffer_2_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_2_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_2_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort init end
+
+            // For second sort duplicate init begin
+            int bufferSize_3_<%=cid %> = bufferSize_<%=cid %>/2;
+            rowStruct_<%=cid %>[] buffer_3_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_3_<%=cid %>];
+            int rowsInBuffer_3_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_3_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_3_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort duplicate init end
+            boolean forDuplicateFlag_<%=cid %> = false;
+            rowStruct_<%=cid %> minItem = null;
+            while (rowList_1_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_1_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_1_<%=cid %>.size(); i++) {
+                        if (comparator_1_<%=cid %>.compare(rowList_1_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_1_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+                if(forDuplicateFlag_<%=cid %>){
+                	if(!rowList_1_<%=cid %>.get(minIndex_<%=cid %>).duplicateTo(minItem)){
+                		if (rowsInBuffer_2_<%=cid %> >= bufferSize_2_<%=cid %>) {
+
+	                        java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0,
+	                                bufferSize_2_<%=cid %>, comparator_2_<%=cid %>);
+	                        java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "unique_"
+	                                + files_2_<%=cid %>.size());
+	                        <%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+							<%
+							}
+							%>
+	                        file.deleteOnExit();
+	                        java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+	                                new java.io.FileOutputStream(file)));
+                        	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+							<%
+							}
+							%>
+	                        for (int i = 0; i < bufferSize_2_<%=cid %>; i++) {
+	                            buffer_2_<%=cid %>[i].writeData(rw);
+	                        }
+	                        rw.close();
+							<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Wrote successfully.");
+							<%
+							}
+							%>
+	
+	                        files_2_<%=cid %>.add(file);
+	
+	                        rowsInBuffer_2_<%=cid %> = 0;
+	                    }
+	                    minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    buffer_2_<%=cid %>[rowsInBuffer_2_<%=cid %>++] = minItem;
+	                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    if (fri.hasNext()) {
+	                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+	                    } else {
+	                        fri.close();
+	                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                    }	
+                	}else{
+	                    if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+	
+	                        java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+	                                bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+	                        java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+	                                + files_3_<%=cid %>.size());
+	                        <%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+							<%
+							}
+							%>
+	                        file.deleteOnExit();
+	                        
+	                        java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+	                                new java.io.FileOutputStream(file)));
+                        	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+							<%
+							}
+							%>
+	                        for (int i = 0; i < bufferSize_3_<%=cid %>; i++) {
+	                            buffer_3_<%=cid %>[i].writeData(rw);
+	                        }
+	                        rw.close();
+							<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Wrote successfully.");
+							<%
+							}
+							%>
+	
+	                        files_3_<%=cid %>.add(file);
+	
+	                        rowsInBuffer_3_<%=cid %> = 0;
+	                    }
+	                    minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = minItem;
+	                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    if (fri.hasNext()) {
+	                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+	                    } else {
+	                        fri.close();
+	                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                    }
+	                    
+	                    forDuplicateFlag_<%=cid %> = false;
+	                    
+	                    // skip other duplicates....begin
+	                    for (int i = 0; i < rowList_1_<%=cid %>.size();) {
+	                        if (rowList_1_<%=cid %>.get(i).duplicateTo(minItem)) {
+	                            rowStruct_<%=cid %> noDuplicateItem = null;
+	                            FileRowIterator_<%=cid %> fri2 = rowFileList_1_<%=cid %>.get(i);
+	                            while (fri2.hasNext()) {
+	                                rowStruct_<%=cid %> current = fri2.next();
+	                                if (!minItem.duplicateTo(current)) {
+	                                    noDuplicateItem = current;
+	                                    break;
+	                                }
+	                            }
+	                            if (noDuplicateItem == null) {
+	                                fri2.close();
+	                                rowFileList_1_<%=cid %>.remove(i);
+	                                rowList_1_<%=cid %>.remove(i);
+	                            } else {
+	                                rowList_1_<%=cid %>.set(i, noDuplicateItem);
+	                                i++;
+	                            }
+	                        } else {
+	                            i++;
+	                        }
+	                    }
+	                    // skip duplicates....end
+                    }
+                }else{
+                    if (rowsInBuffer_2_<%=cid %> >= bufferSize_2_<%=cid %>) {
+
+                        java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0,
+                                bufferSize_2_<%=cid %>, comparator_2_<%=cid %>);
+                        java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "unique_"
+                                + files_2_<%=cid %>.size());
+                        <%
+						if (isLog4jEnabled) {
+						%>
+							log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+						<%
+						}
+						%>
+                        file.deleteOnExit();
+                        java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                                new java.io.FileOutputStream(file)));
+                    	<%
+						if (isLog4jEnabled) {
+						%>
+							log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+						<%
+						}
+						%>
+                        for (int i = 0; i < bufferSize_2_<%=cid %>; i++) {
+                            buffer_2_<%=cid %>[i].writeData(rw);
+                        }
+                        rw.close();
+						<%
+						if (isLog4jEnabled) {
+						%>
+							log.debug("<%=cid%> - Wrote successfully.");
+						<%
+						}
+						%>
+
+                        files_2_<%=cid %>.add(file);
+
+                        rowsInBuffer_2_<%=cid %> = 0;
+                    }
+                    minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                    buffer_2_<%=cid %>[rowsInBuffer_2_<%=cid %>++] = minItem;
+                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                    if (fri.hasNext()) {
+                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                    } else {
+                        fri.close();
+                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                    }
+                    
+                    forDuplicateFlag_<%=cid %> = true;
+                }
+            }
+
+            if (rowsInBuffer_2_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_2_<%=cid %>, 0,
+                        rowsInBuffer_2_<%=cid %>, comparator_2_<%=cid %>);
+
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "uniq_"
+                        + files_2_<%=cid %>.size());
+                        
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+
+                file.deleteOnExit();
+
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+                        
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+
+                for (int i = 0; i < rowsInBuffer_2_<%=cid %>; i++) {
+                    buffer_2_<%=cid %>[i].writeData(rw);
+                }
+
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_2_<%=cid %>.add(file);
+
+                rowsInBuffer_2_<%=cid %> = 0;
+            }
+            buffer_2_<%=cid %> = null;
+
+            // current is duplicate....
+            if (rowsInBuffer_3_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                        rowsInBuffer_3_<%=cid %>, comparator_3_<%=cid %>);
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                        + files_3_<%=cid %>.size());
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                file.deleteOnExit();
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+                for (int j = 0; j < rowsInBuffer_3_<%=cid %>; j++) {
+                    buffer_3_<%=cid %>[j].writeData(rw);
+                }
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_3_<%=cid %>.add(file);
+
+                rowsInBuffer_3_<%=cid %> = 0;
+            }
+            buffer_3_<%=cid %> = null;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_2_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_2_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_2_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_2_<%=cid %>.add(fri);
+                rowList_2_<%=cid %>.add(fri.next());
+            }
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_3_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_3_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_3_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_3_<%=cid %>.add(fri);
+                rowList_3_<%=cid %>.add(fri.next());
+            }
+
+            int nb_uniq_<%=cid %> = 0;
+            int nb_duplicate_<%=cid %> = 0;
+            rowStruct_<%=cid %> uniq_<%=cid %> = null;
+            rowStruct_<%=cid %> duplicate_<%=cid %> = null;
+            int minIndex_<%=cid %> = 0;
+            /////////////////////
+            if(rowList_2_<%=cid %>.size() > 0){
+                minIndex_<%=cid %> = 0;
+                if (rowList_2_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                        if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_2_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+                uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+            }
+            if(rowList_3_<%=cid %>.size() > 0){
+                minIndex_<%=cid %> = 0;
+                if (rowList_3_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_3_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+                duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+            }
+            while (true) {
+                <%=connUniqName %> = null;
+                <%=connDuplicateName %> = null;
+                
+                if(uniq_<%=cid %> == null){
+                    if(duplicate_<%=cid %> == null){
+                        break;
+                    }else{
+                        <%=connDuplicateName %> = new <%=connDuplicateName %>Struct();
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = duplicate_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                    	nb_duplicate_<%=cid %>++;
+                        duplicate_<%=cid %> = null;
+                        if(rowList_3_<%=cid %>.size() > 0){
+                            minIndex_<%=cid %> = 0;
+                            if (rowList_3_<%=cid %>.size() > 1) {
+                                for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                                    if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                            rowList_3_<%=cid %>.get(i)) > 0) {
+                                        minIndex_<%=cid %> = i;
+                                    }
+                                }
+                            }
+                            duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                            FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                            if (fri.hasNext()) {
+                                rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                            } else {
+                                fri.close();
+                                rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                            }
+                        }
+                    }
+                }else{
+                    if(duplicate_<%=cid %> == null){
+                        <%=connUniqName %> = new <%=connUniqName %>Struct();
+                        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniq_<%=cid %>+1) + " into <%=connUniqName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connUniqName %>.<%=column.getLabel() %> = uniq_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                        nb_uniq_<%=cid %>++;
+                        
+                        uniq_<%=cid %> = null;
+                        
+                        if(rowList_2_<%=cid %>.size() > 0){
+                            minIndex_<%=cid %> = 0;
+                            if (rowList_2_<%=cid %>.size() > 1) {
+                                for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                                    if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                            rowList_2_<%=cid %>.get(i)) > 0) {
+                                        minIndex_<%=cid %> = i;
+                                    }
+                                }
+                            }
+                            uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                            FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                            if (fri.hasNext()) {
+                                rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                            } else {
+                                fri.close();
+                                rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                            }
+                        }
+                        
+                    }else{
+                        if(uniq_<%=cid %>.id_<%=cid %> < duplicate_<%=cid %>.id_<%=cid %>){
+                        <%=connUniqName %> = new <%=connUniqName %>Struct();
+                        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniq_<%=cid %>+1) + " into <%=connUniqName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connUniqName %>.<%=column.getLabel() %> = uniq_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+                            
+                            nb_uniq_<%=cid %>++;
+                            
+                            uniq_<%=cid %> = null;
+                            
+                            if(rowList_2_<%=cid %>.size() > 0){
+                                minIndex_<%=cid %> = 0;
+                                if (rowList_2_<%=cid %>.size() > 1) {
+                                    for (int i = 1; i < rowList_2_<%=cid %>.size(); i++) {
+                                        if (comparator_2_<%=cid %>.compare(rowList_2_<%=cid %>.get(minIndex_<%=cid %>),
+                                                rowList_2_<%=cid %>.get(i)) > 0) {
+                                            minIndex_<%=cid %> = i;
+                                        }
+                                    }
+                                }
+                                uniq_<%=cid %> = rowList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                                FileRowIterator_<%=cid %> fri = rowFileList_2_<%=cid %>.get(minIndex_<%=cid %>);
+                                if (fri.hasNext()) {
+                                    rowList_2_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                                } else {
+                                    fri.close();
+                                    rowFileList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                    rowList_2_<%=cid %>.remove(minIndex_<%=cid %>);
+                                }
+                            }
+                        }else{
+                        <%=connDuplicateName %> = new <%=connDuplicateName %>Struct();
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = duplicate_<%=cid %>.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+							nb_duplicate_<%=cid %>++;
+                            duplicate_<%=cid %> = null;
+                            if(rowList_3_<%=cid %>.size() > 0){
+                                minIndex_<%=cid %> = 0;
+                                if (rowList_3_<%=cid %>.size() > 1) {
+                                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                                rowList_3_<%=cid %>.get(i)) > 0) {
+                                            minIndex_<%=cid %> = i;
+                                        }
+                                    }
+                                }
+                                duplicate_<%=cid %> = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                                if (fri.hasNext()) {
+                                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                                } else {
+                                    fri.close();
+                                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                                }
+                            }
+                        }
+                        
+                    }
+                }
+
+<%
+}else if(mode == DUPLICATE){//HSS_____0
+%>
+            int bufferSizePerFile_<%=cid %> = 10000;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_1_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_1_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_1_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_1_<%=cid %>.add(fri);
+                rowList_1_<%=cid %>.add(fri.next());
+            }
+
+            // comparator for second sort
+            class Comparator_2_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+                public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+                    return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+                }
+
+            }
+
+            // For second sort duplicate init begin
+            int bufferSize_3_<%=cid %> = bufferSize_<%=cid %>;
+            rowStruct_<%=cid %>[] buffer_3_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_3_<%=cid %>];
+            int rowsInBuffer_3_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_3_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_3_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort duplicate init end
+
+            while (rowList_1_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_1_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_1_<%=cid %>.size(); i++) {
+                        if (comparator_1_<%=cid %>.compare(rowList_1_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_1_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+                rowStruct_<%=cid %> minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+
+                // get duplicates....begin
+                for (int i = 0; i < rowList_1_<%=cid %>.size();) {
+                    rowStruct_<%=cid %> current = rowList_1_<%=cid %>.get(i);
+                    if (current.duplicateTo(minItem)) {
+                        // current is duplicate....
+                        if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+
+                            java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                                    bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+                            java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                                    + files_3_<%=cid %>.size());
+                            <%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+							<%
+							}
+							%>
+                            file.deleteOnExit();
+                            java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                                    new java.io.FileOutputStream(file)));
+                        	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+							<%
+							}
+							%>
+                            for (int j = 0; j < bufferSize_3_<%=cid %>; j++) {
+                                buffer_3_<%=cid %>[j].writeData(rw);
+                            }
+                            rw.close();
+							<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Wrote successfully.");
+							<%
+							}
+							%>
+
+                            files_3_<%=cid %>.add(file);
+
+                            rowsInBuffer_3_<%=cid %> = 0;
+                        }
+
+                        buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = current;
+                        rowStruct_<%=cid %> noDuplicateItem = null;
+                        FileRowIterator_<%=cid %> fri2 = rowFileList_1_<%=cid %>.get(i);
+                        while (fri2.hasNext()) {
+                            current = fri2.next();
+                            if (!minItem.duplicateTo(current)) {
+                                noDuplicateItem = current;
+                                break;
+                            } else {
+                                // current is duplicate....
+                                if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+
+                                    java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                                            bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+                                    java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                                            + files_3_<%=cid %>.size());
+                                    <%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+									<%
+									}
+									%>
+                                    file.deleteOnExit();
+                                    java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(
+                                            new java.io.BufferedOutputStream(new java.io.FileOutputStream(file)));
+                                    <%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+									<%
+									}
+									%>
+                                    for (int j = 0; j < bufferSize_3_<%=cid %>; j++) {
+                                        buffer_3_<%=cid %>[j].writeData(rw);
+                                    }
+                                    rw.close();
+									<%
+									if (isLog4jEnabled) {
+									%>
+										log.debug("<%=cid%> - Wrote successfully.");
+									<%
+									}
+									%>
+
+                                    files_3_<%=cid %>.add(file);
+
+                                    rowsInBuffer_3_<%=cid %> = 0;
+                                }
+
+                                buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = current;
+                            }
+                        }
+                        if (noDuplicateItem == null) {
+                            fri2.close();
+                            rowFileList_1_<%=cid %>.remove(i);
+                            rowList_1_<%=cid %>.remove(i);
+                        } else {
+                            rowList_1_<%=cid %>.set(i, noDuplicateItem);
+                            i++;
+                        }
+                    } else {
+                        i++;
+                    }
+                }
+                // get duplicates....
+            }
+
+            // current is duplicate....
+            if (rowsInBuffer_3_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                        rowsInBuffer_3_<%=cid %>, comparator_3_<%=cid %>);
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                        + files_3_<%=cid %>.size());
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                file.deleteOnExit();
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+              	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+                for (int j = 0; j < rowsInBuffer_3_<%=cid %>; j++) {
+                    buffer_3_<%=cid %>[j].writeData(rw);
+                }
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_3_<%=cid %>.add(file);
+
+                rowsInBuffer_3_<%=cid %> = 0;
+            }
+            buffer_3_<%=cid %> = null;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_3_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_3_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_3_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_3_<%=cid %>.add(fri);
+                rowList_3_<%=cid %>.add(fri.next());
+            }
+            int nb_uniq_<%=cid %> = 0;
+            int nb_duplicate_<%=cid %> = 0;
+            rowStruct_<%=cid %> duplicate_<%=cid %> = null;
+            
+            while (rowList_3_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_3_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_3_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+
+                rowStruct_<%=cid %> current = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+
+                // ////////////
+                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = current.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+
+                nb_duplicate_<%=cid %>++;
+<%
+}else if(mode == DUPLICATE_ONCE){//HSS_____0
+%>
+            int bufferSizePerFile_<%=cid %> = 10000;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_1_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_1_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_1_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_1_<%=cid %>.add(fri);
+                rowList_1_<%=cid %>.add(fri.next());
+            }
+
+            // comparator for second sort
+            class Comparator_2_<%=cid %> implements Comparator<rowStruct_<%=cid %>> {
+
+                public int compare(rowStruct_<%=cid %> arg0, rowStruct_<%=cid %> arg1) {
+                    return Long.compare(arg0.id_<%=cid %>, arg1.id_<%=cid %>);
+                }
+
+            }
+
+            // For second sort duplicate init begin
+            int bufferSize_3_<%=cid %> = bufferSize_<%=cid %>;
+            rowStruct_<%=cid %>[] buffer_3_<%=cid %> = new rowStruct_<%=cid %>[bufferSize_3_<%=cid %>];
+            int rowsInBuffer_3_<%=cid %> = 0;
+            Comparator<rowStruct_<%=cid %>> comparator_3_<%=cid %> = new Comparator_2_<%=cid %>();
+
+            java.util.ArrayList<java.io.File> files_3_<%=cid %> = new java.util.ArrayList<java.io.File>();
+            // For second sort duplicate init end
+            
+            boolean forDuplicateFlag_<%=cid %> = false;
+            rowStruct_<%=cid %> minItem = null;
+            
+            while (rowList_1_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_1_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_1_<%=cid %>.size(); i++) {
+                        if (comparator_1_<%=cid %>.compare(rowList_1_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_1_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+                if(forDuplicateFlag_<%=cid %>){
+                	if(!minItem.duplicateTo(rowList_1_<%=cid %>.get(minIndex_<%=cid %>))){
+                		minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    if (fri.hasNext()) {
+	                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+	                    } else {
+	                        fri.close();
+	                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                    }
+                	}else{
+                	
+	                    if (rowsInBuffer_3_<%=cid %> >= bufferSize_3_<%=cid %>) {
+	
+	                        java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+	                                bufferSize_3_<%=cid %>, comparator_3_<%=cid %>);
+	                        java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+	                                + files_3_<%=cid %>.size());
+	                        <%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+							<%
+							}
+							%>
+	                        file.deleteOnExit();
+	                        java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+	                                new java.io.FileOutputStream(file)));
+                        	<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+							<%
+							}
+							%>
+	                        for (int i = 0; i < bufferSize_3_<%=cid %>; i++) {
+	                            buffer_3_<%=cid %>[i].writeData(rw);
+	                        }
+	                        rw.close();
+							<%
+							if (isLog4jEnabled) {
+							%>
+								log.debug("<%=cid%> - Wrote successfully.");
+							<%
+							}
+							%>
+	                        files_3_<%=cid %>.add(file);
+	
+	                        rowsInBuffer_3_<%=cid %> = 0;
+	                    }
+	                    minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    buffer_3_<%=cid %>[rowsInBuffer_3_<%=cid %>++] = minItem;
+	                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+	                    if (fri.hasNext()) {
+	                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+	                    } else {
+	                        fri.close();
+	                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+	                    }
+	                    
+	                    forDuplicateFlag_<%=cid %> = false;
+	                    
+	                    // skip other duplicates....begin
+	                    for (int i = 0; i < rowList_1_<%=cid %>.size();) {
+	                        if (rowList_1_<%=cid %>.get(i).duplicateTo(minItem)) {
+	                            rowStruct_<%=cid %> noDuplicateItem = null;
+	                            FileRowIterator_<%=cid %> fri2 = rowFileList_1_<%=cid %>.get(i);
+	                            while (fri2.hasNext()) {
+	                                rowStruct_<%=cid %> current = fri2.next();
+	                                if (!minItem.duplicateTo(current)) {
+	                                    noDuplicateItem = current;
+	                                    break;
+	                                }
+	                            }
+	                            if (noDuplicateItem == null) {
+	                                fri2.close();
+	                                rowFileList_1_<%=cid %>.remove(i);
+	                                rowList_1_<%=cid %>.remove(i);
+	                            } else {
+	                                rowList_1_<%=cid %>.set(i, noDuplicateItem);
+	                                i++;
+	                            }
+	                        } else {
+	                            i++;
+	                        }
+	                    }
+	                    // skip duplicates....end
+                    }
+                }else{
+                    minItem = rowList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                    FileRowIterator_<%=cid %> fri = rowFileList_1_<%=cid %>.get(minIndex_<%=cid %>);
+                    if (fri.hasNext()) {
+                        rowList_1_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                    } else {
+                        fri.close();
+                        rowFileList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                        rowList_1_<%=cid %>.remove(minIndex_<%=cid %>);
+                    }
+                    forDuplicateFlag_<%=cid %> = true;
+                }
+            }
+
+            // current is duplicate....
+            if (rowsInBuffer_3_<%=cid %> > 0) {
+
+                java.util.Arrays.<rowStruct_<%=cid %>> sort(buffer_3_<%=cid %>, 0,
+                        rowsInBuffer_3_<%=cid %>, comparator_3_<%=cid %>);
+                java.io.File file = new java.io.File(temp_file_path_prefix_<%=cid %> + "duplicate_"
+                        + files_3_<%=cid %>.size());
+                <%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Invoke request to delete file: "+file.getPath()+" When VM exit.");
+				<%
+				}
+				%>
+                file.deleteOnExit();
+                java.io.ObjectOutputStream rw = new java.io.ObjectOutputStream(new java.io.BufferedOutputStream(
+                        new java.io.FileOutputStream(file)));
+            	<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Writing the data into: "+file.getPath());
+				<%
+				}
+				%>
+                for (int j = 0; j < rowsInBuffer_3_<%=cid %>; j++) {
+                    buffer_3_<%=cid %>[j].writeData(rw);
+                }
+                rw.close();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.debug("<%=cid%> - Wrote successfully.");
+				<%
+				}
+				%>
+
+                files_3_<%=cid %>.add(file);
+
+                rowsInBuffer_3_<%=cid %> = 0;
+            }
+            buffer_3_<%=cid %> = null;
+
+            java.util.List<FileRowIterator_<%=cid %>> rowFileList_3_<%=cid %> = new java.util.ArrayList<FileRowIterator_<%=cid %>>();
+            java.util.List<rowStruct_<%=cid %>> rowList_3_<%=cid %> = new java.util.ArrayList<rowStruct_<%=cid %>>();
+
+            for (java.io.File file : files_3_<%=cid %>) {
+                FileRowIterator_<%=cid %> fri = new FileRowIterator_<%=cid %>(file,
+                        bufferSizePerFile_<%=cid %>);
+                rowFileList_3_<%=cid %>.add(fri);
+                rowList_3_<%=cid %>.add(fri.next());
+            }
+            int nb_uniq_<%=cid %> = 0;
+            int nb_duplicate_<%=cid %> = 0;
+
+            while (rowList_3_<%=cid %>.size() > 0) {
+                int minIndex_<%=cid %> = 0;
+                if (rowList_3_<%=cid %>.size() > 1) {
+                    for (int i = 1; i < rowList_3_<%=cid %>.size(); i++) {
+                        if (comparator_3_<%=cid %>.compare(rowList_3_<%=cid %>.get(minIndex_<%=cid %>),
+                                rowList_3_<%=cid %>.get(i)) > 0) {
+                            minIndex_<%=cid %> = i;
+                        }
+                    }
+                }
+
+                // /////////////
+
+                rowStruct_<%=cid %> current = rowList_3_<%=cid %>.get(minIndex_<%=cid %>);
+
+                // ////////////
+                FileRowIterator_<%=cid %> fri = rowFileList_3_<%=cid %>.get(minIndex_<%=cid %>);
+                if (fri.hasNext()) {
+                    rowList_3_<%=cid %>.set(minIndex_<%=cid %>, fri.next());
+                } else {
+                    fri.close();
+                    rowFileList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                    rowList_3_<%=cid %>.remove(minIndex_<%=cid %>);
+                }
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicate_<%=cid %>+1) + " into <%=connDuplicateName %>.");
+	<%
+	}
+    for(IMetadataColumn column : columnList){//HSS_____0_____1
+    	%>
+				<%=connDuplicateName %>.<%=column.getLabel() %> = current.<%=column.getLabel() %>;
+    	<%
+    }//HSS_____0_____1
+%>
+
+                nb_duplicate_<%=cid %>++;
+<%
+}//HSS_____0
+
+%>

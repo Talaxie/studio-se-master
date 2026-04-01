@@ -1,0 +1,170 @@
+<COMPONENT>
+
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+    
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20140417A"
+    STARTABLE="true"
+    
+    SCHEMA_AUTO_PROPAGATE="false"
+    DATA_AUTO_PROPAGATE="false"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Cloud/Box</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="1"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+    <CONNECTOR CTYPE="RUN_IF"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+	<PARAMETER NAME="USE_EXISTING_CONNECTION" FIELD="CHECK" NUM_ROW="10">
+      <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="CONNECTION" FIELD="COMPONENT_LIST"  FILTER="tBoxConnection" NUM_ROW="10"  DYNAMIC_SETTINGS="true" SHOW_IF="USE_EXISTING_CONNECTION == 'true'" REQUIRED="true"/>
+    
+    <PARAMETER  NAME="CLIENT_ID"  FIELD="TEXT"  NUM_ROW="16" REQUIRED="true" GROUP="CONNECTION_GROUP" SHOW_IF="USE_EXISTING_CONNECTION == 'false'" >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+    <PARAMETER  NAME="CLIENT_SECRET"  FIELD="TEXT"  NUM_ROW="18" REQUIRED="true" GROUP="CONNECTION_GROUP" SHOW_IF="USE_EXISTING_CONNECTION == 'false'" >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>  
+
+    <PARAMETER  NAME="ACCESS_TOKEN"  FIELD="TEXT"  NUM_ROW="20" REQUIRED="false" GROUP="CONNECTION_GROUP" SHOW_IF="USE_EXISTING_CONNECTION == 'false'" >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+    <PARAMETER  NAME="REFRESH_TOKEN"  FIELD="TEXT"  NUM_ROW="26" REQUIRED="false" GROUP="CONNECTION_GROUP" SHOW_IF="USE_EXISTING_CONNECTION == 'false'" >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER  NAME="USE_PROXY"  FIELD="CHECK"  NUM_ROW="28" REQUIRED="true" GROUP="CONNECTION_GROUP" SHOW_IF="USE_EXISTING_CONNECTION == 'false'" >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER  NAME="PROXY_HOST"  FIELD="TEXT"  NUM_ROW="30" SHOW_IF=" (USE_EXISTING_CONNECTION == 'false') AND (USE_PROXY == 'true')" GROUP="CONNECTION_GROUP">
+      <DEFAULT>"127.0.0.1"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER  NAME="PROXY_PORT"  FIELD="TEXT"  NUM_ROW="32" SHOW_IF=" (USE_EXISTING_CONNECTION == 'false') AND (USE_PROXY == 'true')" GROUP="CONNECTION_GROUP">
+      <DEFAULT>8087</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="MOVE_DIRECTORY" FIELD="CHECK" NUM_ROW="54" SHOW_IF="COPY_DIRECTORY == 'false'">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="COPY_DIRECTORY" FIELD="CHECK" NUM_ROW="54" SHOW_IF="MOVE_DIRECTORY == 'false'">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="FILE_NAME"  FIELD="TEXT"  NUM_ROW="56" REQUIRED="true" SHOW_IF=" (MOVE_DIRECTORY == 'false') AND (COPY_DIRECTORY == 'false')">
+      <DEFAULT>"All Files/name.temp"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="SOURCE_DIRECTORY"  FIELD="TEXT"  NUM_ROW="60" REQUIRED="true"  SHOW_IF=" (MOVE_DIRECTORY == 'true') OR (COPY_DIRECTORY == 'true')">
+      <DEFAULT>"All Files/source"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="DESTINATION_DIRECTORY"  FIELD="TEXT"  NUM_ROW="62" REQUIRED="true">
+      <DEFAULT>"All Files/destination"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="RENAME" FIELD="CHECK" NUM_ROW="64"  SHOW_IF=" (MOVE_DIRECTORY == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="DESTINATION_FILE_NAME"  FIELD="TEXT"  NUM_ROW="66" REQUIRED="true" 
+        		SHOW_IF=" (RENAME == 'true') AND (MOVE_DIRECTORY == 'false') AND (COPY_DIRECTORY == 'false')">
+      <DEFAULT>"newname.temp"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="NEW_FOLDER_NAME"  FIELD="TEXT"  NUM_ROW="66" REQUIRED="true" 
+        		SHOW_IF=" (RENAME == 'true') AND (COPY_DIRECTORY == 'true')">
+      <DEFAULT>"newFolderName"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="REMOVE_SOURCE_FILE" FIELD="CHECK" NUM_ROW="68" 
+        		SHOW_IF=" (MOVE_DIRECTORY == 'false') AND (COPY_DIRECTORY == 'false')">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="70">
+		<TABLE READONLY="true">
+			<COLUMN NAME="destinationFilePath" TYPE="id_String" />
+			<COLUMN NAME="destinationFileName" TYPE="id_String" />
+			<COLUMN NAME="sourceDirectory" TYPE="id_String" />
+			<COLUMN NAME="destinationDirectory" TYPE="id_String" />
+		</TABLE>
+	</PARAMETER>
+    
+   </PARAMETERS>
+   
+	<ADVANCED_PARAMETERS>
+	</ADVANCED_PARAMETERS>
+	
+   <CODEGENERATION>
+      	<IMPORTS>
+               <IMPORT NAME="box-java-sdk"
+                    MODULE="boxjavalibv2-v3.0.10.jar" MVN="mvn:net.box/boxjavalibv2/v3.0.10"
+                    REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="jackson-core"
+                    MODULE="jackson-core-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-core/2.14.3"
+                    REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="jackson-databind"
+                    MODULE="jackson-databind-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-databind/2.14.3"
+                    REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="jackson-annotations"
+                    MODULE="jackson-annotations-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-annotations/2.14.3"
+                    REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="apache-http-client"
+                	MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13"
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="apache-http-core"
+                	MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13"
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+                <IMPORT NAME="apache-http-mime"
+                	MODULE="httpmime-4.1.2.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.1.2" 
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="apache-commons-logging"
+                	MODULE="commons-logging-1.2.jar" MVN="mvn:commons-logging/commons-logging/1.2" 
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" BundleID="" />
+               	<IMPORT NAME="apache-commons-codec"
+	                MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" 
+	            	REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+               <IMPORT NAME="apache-commons-lang"
+                    MODULE="commons-lang-2.6.jar" MVN="mvn:commons-lang/commons-lang/2.6" 
+                    UrlPath="platform:/plugin/org.talend.libraries.apache.common/lib/commons-lang-2.6.jar"
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" BundleID="" />
+               <IMPORT NAME="apache-commons-io"
+                    MODULE="commons-io-2.8.0.jar" MVN="mvn:commons-io/commons-io/2.8.0" 
+               		REQUIRED_IF="USE_EXISTING_CONNECTION == 'false'" />
+		</IMPORTS>
+   </CODEGENERATION>
+
+  <RETURNS>
+  	<RETURN NAME="DESTINATION_FILENAME" TYPE="id_String" AVAILABILITY="AFTER" />
+	<RETURN NAME="DESTINATION_FILEPATH" TYPE="id_String" AVAILABILITY="AFTER" />
+	<RETURN NAME="SOURCE_DIRECTORY" TYPE="id_String" AVAILABILITY="AFTER" />
+	<RETURN NAME="DESTINATION_DIRECTORY" TYPE="id_String" AVAILABILITY="AFTER" />
+		
+  </RETURNS>
+</COMPONENT>

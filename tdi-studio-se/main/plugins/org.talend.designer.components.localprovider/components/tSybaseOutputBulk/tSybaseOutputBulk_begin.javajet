@@ -1,0 +1,79 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String filename = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__FILENAME__",
+            "FILENAME"
+        );
+        
+        String fieldSeparator = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__FIELDSEPARATOR__",
+            "FIELDSEPARATOR"
+        );
+        
+        String rowSeparator = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__ROWSEPARATOR__",
+            "ROWSEPARATOR"
+        );
+        
+        String encoding = ElementParameterParser.getValue(
+            node,
+            "__ENCODING__"
+        );
+        
+        boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+        
+        boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+%>
+		int nb_line_<%=cid%> = 0;
+		
+		final String OUT_DELIM_<%=cid %> = <%=fieldSeparator %>;
+		
+		final String OUT_DELIM_ROWSEP_<%=cid %> = <%=rowSeparator %>;
+		
+		java.io.File file_<%=cid%>=new java.io.File(<%=filename %>);
+		final java.io.BufferedWriter out<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+        		new java.io.FileOutputStream(file_<%=cid%>, <%= isAppend%>),<%= encoding%>));
+		resourceMap.put("out<%=cid %>", out<%=cid %>);         		
+        		
+<%
+		if(isIncludeHeader){
+%>
+		if(file_<%=cid%>.length()==0){
+<%    		List<IMetadataColumn> columns = metadata.getListColumns();
+    		int sizeColumns = columns.size();
+    		for (int i = 0; i < sizeColumns; i++) {
+    			IMetadataColumn column = columns.get(i);
+    		%>
+    			out<%=cid %>.write("<%=column.getLabel() %>");
+    		<%
+    			if(i != sizeColumns - 1) {
+    				%>out<%=cid %>.write(OUT_DELIM_<%=cid %>);<%
+    			}
+    		}%>
+    		out<%=cid %>.write(OUT_DELIM_ROWSEP_<%=cid %>);
+    	}
+<%
+		}
+    }
+}
+%>

@@ -1,0 +1,289 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.process.BlockCode
+    java.util.List
+    java.util.ArrayList
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String field = ElementParameterParser.getValue(node, "__FIELD__");
+String reg = ElementParameterParser.getValue(node,"__REGEX__");
+
+String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+
+String checkNumStr = ElementParameterParser.getValue(node, "__CHECK_FIELDS_NUM__");
+boolean checkNum = (checkNumStr!=null&&!("").equals(checkNumStr))?("true").equals(checkNumStr):false;
+
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+IConnection inConn = null;
+List< ? extends IConnection> inConns = node.getIncomingConnections();
+if(inConns!=null){
+    for (IConnection conn : inConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            inConn = conn;
+            break;
+        }
+    }
+}
+
+String rejectConnName = "";
+List<IMetadataColumn> rejectColumnList = null;
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+    IConnection rejectConn = rejectConns.get(0);
+    rejectColumnList = rejectConn.getMetadataTable().getListColumns();
+    rejectConnName = rejectConn.getName();
+}
+
+IConnection outConn = null;
+String firstConnName = "";
+List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+if(outConns!=null){
+    for (IConnection conn : outConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            outConn = conn;
+            firstConnName = outConn.getName();
+            break;
+        }
+    }
+}
+boolean needRejectLink = !("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0;
+
+if(outConns!=null){
+    for (IConnection conn : outConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+			<%=conn.getName() %> = null;
+<%
+        }
+    }
+}
+
+//get field column
+//========= Bug 19723 add outConn!=null =========
+if(inConn!=null && outConn!=null){
+    IMetadataTable inputMetadataTable = inConn.getMetadataTable();
+    IMetadataTable outputMetadataTable = outConn.getMetadataTable();
+    //outCols below is nerver used after definition
+    //int outCols = outputMetadataTable.getListColumns().size();
+    for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+        if(inputCol.getLabel().equals(field)){
+%>
+			if(<%=inConn.getName()%>.<%=field%>!=null){// C_01
+<%
+			List<BlockCode> blockCodes = new java.util.ArrayList<BlockCode>(1);
+			blockCodes.add(new BlockCode("C_01"));
+			((org.talend.core.model.process.AbstractNode) node).setBlocksCodeToClose(blockCodes);
+%>
+    		java.util.regex.Matcher matcher_<%= cid %> = pattern_<%= cid %>.matcher(<%=inConn.getName()%>.<%=field%>);
+<%
+            if(!"".equals(rejectConnName)) {
+%>
+			    boolean isNotMatch_<%=cid %> = false;
+			    if(!matcher_<%=cid %>.find()){
+			        <%=rejectConnName %> = new <%=rejectConnName%>Struct();
+			        <%=rejectConnName %>.errorMessage = <%=inConn.getName()%>.<%=field%> + " doesn't match regex:" + <%=reg%>;
+			        isNotMatch_<%=cid %> = true;
+<%
+//========= Bug 15631 START =========
+//output rows to reject
+//when there's no output component,we can't get "outputMetadataTable" through "out conn"
+                    for (IMetadataColumn outputRejCol : outputMetadataTable.getListColumns()) {
+                        for (IMetadataColumn inputRejCol : inputMetadataTable.getListColumns()) {
+                            if( outputRejCol.getLabel().equals( inputRejCol.getLabel()) ){
+%>
+                                <%=rejectConnName %>.<%=outputRejCol.getLabel()%> = <%=inConn.getName()%>.<%=inputRejCol.getLabel()%>;
+<%
+                            	break;
+                            }
+                        }
+                    }
+//========= Bug 15631 END =========
+%>
+			    }
+			    matcher_<%=cid %>.reset();
+<%
+            }
+%>
+    
+		    int groupCount_<%=cid %> = matcher_<%= cid %>.groupCount();
+		    while(<%="".equals(rejectConnName)?"":"isNotMatch_"+cid + "||" %> matcher_<%= cid %>.find()){
+		    currentComponent = "<%=cid%>";
+		
+<%			
+            break;
+        }
+    }
+}
+
+//set original columns
+List<IMetadataColumn> newColumnList = new ArrayList<IMetadataColumn>();
+if(outConn!=null && inConn!=null){
+%>
+<%="".equals(rejectConnName)?"":"if(!isNotMatch_"+cid +"){" %>
+try{
+    <%=outConn.getName() %> = new <%=outConn.getName() %>Struct();
+<%
+    IMetadataTable outputMetadataTable = outConn.getMetadataTable();
+    IMetadataTable inputMetadataTable = inConn.getMetadataTable();
+    for (IMetadataColumn outputCol : outputMetadataTable.getListColumns()) {
+        if(outputCol.getLabel().equals(field)){
+//========= Bug 15631 =========
+//allow to keep copy of original field continue;
+        }
+        boolean isOirginalColumn = false;
+        for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+            if( outputCol.getLabel().equals( inputCol.getLabel()) ){
+                isOirginalColumn = true;
+%>
+    			<%=outConn.getName()%>.<%=outputCol.getLabel()%> = <%=inConn.getName()%>.<%=inputCol.getLabel()%>;
+<%
+                break;
+            }
+        }
+        if(!isOirginalColumn){
+            if(!("").equals(rejectConnName)&&rejectConnName.equals(firstConnName)
+                && (outputCol.getLabel().equals("errorMessage") || outputCol.getLabel().equals("errorCode"))){
+            }else{
+                newColumnList.add(outputCol);
+            }
+        }
+    }
+%>
+
+String temp_<%=cid%> = null;
+<%
+    for(int i=0; i<newColumnList.size();i++){
+        IMetadataColumn column = newColumnList.get(i);
+        String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+        String primitiveTypeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+        JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+        String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();%><%
+        if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+
+%>
+			<%=outConn.getName()%>.<%=column.getLabel() %> = groupCount_<%=cid %> <= <%=i %>? "" : matcher_<%= cid %>.group(<%=i + 1 %>);
+<%
+        }else{
+%>
+		    temp_<%=cid%> = groupCount_<%=cid %> <= <%=i %>? "" : matcher_<%= cid %>.group(<%=i %> + 1);
+		    if(temp_<%=cid %>.length() > 0) {
+<%
+	            if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+	            } else if(javaType == JavaTypesManager.BYTE_ARRAY){
+%>
+        			<%=outConn.getName() %>.<%=column.getLabel() %> = temp_<%=cid %>.getBytes();
+<%
+	            }else if(javaType == JavaTypesManager.DATE) {
+	                if(checkNum){
+%>
+        				<%=outConn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>, false);
+<%
+                	}else{
+%>
+        				<%=outConn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>);
+<%
+	                }
+	            } else {
+%>
+        			<%=outConn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_<%=cid %>);
+<%
+            	}
+%>
+    		} else {
+<%
+	            String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+	            if(defaultValue == null) {
+%>
+        			throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=outConn.getName() %>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+            	} else {
+%>
+        			<%=outConn.getName() %>.<%=column.getLabel() %> = <%=defaultValue %>;
+<%
+            	}
+%>
+    		}
+<%
+    	}
+	}
+    
+    if(checkNum) {
+%>
+     int filedsum_<%=cid %> = groupCount_<%=cid %>;
+     if(filedsum_<%=cid %> < <%=newColumnList.size() %>){
+         throw new RuntimeException("Column(s) missing");
+     } else if(filedsum_<%=cid %> > <%=newColumnList.size() %>) {
+         throw new RuntimeException("Too many columns");
+     }
+<%
+    }
+    
+    if(!("").equals(rejectConnName) && rejectConnName.equals(firstConnName)){
+%>
+    	<%=outConn.getName() %> = null;
+<%
+    }
+%>
+	}catch(java.lang.Exception ex_<%=cid %>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+<%
+    if(dieOnError){
+%>
+    	throw(ex_<%=cid %>);
+<%
+    }else{
+        if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+    		<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+            for(IMetadataColumn column : outConn.getMetadataTable().getListColumns()) {
+%>
+    			<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName %>.<%=column.getLabel() %>;
+<%
+            }
+%>
+		    <%=rejectConnName%>.errorMessage = ex_<%=cid %>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+		    <%=firstConnName %> = null;
+<%
+        } else if(("").equals(rejectConnName)){
+			if(isLog4jEnabled){
+%>
+			log.error("<%=cid%> - " + ex_<%=cid %>.getMessage());
+<%
+    		}
+%>
+		    System.err.println(ex_<%=cid %>.getMessage());
+		    <%=firstConnName %> = null;
+<%
+        } else if(rejectConnName.equals(firstConnName)){
+%>
+    		<%=rejectConnName%>.errorMessage = ex_<%=cid %>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+        }
+    }
+%>
+}
+<%if(!"".equals(rejectConnName)){%>
+}
+	isNotMatch_<%=cid %> = false;
+<%
+}
+}
+%>

@@ -1,0 +1,91 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+    String dbport = ElementParameterParser.getValue(node, "__PORT__");
+    String dbschema = ElementParameterParser.getValue(node, "__DB_SCHEMA__");
+    if(dbschema == null||dbschema.trim().length()==0) {
+    	 dbschema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+    }
+    String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+    String dbuser = ElementParameterParser.getValue(node, "__USER__");
+    String dbpass = ElementParameterParser.getValue(node, "__PASS__");
+    String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+    
+	boolean isUseSharedConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_SHARED_CONNECTION__"));
+%>
+<%
+	connUtil.beforeComponentProcess(node);
+	connUtil.createURL(node);
+%>
+	String dbUser_<%=cid%> = <%=(dbuser != null && dbuser.trim().length() == 0)? "null":dbuser%>;<%//the tSQLiteConnection component not contain user and pass return null%>
+	
+	<%if(dbpass != null && dbpass.trim().length() == 0) {%>
+		String dbPwd_<%=cid%> = null;
+	<%} else {
+		String passwordFieldName = "__PASS__";
+	%>
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+	<%}%>
+	
+	java.sql.Connection conn_<%=cid%> = null;
+	<%@ include file="../Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	connUtil.adjustDriverRegisterOrderForConflcit();
+	
+	if(isUseSharedConnection){
+%>
+	<%connUtil.useShareConnection(node);%>
+<%
+	} else {
+		boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+		if(specify_alias){
+		    String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+%>
+	java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+	boolean inOSGi = routines.system.BundleUtils.inOSGi();
+	if (!(inOSGi && dataSources_<%=cid%> != null && <%=alias%> != null && <%=alias%>.replaceAll("\\s+","").length() > 0)) {
+<%
+		}
+%>
+		<%connUtil.classForName(node);%>
+		<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect_begin();
+        connUtil.createConnection(node);
+		
+		log4jCodeGenerateUtil.connect_end();
+		%>
+
+		globalMap.put("conn_<%=cid%>", conn_<%=cid%>);
+<%
+		if(specify_alias){
+			String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+%>
+	} else {
+		String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+		if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+   			throw new Exception("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+      	}
+		conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+		globalMap.put("conn_<%=cid%>", conn_<%=cid%>);
+	}
+<%
+		}
+	}
+%>
+	if (null != conn_<%=cid%>) {
+		<%connUtil.setAutoCommit(node);%>
+	}
+<%
+	connUtil.afterComponentProcess(node);
+%>

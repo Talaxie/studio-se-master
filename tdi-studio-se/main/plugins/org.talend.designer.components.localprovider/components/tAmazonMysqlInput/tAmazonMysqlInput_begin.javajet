@@ -1,0 +1,77 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map
+		"
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	
+		public void beforeComponentProcess(INode node){
+			super.beforeComponentProcess(node);
+			cid = node.getUniqueName();
+%>
+		    java.util.Calendar calendar_<%=cid%> = java.util.Calendar.getInstance();
+		    calendar_<%=cid%>.set(0, 0, 0, 0, 0, 0);
+		    java.util.Date year0_<%=cid%> = calendar_<%=cid%>.getTime();
+<%
+	    }
+	    
+		public void setURL(INode node) {
+			final String jdbcURL = "jdbc:mysql";
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Mysql/jdbcurl4basic.javajet"%>
+<%
+		}
+		
+		public String getDirverClassName(INode node){
+			return "org.gjt.mm.mysql.Driver";
+		}
+		
+		public void createStatement(INode node) {
+			super.createStatement(node);
+			String enableStream = ElementParameterParser.getValue(node, "__ENABLE_STREAM__");
+		    if(("true").equals(enableStream)) {
+%>
+		        if(stmt_<%=cid %> instanceof com.mysql.jdbc.Statement){
+				    ((com.mysql.jdbc.Statement)stmt_<%=cid %>).enableStreamingResults();
+				}else if(stmt_<%=cid %> instanceof com.mysql.jdbc.jdbc2.optional.JDBC4StatementWrapper){
+				    ((com.mysql.jdbc.jdbc2.optional.JDBC4StatementWrapper)stmt_<%=cid %>).enableStreamingResults();
+				}
+<%
+			}
+		}
+		
+		//-----------according schema type to generate ResultSet
+	    public void generateTimestampResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+%>
+	        if(rs_<%=cid %>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) != null) {
+	            String dateString_<%=cid%> = rs_<%=cid%>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+	            if (!("0000-00-00").equals(dateString_<%=cid%>) && !("0000-00-00 00:00:00").equals(dateString_<%=cid%>)) {
+	                <%=firstConnName%>.<%=column.getLabel()%> = rs_<%=cid%>.getTimestamp(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+	            } else {
+	                <%=firstConnName%>.<%=column.getLabel()%> = (java.util.Date) year0_<%=cid%>.clone();
+	            }
+	        } else {
+	            <%=firstConnName%>.<%=column.getLabel()%> =  null;
+	        }			 
+<%
+	    }
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>

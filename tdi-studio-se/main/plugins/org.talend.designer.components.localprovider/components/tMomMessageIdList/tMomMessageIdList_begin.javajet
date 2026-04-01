@@ -1,0 +1,143 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.utils.NodeUtil
+    java.util.List
+" 
+class="MomInput"
+%>
+
+<%
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean isExistConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_CONNECTION__"));
+	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	String serverType=ElementParameterParser.getValue(node, "__SERVER__");
+	if(isExistConnection){
+    	INode connectionComponent = NodeUtil.getNodeByUniqueName(node.getProcess(),connection);
+    	serverType=ElementParameterParser.getValue(connectionComponent, "__SERVER__");
+    }
+	String host=ElementParameterParser.getValue(node, "__SERVERADDRESS__");
+	String port=ElementParameterParser.getValue(node, "__SERVERPORT__");
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	IMetadataTable metadata=null;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		metadata = metadatas.get(0);
+	}
+
+%>
+	int nb_line_<%=cid%> = 0;
+	<%
+	if(("WebSphere").equals(serverType)){ 
+	%>
+		com.ibm.mq.MQQueueManager qMgr_<%=cid%>=null;
+		com.ibm.mq.MQQueue remoteQ_<%=cid%>=null;
+		java.util.List<String> idList_<%=cid%> = new java.util.ArrayList<String>();
+		try{	
+			<%
+			if(isExistConnection){
+				%>
+				qMgr_<%=cid%> = (com.ibm.mq.MQQueueManager)globalMap.get("qMgr_<%=connection%>");
+			<%
+			}else{
+				String channel=ElementParameterParser.getValue(node, "__CHANNEL__");
+				String qm=ElementParameterParser.getValue(node, "__QM__");
+				%>
+				java.util.Hashtable properties_<%=cid%>=new java.util.Hashtable();
+				properties_<%=cid%>.put("hostname", <%=host%>);
+				properties_<%=cid%>.put("port", Integer.valueOf(<%=port%>));
+				properties_<%=cid%>.put("channel", <%=channel%>);
+				properties_<%=cid%>.put("CCSID", new Integer(1208));
+				properties_<%=cid%>.put("transport","MQSeries");
+				<%
+				if(!(dbuser == null) && !("\"\"").equals(dbuser) && !("").equals(dbuser)) {
+				%>
+					properties_<%=cid%>.put("userID",<%=dbuser%>);
+					<%
+					String passwordFieldName = "__PASS__";
+					%>
+	
+					<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>			
+			
+					properties_<%=cid%>.put("password",decryptedPassword_<%=cid%>);
+				<%
+				}
+				%>
+				qMgr_<%=cid%>=new com.ibm.mq.MQQueueManager(<%=qm%>,properties_<%=cid%>);
+			<%
+			}
+			String queue = ElementParameterParser.getValue(node, "__QUEUE__");
+			%>
+			int openOptions_<%=cid%>=com.ibm.mq.MQC.MQOO_FAIL_IF_QUIESCING | com.ibm.mq.MQC.MQOO_INPUT_AS_Q_DEF;
+	
+	    	com.ibm.mq.MQGetMessageOptions gmo_<%=cid%>=new com.ibm.mq.MQGetMessageOptions();
+	    	gmo_<%=cid%>.options=gmo_<%=cid%>.options+com.ibm.mq.MQC.MQGMO_SYNCPOINT;
+	    	gmo_<%=cid%>.options=gmo_<%=cid%>.options+com.ibm.mq.MQC.MQGMO_NO_WAIT;
+	    	gmo_<%=cid%>.options=gmo_<%=cid%>.options+com.ibm.mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+	    	gmo_<%=cid%>.waitInterval=com.ibm.mq.MQC.MQWI_UNLIMITED;
+	    	com.ibm.mq.MQException.log = null;
+	    	boolean flag_<%=cid%>=true;
+			<%
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Ready to receive message.");
+				log.info("<%=cid%> - Waiting...");
+			<%
+			}
+			%>
+	    	while(flag_<%=cid%>){
+	    		remoteQ_<%=cid%>=qMgr_<%=cid%>.accessQueue(<%=queue%>,openOptions_<%=cid%>);
+	    		com.ibm.mq.MQMessage inMessage_<%=cid%>=new com.ibm.mq.MQMessage();
+	    		remoteQ_<%=cid%>.get(inMessage_<%=cid%>,gmo_<%=cid%>);
+	    		idList_<%=cid%>.add(new String(inMessage_<%=cid%>.messageId,"ISO-8859-15"));
+	    		remoteQ_<%=cid%>.close();
+			}
+		}catch(com.ibm.mq.MQException me_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",me_<%=cid%>.getMessage());
+			if (me_<%=cid%>.reasonCode == com.ibm.mq.MQException.MQRC_NO_MSG_AVAILABLE) {
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Disconnecting connection...");
+				<%
+				}
+				%>
+	        	remoteQ_<%=cid%>.close();
+	        	qMgr_<%=cid%>.backout();
+	            qMgr_<%=cid%>.disconnect();
+	            <%
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Disconnected successfully.");
+				<%
+				}
+	            %>
+	        }else{
+	        	throw me_<%=cid%>;
+	        }
+		}
+	
+		for(String tmpId_<%=cid%> : idList_<%=cid%>){
+			nb_line_<%=cid%> ++;
+			<%
+			if(isLog4jEnabled){
+			%>
+				log.debug("<%=cid%> - Retrieving the record: " + nb_line_<%=cid%> + ".");
+			<%
+			}
+			%>
+			globalMap.put("<%=cid%>_CURRENT_MESSAGE_ID", tmpId_<%=cid%>);
+<%
+	}
+%>

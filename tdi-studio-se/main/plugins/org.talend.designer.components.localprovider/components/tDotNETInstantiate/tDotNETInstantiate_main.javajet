@@ -1,0 +1,40 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+    	java.util.Map		
+	" 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String dllLoad = ElementParameterParser.getValue(node,"__LIBRARY__");    
+    String clazz = ElementParameterParser.getValue(node,"__CLASS_NAME__");
+    List<Map<String,String>> values = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__PARAMETERS__");
+    String call = "org.talend.net.Object.createInstance("+dllLoad+","+clazz+")";
+    if (values.size() > 0) {
+        call = "org.talend.net.Object.createInstance("+dllLoad+","+clazz+",parameterList_"+cid+")";
+    
+%>
+   Object[] parameterList_<%=cid%> = new Object[] {
+   <%
+     for (int i = 0; i < values.size(); i++) {
+         Map<String,String> line = values.get(i);
+     %>
+     <%=line.get("PARAMETER") %>
+     <%
+        if (i < values.size() - 1) {
+        %>
+        ,
+        <%
+        }
+     }
+   %>   
+   };
+   <%
+   }%>
+   org.talend.net.Object netObject_<%=cid%> =  <%=call%>;   	
+   globalMap.put("<%=cid%>_INSTANCE",netObject_<%=cid%>);

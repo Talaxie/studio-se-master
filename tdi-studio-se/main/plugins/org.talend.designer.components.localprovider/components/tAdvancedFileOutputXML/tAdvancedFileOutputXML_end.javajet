@@ -1,0 +1,255 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.types.JavaType
+"
+skeleton="tAdvancedFileOutputXML_java.skeleton"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+%>
+
+<%@ include file="./TouchXMLNode.javajet"%>
+
+<%@ include file="./ReferenceTouchXMLNode.javajet"%>
+
+<%@ include file="./MappingTouchXMLNode.javajet"%>
+
+<%@ include file="./BigMethodHelper.javajet"%>
+
+<%@ include file="./XSDToolByDom4j.javajet"%>
+
+<%@ include file="./XSDToolByNull.javajet"%>
+
+<%
+// ------------------- *** Common code start *** ------------------- //
+String allowEmpty = ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__");
+String outputAsXSD = ElementParameterParser.getValue(node, "__OUTPUT_AS_XSD__");
+List<Map<String, String>> rootTable = 
+	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+List<Map<String, String>> groupTable = 
+	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+List<Map<String, String>> loopTable = 
+	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+String cid = node.getUniqueName();
+String cid_original = cid;
+cid = cid_original.replace("tAdvancedFileOutputXML","tAFOX");
+
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+boolean isCompact = ("true").equals(ElementParameterParser.getValue(node, "__PRETTY_COMPACT__"));
+
+//*****************add for the feature:8873 to support output steam *****************
+boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+String outStream = ElementParameterParser.getValue(node,"__STREAMNAME__");
+//*******************add for feature:8873 end ****************
+
+boolean isMerge= ("true").equals(ElementParameterParser.getValue(node, "__MERGE__"));
+if(isMerge){
+    mode = "Dom4j";
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	if("Dom4j".equals(mode)){
+%>
+		nameToElement_<%=cid%>.clear();
+<%
+	}
+	
+	String split = ElementParameterParser.getValue(node, "__SPLIT__");
+	if(!useStream && ("true").equals(split)){
+%>
+if(currentRowCount_<%=cid %> > 0){
+<%
+	}
+	if(("Dom4j").equals(mode)){
+		if(useStream){
+%>
+	java.io.OutputStream stream_<%=cid%> = <%=outStream %>;
+<%
+		}else{
+			if(("true").equals(split)){
+%>
+	java.io.FileOutputStream stream_<%=cid%> = new java.io.FileOutputStream(file_<%=cid%> + currentFileCount_<%=cid %> + suffix_<%=cid %>);
+<%
+			}else{
+%>
+	java.io.FileOutputStream stream_<%=cid%> = new java.io.FileOutputStream(fileName_<%=cid%>);
+<%
+			}
+		}
+%>    
+	org.dom4j.io.XMLWriter output_<%=cid%> = new org.dom4j.io.XMLWriter(stream_<%=cid%>, format_<%=cid%>);
+	if(doc_<%=cid %>.getRootElement()!=null){
+<%
+		if(!useStream && ("true").equals(outputAsXSD)){
+%>
+		doc_<%=cid%>.getRootElement().addAttribute("xsi:noNamespaceSchemaLocation", file_<%=cid%>.substring(file_<%=cid%>.lastIndexOf("/")+1)+".xsd");
+    	doc_<%=cid%>.getRootElement().addNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+<%
+		}
+%>  
+    	nestXMLTool_<%=cid%>.replaceDefaultNameSpace(doc_<%=cid%>.getRootElement());
+    	nestXMLTool_<%=cid%>.removeWhiteSpaceTextNode(doc_<%=cid %>.getRootElement());
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+    	nestXMLTool_<%=cid%>.removeEmptyElement(doc_<%=cid%>.getRootElement());
+<%
+		}
+%>
+    	output_<%=cid%>.write(doc_<%=cid%>);
+    }
+<%
+		if(!useStream){
+%>
+    output_<%=cid%>.close();
+<%
+		}else{
+%>
+	output_<%=cid%>.flush();
+	output_<%=cid%> = null;
+<%
+		}
+%>
+<%
+	}else if(("Null").equals(mode)){
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+	if (preUnNullMaxIndex_<%=cid%> >= 0) {
+        // output all buffer
+        for (int j_<%=cid%> = 0; j_<%=cid%> <= preUnNullMaxIndex_<%=cid%>; j_<%=cid%>++) {
+            if (startTabs_<%=cid%>[j_<%=cid%>] != null)
+                out_<%=cid%>.write(startTabs_<%=cid%>[j_<%=cid%>]);
+        }
+
+        if (preUnNullMaxIndex_<%=cid%> < preNewTabIndex_<%=cid%> ) {
+			for (int i_<%=cid%> = preNewTabIndex_<%=cid%> - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	<%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+            }
+        } else {
+            for (int i_<%=cid%> = preUnNullMaxIndex_<%=cid%>; i_<%=cid%> >= 0; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	<%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+                out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+            }
+        }
+    }
+<%
+		}else{
+			if(loopTable.size()>0){
+%>
+	if(nb_line_<%=cid %> > 0){
+		for (int i_<%=cid%> = endTabStrs_<%=cid%>.size() - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+        	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+        		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+        	}
+        	<%if(isCompact==false){%>out_<%=cid%>.newLine(); <%}%>
+	        out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+	    }
+    }
+<%
+			}
+		}
+		
+		if(!useStream){
+%>
+	out_<%=cid%>.close();
+<%
+		}else{
+%>
+	out_<%=cid%>.flush();
+	outWriter_<%=cid %>.flush();
+	out_<%=cid %> = null;
+<%
+		}
+	}
+	if(!useStream && ("true").equals(split)){
+%>
+}
+<%
+	}
+%>
+globalMap.put("<%=cid_original %>_NB_LINE",nb_line_<%=cid %>);
+<%
+log4jFileUtil.setCid(cid);
+log4jFileUtil.writeDataFinishInfo(node);
+
+// ------------------- *** xsd output code start *** ------------------- //
+	if(!useStream && ("true").equals(outputAsXSD)){ // add a new prerequisite:useStream to ignore generating the xsd file
+
+        // change tables to a tree 
+		Object[] treeObjs = getTree(rootTable, groupTable, loopTable, metadatas.get(0).getListColumns());
+    	List<XMLNode> mainList = (ArrayList<XMLNode>)treeObjs[0];
+        XMLNode root = mainList.get(0);
+        
+		boolean isAppend = "true".equals(ElementParameterParser.getValue(node, "__MERGE__")); 
+        if(!"true".equals(allowEmpty) && !(groupTable.size()>0 && isAppend)){
+        	removeEmptyElement(root);
+        }
+
+		if(("Dom4j").equals(mode)){
+%>
+	org.dom4j.Document doc_xsd_<%=cid%>  = org.dom4j.DocumentHelper.createDocument();
+	
+	org.dom4j.Element root_xsd_<%=cid%> = doc_xsd_<%=cid%>.addElement("xsd:schema");
+    root_xsd_<%=cid%>.addNamespace("xsd", "http://www.w3.org/2001/XMLSchema");
+<%
+	XSDToolByDom4j xsdTool = new XSDToolByDom4j();
+	xsdTool.cid = cid;
+	xsdTool.touchXMLNode.cid = cid;
+	xsdTool.bigMethodHelper.cid = cid;
+	xsdTool.touchXMLNode.putRootElement();
+	xsdTool.generateXSD("root_xsd","ele_xsd",root);
+%>
+	java.io.FileOutputStream stream_xsd_<%=cid%> = new java.io.FileOutputStream(file_<%=cid%>+".xsd");
+    org.dom4j.io.XMLWriter output_xsd_<%=cid%> = new org.dom4j.io.XMLWriter(stream_xsd_<%=cid%>, format_<%=cid%>);
+    output_xsd_<%=cid%>.write(doc_xsd_<%=cid%> );
+    output_xsd_<%=cid%>.close();
+    nameToElement_<%=cid%>.clear();
+<%
+		}else if(("Null").equals(mode)){
+%>
+	java.io.BufferedWriter out_xsd_<%=cid%> = new java.io.BufferedWriter(
+		new java.io.OutputStreamWriter(new java.io.FileOutputStream(file_<%=cid%>+".xsd"), <%=encoding%>));
+	out_xsd_<%=cid%>.write("<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">");
+	out_xsd_<%=cid%>.newLine();
+<%
+	XSDToolByNull xsdTool = new XSDToolByNull();
+	xsdTool.cid=cid;
+	xsdTool.generateXSD("  ",root);
+%>
+	out_xsd_<%=cid%>.write("</xsd:schema>");
+	out_xsd_<%=cid %>.close();
+<%
+		}
+    }
+}
+%>
+
+<%if(!useStream && isDeleteEmptyFile){%>
+ 	if((nb_line_<%=cid %> == 0) && !alreadyExistsFile_<%=cid%>){
+   		createFile<%=cid%>.delete();
+ 	}
+<%}%>

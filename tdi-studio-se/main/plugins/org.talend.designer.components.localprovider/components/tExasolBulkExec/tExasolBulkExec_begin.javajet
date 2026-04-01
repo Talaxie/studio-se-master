@@ -1,0 +1,349 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever    
+    java.util.List
+    java.util.ArrayList    
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="@{org.talend.designer.components.localprovider}/components/templates/db_output_bulk.skeleton"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String table = ElementParameterParser.getValue(node, "__TABLE__");
+	boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+	String userName = ElementParameterParser.getValue(node, "__USER__");
+	String dbschema = ElementParameterParser.getValue(node, "__DB_SCHEMA__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String fileOptColumnSeparator = ElementParameterParser.getValue(node, "__COLUMN_SEPARATOR__");
+	String fileOptColumnEnclosure = ElementParameterParser.getValue(node, "__COLUMN_DELIMITER__");
+	String fileOptRowSeparator = ElementParameterParser.getValue(node, "__ROW_SEPARATOR__");
+	String fileOptTrim = ElementParameterParser.getValue(node, "__TRIM_METHOD__");
+	String fileOptEncoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	String fileOptSkip = ElementParameterParser.getValue(node, "__SKIP__");
+	String fileOptNullString = ElementParameterParser.getValue(node, "__NULLSTRING__");
+	String defaultDateFormat = ElementParameterParser.getValue(node, "__DEFAULT_DATE_FORMAT__");
+	String defaultTimestampFormat = ElementParameterParser.getValue(node, "__DEFAULT_TIMESTAMP_FORMAT__");
+	String numGroupSep = ElementParameterParser.getValue(node, "__THOUSANDS_SEPARATOR__");
+	boolean useLenPrecision = "true".equals(ElementParameterParser.getValue(node, "__USE_PRECISION_LENGTH_FROM_SCHEMA__"));
+	
+	if (numGroupSep == null|| numGroupSep.trim().isEmpty()) {
+		 numGroupSep = "null";
+	}
+	String numDecSep = ElementParameterParser.getValue(node, "__DECIMAL_SEPARATOR__");
+	if (numDecSep == null|| numDecSep.trim().isEmpty()) {
+		 numDecSep = "null";
+	}
+	// source chooser
+	String source = ElementParameterParser.getValue(node, "__SOURCE__");
+	// local source file
+	String file = ElementParameterParser.getValue(node, "__FILENAME__");
+	// in exasol predefined connections
+	boolean usePredefinedConnection = "true".equals(ElementParameterParser.getValue(node, "__REMOTE_USE_EXISTING_CONNECTION__"));
+	String predefinedConnName = ElementParameterParser.getValue(node, "__REMOTE_EXISTING_CONNECTION_NAME__");
+	// remote source file
+	String remoteFileUrl = ElementParameterParser.getValue(node, "__REMOTE_FILE_URL__");
+	String remoteFileName = ElementParameterParser.getValue(node, "__REMOTE_FILENAME__");
+	String remoteUrlParams = ElementParameterParser.getValue(node, "__REMOTE_URL_PARAMS__");
+	// remote source EXASol db
+	String remoteExaHost = ElementParameterParser.getValue(node, "__REMOTE_EXA_HOST__");
+	// remote source JDBC
+	String remoteJdbcUrl = ElementParameterParser.getValue(node, "__REMOTE_JDBC_URL__");
+	// remote source Oracle db
+	String remoteOraUrl = ElementParameterParser.getValue(node, "__REMOTE_ORA_URL__");
+	// source table or query
+	boolean useSourceQuery = "true".equals(ElementParameterParser.getValue(node, "__USE_SELF_DEFINED_SELECT__"));
+	String sourceSchema = ElementParameterParser.getValue(node, "__SOURCE_SCHEMA_DB__");
+	if (sourceSchema == null || sourceSchema.trim().isEmpty()) {
+		 sourceSchema = "null";
+	}
+	String sourceTable = ElementParameterParser.getValue(node, "__SOURCE_TABLE__");
+	String sourceQuery = ElementParameterParser.getValue(node, "__SOURCE_QUERY__");
+	if (sourceQuery != null) {
+		 sourceQuery = sourceQuery.trim().replace('\r', ' ').replace("\n", "\\n\" +\n\"");
+	}
+	// remote user credentials
+	boolean useRemoteUserAuthentication = "true".equals(ElementParameterParser.getValue(node, "__USE_REMOTE_ATHENTICATION__"));
+	String remoteUser = ElementParameterParser.getValue(node, "__REMOTE_USER__");
+	String remotePassword = ElementParameterParser.getValue(node, "__REMOTE_PASSWORD__");
+	// secure local file transfer
+	boolean secureTransfer = "true".equals(ElementParameterParser.getValue(node, "__SECURE_TRANSFER__"));
+	// error logging
+	String errorTable = ElementParameterParser.getValue(node, "__ERROR_TABLE__");
+	if (errorTable == null || errorTable.trim().isEmpty()) {
+		 errorTable = "null";
+	}
+	List<Map<String, String>> columnConfigList = (List<Map<String,String>>) ElementParameterParser.getObjectValue(node, "__COLUMN_CONFIG__");
+	List<Map<String, String>> sourceTableColumnConfigList = (List<Map<String,String>>) ElementParameterParser.getObjectValue(node, "__SOURCE_TABLE_COLUMN_CONFIG__");
+	boolean errorTableWithTimestamp = "true".equals(ElementParameterParser.getValue(node, "__ERROR_TABLE_WITH_CURRENT_TIMESTAMP__"));
+	String localErrorFile = ElementParameterParser.getValue(node, "__LOCAL_ERROR_FILE__");
+	if (localErrorFile == null || localErrorFile.trim().isEmpty()) {
+		 localErrorFile = "null";
+	}
+	String errorDest = ElementParameterParser.getValue(node, "__ERROR_LOG_DESTINATION__");
+	boolean localErrorFileWithTimestamp = "true".equals(ElementParameterParser.getValue(node, "__LOCAL_ERROR_FILE_WITH_CURRENT_TIMESTAMP__"));
+	String errorLimit = ElementParameterParser.getValue(node, "__ERROR_LIMIT__");
+	if (errorLimit == null || errorLimit.trim().isEmpty()) {
+		 errorLimit = "null";
+	}
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean testMode = "true".equals(ElementParameterParser.getValue(node, "__TEST_MODE__"));
+%>
+<%@include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jDBConnUtil.javajet"%>
+
+int deletedCount_<%=cid%> = 0;
+int insertedCount_<%=cid%> = 0;
+
+String dbschema_<%=cid%> = null;
+<% if (useExistingConnection) { %>
+    dbschema_<%=cid%> = (String)globalMap.get("schema_<%=connection%>");
+<% } else { %>
+    dbschema_<%=cid%> = <%=dbschema%>;
+<% } %>
+String tableName_<%=cid%> = null;
+if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+    tableName_<%=cid%> = <%=table%>;
+} else {
+    tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;
+}
+java.sql.Connection conn_<%=cid%> = null;
+<%	if (useExistingConnection) { %>
+conn_<%=cid%> = (java.sql.Connection) globalMap.get("conn_<%=connection%>");
+<% } else { %>
+try {
+	 java.lang.Class.forName("com.exasol.jdbc.EXADriver").newInstance();
+} catch (Exception e) {
+	 globalMap.put("<%=cid%>_ERROR_MESSAGE", "Load driver failed: " + e.getMessage());
+	 throw e;
+}
+<%     if (dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) { %>
+String url_<%=cid%> = "jdbc:exa:" + <%=dbhost%> + ":" + <%=dbport%>+ ";schema=" + <%=dbschema%>; 
+<%     } else { %>
+String url_<%=cid%> = "jdbc:exa:" + <%=dbhost%> + ":" + <%=dbport%> + ";schema=" + <%=dbschema%> + ";" + <%=dbproperties%>;
+<%     } %> 
+
+<%     String passwordFieldName = "__PASS__"; %>
+<%@include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+
+try {    
+	 conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, <%=userName%>, dbPwd_<%=cid%>);
+} catch (Exception e) {
+	 String message = "Connect failed: " + e.getMessage();
+	 globalMap.put("<%=cid%>_ERROR_MESSAGE", message);
+	 throw e;
+}
+<%	} // if (useExistingConnection) %>
+
+<% String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+   String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+   List<IMetadataColumn> columnList = getColumnList(node);
+   List<Column> stmtStructure = null;
+   Manager manager = null;
+   if (columnList != null && columnList.size() > 0) {
+	    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null); %>
+<%@include file="@{org.talend.designer.components.localprovider}/components/templates/_tableActionForBulk.javajet"%>	
+<% } %>
+globalMap.put("<%=cid%>_NB_LINE_DELETED", deletedCount_<%=cid%>);
+org.talend.database.exasol.imp.EXABulkUtil <%=cid%> = new org.talend.database.exasol.imp.EXABulkUtil();
+<%=cid%>.setOnlyBuildSQLCode(<%=testMode%>);
+<%=cid%>.setConnection(conn_<%=cid%>);
+<%=cid%>.setTable(tableName_<%=cid%>);
+<% if ("LOCAL_FILE".equals(source) || "REMOTE_FILE".equals(source)) { %>
+<%     if (defaultDateFormat != null && defaultDateFormat.trim().isEmpty() == false) { %>
+// Source is a file
+// setup the format of date values if no dedicated pattern is provided for a column 
+<%=cid%>.setDefaultDateFormat(<%=defaultDateFormat%>);
+<%     } %>
+<%     if (defaultTimestampFormat != null && defaultTimestampFormat.trim().isEmpty() == false) { %>
+// setup the format of timestamp values if no dedicated pattern is provided for a column
+<%=cid%>.setDefaultTimestampFormat(<%=defaultTimestampFormat%>);
+<%     } %>
+// setup numeric separators, default if nothing set is the English format
+<%=cid%>.setDefaultNumericCharacters(<%=numGroupSep%>, <%=numDecSep%>);
+<%     if (fileOptColumnEnclosure != null && fileOptColumnEnclosure.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptColumnEnclosure(<%=fileOptColumnEnclosure%>);
+<%     } %>
+<%     if (fileOptColumnSeparator != null && fileOptColumnSeparator.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptColumnSeparator(<%=fileOptColumnSeparator%>);
+<%     } %>
+<%     if (fileOptEncoding != null && fileOptEncoding.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptEncoding(<%=fileOptEncoding%>);
+<%     } %>
+<%     if (fileOptRowSeparator != null && fileOptRowSeparator.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptRowSeparator(<%=fileOptRowSeparator%>);
+<%     } %>
+<%     if (fileOptTrim != null && fileOptTrim.trim().isEmpty() == false && "NONE".equals(fileOptTrim) == false) { %>
+<%=cid%>.setFileOptTrim("<%=fileOptTrim%>");
+<%     } %>
+<%     if (fileOptSkip != null && fileOptSkip.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptSkip(<%=fileOptSkip%>);
+<%     } %>
+<%     if (fileOptNullString != null && fileOptNullString.trim().isEmpty() == false) { %>
+<%=cid%>.setFileOptNullIdentifier(<%=fileOptNullString%>);
+<%     } %>
+// add column configurations
+<%     if (columnList != null && columnList.size() > 0) {
+            int index = 0;
+            for (IMetadataColumn column : columnList) {
+                String name = column.getOriginalDbColumnName();
+                String pattern = column.getPattern();
+                if (pattern == null || pattern.trim().isEmpty()) {
+                    pattern = "null";
+                }
+                Map<String, String> config = columnConfigList.get(index);
+                boolean hasGroupSep = "true".equals(config.get("HAS_GROUP_DELIMITERS"));
+                String format = config.get("FORMAT");
+                if (format == null || format.trim().isEmpty()) {
+                    format = "null";
+                }
+                String lengthStr = "null";
+                String precisionStr = "null";
+                Integer length = column.getLength();
+                if(useLenPrecision) {
+	                if (length != null) {
+	                    lengthStr = String.valueOf(length);
+	                }
+	            } else {
+	            	if (length != null && hasGroupSep) {
+	                    lengthStr = String.valueOf(length);
+	                }
+	            }
+                Integer precision = column.getPrecision();
+                if(useLenPrecision) {
+                	if (precision != null) {
+                    	precisionStr = String.valueOf(precision);
+                	}
+                } else {
+                	if (precision != null && hasGroupSep) {
+	                    precisionStr = String.valueOf(precision);
+	                }
+                }
+                String talendType = column.getTalendType();
+                if ("id_Date".equals(talendType)
+                    || "id_Timestamp".equals(talendType)
+                    || "id_Time".equals(talendType)) { %>
+<%=cid%>.addCSVDateColumn("<%=name%>", null, <%=pattern%>);
+<%                 } else if ("id_BigDecimal".equals(talendType)
+                   || "id_Long".equals(talendType)
+                   || "id_Integer".equals(talendType)
+                   || "id_Short".equals(talendType)
+                   || "id_Float".equals(talendType)
+                   || "id_Double".equals(talendType)) { %>
+<%=cid%>.addCSVNumberColumn("<%=name%>", null, <%=lengthStr%>, <%=precisionStr%>, <%=format%>, <%=hasGroupSep%>);
+<%              } else { %>
+<%=cid%>.addCSVColumn("<%=name%>", null);
+<%              }
+               index++;
+           } // for
+       } // if (columnList != null  %>
+<% } %>
+<% if (usePredefinedConnection) { %>
+<% 	if (source.equals("REMOTE_FILE")) { %>
+<%=cid%>.setRemoteExistingFileConnectionName(<%=predefinedConnName%>);
+<%    } else if (source.startsWith("REMOTE")) { // all the other remotes are DB based %>
+<%=cid%>.setRemoteExistingDBConnectionName(<%=predefinedConnName%>);
+<% 	} %>
+<% } %>
+<% if (source.startsWith("REMOTE")) { %>
+<%     if (useRemoteUserAuthentication) { %>
+<%         if (remoteUser != null && remoteUser.trim().isEmpty() == false) { %>
+<%=cid%>.setRemoteUser(<%=remoteUser%>);
+<%         } %>
+<%         if (remotePassword != null && remotePassword.trim().isEmpty() == false) { %>
+<%=cid%>.setRemotePassword(<%=remotePassword%>);
+<%         } %>
+<%     } %>
+<% } %>
+<% if ("LOCAL_FILE".equals(source)) { %>
+<%=cid%>.setLocalFilePath(<%=file%>);
+<%=cid%>.setTransferSecure(<%=secureTransfer%>);
+<% } %>
+<% if ("REMOTE_FILE".equals(source)) { %>
+<%     if (usePredefinedConnection == false) { %>
+<%=cid%>.setRemoteFileUrl(<%=remoteFileUrl%>);
+<%         if (remoteUrlParams != null && remoteUrlParams.trim().isEmpty() == false) { %>
+<%=cid%>.setRemoteFileUrlParameters(<%=remoteUrlParams%>);
+<%         } %>
+<%     } %>
+<%=cid%>.setRemoteFileName(<%=remoteFileName%>);
+<% } %>
+<% if ("REMOTE_EXA".equals(source)) { %>
+<%=cid%>.setDbmsSourceType("EXA");
+<%     if (usePredefinedConnection == false) { %>
+<%=cid%>.setRemoteDbmsUrl(<%=remoteExaHost%>);
+<%     } %>
+<% } %>
+<% if ("REMOTE_JDBC".equals(source)) { %>
+<%=cid%>.setDbmsSourceType("JDBC");
+<%     if (usePredefinedConnection == false) { %>
+<%=cid%>.setRemoteDbmsUrl(<%=remoteJdbcUrl%>);
+<%     } %>
+<% } %>
+<% if ("REMOTE_ORA".equals(source)) { %>
+<%=cid%>.setDbmsSourceType("ORA");
+<%     if (usePredefinedConnection == false) { %>
+<%=cid%>.setRemoteDbmsUrl(<%=remoteOraUrl%>);
+<%     } %>
+<% } %>
+<% if ("REMOTE_EXA".equals(source) || "REMOTE_JDBC".equals(source) || "REMOTE_ORA".equals(source)) { %>
+<%     if (useSourceQuery) { %>
+<%=cid%>.setRemoteSourceSelect(<%=sourceQuery%>);
+<%     } else { %>
+<%=cid%>.setRemoteSourceTable(<%=sourceSchema%>, <%=sourceTable%>);
+<%     } %>
+<%     if (columnList != null && columnList.size() > 0) { // build the target column list anyway
+           int index = 0;
+           for (IMetadataColumn column : columnList) {
+               String name = column.getOriginalDbColumnName();
+               Map<String, String> config = sourceTableColumnConfigList.get(index++);
+			      String sourceTableName = config.get("SOURCE_COLUMN_NAME");
+					if (sourceTableName == null || sourceTableName.trim().isEmpty()) {
+					    sourceTableName = "null";
+					} %>
+<%=cid%>.addRemoteSourceTableColumn("<%=name%>", <%=sourceTableName%>, null);
+<%         } %>
+<%     } %>
+<% } %>
+<%=cid%>.setErrorRejectLimit(<%=errorLimit%>);
+<% if ("TABLE".equals(errorDest)) { %>
+// setup error monitoring to a log table
+<%=cid%>.setErrorTableWithCurrentTimestamp(<%=errorTableWithTimestamp%>);
+<%=cid%>.setErrorTable(<%=errorTable%>);
+<% } %>
+<% if ("LOCAL_FILE".equals(errorDest)) { %>
+// setup error monitoring to a local log file
+<%=cid%>.setLocalErrorFileWithCurrentTimestamp(<%=localErrorFileWithTimestamp%>);
+<%=cid%>.setLocalErrorFile(<%=localErrorFile%>);
+globalMap.put("<%=cid%>_ERROR_LOG_FILE", <%=cid%>.getLocalErrorFile());
+<% } %>
+// execute the import
+try {
+<% if ("LOCAL_FILE".equals(source)) { %>
+	 globalMap.put("<%=cid%>_FILENAME", <%=cid%>.getLocalFilePath());
+<% } %>
+    <%=cid%>.executeImport();
+    insertedCount_<%=cid%> = <%=cid%>.getCountAffectedRows();
+<% if (useExistingConnection == false) { %>
+    <%=cid%>.commitAndClose();
+<% } %>
+    globalMap.put("<%=cid%>_NB_LINE_INSERTED", insertedCount_<%=cid%>); 
+} catch (Exception e) {
+	 globalMap.put("<%=cid%>_ERROR_MESSAGE", "Import failed: " + e.getMessage());
+<% if (useExistingConnection == false) { %>
+    <%=cid%>.rollbackAndClose();
+<% } %>
+	 throw e;
+}

@@ -1,0 +1,142 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    String conn = "conn_" + connection;
+    
+    String db = "db_" + connection;
+    
+    String dbSchema = "dbschema_" + connection;
+    
+    String table = ElementParameterParser.getValue(node,"__TABLE_NAME__");
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+	java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%	log4jCodeGenerateUtil.useExistConnection(node);%>
+
+	String db_<%=cid%> = (String)globalMap.get("<%=db %>");
+
+	String table_<%=cid%> = <%=table %>;
+
+	String dbSchema_<%=cid%> = (String)globalMap.get("<%=dbSchema %>");
+
+	String query_<%=cid %> = "";
+
+	if(dbSchema_<%=cid%> != null && dbSchema_<%=cid%>.length() > 0){
+		query_<%=cid %> = "SELECT t.COLUMN_NAME, t.COLUMN_DEFAULT, t.IS_NULLABLE, t.DATA_TYPE, t.CHARACTER_MAXIMUM_LENGTH, " +
+				"t.CHARACTER_OCTET_LENGTH, t.NUMERIC_PRECISION, t.NUMERIC_PRECISION_RADIX, t.NUMERIC_SCALE, t.DATETIME_PRECISION," +
+				" c.COLUMN_NAME, t.ORDINAL_POSITION FROM (SELECT * FROM information_schema.columns WHERE TABLE_CATALOG='" +
+				db_<%=cid%> + "' AND TABLE_SCHEMA='" + dbSchema_<%=cid %> + "' AND TABLE_NAME='" + table_<%=cid%> +
+				"') AS t  LEFT OUTER JOIN (SELECT isK.COLUMN_NAME,isK.CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE isK," +
+				"information_schema.TABLE_CONSTRAINTS isT WHERE isK.TABLE_CATALOG='" + db_<%=cid%> + 
+				"' AND isK.TABLE_SCHEMA='" + dbSchema_<%=cid %> + "' AND isK.TABLE_NAME='" + table_<%=cid%>+ 
+				"' AND isT.CONSTRAINT_TYPE='PRIMARY KEY'AND isK.CONSTRAINT_NAME=isT.CONSTRAINT_NAME) " +
+				"AS c ON t.COLUMN_NAME=c.COLUMN_NAME ORDER BY t.ORDINAL_POSITION";
+	
+	}else{
+		query_<%=cid %> = "SELECT t.COLUMN_NAME, t.COLUMN_DEFAULT, t.IS_NULLABLE, t.DATA_TYPE, " +
+			"t.CHARACTER_MAXIMUM_LENGTH, t.CHARACTER_OCTET_LENGTH, t.NUMERIC_PRECISION, " + 
+			"t.NUMERIC_PRECISION_RADIX, t.NUMERIC_SCALE, t.DATETIME_PRECISION, c.COLUMN_NAME, " + 
+			"t.ORDINAL_POSITION FROM (SELECT * FROM information_schema.columns WHERE TABLE_CATALOG='" + db_<%=cid%> + 
+			"' AND TABLE_NAME='" + table_<%=cid%> +"') AS t LEFT OUTER JOIN (SELECT isK.COLUMN_NAME,isK.CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE isK," +
+			"information_schema.TABLE_CONSTRAINTS isT WHERE isK.TABLE_CATALOG='" + db_<%=cid%> + 
+			"' AND isK.TABLE_NAME='" + table_<%=cid%>+ 
+			"' AND isT.CONSTRAINT_TYPE='PRIMARY KEY'AND isK.CONSTRAINT_NAME=isT.CONSTRAINT_NAME) AS c ON t.COLUMN_NAME=c.COLUMN_NAME ORDER BY t.ORDINAL_POSITION";	
+	}
+
+	int nb_column_<%=cid%> = 0;
+	
+	java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+	
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+	<%
+	}
+	%>
+	java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+	
+	
+	while (rs_<%=cid %>.next()) {
+	
+		String currentColumnName_<%=cid %> = rs_<%=cid %>.getString(1);
+		
+		String columnDefault_<%=cid %> = rs_<%=cid %>.getString(2);
+		
+		String isNullable_<%=cid %> = rs_<%=cid %>.getString(3);
+		
+		String dataType_<%=cid %> = rs_<%=cid %>.getString(4);
+		
+		String characterMaximumLength_<%=cid %> = rs_<%=cid %>.getString(5);
+		
+		String characterOctetLength_<%=cid %> = rs_<%=cid %>.getString(6);
+		
+		String numericPrecision_<%=cid %> = rs_<%=cid %>.getString(7);
+	
+		String numericPrecisionRadix_<%=cid %> = rs_<%=cid %>.getString(8);
+		
+		String numericScale_<%=cid %> = rs_<%=cid %>.getString(9);
+		
+		String dateTimePrecision_<%=cid %> = rs_<%=cid %>.getString(10);
+		
+		String columKey_<%=cid %> = "NO";
+		
+		if(rs_<%=cid %>.getString(11) != null){
+			columKey_<%=cid %> = "YES";
+		}
+	
+		nb_column_<%=cid %>++;
+	        
+		<%
+		if(isLog4jEnabled){
+		%>
+			log.debug("<%=cid%> - Retrieving the column "+nb_column_<%=cid%>+".");
+			StringBuffer logSB_<%=cid%> = new StringBuffer("<%=cid%> - Name of column "+nb_column_<%=cid%>+":"+currentColumnName_<%=cid %>+" | ");
+			logSB_<%=cid%>.append("Default value of column "+nb_column_<%=cid%>+":"+columnDefault_<%=cid %>+" | ")
+			.append("Is nullable of column "+nb_column_<%=cid%>+":"+isNullable_<%=cid %>+" | ")
+			.append("Data type of column "+nb_column_<%=cid%>+":"+dataType_<%=cid %>+" | ")
+			.append("Character maximum length of column "+nb_column_<%=cid%>+":"+characterMaximumLength_<%=cid %>+" | ")
+			.append("Character octet length of column "+nb_column_<%=cid%>+":"+characterOctetLength_<%=cid %>+" | ")
+			.append("Numeric precision of column "+nb_column_<%=cid%>+":"+numericPrecision_<%=cid %>+" | ")
+			.append("Numeric precision radix of column "+nb_column_<%=cid%>+":"+numericPrecisionRadix_<%=cid %>+" | ")
+			.append("Numeric scale of column "+nb_column_<%=cid%>+":"+numericScale_<%=cid %>+" | ")
+			.append("Datetime precision of column "+nb_column_<%=cid%>+":"+dateTimePrecision_<%=cid %>+" | ")
+			.append("Column key of column "+nb_column_<%=cid%>+":"+columKey_<%=cid %>+" |");
+			log.trace(logSB_<%=cid%>.toString());
+		<%
+		}
+		%>
+		globalMap.put("<%=cid %>_COLUMN_NAME", currentColumnName_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_COLUMN_DEFAULT", columnDefault_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_IS_NULLABLE", isNullable_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_DATA_TYPE", dataType_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_CHARACTER_MAXIMUM_LENGTH", characterMaximumLength_<%=cid %>);
+	
+		globalMap.put("<%=cid %>_CHARACTER_OCTET_LENGTH", characterOctetLength_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_NUMERIC_PRECISION", numericPrecision_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_NUMERIC_PRECISION_RADIX", numericPrecisionRadix_<%=cid %>);
+	
+		globalMap.put("<%=cid %>_NUMERIC_SCALE", numericScale_<%=cid %>);
+		
+		globalMap.put("<%=cid %>_DATETIME_PRECISION", dateTimePrecision_<%=cid %>);
+	
+		globalMap.put("<%=cid %>_COLUMN_KEY", columKey_<%=cid %>);

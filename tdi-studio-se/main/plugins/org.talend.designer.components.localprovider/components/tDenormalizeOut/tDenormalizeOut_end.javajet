@@ -1,0 +1,222 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    java.util.List
+    java.util.Map
+    java.util.ArrayList
+    java.util.HashMap
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName(); 
+List<IMetadataTable> metadatas = node.getMetadataList();
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+
+    IMetadataTable metadata = metadatas.get(0);
+    List< ? extends IConnection> inConns = node.getIncomingConnections();
+    IMetadataTable inMetadata = null;
+    if(inConns != null){ 
+    	for (IConnection conn : inConns) { 
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+				inMetadata = conn.getMetadataTable();
+    			break;
+			}
+		}
+	}
+    if (metadata != null && inMetadata != null) { 
+    	List<IMetadataColumn> inColumns = inMetadata.getListColumns();
+    	Map<String, String> typesMap = new HashMap<String, String>();
+    	Map<String, String> patternsMap = new HashMap<String, String>();
+    	for(IMetadataColumn column : inColumns){
+    		String type = JavaTypesManager.getTypeToGenerate(column.getTalendType(), true);
+    		typesMap.put(column.getLabel(), type);
+    		String pattern = ((column.getPattern() == null) || (column.getPattern().trim().length() == 0)) ? "" : column.getPattern();
+    		patternsMap.put(column.getLabel(), pattern);
+    	}
+    	Map<String, String> outTypesMap = new HashMap<String, String>();
+    	for(IMetadataColumn outColumn : metadata.getListColumns()){
+    		String type = JavaTypesManager.getTypeToGenerate(outColumn.getTalendType(), true);
+    		outTypesMap.put(outColumn.getLabel(), type);
+    	}
+    	String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+        List<Map<String, String>> denormalizes = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DENORMALIZE_COLUMNS__");
+        List<String> denormalizeColumns = new ArrayList<String>();
+        List<String> denormalizeDelimiters = new ArrayList<String>();
+        List<Boolean> denormalizeMergeFlags = new ArrayList<Boolean>();
+        List<String> groupColumns = new ArrayList<String>();
+        for(Map<String, String> denormalize : denormalizes){
+        	String columnName = denormalize.get("INPUT_COLUMN");
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	denormalizeColumns.add(columnName);
+        	denormalizeDelimiters.add(denormalize.get("DELIMITER"));
+        	denormalizeMergeFlags.add(("true").equals(denormalize.get("MERGE")));
+        }
+        for(IMetadataColumn column : inColumns){
+        	String columnName = column.getLabel();
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	groupColumns.add(column.getLabel());
+        }
+		%>
+java.util.List<OnRowsEndStruct<%=destination %>> result_list_<%=cid %> = new java.util.ArrayList<OnRowsEndStruct<%=destination %>>();
+if (denormalize_result_<%=cid %> != null) {
+<%
+	for(boolean b : denormalizeMergeFlags){
+		if(b){
+%>
+StringBuilder sb_<%=cid %> = null;
+
+<%
+			break;
+		}
+	}
+%>
+//generate result begin
+<%		//start
+        //
+		if(denormalizeColumns.size() > 0 || groupColumns.size() > 0){
+			for(int i = 0; i < groupColumns.size(); i++){
+				String inputColumn = groupColumns.get(i);
+				String nextInputColumn = null;
+				if(i != groupColumns.size() - 1){
+					nextInputColumn = groupColumns.get(i+1);
+				}
+				//gen loops begin begin
+                %>
+java.util.Iterator<<%=typesMap.get(groupColumns.get(i)) %>> <%=inputColumn%>_iterator_<%=cid %> = hash_<%=inputColumn %>_<%=cid %>.keySet().iterator();
+
+while(<%=inputColumn%>_iterator_<%=cid %>.hasNext()){
+
+	<%=typesMap.get(groupColumns.get(i)) %> key_<%=inputColumn %>_<%=cid %> = <%=inputColumn%>_iterator_<%=cid %>.next();
+	
+<%
+    			if(i == groupColumns.size() - 1){
+    					    %>
+	denormalize_result_<%=cid %> = hash_<%=inputColumn%>_<%=cid %>.get(key_<%=inputColumn %>_<%=cid %>);
+
+<%
+    			}else{
+    				    %>
+	hash_<%=nextInputColumn %>_<%=cid %> = hash_<%=inputColumn %>_<%=cid %>.get(key_<%=inputColumn %>_<%=cid %>);
+
+<%
+    			}
+    			//gen loops begin end
+    		}
+%>
+	OnRowsEndStruct<%=destination %> denormalize_row_<%=cid %> = new OnRowsEndStruct<%=destination %>();
+                
+<%
+			for(int i = 0; i < groupColumns.size(); i++){
+				String inputColumn = groupColumns.get(i);
+%>
+	denormalize_row_<%=cid %>.<%=inputColumn %> = key_<%=inputColumn %>_<%=cid %>;
+<%
+			}
+			
+			for(int i = 0; i < denormalizeColumns.size(); i++){
+				String inputColumn = denormalizeColumns.get(i);
+				String delimiter = denormalizeDelimiters.get(i);
+				if("List".equals(outTypesMap.get(inputColumn))){
+%>
+	denormalize_row_<%=cid %>.<%=inputColumn %> = denormalize_result_<%=cid %>.<%=inputColumn %>;
+<%
+					continue;
+				}
+				if(denormalizeMergeFlags.get(i)){
+%>
+	for(<%=typesMap.get(inputColumn) %> temp_<%=cid %> : denormalize_result_<%=cid %>.<%=inputColumn %>){
+	
+		if(sb_<%=cid %> == null){
+		
+			sb_<%=cid %> = new StringBuilder();
+<%
+					if((("java.util.Date").equals(typesMap.get(inputColumn))) && (patternsMap.get(inputColumn).length() != 0)){
+%>		
+			sb_<%=cid %>.append(FormatterUtils.format_Date(temp_<%=cid %>, <%=patternsMap.get(inputColumn) %>));
+			
+<%
+					}else{
+%>		
+			sb_<%=cid %>.append(temp_<%=cid %>);
+			
+<%
+					}
+%>
+			
+		}else{
+<%
+					if((("java.util.Date").equals(typesMap.get(inputColumn))) && (patternsMap.get(inputColumn).length() != 0)){
+%>		
+			sb_<%=cid %>.append(<%=delimiter %>).append(FormatterUtils.format_Date(temp_<%=cid %>, <%=patternsMap.get(inputColumn) %>));
+			
+<%
+					}else{
+%>		
+			sb_<%=cid %>.append(<%=delimiter %>).append(temp_<%=cid %>);
+			
+<%
+					}
+%>
+		}
+		
+	}
+	if (sb_<%=cid %> != null)
+		denormalize_row_<%=cid %>.<%=inputColumn %> = sb_<%=cid %>.toString();
+	
+	sb_<%=cid %> = null;
+	
+<%
+				}else{
+%>
+	denormalize_row_<%=cid %>.<%=inputColumn %> = denormalize_result_<%=cid %>.<%=inputColumn %>.toString();
+	
+<%
+				}
+			}
+%>
+	//in the deepest end
+	
+	result_list_<%=cid %>.add(denormalize_row_<%=cid %>);
+
+<%
+			//gen loop end begin
+            for(int i = 0; i < groupColumns.size(); i++){
+%>
+}
+
+<%
+			}
+			//gen loop end end
+		}//i f(denormalizeColumns.size() > 0|| groupColumns.size() > 0) end
+		%>
+}
+//generate result end
+globalMap.put("<%=destination %>", result_list_<%=cid %>);
+globalMap.put("<%=cid %>_NB_LINE", result_list_<%=cid %>.size()); 
+<%
+if(isLog4jEnabled){
+%>
+	log.info("<%=cid%> - Generated records count: " + result_list_<%=cid %>.size() + " .");
+<%
+}
+	}
+}
+%>
+
+        
+

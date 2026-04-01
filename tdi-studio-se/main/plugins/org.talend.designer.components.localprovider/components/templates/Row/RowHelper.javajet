@@ -1,0 +1,206 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+	<%
+	class DefaultRowUtil {
+		String cid = "";
+		INode node;
+		int schemaOptNum;
+		int columnListSize;
+		boolean isOptimizeCode;
+		boolean isBehindDynamic;
+	
+		boolean useV2C = false;
+		IMetadataTable V2CMetadata;
+		String V2CTargetConnName;
+		String V2CSourceValueClass;
+		String V2CSourceValueName;
+		StringBuffer parmsStr;
+		StringBuffer varsStr;
+		public void prepareOptimizeParam(IMetadataTable metadata,int schemaOptNum){
+			this.schemaOptNum=schemaOptNum;
+			this.columnListSize = metadata.getListColumns().size();
+			this.isOptimizeCode = schemaOptNum < this.columnListSize;
+		}
+		
+		public void prepareValueToConn(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, int schemaOptNum){
+			this.node = node;
+			this.V2CMetadata = metadata;
+			this.V2CTargetConnName = targetConnName;
+			this.V2CSourceValueClass = sourceValueClass;
+			this.V2CSourceValueName = sourceValueName;
+			this.useV2C = true;
+			prepareOptimizeParam(metadata, schemaOptNum);
+		}
+		public void genVarsParmsStr(Map<String,String> varsMap){
+			parmsStr=new StringBuffer();
+			varsStr=new StringBuffer();
+			if(varsMap!=null && varsMap.size()>0){
+				java.util.Set<String> vars=varsMap.keySet();
+				for(String varName:vars){
+					parmsStr.append(","+varsMap.get(varName)+" "+varName);
+					varsStr.append(","+varName);
+				}
+			}
+		}
+		public void codeForValueToConn(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, int start , int end){
+		}
+		
+		public void callValueToConn(String sourceValueName, String targetConnName){
+			if(isOptimizeCode){
+		%>
+			rowHelper_<%=cid%>.valueToConn(<%=sourceValueName%>, <%=targetConnName%> <%=(varsStr!=null?varsStr.toString():"")%>);
+		<%
+			}else{
+				codeForValueToConn(node, V2CMetadata, V2CSourceValueClass, V2CSourceValueName, V2CTargetConnName, 0, columnListSize);
+			}
+		}
+		
+		boolean useV2CWithD = false;
+		IMetadataTable V2CWithDMetadata;
+		String V2CWithDTargetConnName;
+		String V2CWithDSourceValueClass;
+		String V2CWithDSourceValueName;
+		String V2CWithDDynamicName;
+		public void prepareValueToConnWithD(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, String dynamicName, int schemaOptNum){
+			this.node = node;
+			this.V2CWithDMetadata = metadata;
+			this.V2CWithDTargetConnName = targetConnName;
+			this.V2CWithDSourceValueClass = sourceValueClass;
+			this.V2CWithDSourceValueName = sourceValueName;
+			this.V2CWithDDynamicName = dynamicName;
+			this.useV2CWithD = true;
+			prepareOptimizeParam(metadata, schemaOptNum);
+		}
+		
+		public boolean codeForValueToConnWithD(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, String dynamicName ,int start , int end){
+			return false;
+		}
+		
+		public void callValueToConnWithD(String sourceValueName, String targetConnName, String dynamicName){
+			if(isOptimizeCode){
+		%>
+			rowHelper_<%=cid%>.valueToConnWithD(<%=sourceValueName%>, <%=targetConnName%>, <%=dynamicName%> <%=(varsStr!=null?varsStr.toString():"")%>);
+		<%
+			}else{
+				codeForValueToConnWithD(node, V2CWithDMetadata, V2CWithDSourceValueClass, V2CWithDSourceValueName, V2CWithDTargetConnName, V2CWithDDynamicName, 0, columnListSize);
+			}
+		}
+		
+		IMetadataTable C2CMetadata;
+		String C2CTargetConnName;
+		String C2CSourceConnName;
+		boolean useC2C = false;
+		public void prepareConnToConn(IMetadataTable metadata, String sourceConnName, String targetConnName){
+			this.C2CMetadata = metadata;
+			this.C2CTargetConnName = targetConnName;
+			this.C2CSourceConnName = sourceConnName;
+			this.useC2C = true;
+		}
+		
+		public void codeForConnToConn(INode node, IMetadataTable metadata, String sourceConnName, String targetConnName, int start ,int end){
+		}
+		
+		public void callConnToConn(String sourceConnName, String targetConnName){
+			if(isOptimizeCode){
+		%>
+			rowHelper_<%=cid%>.connToConn(<%=sourceConnName%>,<%=targetConnName%>);
+		<%
+			}else{
+				codeForConnToConn(node, C2CMetadata, C2CSourceConnName, C2CTargetConnName, 0, columnListSize);
+			}
+		}
+		
+		
+		public void generateClass(){
+		  	if(isOptimizeCode){
+				cid = node.getUniqueName();
+				int methodNum=(columnListSize%schemaOptNum==0?columnListSize/schemaOptNum:(columnListSize/schemaOptNum)+1);
+				%>
+				class RowHelper_<%=cid%>{
+				<%
+				int start=0;
+				int end=0;
+				for(int i=0;i<methodNum;i++){
+					start=i*schemaOptNum;
+					if(i==(methodNum-1)){
+						end=columnListSize;
+					}else{
+						end=(i+1)*schemaOptNum;
+					}
+					if(useV2C){
+					%>
+					public void valueToConn_<%=i%>(<%=V2CSourceValueClass%> <%=V2CSourceValueName%>,<%=V2CTargetConnName%>Struct <%=V2CTargetConnName%> <%=(parmsStr!=null?parmsStr.toString():"")%>) throws java.lang.Exception{
+						<%codeForValueToConn(node, V2CMetadata, V2CSourceValueClass, V2CSourceValueName, V2CTargetConnName, start, end);%>
+					}
+					<%	
+					}
+					if(useV2CWithD){
+					%>
+					public void valueToConnWithD_<%=i%>(<%=V2CWithDSourceValueClass%> <%=V2CWithDSourceValueName%>,<%=V2CWithDTargetConnName%>Struct <%=V2CWithDTargetConnName%>, routines.system.Dynamic <%=V2CWithDDynamicName%> <%=(parmsStr!=null?parmsStr.toString():"")%>) throws java.lang.Exception{
+						<%this.isBehindDynamic = codeForValueToConnWithD(node, V2CWithDMetadata, V2CWithDSourceValueClass, V2CWithDSourceValueName, V2CWithDTargetConnName, V2CWithDDynamicName, start, end);%>
+					}
+					<%		
+					}
+					if(useC2C){
+					%>
+					public void connToConn_<%=i%>(<%=C2CSourceConnName%>Struct <%=C2CSourceConnName%>,<%=C2CTargetConnName%>Struct <%=C2CTargetConnName%>) throws java.lang.Exception{
+						<%codeForConnToConn(node, C2CMetadata, C2CSourceConnName, C2CTargetConnName, start, end);%>
+					}
+					<%
+					}
+				}
+				if(useV2C){//Call all split methods in one method
+				%>
+					public void valueToConn(<%=V2CSourceValueClass%> <%=V2CSourceValueName%>,<%=V2CTargetConnName%>Struct <%=V2CTargetConnName%> <%=(parmsStr!=null?parmsStr.toString():"")%>) throws java.lang.Exception{
+				<%	
+				}
+				if(useV2CWithD){
+				%>
+					public void valueToConnWithD(<%=V2CWithDSourceValueClass%> <%=V2CWithDSourceValueName%>,<%=V2CWithDTargetConnName%>Struct <%=V2CWithDTargetConnName%>, routines.system.Dynamic <%=V2CWithDDynamicName%> <%=(parmsStr!=null?parmsStr.toString():"")%>) throws java.lang.Exception{
+				<%
+				}
+				for(int i=0;i<methodNum;i++){
+					if(useV2C){
+					%>
+						valueToConn_<%=i%>(<%=V2CSourceValueName%>,<%=V2CTargetConnName%> <%=(varsStr!=null?varsStr.toString():"")%>);
+					<%
+					}
+					if(useV2CWithD){
+					%>
+						valueToConnWithD_<%=i%>(<%=V2CWithDSourceValueName%>,<%=V2CWithDTargetConnName%>,<%=V2CWithDDynamicName%> <%=(varsStr!=null?varsStr.toString():"")%>);
+					<%
+					}
+				}
+				if(useV2C || useV2CWithD){
+				%>
+					}
+				<%
+				}
+				if(useC2C){
+				%>
+					public void connToConn(<%=C2CSourceConnName%>Struct <%=C2CSourceConnName%>,<%=C2CTargetConnName%>Struct <%=C2CTargetConnName%>) throws java.lang.Exception{
+					<%
+					for(int i=0;i<methodNum;i++){
+						if(useC2C){
+						%>
+						connToConn_<%=i%>(<%=C2CSourceConnName%>,<%=C2CTargetConnName%>);
+						<%
+						}
+					}
+					%>
+					}
+				<%
+				}
+				%>
+				}
+				RowHelper_<%=cid%> rowHelper_<%=cid%>  = new RowHelper_<%=cid%>();
+			<%
+		  	}
+		}
+	}
+	%>

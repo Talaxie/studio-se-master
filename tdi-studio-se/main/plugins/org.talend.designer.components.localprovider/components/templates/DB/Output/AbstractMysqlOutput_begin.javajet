@@ -1,0 +1,595 @@
+<%@ jet
+imports="
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.MappingTypeRetriever
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.process.IProcess
+	org.talend.core.model.process.IConnection
+	java.util.List
+	java.util.ArrayList
+	java.util.Map
+	java.util.HashMap
+"
+skeleton="../../db_output_bulk.skeleton"
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+
+	dbLog = new DBLogUtil(node);
+
+	IProcess process = node.getProcess();
+
+	String dbtypeDefinition = ElementParameterParser.getValue(node, "__TYPE__");
+
+	List<Map<String, String>> addCols =
+		(List<Map<String,String>>)ElementParameterParser.getObjectValue(
+			node,"__ADD_COLS__" );
+
+	boolean useFieldOptions = ("true").equals(ElementParameterParser.getValue(node, "__USE_FIELD_OPTIONS__"));
+
+	List<Map<String, String>> fieldOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FIELD_OPTIONS__");
+
+	String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+
+	String table = ElementParameterParser.getValue(node,"__TABLE__");
+
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+
+	String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+
+	String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+
+	String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+	boolean extendedInsert = false;
+
+	String dbVersion = "" ;
+
+	if ("INSERT".equalsIgnoreCase(dataAction)) {
+		extendedInsert = ("true").equals(ElementParameterParser.getValue(node, "__EXTENDINSERT__"));
+
+		//to fixed: bug8422
+		if((cid.equals("talendLogs_DB") || cid.equals("talendStats_DB") || cid.equals("talendMeter_DB"))){
+			extendedInsert = false;
+		}
+
+	}else {
+		extendedInsert = false;
+	}
+
+	String numPerInsert = ElementParameterParser.getValue(node, "__NB_ROWS_PER_INSERT__");
+
+	boolean isEnableDebug = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_DEBUG_MODE__"));
+
+	boolean useBatchSize = ("true").equals(ElementParameterParser.getValue(node,"__USE_BATCH_SIZE__"));
+	String batchSize=ElementParameterParser.getValue(node,"__BATCH_SIZE__");
+%>
+
+<%
+	getManager(dbmsId, cid, node);
+
+	boolean isDynamic = false;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		isDynamic = metadata.isDynamicSchema();
+	}
+
+	List<IMetadataColumn> columnList = getColumnList(node);
+	List<Column> stmtStructure = null;
+	Manager manager = null;
+	if(columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, useFieldOptions, fieldOptions, addCols);
+		isDynamic = isDynamic && !getManager(dbmsId, cid).isDynamicColumnReplaced();
+	}
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/CheckKeysForUpdateAndDelete.javajet"%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/CheckKeysForUpdateOnDuplicateKey.javajet"%>
+
+int nb_line_<%=cid%> = 0;
+int nb_line_update_<%=cid%> = 0;
+int nb_line_inserted_<%=cid%> = 0;
+int nb_line_deleted_<%=cid%> = 0;
+int nb_line_rejected_<%=cid%> = 0;
+
+int deletedCount_<%=cid%>=0;
+int updatedCount_<%=cid%>=0;
+int insertedCount_<%=cid%>=0;
+int rowsToCommitCount_<%=cid%>=0;
+int rejectedCount_<%=cid%>=0;
+
+String tableName_<%=cid%> = <%=table%>;
+boolean whetherReject_<%=cid%> = false;
+
+java.util.Calendar calendar_<%=cid %> = java.util.Calendar.getInstance();
+calendar_<%=cid %>.set(1, 0, 1, 0, 0, 0);
+long year1_<%=cid %> = calendar_<%=cid %>.getTime().getTime();
+calendar_<%=cid %>.set(10000, 0, 1, 0, 0, 0);
+long year10000_<%=cid %> = calendar_<%=cid %>.getTime().getTime();
+long date_<%=cid %>;
+
+java.sql.Connection conn_<%=cid%> = null;
+<%
+	boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+
+	if(useExistingConnection) {
+		String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+		String conn = "conn_" + connection;
+		List<? extends INode> nodes = process.getNodesOfType(connectionName);
+		for (INode ne:nodes) {
+			if (connection.equals(ne.getUniqueName())) {
+				dbVersion = ElementParameterParser.getValue(ne, "__DB_VERSION__");
+			}
+		}
+	%>
+		conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+		<%dbLog.conn().useExistConn("conn_"+cid+".getMetaData().getURL()", "conn_"+cid+".getMetaData().getUserName()");%>
+	<%
+	} else {
+		%>
+		<%
+		boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+		if(specify_alias){
+			String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+			%>
+			java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+			if (null != dataSources_<%=cid%>) {
+				String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+				if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+					throw new RuntimeException("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+				}
+				conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+			} else {
+				<%
+			}
+			dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			String drverClass = "com.mysql.jdbc.Driver";
+			String jdbcURL = "jdbc:mysql";
+			if("MARIADB".equals(dbVersion)){
+				drverClass = "org.mariadb.jdbc.Driver";
+				jdbcURL = "jdbc:mariadb";
+			} else if ("MYSQL_8".equals(dbVersion)) {
+				drverClass = "com.mysql.cj.jdbc.Driver";
+			}
+
+			final boolean supportBulkComponent = true;
+			%>
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Mysql/jdbcurl4connection_output.javajet"%>
+
+			String driverClass_<%=cid%> = "<%=drverClass%>";
+			<%dbLog.conn().logJDBCDriver(dbLog.var("driverClass"));%>
+			String dbUser_<%=cid %> = <%=dbuser%>;
+			<%
+			String passwordFieldName = "__PASS__";
+			%>
+
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+			String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+			java.lang.Class.forName(driverClass_<%=cid%>);
+			<%dbLog.conn().connTry(dbLog.var("url"), dbLog.var("dbUser"));%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>, dbUser_<%=cid%>, dbPwd_<%=cid%>);
+			<%dbLog.conn().connDone(dbLog.var("url"));%>
+			<%
+			if(specify_alias){
+				%>
+			}
+			<%
+		}
+		%>
+	resourceMap.put("conn_<%=cid%>", conn_<%=cid%>);
+	<%
+	}
+	if(!useExistingConnection) {
+		if(!("").equals(commitEvery)&&!("0").equals(commitEvery)){
+			%>
+			conn_<%=cid%>.setAutoCommit(false);
+			int commitEvery_<%=cid%> = <%=commitEvery%>;
+			int commitCounter_<%=cid%> = 0;
+			<%
+		}
+	}
+	dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
+%>
+<%
+	if (useBatchSize && ("MYSQL_8".equals(dbVersion) || "MYSQL_5".equals(dbVersion) || "MARIADB".equals(dbVersion)) && (("UPDATE").equals(dataAction)||("DELETE").equals(dataAction))) {
+		if(!("").equals(batchSize)&&!("0").equals(batchSize)) {
+	%>
+		int batchSize_<%=cid%> = <%=batchSize%>;
+		int batchSizeCounter_<%=cid%>=0;
+	<%
+		}
+	}
+%>
+
+<%
+	if(!isDynamic) {
+		%>
+		int count_<%=cid%>=0;
+		<%
+		///// hint options/////
+		boolean useHintOptions = ("true").equals(ElementParameterParser.getValue(node,"__USE_HINT_OPTIONS__"));
+		Map<String, String> hintsValues = null;
+		if (useHintOptions) {
+			List<Map<String, String>> hintOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HINT_OPTIONS__");
+			hintsValues = new HashMap<String, String>();
+			String hintValue = null;
+			boolean firstInsert = true;
+			boolean firstUpdate = true;
+			boolean firstDelete = true;
+			boolean firstTableName = true;
+			for(java.util.Map<String, String> option : hintOptions) {
+				//get
+				hintValue = option.get("HINT");
+				//set
+				if ("INSERT".equalsIgnoreCase(option.get("SQL_STMT"))){
+					if(firstInsert){
+						hintsValues.put("INSERT", hintValue) ;
+						firstInsert = false;
+					}else {
+						hintsValues.put("INSERT", hintsValues.get("INSERT") + "+" + hintValue) ;
+					}
+				}else if ("UPDATE".equalsIgnoreCase(option.get("SQL_STMT"))) {
+					if(firstUpdate){
+						hintsValues.put("UPDATE", hintValue) ;
+						firstUpdate = false;
+					}else {
+						hintsValues.put("UPDATE", hintsValues.get("UPDATE") + "+" + hintValue) ;
+					}
+				}else if ("DELETE".equalsIgnoreCase(option.get("SQL_STMT"))) {
+					if (firstDelete){
+						hintsValues.put("DELETE", hintValue) ;
+						firstDelete =false;
+					}else {
+						hintsValues.put("DELETE", hintsValues.get("DELETE") + "+" + hintValue) ;
+					}
+				}
+			}
+		}
+		//// hint options end ////
+
+		if(columnList != null && columnList.size() > 0) {
+			%>
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_tableActionForOutput.javajet"%>
+			<%
+			Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+			StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);
+			StringBuilder insertValueStmt = actionSQLMap.get(INSERT_VALUE_STMT);
+			StringBuilder updateSetStmt = actionSQLMap.get(UPDATE_SET_STMT);
+			StringBuilder updateWhereStmt = actionSQLMap.get(UPDATE_WHERE_STMT);
+			StringBuilder deleteWhereStmt = actionSQLMap.get(DELETE_WHERE_STMT);
+
+			boolean supportDuplicateUpdate = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__ON_DUPLICATE_KEY_UPDATE__"));
+
+			if(("INSERT").equals(dataAction)) {
+
+				if (supportDuplicateUpdate) {
+					List<Map<String, String>> duplicateKeys = (List<Map<String,String>>)ElementParameterParser.getObjectValue( node,"__DUPLICATED_KEYS__" );
+
+					if (duplicateKeys.size() > 0) {
+					%>
+					StringBuffer duplidateClause_<%=cid%> = new StringBuffer(" ON DUPLICATE KEY UPDATE ");
+						<%
+						for (int i=0; i< duplicateKeys.size() ; i++) {
+							if (i >0) {
+							%>
+								duplidateClause_<%=cid%>.append(",");
+							<%
+							}
+							%>
+								duplidateClause_<%=cid%>.append ("`" +  <%=duplicateKeys.get(i).get("DUPLICATED_KEY")%> + "`");
+								duplidateClause_<%=cid%>.append ("=");
+								duplidateClause_<%=cid%>.append (<%=duplicateKeys.get(i).get("DUPLICATED_VALUE")%>);
+						<%
+						}
+					}
+				}
+		%>
+
+		<%
+				if(!extendedInsert) {
+					%>
+					String insert_<%=cid%> = "INSERT INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+		<%
+					if (supportDuplicateUpdate) {
+		%>
+						insert_<%=cid%> += 	duplidateClause_<%=cid%>.toString();
+		<%
+					}
+		%>
+					<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+
+					<%
+					//to fixed: bug8422
+					if(!(cid.equals("talendLogs_DB") || cid.equals("talendStats_DB") || cid.equals("talendMeter_DB"))){%>
+						java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+						resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+					<%}%>
+
+					<%
+					//to fixed: bug8422
+					if((cid.equals("talendLogs_DB") || cid.equals("talendStats_DB") || cid.equals("talendMeter_DB"))){ %>
+						java.sql.PreparedStatement pstmt_<%=cid %> = null;
+						// [%connection%][psmt][tableName]
+						String keyPsmt_<%=cid %> = conn_<%=cid%> + "[psmt]" + "[" + <%=table%> + "]";
+						pstmt_<%=cid %> = SharedDBPreparedStatement.getSharedPreparedStatement(conn_<%=cid%>,insert_<%=cid%>,keyPsmt_<%=cid%>);
+						resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+						resourceMap.put("keyPsmt_<%=cid %>", keyPsmt_<%=cid %>);
+					<%}%>
+
+		<%
+				} else {//extended-insert mode(begin)
+					if ("MYSQL_4".equals(dbVersion)) {
+		%>
+						class BufferLine_<%=cid%> {
+							<%
+							for(Column column : stmtStructure) {
+								if(!column.isReplaced() && !column.isAddCol() && column.isInsertable()) {
+									String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+									%>
+									<%=typeToGenerate%> <%=column.getName()%>;
+									<%
+								}
+							}
+							%>
+
+							public BufferLine_<%=cid%>(
+							<%
+							int count = 0;
+							for(Column column : stmtStructure) {
+								if(!column.isReplaced() && !column.isAddCol() && column.isInsertable()) {
+									if(count != 0) {
+										%>
+										,
+										<%
+									}
+									String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+									%>
+									<%=typeToGenerate%> <%=column.getName()%>
+									<%
+									count++;
+								}
+							}
+							%>
+							){
+								<%
+								for(Column column : stmtStructure) {
+									if(!column.isReplaced() && !column.isAddCol() && column.isInsertable()) {
+										%>
+										this.<%=column.getName()%> = <%=column.getName()%>;
+										<%
+									}
+								}
+								%>
+							}
+						}
+
+						java.util.List<BufferLine_<%=cid%>> exInsertColValueList<%=cid%> = new java.util.ArrayList();
+						BufferLine_<%=cid%> exInsertColValue<%=cid%> = null;
+
+
+						StringBuilder extendInsertValueStmt_<%=cid%> = new StringBuilder();
+						for(int i=0;i < <%=numPerInsert%>;i++){
+							extendInsertValueStmt_<%=cid%>.append("(<%=insertValueStmt.toString()%>)");
+							if (i!=<%=numPerInsert%>-1) extendInsertValueStmt_<%=cid%>.append(",");
+						}
+
+
+						String insert_<%=cid%> = "INSERT INTO `"+<%=table%>+"` (<%=insertColName.toString()%>) VALUES " + extendInsertValueStmt_<%=cid%>.toString();
+		<%
+						if (supportDuplicateUpdate) {
+		%>
+						insert_<%=cid%> += 	duplidateClause_<%=cid%>.toString();
+		<%
+						}
+		%>
+						<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+						java.sql.PreparedStatement pstmt_<%=cid %> =  conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+						resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+
+						String insertColName<%=cid%> = "<%=insertColName.toString()%>";
+						String insertColValue<%=cid%> =  "<%=insertValueStmt.toString()%>";
+						int rowCount<%=cid%> = 0;
+		<%
+					} else if ("MYSQL_8".equals(dbVersion) || "MYSQL_5".equals(dbVersion) || "MARIADB".equals(dbVersion)) {
+		%>
+						String insert_<%=cid%> = "INSERT INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+		<%
+						if (supportDuplicateUpdate) {
+		%>
+						insert_<%=cid%> += 	duplidateClause_<%=cid%>.toString();
+		<%
+						}
+		%>
+						int batchSize_<%=cid%> = <%=numPerInsert%>;
+						int batchSizeCounter_<%=cid%>=0;
+						<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+						java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+						resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+
+		<%
+					}
+				}//extended-insert mode(end)
+			} else if (("UPDATE").equals(dataAction)) {
+				%>
+				String update_<%=cid%> = "UPDATE `" + <%=table%> + "` SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintUpdate.javajet" %>
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				<%
+			} else if (("INSERT_OR_UPDATE").equals(dataAction)) {
+				%>
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement("SELECT COUNT(1) FROM `" + <%=table%> + "` WHERE <%=updateWhereStmt.toString()%>");
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				String insert_<%=cid%> = "INSERT INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+				java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+				resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+				String update_<%=cid%> = "UPDATE `" + <%=table%> + "` SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintUpdate.javajet" %>
+				java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+				resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+				<%
+			} else if (("UPDATE_OR_INSERT").equals(dataAction)) {
+				%>
+				String update_<%=cid%> = "UPDATE `" + <%=table%> + "` SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintUpdate.javajet" %>
+				java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+				resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+				String insert_<%=cid%> = "INSERT INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+				java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+				resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+				<%
+			} else if (("DELETE").equals(dataAction)) {
+				%>
+				String delete_<%=cid%> = "DELETE FROM `" + <%=table%> + "` WHERE <%=deleteWhereStmt.toString()%>";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintDelete.javajet" %>
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(delete_<%=cid%>);
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				<%
+			} else if(("REPLACE").equals(dataAction)) {
+				%>
+				String replace_<%=cid%> = "REPLACE INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(replace_<%=cid%>);
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				<%
+			} else if(("INSERT_ON_DUPLICATE_KEY_UPDATE").equals(dataAction)) {
+				%>
+				String insertIgnore_<%=cid%> = "INSERT IGNORE INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>) ON DUPLICATE KEY UPDATE <%=updateSetStmt.toString()%>";
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insertIgnore_<%=cid%>);
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				<%
+			} else if(("INSERT_IGNORE").equals(dataAction)) {
+				%>
+				String insert_<%=cid%> = "INSERT IGNORE INTO `" + <%=table%> + "` (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_hintInsert.javajet" %>
+				java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+				resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+				<%
+			}
+			if(isEnableDebug) {
+				%>
+				StringBuffer query_<%=cid%> = null;
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/splitSQLForAllDBInBegin.javajet" %>
+				<%
+			}
+		}
+	}
+	if(isDynamic) {
+		if ("MYSQL_4".equals(dbVersion) && extendedInsert) {
+			%>
+
+			class BufferLine_<%=cid%> {
+				<%
+				for(Column column : stmtStructure) {
+					if(!column.isReplaced() && !column.isAddCol() && column.isInsertable() && !column.isDynamic()) {
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+						%>
+						<%=typeToGenerate%> <%=column.getName()%>;
+						<%
+					}
+				}
+				if(isDynamic) {
+					Column dynamicColumn = getColumn(getDynamicColumn());
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(dynamicColumn.getColumn().getTalendType(), dynamicColumn.getColumn().isNullable());
+					if("Dynamic".equals(typeToGenerate)) {
+					%>
+						routines.system.Dynamic <%=dynamicColumn.getName()%>;
+					<%
+					}
+				}
+				%>
+
+				public BufferLine_<%=cid%>(
+					<%
+					int count = 0;
+					for(Column column : stmtStructure) {
+						if(!column.isReplaced() && !column.isAddCol() && column.isInsertable() && !column.isDynamic()) {
+							if(count != 0) {
+								%>
+								,
+								<%
+							}
+							String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+							%>
+							<%=typeToGenerate%> <%=column.getName()%>
+							<%
+							count++;
+						}
+					}
+					if(isDynamic) {
+						Column dynamicColumn = getColumn(getDynamicColumn());
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(dynamicColumn.getColumn().getTalendType(), dynamicColumn.getColumn().isNullable());
+						if("Dynamic".equals(typeToGenerate)) {
+							%>
+							, routines.system.Dynamic <%=dynamicColumn.getName()%>
+							<%
+						}
+					}
+
+					%>
+				){
+					<%
+					for(Column column : stmtStructure) {
+						if(!column.isReplaced() && !column.isAddCol() && column.isInsertable() && !column.isDynamic()) {
+							%>
+							this.<%=column.getName()%> = <%=column.getName()%>;
+							<%
+						}
+					}
+					if(isDynamic) {
+						Column dynamicColumn = getColumn(getDynamicColumn());
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(dynamicColumn.getColumn().getTalendType(), dynamicColumn.getColumn().isNullable());
+						if("Dynamic".equals(typeToGenerate)) {
+							%>
+							this.<%=dynamicColumn.getName()%>=<%=dynamicColumn.getName()%>;
+							<%
+						}
+					}
+					%>
+				}
+			}
+
+			java.util.List<BufferLine_<%=cid%>> exInsertColValueList<%=cid%> = new java.util.ArrayList();
+			BufferLine_<%=cid%> exInsertColValue<%=cid%> = null;
+			String insert_<%=cid%>="";
+			String insertColValue<%=cid%>="";
+			String insertColName<%=cid%>="";
+			int counter<%=cid%>=1;
+			<%
+		}else if (("MYSQL_8".equals(dbVersion) || "MYSQL_5".equals(dbVersion) || "MARIADB".equals(dbVersion)) && extendedInsert){
+			%>
+			int batchSizeCounter_<%=cid%>=0;
+			int batchSize_<%=cid%>=0;
+		<%
+		}
+		%>
+		java.sql.PreparedStatement pstmt_<%=cid %> =null;
+		java.sql.PreparedStatement pstmtInsert_<%=cid %> =null;
+		java.sql.PreparedStatement pstmtUpdate_<%=cid %> =null;
+		int rowCount<%=cid%>=0;
+		<%if(isEnableDebug) {%>
+			StringBuffer query_<%=cid%> = null;
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/splitSQLForAllDBInDynamicBegin.javajet" %>
+		<%
+		}
+	}
+%>

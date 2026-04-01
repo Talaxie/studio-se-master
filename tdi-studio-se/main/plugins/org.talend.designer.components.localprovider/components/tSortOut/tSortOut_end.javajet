@@ -1,0 +1,41 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode  
+    	org.talend.designer.codegen.config.CodeGeneratorArgument
+    	org.talend.core.model.process.ElementParameterParser
+    " 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();	
+String cid = node.getUniqueName();
+String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+String rowName="";
+if ((node.getIncomingConnections()!=null)&&(node.getIncomingConnections().size()>0)) {
+	rowName = node.getIncomingConnections().get(0).getName();
+} else {
+	rowName="defaultRow";
+}
+
+String isExternalSort = ElementParameterParser.getValue(node, "__EXTERNAL__");
+
+%>
+
+<%
+if(("false").equals(isExternalSort)){
+%>
+<%=rowName %>Struct[] array_<%=cid %> = list_<%=cid %>.toArray(new Comparable<%=rowName %>Struct[0]);
+
+java.util.Arrays.sort(array_<%=cid %>);
+
+globalMap.put("<%=destination %>",array_<%=cid %>);
+
+<%
+}else{
+%>
+iterator_<%=cid %>.endPut();
+
+globalMap.put("<%=destination %>", iterator_<%=cid %>);
+<%
+}
+%>

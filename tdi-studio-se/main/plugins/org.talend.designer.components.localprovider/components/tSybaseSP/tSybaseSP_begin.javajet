@@ -1,0 +1,132 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode) codeGenArgument.getArgument();
+	   dbLog = new DBLogUtil(node);
+String cid = node.getUniqueName();
+
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbport = ElementParameterParser.getValue(node, "__PORT__");
+String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbuser = ElementParameterParser.getValue(node, "__USER__");
+String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+String spName = ElementParameterParser.getValue(node, "__SP_NAME__");
+String dbschema = ElementParameterParser.getValue(node, "__DB_SCHEMA__");
+boolean isFunction = ("true").equals(ElementParameterParser.getValue(node, "__IS_FUNCTION__"));
+List<Map<String, String>> spArgs = (List<Map<String,String>>) ElementParameterParser.getObjectValue(node, "__SP_ARGS__");
+boolean useExistingConn = ("true").equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+if(useExistingConn){
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String conn = "conn_" + connection;
+	String schema = "dbschema_" + connection;
+    %>
+    java.sql.Connection connection_<%=cid %> = (java.sql.Connection)globalMap.get("<%=conn %>");
+    <%dbLog.conn().useExistConn("connection_"+cid+".getMetaData().getURL()", "connection_"+cid+".getMetaData().getUserName()");%>
+    String dbschema_<%=cid%>= (String)globalMap.get("<%=schema%>");
+    <%
+} else {       
+    
+         if("SYBSEIQ_16_SA".equals(dbVersion)){
+	    dbLog.conn().logJDBCDriver(dbLog.str("com.sybase.jdbc4.jdbc.SybDriver"));
+%>
+		java.lang.Class.forName("sap.jdbc4.sqlanywhere.IDriver");
+<%
+	 }
+	 else if("SYBSEIQ_16".equals(dbVersion)){
+	    dbLog.conn().logJDBCDriver(dbLog.str("com.sybase.jdbc4.jdbc.SybDriver"));%>
+		java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName("com.sybase.jdbc4.jdbc.SybDriver");
+		jdbcclazz_<%=cid%>.newInstance();
+		
+	<%}else{
+	    dbLog.conn().logJDBCDriver(dbLog.str("com.sybase.jdbc3.jdbc.SybDriver"));%>
+	    java.lang.Class.forName("com.sybase.jdbc3.jdbc.SybDriver");
+	<%}%>
+<%
+        if("SYBSEIQ_16_SA".equals(dbVersion)){
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			String connectionString_<%=cid %> = "jdbc:sqlanywhere:Host=" + <%=dbhost %> + ":" + <%=dbport %> + ";DatabaseName=" + <%=dbname %>; 
+<%
+		}
+		else{
+%>
+			String connectionString_<%=cid %> = "jdbc:sqlanywhere:Host=" + <%=dbhost %> + ":" + <%=dbport %> + ";DatabaseName=" + <%=dbname %> + ";" + <%=dbproperties%>;
+<%
+		}
+	}
+	else {
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			 String connectionString_<%=cid%> = "jdbc:sybase:Tds:" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+		} else {
+%>
+			 String connectionString_<%=cid%> = "jdbc:sybase:Tds:" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + "?" + <%=dbproperties%>;
+<%
+		}
+	}
+%>
+	        
+	<%
+	String passwordFieldName = "__PASS__";
+	%>
+	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+   	<%dbLog.conn().connTry(dbLog.var("connectionString"), dbuser);%>
+    java.sql.Connection connection_<%=cid%> = java.sql.DriverManager.getConnection(connectionString_<%=cid%>, <%=dbuser%>, decryptedPassword_<%=cid%>);
+	<%dbLog.conn().connDone(dbLog.var("connectionString"));%>
+
+	String dbschema_<%=cid%>= <%=dbschema%>; 
+    <%
+}
+dbLog.commit().logAutoCommit("connection_"+cid+".getAutoCommit()");
+%>
+String spName_<%=cid%> = <%=spName%>;
+if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+	spName_<%=cid%> = dbschema_<%=cid%> + "." + spName_<%=cid%>;
+} 
+<%
+if(isFunction){
+%>
+java.sql.PreparedStatement statement_<%=cid%> = connection_<%=cid%>.prepareStatement("select " + spName_<%=cid%> + "(
+<%
+}else{
+%>
+java.sql.CallableStatement statement_<%=cid%> = connection_<%=cid%>.prepareCall("{call " + <%=spName%> + "(
+<%
+}
+boolean isFirstArg = true;
+for (int i = 0; i < spArgs.size(); i++) {
+	if(!("RECORDSET").equals(spArgs.get(i).get("TYPE"))){
+		if(isFirstArg){
+			%>?<%
+			isFirstArg=false;
+		}else{
+			%>,?<%
+		}
+	}
+}
+%>)<%if(!isFunction){%>}<%}%>");
+
+<%
+String timeoutInterval = ElementParameterParser.getValue(node, "__TIMEOUT_INTERVAL__");
+if(timeoutInterval != null && !("0").equals(timeoutInterval) && !("").equals(timeoutInterval)) {
+    %>
+    statement_<%=cid%>.setQueryTimeout(<%=timeoutInterval%>);
+    <%
+}
+%>
+
+java.sql.Date tmpDate_<%=cid%>;
+String tmpString_<%=cid%>;

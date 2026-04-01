@@ -1,0 +1,315 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+        java.util.List
+        java.util.Map
+	"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean version07 = ("true").equals(ElementParameterParser.getValue(node,"__VERSION_2007__"));
+
+	boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+	String outStream = ElementParameterParser.getValue(node,"__STREAMNAME__");
+	boolean createDir = ("true").equals(ElementParameterParser.getValue(node,"__CREATE__"));	
+	boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));	
+	boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND_FILE__"));
+	boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDEHEADER__"));
+	
+	String allColumnAutoSize = ElementParameterParser.getValue(node, "__IS_ALL_AUTO_SZIE__");
+	boolean flushOnRow=("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__" ));
+	boolean isAppendFile = ("true").equals(ElementParameterParser.getValue(node, "__APPEND_FILE__" ));
+	//modif start
+	boolean firstCellYAbsolute = ("true").equals(ElementParameterParser.getValue(node, "__FIRST_CELL_Y_ABSOLUTE__"));
+	String firstCellXStr = ElementParameterParser.getValue(node, "__FIRST_CELL_X__");
+	String firstCellYStr = ElementParameterParser.getValue(node, "__FIRST_CELL_Y__");
+	//modif end
+	
+	boolean isAllColumnAutoSize = (allColumnAutoSize!=null&&!("").equals(allColumnAutoSize))?("true").equals(allColumnAutoSize):false;
+	List<Map<String, String>> autoSizeList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__AUTO_SZIE_SETTING__");
+	
+	int schemaOptNum=100;
+    String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+    if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+    	schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+    }
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if((conns == null) || (conns.size() < 1) || (conns.get(0) == null)) {
+		return "";
+	}
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	int dynamic_index = 1;
+	boolean hasDynamic = false;
+	if(!version07){//version judgement
+		List<IMetadataTable> metadatas = node.getMetadataList();
+		if ((metadatas!=null)&&(metadatas.size()>0)) {
+	    	IMetadataTable metadata = metadatas.get(0);
+	        if (metadata!=null) {
+	        	List<IMetadataColumn> columns = metadata.getListColumns();
+				for(int i=0; columns!=null && i< columns.size(); i++) {
+					IMetadataColumn column = columns.get(i);
+			        if(column.getTalendType().equals("id_Dynamic")){
+			            dynamic_index = i+1;
+			            hasDynamic = true;
+			            break;
+			        }
+				}
+	        	int sizeColumns = columns.size();
+	        	if(isAllColumnAutoSize){
+	        		for(int i=0;i<columns.size();i++){
+	        			IMetadataColumn column = columns.get(i);
+                		if(column.getTalendType().equals("id_Dynamic")){
+							continue;
+						}
+	        			if(sizeColumns > schemaOptNum) {
+	        				if(i%schemaOptNum==0){
+	%>
+			fileOutputExcelUtil_<%=cid%>.setColumnView_<%=i/schemaOptNum%>(writableSheet_<%=cid %>,fitWidth_<%=cid%>);
+	<%
+	        				}
+	        				continue;
+	        			}
+						if(hasDynamic && i+1>dynamic_index){
+						%>
+							columnIndex_<%=cid%> = excelDynamicUtil_<%=cid%>.getDynamicColCount()+<%=i-1%>;
+						<%
+						}else{
+						%>
+							columnIndex_<%=cid%> = <%=i%>;
+						<%
+						}
+	%>
+	//modif start
+		<%if(firstCellYAbsolute){%>
+			writableSheet_<%=cid %>.setColumnView(columnIndex_<%=cid%> + <%=firstCellXStr%>, fitWidth_<%=cid %>[<%=i%>]);
+		<%}else{%>
+			writableSheet_<%=cid %>.setColumnView(columnIndex_<%=cid%>, fitWidth_<%=cid %>[<%=i%>]);
+		<%}%>
+	//modif end
+	<%
+	    			}
+	    		}else{
+	    			if(autoSizeList.size() == columns.size()){
+	                	for(int i=0;i<columns.size();i++){
+	                		IMetadataColumn column = columns.get(i);
+	                		if(column.getTalendType().equals("id_Dynamic")){
+								continue;
+							}
+	        				if(sizeColumns > schemaOptNum) {
+	        					if(i%schemaOptNum==0){
+	        						boolean emptyMethod = true;
+	        						for(int j=0;(j<schemaOptNum) && (i+j<sizeColumns);j++) {
+                						Map<String,String> tmp= autoSizeList.get(i+j);
+                						if(("true").equals(tmp.get("IS_AUTO_SIZE")) && (!columns.get(i+j).getTalendType().equals("id_Dynamic"))){
+                							emptyMethod = false;
+                							break;
+                						}
+									}
+									
+									if(!emptyMethod) {
+	%>
+			fileOutputExcelUtil_<%=cid%>.setColumnView_<%=i/schemaOptNum%>(writableSheet_<%=cid %>,fitWidth_<%=cid%>);
+	<%
+									}
+	        					}
+	        					continue;
+	        				}
+	                		Map<String,String> tmp= autoSizeList.get(i);
+	                		if(("true").equals(tmp.get("IS_AUTO_SIZE"))){ 
+								if(hasDynamic && i+1>dynamic_index){
+								%>
+									columnIndex_<%=cid%> = excelDynamicUtil_<%=cid%>.getDynamicColCount()+<%=i-1%>;
+								<%
+								}else{
+								%>
+									columnIndex_<%=cid%> = <%=i%>;
+								<%
+								}
+	%>
+		writableSheet_<%=cid %>.setColumnView(columnIndex_<%=cid%>, fitWidth_<%=cid %>[<%=i%>]);
+	<%
+	                		}
+	                	}
+	                }
+	    		}
+	    	}
+	    }
+	%>
+		writeableWorkbook_<%=cid %>.write();
+		writeableWorkbook_<%=cid %>.close();
+		if(headerIsInserted_<%=cid%> && nb_line_<%=cid %> > 0){
+			nb_line_<%=cid %> = nb_line_<%=cid %> -1;
+		}
+		globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+		
+	<%if(!useStream && isDeleteEmptyFile){
+	%>
+		if(isFileGenerated_<%=cid %> && nb_line_<%=cid %> == 0){
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Creating directory '" + file_<%=cid %>.getCanonicalPath() + "'.");
+			<%}%>
+			file_<%=cid %>.delete();
+	    	<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Create directory '"+ file_<%=cid %>.getCanonicalPath() + "' has succeeded.");
+			<%}%>
+		}		
+	<%}
+		log4jFileUtil.writeDataFinishInfo(node);
+	}else{//version judgement /***excel 2007 xlsx*****/
+		List<IMetadataTable> metadatas = node.getMetadataList();
+		if ((metadatas!=null)&&(metadatas.size()>0)) {
+	    	IMetadataTable metadata = metadatas.get(0);
+	        if (metadata!=null) {
+	        	List<IMetadataColumn> columns = metadata.getListColumns();
+	        	for(int i=0; columns!=null && i< columns.size(); i++) {
+					IMetadataColumn column = columns.get(i);
+			        if(column.getTalendType().equals("id_Dynamic")){
+			            dynamic_index = i+1;
+			            hasDynamic = true;
+			            break;
+			        }
+				}
+	        	int sizeColumns = columns.size();
+	        	if(isAllColumnAutoSize){
+	        		for(int i=0;i<columns.size();i++){
+	        			IMetadataColumn column = columns.get(i);
+                		if(column.getTalendType().equals("id_Dynamic")){
+							if(sizeColumns > schemaOptNum) {
+
+							} else {
+	%>
+					excelDynamicUtil_<%=cid%>.autoDynamicColumnSize(xlsxTool_<%=cid%>);
+	<%
+							}
+							continue;
+						}
+	        			if(sizeColumns > schemaOptNum) {
+	        				if(i%schemaOptNum==0){
+	%>
+					fileOutputExcelUtil_<%=cid%>.setColAutoSize_<%=i/schemaOptNum%>(xlsxTool_<%=cid%>);
+	<%
+	        				}
+	        				continue;
+	        			}
+						if(hasDynamic && i+1>dynamic_index){
+						%>
+							columnIndex_<%=cid%> = excelDynamicUtil_<%=cid%>.getDynamicColCount()+<%=i-1%>;
+						<%
+						}else{
+						%>
+							columnIndex_<%=cid%> = <%=i%>;
+						<%
+						}
+	%>
+					xlsxTool_<%=cid%>.setColAutoSize(columnIndex_<%=cid%>);
+	<%
+	    			}
+	    		}else{
+	    			if(autoSizeList.size() == columns.size()){
+	                	for(int i=0;i<columns.size();i++){
+	                		IMetadataColumn column = columns.get(i);
+	                		if(column.getTalendType().equals("id_Dynamic")){
+								if(sizeColumns > schemaOptNum) {
+
+								} else {
+									Map<String,String> tmp = autoSizeList.get(i);
+									if(("true").equals(tmp.get("IS_AUTO_SIZE"))){
+	%>
+									excelDynamicUtil_<%=cid%>.autoDynamicColumnSize(xlsxTool_<%=cid%>);
+	<%
+									}
+								}
+								continue;
+							}
+	                		if(sizeColumns > schemaOptNum) {
+	        					if(i%schemaOptNum==0){
+	        						boolean emptyMethod = true;
+	        						for(int j=0;(j<schemaOptNum) && (i+j<sizeColumns);j++) {
+                						Map<String,String> tmp= autoSizeList.get(i+j);
+                						if(("true").equals(tmp.get("IS_AUTO_SIZE")) && (!columns.get(i+j).getTalendType().equals("id_Dynamic"))){
+                							emptyMethod = false;
+                							break;
+                						}
+									}
+									
+									if(!emptyMethod) {
+	%>
+					fileOutputExcelUtil_<%=cid%>.setColAutoSize_<%=i/schemaOptNum%>(xlsxTool_<%=cid%>);
+	<%
+									}
+	        					}
+	        					continue;
+	        				}
+	                		Map<String,String> tmp= autoSizeList.get(i);
+	                		if(("true").equals(tmp.get("IS_AUTO_SIZE"))){ 
+								if(hasDynamic && i+1>dynamic_index){
+								%>
+									columnIndex_<%=cid%> = excelDynamicUtil_<%=cid%>.getDynamicColCount()+<%=i-1%>;
+								<%
+								}else{
+								%>
+									columnIndex_<%=cid%> = <%=i%>;
+								<%
+								}
+	%>
+					xlsxTool_<%=cid%>.setColAutoSize(columnIndex_<%=cid%>);
+	<%
+	                		}
+	                	}
+	                }
+	    		}
+	    	}
+	    }
+	%>
+	
+	<%
+				if(flushOnRow && (useStream || !isAppendFile)){
+	%>
+					if(bufferCount_<%=cid%>!=0){
+    					xlsxTool_<%=cid%>.flushRowInMemory();
+    					//flush all rocords in memory on disk.
+    				}
+	<%
+				}
+	%>
+	<%
+		if(useStream){
+	%>
+			xlsxTool_<%=cid%>.writeExcel(<%=outStream%>);
+	<%
+		}else{	
+	%>
+			xlsxTool_<%=cid%>.writeExcel(fileName_<%=cid%>,<%=createDir%>);
+	<%
+		}
+	%>
+		if(headerIsInserted_<%=cid%> && nb_line_<%=cid %> > 0){
+			nb_line_<%=cid %> = nb_line_<%=cid %> -1;
+		}
+		globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+		
+	<%if(!useStream && isDeleteEmptyFile){
+	%>
+		if(isFileGenerated_<%=cid %> && nb_line_<%=cid %> == 0){
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Creating directory '" + file_<%=cid %>.getCanonicalPath() + "'.");
+			<%}%>
+			file_<%=cid %>.delete();
+	    	<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Create directory '"+ file_<%=cid %>.getCanonicalPath() + "' has succeeded.");
+			<%}%>
+		}		
+	<%}
+log4jFileUtil.writeDataFinishInfo(node);
+	}
+	%>	

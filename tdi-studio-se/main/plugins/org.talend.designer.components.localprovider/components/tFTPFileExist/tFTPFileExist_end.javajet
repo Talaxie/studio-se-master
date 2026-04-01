@@ -1,0 +1,78 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+  "
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String remoteDir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+boolean moveToCurrentDir = ("true").equals(ElementParameterParser.getValue(node, "__MOVE_TO_THE_CURRENT_DIRECTORY__"));
+String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+String ignoreFailureAtQuit= ElementParameterParser.getValue(node,"__IGNORE_FAILURE_AT_QUIT__");
+String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+boolean sftp = false;
+boolean ftps = false;
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if (("true").equals(useExistingConn)) {
+  List<? extends INode> nodeList = node.getProcess().getGeneratingNodes();
+  for (INode n : nodeList) {
+    if (n.getUniqueName().equals(connection)) {
+      sftp = ("true").equals(ElementParameterParser.getValue(n, "__SFTP__"));
+      ftps = ("true").equals(ElementParameterParser.getValue(n, "__FTPS__"));
+    }
+  }
+} else {
+  sftp = ("true").equals(ElementParameterParser.getValue(node, "__SFTP__"));
+  ftps = ("true").equals(ElementParameterParser.getValue(node, "__FTPS__"));
+}
+
+if (sftp) { // *** sftp *** //
+	if (!"true".equals(useExistingConn)) {
+%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Closing the connection to the server.");
+		<%}%>
+		session_<%=cid%>.disconnect(); 
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to the server closed.");
+		<%}%>
+<%
+	} else if (moveToCurrentDir){
+%>
+		c_<%=cid%>.cd(<%=remoteDir %>);
+<%
+	}
+} else if (!("true").equals(useExistingConn)) { // *** ftp and ftps *** //
+	if (!ftps && ("true").equals(ignoreFailureAtQuit)) {
+%>
+		try {
+<%
+	}
+%>
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Closing the connection to the server.");
+			<%}%>
+			ftp_<%=cid%>.logout();
+			ftp_<%=cid%>.disconnect();
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Connection to the server closed.");
+			<%}
+	if (!ftps && ("true").equals(ignoreFailureAtQuit)) {
+%>
+		} catch (java.io.IOException ioe_<%=cid%>) { //ignore failure
+			globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe_<%=cid%>.getMessage());
+			<%if(isLog4jEnabled){%>
+				log.warn("<%=cid%> - " + ioe_<%=cid%>.getMessage());
+			<%}%>
+		}
+<%
+	}
+}
+%>

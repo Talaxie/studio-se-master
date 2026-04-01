@@ -1,0 +1,117 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean useExistingPipe = ElementParameterParser.getValue(node, "__USE_EXISTING_PIPE__").equals("true");
+String existingPipe = ElementParameterParser.getValue(node, "__PIPE__");
+String namedPipeName = ElementParameterParser.getValue(node, "__NAMEDPIPE_NAME__");
+String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+boolean csv = ElementParameterParser.getValue(node, "__CSV__").equals("true");
+String escapeChar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+String quoteChar = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+boolean quoteAllFields = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE_OPTION__").equals("ALL");
+boolean deleteIfExists = ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__").equals("true");
+String nullText = ElementParameterParser.getValue(node, "__NULL_TEXT__");
+String boolType = ElementParameterParser.getValue(node, "__BOOLEAN_TYPE__");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+List<IMetadataColumn> columnList = null;
+if(metadatas != null && metadatas.size() > 0) {
+    IMetadataTable metadata = metadatas.get(0);
+    if(metadata != null) {
+        columnList = metadata.getListColumns();
+    }
+}
+List< ? extends IConnection> inputConns = node.getIncomingConnections();
+List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+boolean hasInputRow = false;
+boolean hasOutputRow = false;
+if (inputConns != null || inputConns.size() > 0) {
+	for(IConnection conn : inputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasInputRow)
+				hasInputRow = true;
+	}
+}
+if (outputConns != null || outputConns.size() > 0) {
+	for(IConnection conn : outputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasOutputRow)
+				hasOutputRow = true;
+	}
+}
+String inputRowName = (hasInputRow) ? inputConns.get(0).getName() : null;
+String outputRowName = (hasOutputRow) ? outputConns.get(0).getName() : null;
+
+// -----------------------------------------------------------
+// basic setup check:
+// 		if the component is used with named-piped option, it must have an input row
+//		if the component is used as a start component, then it must not have an output row
+// -----------------------------------------------------------
+boolean missConfiguration = false;
+String  missConfigurationMsg = "";
+if (hasOutputRow && !hasInputRow) {
+	missConfiguration = true;
+	missConfigurationMsg = cid + " is miss configured. This component can only have an output row when it has an input row.";
+}
+if (missConfiguration) {
+	%>
+	boolean missConfiguration_<%=cid%> = true;
+	String missConfigurationMsg_<%=cid%> = "<%=missConfigurationMsg%>";
+	if (missConfiguration_<%=cid%>) {
+		throw new java.lang.Exception(missConfigurationMsg_<%=cid%>);
+	}
+	<%
+}
+%>
+
+	
+<%
+if (hasInputRow && columnList != null) {
+
+	if (useExistingPipe == false) { 
+	%>
+		String namedPipeName_<%=cid%> = <%=namedPipeName%>;
+		String namedPipeNativeName_<%=cid%> = (new com.infobright.io.NamedPipeFactory()).getNativePipeName(namedPipeName_<%=cid%>);
+		<% if (deleteIfExists) { %>
+			java.io.File file_<%=cid%> = new java.io.File(namedPipeNativeName_<%=cid%>);
+			if (file_<%=cid%>.exists())
+				file_<%=cid%>.delete();
+		<% } %>
+		com.infobright.io.NamedPipe outputStream_<%=cid%> = (new com.infobright.io.NamedPipeFactory()).createServer(<%=namedPipeName%>, true, true, 1024000, 10000);
+
+		// in Windows wait for named pipe to get opened
+		if ((new com.infobright.io.NamedPipeFactory()).isWindowsMode()) { 
+			Thread.sleep(10000);
+		}
+	<% } else { %>
+		String namedPipeName_<%=cid%> = (String)globalMap.get("<%=existingPipe%>_PIPE_NAME");
+		String namedPipeNativeName_<%=cid%> = (String)globalMap.get("<%=existingPipe%>_PIPE_NATIVE_NAME");
+		com.infobright.io.NamedPipe outputStream_<%=cid%> = (com.infobright.io.NamedPipe)globalMap.get("<%=existingPipe%>_PIPE_OUTPUTSTREAM");
+	<% } %>
+
+	
+	int rowCout_<%=cid%> = 0;
+	globalMap.put("<%=cid%>_PIPE_NAME", namedPipeName_<%=cid%>);
+	globalMap.put("<%=cid%>_PIPE_NATIVE_NAME",  namedPipeNativeName_<%=cid%>);
+	globalMap.put("<%=cid%>_PIPE_OUTPUTSTREAM", outputStream_<%=cid%>);
+<%
+}
+%>
+	
+

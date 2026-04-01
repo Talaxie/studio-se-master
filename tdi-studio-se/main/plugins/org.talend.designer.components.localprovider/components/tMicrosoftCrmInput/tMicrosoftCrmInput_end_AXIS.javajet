@@ -1,0 +1,65 @@
+<%@ jet
+imports="
+    	org.talend.core.model.process.INode
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.ElementParameterParser
+		java.util.List
+		"
+%>
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+	IMetadataTable metadata = metadatas.get(0);
+
+	if (metadata != null) {
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		int nbSchemaColumns = columnList.size();
+
+		List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+
+		// if output columns are defined
+		if (nbSchemaColumns > 0 && outgoingConns != null && outgoingConns.size() > 0){
+
+			IConnection outgoingConn = outgoingConns.get(0);
+
+			if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				String authType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+				boolean isAPI2011 = ("API_2011").equals(ElementParameterParser.getValue(node,"__API_VERSION__"));
+				String discWSDL = ElementParameterParser.getValue(node, "__DISC_WSDL__");
+				if(!isAPI2011 || ("ON_PREMISE").equals(authType)){
+				%>
+    				}
+    				if(fetchMore_<%=cid%>){
+	                    pageNumber_<%=cid%>++;
+	                    pagingInfo_<%=cid%>.setPageNumber(pageNumber_<%=cid%>);
+	                    pagingInfo_<%=cid%>.setPagingCookie(pagingCookie_<%=cid%>);
+	                    query_<%=cid%>.setPageInfo(pagingInfo_<%=cid%>);
+	                    rmr_<%=cid%>.setQuery(query_<%=cid%>);
+	                    execute_<%=cid%>.setRequest(rmr_<%=cid%>);
+	        			executeDoc_<%=cid%>.setExecute(execute_<%=cid%>);
+	        			executeDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Factory.parse(executeDoc_<%=cid%>.toString());
+        			}
+				}
+
+				<%
+				}else{
+				%>
+					}
+					if (!retrieveMultipleResult_<%=cid%>.getMoreRecords()) {
+		                break;
+		            }
+		            pagingInfo_<%=cid%>.setPagingCookie(retrieveMultipleResult_<%=cid%>.getPagingCookie());
+		            pagingInfo_<%=cid%>.setPageNumber(++pageNumber_<%=cid%>);
+		            query_<%=cid%>.setPageInfo(pagingInfo_<%=cid%>);
+		        }
+				<%
+				}
+			}
+		}
+	}
+}
+%>

@@ -1,0 +1,81 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    java.util.List
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+IMetadataTable metadata = metadatas.get(0);
+
+String lookupSearchColumn = ElementParameterParser.getValue(
+    node,
+    "__LOOKUP_SEARCH_COLUMN__"
+);
+String lookupSearchName = null;
+
+
+String lookupReplacementColumn = ElementParameterParser.getValue(
+    node,
+    "__LOOKUP_REPLACEMENT_COLUMN__"
+);
+String lookupReplacementName = null;
+String typeToGenerate_lookup="";
+String typeToGenerate_replacement="";
+if (metadatas != null && metadatas.size() > 0) {
+    String lookup = null;
+
+    List<IConnection> inputConnections;
+    inputConnections = (List<IConnection>) node.getIncomingConnections();
+    for (IConnection connection : inputConnections) {
+        if (connection == null) {
+            continue;
+        }
+        if (connection.getLineStyle() == EConnectionType.FLOW_REF) {
+            lookup = connection.getName();
+            IMetadataTable lookupMetadata = connection.getSource().getMetadataList().get(0);
+            int colnum = 0; 
+            for(IMetadataColumn column: lookupMetadata.getListColumns()){
+                if (lookupSearchColumn.equals(column.getLabel())){
+                	typeToGenerate_lookup = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                	lookupSearchName = column.getLabel();
+                }
+                if (lookupReplacementColumn.equals(column.getLabel())){
+                	typeToGenerate_replacement = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()); 
+                	lookupReplacementName = column.getLabel();
+                }
+                colnum++;
+            }
+          
+        }
+    }
+   
+%>
+
+java.util.Map<<%=lookup %>Struct, <%=lookup %>Struct>  tMap_<%=lookup%>_<%=cid %> = (java.util.Map<<%=lookup %>Struct, <%=lookup %>Struct>) globalMap.get("tHash_<%=lookup %>");
+java.util.Map<<%=typeToGenerate_lookup%>,<%=typeToGenerate_replacement%>> replace_<%=cid%> = new java.util.LinkedHashMap<<%=typeToGenerate_lookup%>,<%=typeToGenerate_replacement%>>();
+
+for (Object o : tMap_<%=lookup%>_<%=cid %>.keySet()) {
+    
+    <%=typeToGenerate_lookup%> search = tMap_<%=lookup%>_<%=cid %>.get(o).<%=lookupSearchName%>;
+    <%=typeToGenerate_replacement%> replacement = tMap_<%=lookup%>_<%=cid %>.get(o).<%=lookupReplacementName%>;
+    if(search!=null&&!"".equals(search)){
+        replace_<%=cid%>.put(search,replacement);
+    }
+}
+
+<%
+}
+%>

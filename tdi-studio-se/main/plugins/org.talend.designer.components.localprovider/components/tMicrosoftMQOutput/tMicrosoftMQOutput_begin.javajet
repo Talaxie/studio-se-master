@@ -1,0 +1,79 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List 
+  " 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	List< ? extends IConnection> inConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+	String queueType = ElementParameterParser.getValue(node, "__QUEUE_TYPE__");
+	boolean isCreateQueueNotExist = ("true").equals(ElementParameterParser.getValue(node,"__CREATE_QUEUE_NOT_EXIST__"));
+	   
+	if (inConns != null && inConns.size() > 0){
+		IMetadataTable inTable = inConns.get(0).getMetadataTable();
+		List<IMetadataColumn> columns = inTable.getListColumns();
+	
+		if (columns != null && columns.size() > 0){
+			String host = ElementParameterParser.getValue(node, "__HOST__");
+			String queue = ElementParameterParser.getValue(node, "__QUEUE__");
+			%>
+			org.talend.msmq.MsmqUtil msgu_<%=cid%> = new org.talend.msmq.MsmqUtil();
+			try{
+				msgu_<%=cid%>.setHost(<%=host%>);
+				msgu_<%=cid%>.setQueue(<%=queue%>); 
+				msgu_<%=cid%>.createIfNotExists(<%=isCreateQueueNotExist%>);
+				<%
+		   		if(queueType!=null && queueType.endsWith("PUBLIC")){
+				%>
+					msgu_<%=cid%>.setQueueType(""); 
+				<%
+				}
+				if(queueType!=null && queueType.startsWith("TRANSACTION")){
+				%>
+					msgu_<%=cid%>.setIsTransaction(true);
+				<%
+				}
+		   		%>
+				msgu_<%=cid%>.open();
+				resourceMap.put("msgu_<%=cid%>", msgu_<%=cid%>);
+			}catch(java.net.UnknownHostException ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+				<%
+				if(dieOnError){
+				%>
+					throw ex_<%=cid%>;
+				<%
+				}else{
+				%>
+					System.err.println("Unknown host :" + ex_<%=cid%>.getMessage());
+				<%
+				}
+				%>
+			}catch(ionic.Msmq.MessageQueueException e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+				<%
+				if(dieOnError){
+				%>
+					throw e_<%=cid%>;
+				<%
+				}else{
+				%>
+					System.out.println("Queue creation failure: " +e_<%=cid%>.getMessage());
+				<%
+				}
+				%>
+			}
+		<%
+		}
+	}
+	%>

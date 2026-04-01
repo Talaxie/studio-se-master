@@ -1,0 +1,127 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.utils.TalendQuoteUtils
+    java.util.List
+    java.util.Map
+    java.util.HashMap
+    org.talend.core.model.metadata.IMetadataTable 
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String filename = ElementParameterParser.getValue(node, "__FILENAME__");		
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));		
+
+boolean inputIsDocument = "true".equals(ElementParameterParser.getValue(node, "__INPUT_IS_DOCUMENT__"));
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(!inputIsDocument) {
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+String split = ElementParameterParser.getValue(node, "__SPLIT__");
+String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+List rootTags = (List)ElementParameterParser.getObjectValue(node, "__ROOT_TAGS__");
+if (rootTags.size()==0) {
+    Map<String, String> defaultRootNode = new HashMap<String, String>();
+    defaultRootNode.put("TAG","\"root\"");
+    rootTags.add(defaultRootNode);
+}
+    int footers = rootTags.size();
+String useDynamicGrouping = ElementParameterParser.getValue(
+            node,
+            "__USE_DYNAMIC_GROUPING__"
+        );
+List<Map<String, String>> columnMapping = 
+    		(List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__MAPPING__"
+            );
+List<Map<String, String>> groupBys =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__GROUP_BY__"
+            );
+if (("false").equals(useDynamicGrouping)) {
+    groupBys.clear();
+}
+
+
+String groupby[][] = new String[groupBys.size()][3];
+for(int i = 0; i < groupBys.size(); i++){
+    groupby[i][0] = groupBys.get(i).get("COLUMN");
+    groupby[i][1] = groupBys.get(i).get("LABEL");
+}
+for(int i = 0; i < groupby.length; i++){
+	for(int j = 0; j < columnMapping.size(); j++){
+		Map<String, String> map = columnMapping.get(j);
+		String col = metadata.getListColumns().get(j).getLabel();
+		if(groupby[i][0].equals(col)){
+			if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+    			groupby[i][2] = col;
+    			groupby[i][2] = TalendQuoteUtils.addQuotes(groupby[i][2]);
+    		}else{
+    			groupby[i][2] = map.get("LABEL");
+    		}
+    		break;
+		}
+	}
+}
+%><%
+for(int i = groupby.length -1; i >= 0; i--){
+%>out_<%=cid%>.write("</"+<%=groupby[i][2] %>+">");
+
+out_<%=cid%>.newLine();
+
+<%
+}
+	for(int i = footers - 1; i >= 0;i--){
+%>	out_<%=cid%>.write(footers_<%=cid %>[<%=i %>]);
+
+	out_<%=cid%>.newLine();
+	
+<%
+	}
+%>out_<%=cid %>.close();
+
+<%
+if(("true").equals(split)){
+%>
+	if(currentRowCount_<%=cid %> == 0){		
+		file_<%=cid %>.delete();
+	}
+<%
+}
+log4jFileUtil.writeDataFinishInfo(node);
+%>globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+<%
+	}
+}
+} else {
+%>
+	writer_<%=cid%>.close();
+<%
+	if(isDeleteEmptyFile) {
+%>
+	if(isEmpty_<%=cid%>){
+		file_<%=cid %>.delete();
+	} else 
+<%
+	}
+}
+	%>
+	
+<%if(isDeleteEmptyFile){%>
+	if(nb_line_<%=cid %> == 0){
+		file_<%=cid %>.delete();
+	}		
+<%}%>	

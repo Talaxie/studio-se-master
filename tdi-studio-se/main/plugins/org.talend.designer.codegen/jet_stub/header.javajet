@@ -1,0 +1,1018 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators"
+	imports="
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.designer.runprocess.CodeGeneratorRoutine
+		org.talend.designer.codegen.i18n.Messages
+		org.talend.core.ui.branding.IBrandingService
+		org.talend.core.ui.branding.AbstractBrandingService
+		org.talend.core.GlobalServiceRegister
+		org.talend.designer.codegen.ITalendSynchronizer
+		org.talend.designer.codegen.PigTemplate
+		java.util.List
+		java.util.ArrayList
+		java.util.Vector
+		org.talend.core.model.process.IContextParameter
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.utils.JavaResourcesHelper
+		org.talend.core.model.process.ProcessUtils
+        org.talend.designer.runprocess.ProcessorUtilities
+	"
+	class="Header"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	Vector v = (Vector) codeGenArgument.getArgument();
+	IProcess process = (IProcess)v.get(0);
+	String version = (String)v.get(1);
+
+	List< ? extends INode> processNodes = (List< ? extends INode>)process.getGeneratingNodes();
+	boolean stats = codeGenArgument.isStatistics();
+	boolean trace = codeGenArgument.isTrace();
+	boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+	
+	boolean exportTypeSpringBoot = false;
+	if (process instanceof org.talend.core.model.process.IProcess2) {
+            org.talend.core.model.process.IProcess2 p2 = (org.talend.core.model.process.IProcess2) process;
+	    if (p2.getProperty() != null && p2.getProperty().getAdditionalProperties() != null) {
+	        exportTypeSpringBoot = "REST_MS".equals(p2.getProperty().getAdditionalProperties().get(org.talend.core.runtime.process.TalendProcessArgumentConstant.ARG_BUILD_TYPE));
+	    } 
+	}
+
+	List<IContextParameter> params = new ArrayList<IContextParameter>();
+	params=process.getContextManager().getDefaultContext().getContextParameterList();
+	String className = process.getName();
+%>
+<%
+IBrandingService service=(IBrandingService)GlobalServiceRegister.getDefault().getService(IBrandingService.class);
+if(service instanceof AbstractBrandingService){
+%>
+<%=((AbstractBrandingService) service).getJobLicenseHeader(version)%>
+<%
+}
+    String jobFolderName = "";
+    IProcess baseProcess = ProcessUtils.getTestContainerBaseProcess(process);
+    if (baseProcess != null) {
+        jobFolderName = JavaResourcesHelper.getJobFolderName(baseProcess.getName(), baseProcess.getVersion()) + ".";
+    }
+	jobFolderName = jobFolderName + JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+	String packageName = codeGenArgument.getCurrentProjectName().toLowerCase() + "." + jobFolderName;
+%>
+package <%= packageName %>;
+
+<%for (String routine : CodeGeneratorRoutine.getRequiredPigudfName(process)) {
+      boolean isTemplate =false;
+       for(PigTemplate template:PigTemplate.values()){
+            if(routine.equals(template.getFileName())){
+                isTemplate = true;
+            }
+        }
+    if(!isTemplate){%>
+import pigudf.<%=routine%>;
+<%  }
+}%>
+<%for (String routine : CodeGeneratorRoutine.getRequiredRoutineName(process)) {
+    if(!routine.equals(ITalendSynchronizer.TEMPLATE)){%>
+import routines.<%=routine%>;
+<%  }
+}%>
+<%for (String codesJar : CodeGeneratorRoutine.getRequiredCodesJarName(process)) {%>
+import <%=codesJar%>;
+<%}%>
+import routines.system.*;
+import routines.system.api.*;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.math.BigDecimal;
+import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.ObjectOutputStream;
+import java.io.ObjectInputStream;
+import java.io.IOException;
+import java.util.Comparator;
+<%
+if(ProcessUtils.isTestContainer(process)) {
+    className = className + "Test";
+%>
+import org.junit.Test;
+import static org.junit.Assert.assertTrue;
+<%
+}
+%>
+ 
+<%=ElementParameterParser.getValue(process, "__HEADER_IMPORT__") %>
+<%=ElementParameterParser.getValue(process, "__FOOTER_IMPORT__") %>
+
+
+<%
+	List<INode> nodesWithImport = process.getNodesWithImport();
+	if(nodesWithImport != null) {
+		for(INode node:nodesWithImport){
+%>
+	//the import part of <%=node.getUniqueName() %>
+	<%=ElementParameterParser.getValue(node, "__IMPORT__") %>
+
+<%		}
+	}
+%>
+
+@SuppressWarnings("unused")
+
+/**
+ * Job: <%=className%> Purpose: <%=ElementParameterParser.getValue(process, "__PURPOSE__") %><br>
+ * Description: <%=ElementParameterParser.getValue(process, "__DESCRIPTION__") %> <br>
+ * @author <%=ElementParameterParser.getValue(process, "__AUTHOR__") %>
+ * @version <%=version %>
+ * @status <%=ElementParameterParser.getValue(process, "__STATUS__") %>
+ */
+<%
+String talendJobInterfaces = "TalendJob";
+
+boolean talendMdmJob = !process.getNodesOfType("tMDMTriggerInput").isEmpty() || !process.getNodesOfType("tMDMTriggerOutput").isEmpty();
+
+boolean actAsProvider = !process.getNodesOfType("tESBProviderRequest").isEmpty();
+boolean actAsConsumer = !process.getNodesOfType("tESBConsumer").isEmpty();
+boolean hasSAM4RS = false;
+for (INode node : process.getNodesOfType("tRESTClient")) {
+    if (Boolean.valueOf(ElementParameterParser.getValue(node, "__SERVICE_ACTIVITY_MONITOR__"))) {
+        hasSAM4RS = true;
+        break;
+    }
+}
+
+boolean isChildRouteJob = !process.getNodesOfType("tRouteInput").isEmpty();
+boolean talendEsbJobFactory = actAsProvider || isChildRouteJob;
+boolean talendEsbJob = talendEsbJobFactory || actAsConsumer || ProcessorUtilities.isEsbJob(process);
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));//log4j enable
+boolean isLog4j2Enabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J2_ACTIVATE__"));//log4j2 enable
+boolean isLog4j1Enabled = !isLog4j2Enabled;//log4j1 enable
+
+if (talendMdmJob) {
+	talendJobInterfaces += ", TalendMDMJob"; // Talend MDM job
+}
+if (talendEsbJob) {
+	talendJobInterfaces += ", TalendESBJob"; // Talend ESB job
+}
+if (talendEsbJobFactory) {
+	talendJobInterfaces += ", TalendESBJobFactory"; // Talend ESB provider job
+}
+%>
+public class <%=className%> implements <%=talendJobInterfaces%> {
+<%if(isLog4jEnabled){%>
+	static {System.setProperty("TalendJob.log", "<%=className%>.log");}
+
+	<%if(isLog4j1Enabled){%>
+	private static org.apache.log4j.Logger log = org.apache.log4j.Logger.getLogger(<%=className%>.class);
+	<%}%>
+
+	<%if(isLog4j2Enabled){%>
+	private static org.apache.logging.log4j.Logger log = org.apache.logging.log4j.LogManager.getLogger(<%=className%>.class);
+	<%}%>
+<%}%>
+
+protected static void logIgnoredError(String message, Throwable cause) {
+<%if (isLog4jEnabled){%>
+       log.error(message, cause);
+<%} else {%>
+       System.err.println(message);
+       if (cause != null) {
+               cause.printStackTrace();
+       }
+<%}%>
+
+}
+<% if (talendEsbJob) { %>
+	private ESBEndpointRegistry registry = null;
+
+	public void setEndpointRegistry(ESBEndpointRegistry registry) {
+		this.registry = registry;
+	}
+
+	private ESBProviderCallback callback = null;
+
+	public void setProviderCallback(ESBProviderCallback callback) {
+		<% if (actAsProvider) { %>
+			this.callback = callback;
+		<% } %>
+	}
+
+	<% if (!actAsProvider) { %>
+		public ESBEndpointInfo getEndpoint() { return null; }
+	<% } %>
+<% } %>
+
+<% if (talendEsbJobFactory) { %>
+	public TalendESBJob newTalendESBJob() {
+		<%=process.getName()%> talendESBJob = new <%=process.getName()%>();
+		java.util.Map<String, routines.system.TalendDataSource> talendDataSources =
+			(java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+		if (null != talendDataSources) {
+			java.util.Map<String, javax.sql.DataSource> dataSources = new java.util.HashMap<String, javax.sql.DataSource>();
+			for (java.util.Map.Entry<String, routines.system.TalendDataSource> talendDataSourceEntry : talendDataSources.entrySet()) {
+				dataSources.put(talendDataSourceEntry.getKey(), talendDataSourceEntry.getValue().getRawDataSource());
+			}
+			talendESBJob.setDataSources(dataSources);
+		}
+		// fix for TESB-7714
+		talendESBJob.setEndpointRegistry(registry);
+
+		return talendESBJob;
+	}
+<% } %>
+
+	public final Object obj = new Object();
+
+	// for transmiting parameters purpose
+	private Object valueObject = null;
+
+	public Object getValueObject() {
+		return this.valueObject;
+	}
+
+	public void setValueObject(Object valueObject) {
+		this.valueObject = valueObject;
+	}
+<%
+if(isRunInMultiThread){
+%>
+	private Object[] multiThreadLockWrite = new Object[0];
+<%
+}
+%>
+	<%//it will be use in job setting.%>
+	private final static String defaultCharset = java.nio.charset.Charset.defaultCharset().name();
+
+	<%//uft-8 is for temp file, for example: tSortRow, tMap. Because they need keep reversibility.%>
+	private final static String utf8Charset = "UTF-8";
+
+<%
+if(!exportTypeSpringBoot || isChildRouteJob){
+%>	
+
+	//contains type for every context property
+	public class PropertiesWithType extends java.util.Properties {
+		private static final long serialVersionUID = 1L;
+		private java.util.Map<String,String> propertyTypes = new java.util.HashMap<>();
+		
+		public PropertiesWithType(java.util.Properties properties){
+			super(properties);
+		}
+		public PropertiesWithType(){
+			super();
+		}
+		
+		public void setContextType(String key, String type) {
+			propertyTypes.put(key,type);
+		}
+	
+		public String getContextType(String key) {
+			return propertyTypes.get(key);
+		}
+	}
+<%
+}
+%>	
+	// create and load default properties
+	private java.util.Properties defaultProps = new java.util.Properties();
+	
+<%
+if(!exportTypeSpringBoot){
+%>	
+
+	// create application properties with default
+	public class ContextProperties extends PropertiesWithType {
+
+		private static final long serialVersionUID = 1L;
+
+		public ContextProperties(java.util.Properties properties){
+			super(properties);
+		}
+		public ContextProperties(){
+			super();
+		}
+
+		public void synchronizeContext(){
+			<% for (IContextParameter ctxParam :params){
+				String cParaName = ctxParam.getName();
+			%>
+			if(<%=cParaName %> != null){
+				<%if(ctxParam.getType().equals("id_Date")){%>
+					String pattern_<%=cParaName %> = "yyyy-MM-dd HH:mm:ss";
+					String value_<%=cParaName %> = "<%=ctxParam.getValue() %>";
+					String[] parts_<%=cParaName %> = value_<%=cParaName %>.split(";");
+					if(parts_<%=cParaName %>.length > 1){
+						pattern_<%=cParaName %> = parts_<%=cParaName %>[0];
+						this.setProperty("<%=cParaName %>", pattern_<%=cParaName %> + ";" + FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+					}else{
+						this.setProperty("<%=cParaName %>", FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+					}
+				<%}else{%>
+					this.setProperty("<%=cParaName %>", <%=cParaName %>.toString());
+				<%}%>
+			}
+			<% } %>
+		}
+		
+		//if the stored or passed value is "<TALEND_NULL>" string, it mean null
+		public String getStringValue(String key) {
+			String origin_value = this.getProperty(key);
+			if(NULL_VALUE_EXPRESSION_IN_COMMAND_STRING_FOR_CHILD_JOB_ONLY.equals(origin_value)) {
+				return null;
+			}
+			return origin_value;
+		}
+
+<%
+		for (IContextParameter ctxParam :params)
+		{
+				if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory"))
+				{
+		%>
+		public String <%=ctxParam.getName()%>;
+		public String get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>(){
+			return this.<%=ctxParam.getName()%>;
+		}
+		<%
+				}else
+				{
+%>
+public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> <%=ctxParam.getName()%>;
+public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>(){
+	return this.<%=ctxParam.getName()%>;
+}
+<%				}
+		}
+%>
+	}
+	
+<%
+}
+%>		
+	protected ContextProperties context = new ContextProperties(); // will be instanciated by MS.
+	public ContextProperties getContext() {
+		return this.context;
+	}
+	private final String jobVersion = "<%=process.getVersion() %>";
+	private final String jobName = "<%=codeGenArgument.getJobName() %>";
+	private final String projectName = "<%=codeGenArgument.getCurrentProjectName() %>";
+	public Integer errorCode = null;
+	private String currentComponent = "";
+	<%
+	// is necessary? avoid some compiler issue as var name not found? TODO consider remove it, also the currentComponent above
+	%>
+	private String cLabel =  null;
+	<%
+	//tParallelize will wrap globalMap with synchronizedMap
+	if(isRunInMultiThread || NodeUtil.containsMultiThreadComponent(process)){
+	%>
+		private final java.util.Map<String, Object> globalMap = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Object>());
+		<%
+		if(ProcessUtils.isTestContainer(process)) {
+		%>
+			private final static java.util.Map<String, Object> junitGlobalMap = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Object>());
+		<%
+		}
+		%>
+	<%
+	} else {
+	%>
+		private final java.util.Map<String, Object> globalMap = new java.util.HashMap<String, Object>();
+        private final static java.util.Map<String, Object> junitGlobalMap = new java.util.HashMap<String, Object>();
+	<%
+	}
+	boolean exist_tParallelize = false;
+    List<? extends INode> tParallelizeList = process.getNodesOfType("tParallelize");
+    if(tParallelizeList != null && tParallelizeList.size() > 0){
+        exist_tParallelize = true;
+    }
+	if(!isRunInMultiThread && !exist_tParallelize){
+	%>
+		private final java.util.Map<String, Long> start_Hash = new java.util.HashMap<String, Long>();
+		private final java.util.Map<String, Long> end_Hash = new java.util.HashMap<String, Long>();
+		private final java.util.Map<String, Boolean> ok_Hash = new java.util.HashMap<String, Boolean>();
+		public  final java.util.List<String[]> globalBuffer = new java.util.ArrayList<String[]>();
+	<%
+	}else{
+	%>
+		private final java.util.Map<String, Long> start_Hash = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Long>());
+		private final java.util.Map<String, Long> end_Hash = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Long>());
+		private final java.util.Map<String, Boolean> ok_Hash = java.util.Collections.synchronizedMap(new java.util.HashMap<String, Boolean>());
+		public  final java.util.List<String[]> globalBuffer = java.util.Collections.synchronizedList(new java.util.ArrayList<String[]>());
+	<%
+	}
+	%>
+
+<%
+	INode jobCatcherNode = null;
+
+	//one matched component or part, one thread
+	//why not computed by cpu or resource : please image this case : 
+	//loop==>(input==>(twritexmlfield A)==>(twritexmlfield B)==>(twritexmlfield C)==>output), dead lock as cycle dependency and only one thead in thread pool
+	//maybe newCachedThreadPool is a better idea,  but that have risk for creating more threads, then more memory for TDI-47230
+	//why not generate thread pool object in subprocess scope : 
+	// 1: major reason : difficult to control the var scope, somewhere can't access it, then compiler issue
+	// 2: we may need this thread pool for bigger scope, not only for twritexmlfield/twritejsonfield in future
+	// 3: we don't suppose this thread pool cost big resource after all tasks done, so we can shutdown it more later,
+	//		for example, most time, user will use less than 3 twritexmlfield in one job, then 3 threads thread pool, we can close them in job finish code part, 
+	//		not a big cost to keep that. And of course, we best to start&clean it in subprocess finish, but that's risk of 1 above.
+	int threadPoolSize = 0;
+	boolean tHMapExists = false;
+	boolean tHMapOutExists = false;
+	boolean tRESTRequestLoopExists = false;
+	for (INode nodeInProcess : processNodes) {
+		String componentName = nodeInProcess.getComponent().getName();
+
+		if(jobCatcherNode==null && "tJobStructureCatcher".equals(componentName)) {
+			jobCatcherNode = nodeInProcess;
+			continue;
+		}
+
+		if(!nodeInProcess.isActivate()) continue;
+
+		if("tHMap".equals(componentName)) {
+			tHMapExists = true;
+			continue;
+		}
+
+		if("tHMapOut".equals(componentName)) {
+			tHMapOutExists = true;
+			continue;
+		}
+
+		if("tRESTRequestLoop".equals(componentName)) {
+			tRESTRequestLoopExists = true;
+			continue;
+		}
+		
+		if("tWriteXMLFieldOut".equals(componentName)) {
+			IConnection nextMergeConn = NodeUtil.getNextMergeConnection(nodeInProcess);
+			if(nextMergeConn == null || nextMergeConn.getInputId()==1){
+				threadPoolSize++;
+			}
+		}
+	}
+
+	if(threadPoolSize>0) {
+		if(tRESTRequestLoopExists) {//miscroservice
+%>
+			private class DaemonThreadFactory implements java.util.concurrent.ThreadFactory {
+				java.util.concurrent.ThreadFactory factory = java.util.concurrent.Executors.defaultThreadFactory();
+				
+				public java.lang.Thread newThread(java.lang.Runnable r) {
+					java.lang.Thread t = factory.newThread(r);
+					t.setDaemon(true);
+					return t;
+				}
+			}
+<%
+		}
+
+		if(tHMapExists || tHMapOutExists) {
+%>
+private final java.util.concurrent.ExecutorService es = java.util.concurrent.Executors.newFixedThreadPool(<%=threadPoolSize%> <%if(tRESTRequestLoopExists) {%>,new DaemonThreadFactory()<%}%>);
+<%
+		} else {
+%>
+private final java.util.concurrent.ExecutorService es = java.util.concurrent.Executors.newCachedThreadPool(<%if(tRESTRequestLoopExists) {%>new DaemonThreadFactory()<%}%>);
+<%
+		}
+
+		if(tRESTRequestLoopExists) {//miscroservice
+%>
+		{
+			java.lang.Runtime.getRuntime().addShutdownHook(new java.lang.Thread() {
+				public void run() {
+					es.shutdown();
+					try {
+						if(!es.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+							es.shutdownNow();
+							if(!es.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+
+							}
+						}
+					} catch (java.lang.InterruptedException ie) {
+						es.shutdownNow();
+					} catch (java.lang.Exception e) {
+
+					}
+				}
+			});
+		}
+<%
+		}
+	}
+	
+	boolean enableLogStash = !Boolean.getBoolean("deactivate_extended_component_log") && (jobCatcherNode!=null);
+	boolean enable_runtime_lineage_log = NodeUtil.isJobUsingRuntimeLineage(process) && (jobCatcherNode!=null);
+	
+	if(jobCatcherNode!=null) {
+%>
+private final JobStructureCatcherUtils <%=jobCatcherNode.getUniqueName() %> = new JobStructureCatcherUtils(jobName, "<%=process.getId() %>", "<%=process.getVersion() %>");
+<%
+	}
+	if(enable_runtime_lineage_log) {
+%>
+private org.talend.job.audit.JobAuditLogger runtime_lineage_logger_<%=jobCatcherNode.getUniqueName()%> = null;
+<%
+	}
+	
+	if (enableLogStash) {
+%>
+private org.talend.job.audit.JobAuditLogger auditLogger_<%=jobCatcherNode.getUniqueName()%> = null;
+
+private RunStat runStat = new RunStat(<%=jobCatcherNode.getUniqueName() %>, System.getProperty("audit.interval"));
+<%
+	} else if(stats) {
+%>
+private RunStat runStat = new RunStat();
+<%
+	}
+%>
+<%
+	if (trace) {
+%>
+private RunTrace runTrace = new RunTrace();
+<%
+	}
+%>
+
+	// OSGi DataSource
+	private final static String KEY_DB_DATASOURCES = "KEY_DB_DATASOURCES";
+	
+	private final static String KEY_DB_DATASOURCES_RAW = "KEY_DB_DATASOURCES_RAW";
+
+	public void setDataSources(java.util.Map<String, javax.sql.DataSource> dataSources) {
+		java.util.Map<String, routines.system.TalendDataSource> talendDataSources = new java.util.HashMap<String, routines.system.TalendDataSource>();
+		for (java.util.Map.Entry<String, javax.sql.DataSource> dataSourceEntry : dataSources.entrySet()) {
+			talendDataSources.put(dataSourceEntry.getKey(), new routines.system.TalendDataSource(dataSourceEntry.getValue()));
+		}
+		globalMap.put(KEY_DB_DATASOURCES, talendDataSources);
+		globalMap.put(KEY_DB_DATASOURCES_RAW, new java.util.HashMap<String, javax.sql.DataSource>(dataSources));
+	}
+	
+	public void setDataSourceReferences(List serviceReferences) throws Exception{
+		
+		java.util.Map<String, routines.system.TalendDataSource> talendDataSources = new java.util.HashMap<String, routines.system.TalendDataSource>();
+		java.util.Map<String, javax.sql.DataSource> dataSources = new java.util.HashMap<String, javax.sql.DataSource>();
+		
+		for (java.util.Map.Entry<String, javax.sql.DataSource> entry : BundleUtils.getServices(serviceReferences,  javax.sql.DataSource.class).entrySet()) {
+                    dataSources.put(entry.getKey(), entry.getValue());
+                    talendDataSources.put(entry.getKey(), new routines.system.TalendDataSource(entry.getValue()));
+		}
+
+		globalMap.put(KEY_DB_DATASOURCES, talendDataSources);
+		globalMap.put(KEY_DB_DATASOURCES_RAW, new java.util.HashMap<String, javax.sql.DataSource>(dataSources));
+	}
+
+<%
+	for (INode logCatcher : process.getNodesOfType("tLogCatcher")) {
+%>
+	LogCatcherUtils <%=logCatcher.getUniqueName() %> = new LogCatcherUtils();
+<%
+	}
+
+	for (INode statCatcher : process.getNodesOfType("tStatCatcher")) {
+%>
+	StatCatcherUtils <%=statCatcher.getUniqueName() %> = new StatCatcherUtils("<%=process.getId() %>", "<%=process.getVersion() %>");
+<%
+	}
+	
+	for (INode metterCatcher : process.getNodesOfType("tFlowMeterCatcher")) {
+%>
+	MetterCatcherUtils <%=metterCatcher.getUniqueName() %> = new MetterCatcherUtils("<%=process.getId() %>", "<%=process.getVersion() %>");
+<%
+	}
+
+	for (INode assertCatcher : process.getNodesOfType("tAssertCatcher")) {
+%>
+	AssertCatcherUtils <%=assertCatcher.getUniqueName() %> = new AssertCatcherUtils();
+<%
+	}
+%>
+
+private final java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+private final java.io.PrintStream errorMessagePS = new java.io.PrintStream(new java.io.BufferedOutputStream(baos));
+
+public String getExceptionStackTrace() {
+	if ("failure".equals(this.getStatus())) {
+		errorMessagePS.flush();
+		return baos.toString();
+	}
+	return null;
+}
+
+private Exception exception;
+
+public Exception getException() {
+	if ("failure".equals(this.getStatus())) {
+		return this.exception;
+	}
+	return null;
+}
+
+private class TalendException extends Exception {
+
+	private static final long serialVersionUID = 1L;
+
+	private java.util.Map<String, Object> globalMap = null;
+	private Exception e = null;
+	
+	private String currentComponent = null;
+	private String cLabel =  null;
+	
+	private String virtualComponentName = null;
+	
+	public void setVirtualComponentName (String virtualComponentName){
+		this.virtualComponentName = virtualComponentName;
+	}
+
+	private TalendException(Exception e, String errorComponent, final java.util.Map<String, Object> globalMap) {
+		this.currentComponent= errorComponent;
+		this.globalMap = globalMap;
+		this.e = e;
+	}
+	
+	private TalendException(Exception e, String errorComponent, String errorComponentLabel, final java.util.Map<String, Object> globalMap) {
+		this(e, errorComponent, globalMap);
+		this.cLabel = errorComponentLabel;
+	}
+
+	public Exception getException() {
+		return this.e;
+	}
+
+	public String getCurrentComponent() {
+		return this.currentComponent;
+	}
+
+	<%//For TDI-27789%>
+    public String getExceptionCauseMessage(Exception e){
+        Throwable cause = e;
+        String message = null;
+        int i = 10;
+        while (null != cause && 0 < i--) {
+            message = cause.getMessage();
+            if (null == message) {
+                cause = cause.getCause();
+            } else {
+                break;          
+            }
+        }
+        if (null == message) {
+            message = e.getClass().getName();
+        }   
+        return message;
+    }
+
+	@Override
+	public void printStackTrace() {
+		if (!(e instanceof TalendException || e instanceof TDieException)) {
+			if(virtualComponentName!=null && currentComponent.indexOf(virtualComponentName+"_")==0){
+				globalMap.put(virtualComponentName+"_ERROR_MESSAGE",getExceptionCauseMessage(e));
+			}
+			globalMap.put(currentComponent+"_ERROR_MESSAGE",getExceptionCauseMessage(e));
+			System.err.println("Exception in component " + currentComponent + " (" + jobName + ")");
+		}
+		if (!(e instanceof TDieException)) {
+			if(e instanceof TalendException){
+				e.printStackTrace();
+			} else {
+				e.printStackTrace();
+				e.printStackTrace(errorMessagePS);
+				<%=className%>.this.exception = e;
+			}
+		}
+		if (!(e instanceof TalendException)) {
+		try {
+			for (java.lang.reflect.Method m : this.getClass().getEnclosingClass().getMethods()) {
+				if (m.getName().compareTo(currentComponent + "_error") == 0) {
+					m.invoke(<%=className%>.this, new Object[] { e , currentComponent, globalMap});
+					break;
+				}
+			}
+
+			if(!(e instanceof TDieException)){
+<%
+		boolean needCatchTalendException = false;
+		
+		if(enableLogStash) {
+%>
+		if(enableLogStash) {
+			<%=jobCatcherNode.getUniqueName() %>.addJobExceptionMessage(currentComponent, cLabel, null, e);
+			<%=jobCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+		}
+<%
+		}
+		
+		if (process.getNodesOfType("tLogCatcher").size() > 0) {
+			List<INode> logCatchers = (List<INode>)process.getNodesOfType("tLogCatcher");
+			for (INode logCatcher : logCatchers) {
+				if (ElementParameterParser.getValue(logCatcher, "__CATCH_JAVA_EXCEPTION__").equals("true")) {
+					// 1) add the message to the stack
+%>
+				<%=logCatcher.getUniqueName() %>.addMessage("Java Exception", currentComponent, 6, e.getClass().getName() + ":" + e.getMessage(), 1);
+<%
+				}
+			}
+			
+			INode virtualNCatchNode = null;
+			boolean hasRealCatchNode = false;
+			for (INode logCatcher : logCatchers) {
+				if (ElementParameterParser.getValue(logCatcher, "__CATCH_JAVA_EXCEPTION__").equals("true")) {
+					if(logCatcher.isVirtualGenerateNode()){
+						virtualNCatchNode = logCatcher;
+					}else{
+						hasRealCatchNode = true;
+					}
+				}
+			}
+			if(hasRealCatchNode && virtualNCatchNode!=null){
+%>
+			try{
+<%
+			}
+			for (INode logCatcher : logCatchers) {
+				if (ElementParameterParser.getValue(logCatcher, "__CATCH_JAVA_EXCEPTION__").equals("true")) {
+					if(logCatcher!=virtualNCatchNode){
+					// 2) launch logCatcher subProcess
+					needCatchTalendException =  true;
+%>
+				<%=logCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+<%
+					}
+				}
+			}
+			if(hasRealCatchNode && virtualNCatchNode!=null){
+%>
+			}finally{
+<%
+			}
+			if(virtualNCatchNode!=null){
+				needCatchTalendException =  true;
+%>
+				<%=virtualNCatchNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+<%
+			}
+			if(hasRealCatchNode && virtualNCatchNode!=null){
+%>
+			}
+<%
+			}
+		}
+%>
+			}
+<%
+		if(needCatchTalendException) {
+			//TODO should catch the TalendException in assertcatcher process? but before should not work too as use java reflect, this exception can't catch
+			%>
+			} catch (TalendException e) {
+				// do nothing
+			<%
+		}
+%>
+		} catch (Exception e) {
+			this.e.printStackTrace();
+		}
+		}
+	}
+}
+
+<% // Methods for RUN IF Error links %>
+<%
+	for (INode node : processNodes) {
+		if (node.isActivate()) {
+			%>
+			public void <%=node.getUniqueName() %>_error(Exception exception, String errorComponent, final java.util.Map<String, Object> globalMap) throws TalendException {
+				<%
+				//If node is virtual component input part,invoke virtual component output part when virtual link is ROWS_END,FLOW,COMPONENT_OK,ITERATE(virtual link could not be ON_SUBJOB_OK)
+				if(node.isVirtualGenerateNode() && node.getVirtualLinkTo()!=null){
+					List< ? extends IConnection> conns = node.getOutgoingConnections(node.getVirtualLinkTo());
+					boolean invokeVirtualLinkError=false;
+					//If virtual component virtual link is EConnectionType.ON_SUBJOB_OK,node.getOutgoingConnections().size() is 0
+					for(IConnection conn:conns){
+						INode virtualLinkNode = conn.getTarget();
+						if(virtualLinkNode.isVirtualGenerateNode()){
+						%>
+							<%=virtualLinkNode.getUniqueName()%>_error(exception, errorComponent, globalMap);
+						<%
+							invokeVirtualLinkError=true;
+							break;
+						}
+					}
+					if(invokeVirtualLinkError){
+					%>
+						}
+					<%
+						continue;
+					}
+				}
+				if(!node.isVirtualGenerateNode() && node.getUniqueName().startsWith("tAsyncIn_")){
+				%>
+					<%=node.getUniqueName().replace("tAsyncIn_","tAsyncOut_")%>_error(exception, errorComponent, globalMap);
+					}
+				<%
+					continue;
+				}
+				%>
+				end_Hash.put(errorComponent, System.currentTimeMillis());
+				<%
+				boolean ifBeforRunError = NodeUtil.checkComponentErrorConnectionAfterNode(node);
+				if(!ifBeforRunError) {
+					if (process.getNodesOfType("tAssertCatcher").size() > 0) {
+						List<INode> assertCatchers = (List<INode>)process.getNodesOfType("tAssertCatcher");
+						for (INode assertCatcher : assertCatchers) {
+							if (ElementParameterParser.getValue(assertCatcher, "__CATCH_JAVA_EXCEPTION__").equals("true")) {
+								// 1) add the message to the stack
+								%>
+								if(!(exception instanceof TDieException)){
+									<%if("true".equals(ElementParameterParser.getValue(assertCatcher, "__GET_ORIGINAL_EXCEPTION__"))){%>
+										<%=assertCatcher.getUniqueName()%>.addMessage(pid, projectName, jobName, "java", null, "Failed", "Job execution error", exception);
+									<%}else{%>
+										<%=assertCatcher.getUniqueName()%>.addMessage(pid, projectName, jobName, "java", null, "Failed", "Job execution error", exception.getMessage());
+									<%}%>
+									<%=assertCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+								}
+								<%
+							}
+						}
+					}
+				}
+				if (!node.getComponent().getName().equals("tDie")) {
+					String statCatcher = ElementParameterParser.getValue(node,"__TSTATCATCHER_STATS__");
+					if (statCatcher.compareTo("true")==0) {
+						for (INode statCatcherNode : node.getProcess().getNodesOfType("tStatCatcher")) {
+							%>
+							<%=statCatcherNode.getUniqueName() %>.addMessage("failure",errorComponent, end_Hash.get(errorComponent)-start_Hash.get(errorComponent));
+							<%=statCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+							<%
+						}
+					}
+				}
+				boolean isExistOnCompErrorLink = false;
+				List< ? extends IConnection> conns = NodeUtil.getVirtualNode(node).getOutgoingConnections();
+				for (IConnection conn : conns) {
+					if (conn.getLineStyle().equals(EConnectionType.ON_COMPONENT_ERROR)) {
+						isExistOnCompErrorLink = true;
+						%>
+						try {
+							<%if (stats) {%>
+								if(this.execStat){
+									runStat.updateStatOnConnection("<%=conn.getUniqueName() %>", 0, "error");
+								}
+							<%}%>
+							<%
+							if (isRunInMultiThread ) {
+								%>
+								((java.util.Map)threadLocal.get()).put("errorCode", null);
+								<%=conn.getTarget().getUniqueName() %>Process(globalMap);
+								if ( !"failure".equals(((java.util.Map)threadLocal.get()).get("status")) ) {
+									((java.util.Map)threadLocal.get()).put("status", "end");
+								}
+								<%
+							} else {
+								%>
+								errorCode = null;
+								<%=conn.getTarget().getUniqueName() %>Process(globalMap);
+								if (!"failure".equals(status)) {
+									status = "end";
+								}
+								<%
+							}
+							%>
+
+						} catch (Exception e) {
+							e.printStackTrace();
+						}
+						<%
+					}
+				}
+				/*
+				This part of code in order to call the correct onComponentError and onSubjobError for virtual component which EConnectionType is ROWS_END,FLOW,COMPONENT_OK,ITERATE.
+				*/
+				INode subjob_start_node = node;
+				boolean hasBeenChanged = true;
+				while(subjob_start_node.getDesignSubjobStartNode().isVirtualGenerateNode() && hasBeenChanged) {
+					hasBeenChanged = false;
+					if(subjob_start_node.getDesignSubjobStartNode().getVirtualLinkTo()==null){
+						//if EConnectionType of virtual component(INPUT-->SUBJOB_OK-->OUTPUT) is SUBJOB_OK,the size of OUTPUT node IncomingConnections is zero.
+						if(subjob_start_node.getDesignSubjobStartNode().getIncomingConnections().size()>0){
+							subjob_start_node = subjob_start_node.getDesignSubjobStartNode().getIncomingConnections().get(0).getSource();
+							hasBeenChanged = true;
+						}
+					}
+				}
+				// when use parallelize will add virtual components(tAsyncIn and tAsyncOut) but in graphical these is visable=false
+				if ("true".equals(ElementParameterParser.getValue(node, "__PARALLELIZE__"))) {
+					if(subjob_start_node.getDesignSubjobStartNode().getUniqueName().startsWith("tAsyncIn_")){
+						subjob_start_node = NodeUtil.getNodeByUniqueName(subjob_start_node.getProcess(),subjob_start_node.getDesignSubjobStartNode().getUniqueName().replace("tAsyncIn_","tAsyncOut_"));
+					}
+				}
+				//end
+				boolean isSubjobHasOnSubJobError = false;
+				if (!isExistOnCompErrorLink) {
+					INode subJobStartNode =	subjob_start_node.getDesignSubjobStartNode();
+					if (subJobStartNode != null) {
+						List< ? extends IConnection> tempConns = subJobStartNode.getOutgoingConnections();
+						for (IConnection conn : tempConns) {
+							if (conn.getLineStyle().equals(EConnectionType.ON_SUBJOB_ERROR)) {
+								isSubjobHasOnSubJobError = true;
+								break;
+							}
+						}
+					}
+				}
+
+				if (!isSubjobHasOnSubJobError && !isExistOnCompErrorLink) { // when there is no subjoberror and no onComponentError
+					if (isRunInMultiThread ) {
+				%>
+				((java.util.Map)threadLocal.get()).put("status", "failure");
+				<%
+					} else {
+				%>
+				status = "failure";
+				<%
+					}
+				}
+
+				%>
+					<%=subjob_start_node.getDesignSubjobStartNode().getUniqueName() %>_onSubJobError(exception, errorComponent, globalMap);
+			}
+			<%
+		}
+	}
+	for (INode node : processNodes) {
+		if (node.isDesignSubjobStartNode()) {
+%>
+			public void <%=node.getUniqueName() %>_onSubJobError(Exception exception, String errorComponent, final java.util.Map<String, Object> globalMap) throws TalendException {
+<%
+			List< ? extends IConnection> conns = node.getOutgoingConnections();
+			int count = 0;
+			for (IConnection conn : conns) {
+				if (conn.getLineStyle().equals(EConnectionType.ON_SUBJOB_ERROR)) {
+					count++;
+				}
+			}
+
+			String label = "ERROR";
+
+			if(count == 0){//FATAL
+				label = "FATAL";
+			}else{//ERROR------>RunSubJobError
+				label = "ERROR";
+			}
+%>
+
+resumeUtil.addLog("SYSTEM_LOG", "NODE:"+ errorComponent, "", Thread.currentThread().getId()+ "", "<%=label %>", "", exception.getMessage(), ResumeUtil.getExceptionStackTrace(exception),"");
+
+<%
+			for (IConnection conn : conns) {
+				if (conn.getLineStyle().equals(EConnectionType.ON_SUBJOB_ERROR)) {
+%>
+				try {
+					<%if (stats) {%>
+						if(this.execStat){
+							runStat.updateStatOnConnection("<%=conn.getUniqueName() %>", 0, "error");
+						}
+					<%}%>
+<%
+					if(isRunInMultiThread ){
+%>
+					((java.util.Map)threadLocal.get()).put("errorCode", null);
+					<%=conn.getTarget().getUniqueName() %>Process(globalMap);
+					if ( !"failure".equals(((java.util.Map)threadLocal.get()).get("status")) ) {
+						((java.util.Map)threadLocal.get()).put("status", "end");
+					}
+<%
+					} else {
+%>
+					errorCode = null;
+					<%=conn.getTarget().getUniqueName() %>Process(globalMap);
+					if (!"failure".equals(status)) {
+						status = "end";
+					}
+<%
+					}
+%>
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+<%
+				}
+			}
+%>
+			}
+<%
+		}
+	}
+%>

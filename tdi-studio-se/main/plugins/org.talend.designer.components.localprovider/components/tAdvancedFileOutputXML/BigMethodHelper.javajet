@@ -1,0 +1,119 @@
+<%
+//65535 limit
+class BigMethodHelper {
+	protected String cid = null;
+	protected boolean isOptimizeCodeForXMLNode = false;
+	protected int xmlNodeOptNum = 100;
+	protected int index = -1;
+	
+	protected String generateId = "";
+	
+	public BigMethodHelper() {
+		initIsOptimizeCodeForXMLNode();
+	}
+	
+	public void setGenerateId(String generateId) {
+		this.generateId = generateId; 
+	}
+	
+	public void resetIndex() {
+		index = -1;
+	}
+	
+	public TouchXMLNode getTouchXMLNode() {
+		if(isOptimizeCodeForXMLNode) {
+			return new MappingTouchXMLNode();
+		}
+		return new ReferenceTouchXMLNode();
+	}
+	
+	public void initIsOptimizeCodeForXMLNode(){
+		String xmlNodeOptNumStr = ElementParameterParser.getValue(node, "__XMLNODE_OPT_NUM__");
+		if(xmlNodeOptNumStr!=null && !"".equals(xmlNodeOptNumStr) && !"\"\"".equals(xmlNodeOptNumStr)){
+			xmlNodeOptNum  = Integer.parseInt(xmlNodeOptNumStr);
+		}
+		
+        List<Map<String, String>> rootTable =
+        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+        List<Map<String, String>> groupTable =
+        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+        List<Map<String, String>> loopTable =
+        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+        
+        int elementNumber = getElementNumber(rootTable) + getElementNumber(groupTable) + getElementNumber(loopTable);
+        if(elementNumber > xmlNodeOptNum) {
+			isOptimizeCodeForXMLNode = true;
+        }
+	}
+	
+	private int getElementNumber(List<Map<String, String>> nodeTable) {
+		if(nodeTable == null) {
+			return 0;
+		}
+		
+		int result = 0;
+		for(Map<String,String> node : nodeTable) {
+			if(node == null) {
+				continue;
+			}
+			
+			if("attri".equals(node.get("ATTRIBUTE")) || "ns".equals(node.get("ATTRIBUTE"))) {
+				continue;
+			}
+			
+			result++;
+		}
+		
+		return result;
+	}
+	
+	public void generateClassNameWithRBlock() {
+		if (this.isOptimizeCodeForXMLNode) {
+%>
+			class TalendXMLGenerateTool_<%=generateId%>_<%=cid %> {
+<%
+		}
+	}
+	
+	public void generateLeftBlock() {
+		if (this.isOptimizeCodeForXMLNode) {
+%>
+			}
+<%
+		}
+	}
+	
+	public void generateMethod() {
+		if(isOptimizeCodeForXMLNode) {
+			if(index == -1) {
+%>
+				public void generateDocument_<%=(index+1)/xmlNodeOptNum%>() throws java.lang.Exception{
+<%
+			} else if((index+1)%xmlNodeOptNum==0){
+%>
+				}
+				public void generateDocument_<%=(index+1)/xmlNodeOptNum%>() throws java.lang.Exception{
+<%
+			}
+			index++;
+		}
+	}
+	
+	public void generateMethodCall() {
+		if (this.isOptimizeCodeForXMLNode) {
+%>
+			TalendXMLGenerateTool_<%=generateId%>_<%=cid %> talendXMLGenerateTool_<%=generateId%>_<%=cid %> = new TalendXMLGenerateTool_<%=generateId%>_<%=cid %>();
+<%
+			int count = index + 1;
+			for(int i = 0; i < count; i++) {
+				if(i%xmlNodeOptNum==0){
+%>
+					talendXMLGenerateTool_<%=generateId%>_<%=cid%>.generateDocument_<%=i/xmlNodeOptNum%>();
+<%
+				}
+			}
+		}
+	}
+	
+}
+%>

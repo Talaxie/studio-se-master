@@ -1,0 +1,78 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    String conn = "conn_" + connection;
+    
+    String dbSchema = "dbschema_" + connection;
+    
+    String whereClause = ElementParameterParser.getValue(node,"__WHERE_CLAUSE__");
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%log4jCodeGenerateUtil.useExistConnection(node);%>
+String dbSchema_<%=cid%> = (String)globalMap.get("<%=dbSchema %>");
+
+String whereClause_<%=cid %> = <%=whereClause %>;
+
+String query_<%=cid %> = "";
+
+if(dbSchema_<%=cid%> != null && dbSchema_<%=cid%>.length() > 0){
+	
+	query_<%=cid %> = "SELECT table_name FROM information_schema.tables WHERE table_type='BASE TABLE' AND table_schema='" + dbSchema_<%=cid %> + "'";
+	
+}else{
+	
+	query_<%=cid %> = "SELECT table_name FROM information_schema.tables WHERE table_type='BASE TABLE'";
+	
+}
+if(whereClause_<%=cid %> != null && whereClause_<%=cid %>.length() > 0){
+
+	query_<%=cid %> = query_<%=cid %> + " AND (" + whereClause_<%=cid %> + ") ORDER BY table_name ASC";
+
+}else{
+
+	query_<%=cid %> = query_<%=cid %> + " ORDER BY table_name ASC";
+
+}
+<%
+if(isLog4jEnabled){
+%>
+    log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+<%
+}
+%>
+
+int nb_table_<%=cid%> = 0;
+
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+
+while (rs_<%=cid %>.next()) {
+
+	String currentTableName_<%=cid %> = rs_<%=cid %>.getString(1); 
+
+	nb_table_<%=cid %>++;
+        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.debug("<%=cid%> - Retrieving the table "+nb_table_<%=cid %>+".");
+		log.trace("<%=cid%> - Name of table "+nb_table_<%=cid%>+":"+currentTableName_<%=cid %>+".");
+	<%
+	}
+	%>
+	globalMap.put("<%=cid %>_CURRENT_TABLE", currentTableName_<%=cid %>);

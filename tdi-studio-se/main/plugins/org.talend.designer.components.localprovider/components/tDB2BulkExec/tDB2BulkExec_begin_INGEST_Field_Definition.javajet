@@ -1,0 +1,109 @@
+<%@ jet %>
+StringBuilder fieldDefinition_<%= cid %> = new StringBuilder(" (");
+<%
+    if(optionallyEnclosedBy != null && !"".equals(optionallyEnclosedBy) && !"\"\"".equals(optionallyEnclosedBy)){
+       applyOptionallyEnclosedBy = true;
+    }
+    int index_y = 0;
+    for(IMetadataColumnEnhance imetadataColumnEnhance: iMetadataColumnEnhanceList){
+        IMetadataColumn imetadataColumn = imetadataColumnEnhance.getIMetadataColumn();
+        String columnLabel = imetadataColumn.getLabel();
+        String startPosition = imetadataColumnEnhance.getStartPosition();
+        String endPosition = imetadataColumnEnhance.getEndPosition();
+        String dbType = imetadataColumn.getType();
+        String ingestDataType = ingestDataTypeMapping.get(dbType);
+        String dbColumnName = imetadataColumn.getOriginalDbColumnName();
+        Integer lgth = imetadataColumn.getLength();
+        Integer precision = imetadataColumn.getPrecision();
+        String datePattern = imetadataColumn.getPattern();
+        boolean useDatePattern = true;
+        if(datePattern == null || "".equals(datePattern) || "\"\"".equals(datePattern)){
+                useDatePattern = false;
+        }
+        if(precision == null){
+            precision = 0;
+        }
+       if(index_y != 0){
+          %>
+            fieldDefinition_<%= cid %>.append(columnDelimiter_<%= cid %>);
+          <%
+       }
+       %>
+            fieldDefinition_<%= cid %>.append("\"$<%= dbColumnName %>\"");
+            <%
+            if(startPosition != null && !"".equals(startPosition) && endPosition != null && !"".equals(endPosition)){
+            %>
+               fieldDefinition_<%= cid %>.append(" position(");
+               fieldDefinition_<%= cid %>.append(Integer.valueOf(<%= startPosition %>));
+               fieldDefinition_<%= cid %>.append(":");
+               fieldDefinition_<%= cid %>.append(Integer.valueOf(<%= endPosition %>));
+               fieldDefinition_<%= cid %>.append(")");
+            <%
+            }
+            %>
+            <%
+            if(ingestDataType != null && !"UNSUPPORTED".equals(ingestDataType)){
+            %>
+               fieldDefinition_<%= cid %>.append(" <%= ingestDataType %>");
+            <%
+            }else{
+            %>
+               Compile Err: UNSUPPORTED DATABASE TYPE <%= dbType %> FOR INGEST COMMAND, PLEASE TRY TO USE LOAD COMMAND.
+            <%
+            }
+             %>
+         <%
+         if("CHARACTER".equalsIgnoreCase(ingestDataType) || "CHAR".equalsIgnoreCase(ingestDataType)){
+         if(lgth == null){
+         %>
+            Compile Err: YOU MUST SET THE LENGTH FOR THE COLUMN <%= columnLabel %>.
+         <%
+         }
+         %>
+            fieldDefinition_<%= cid %>.append("(<%= lgth %>)");
+         <%
+         if(applyOptionallyEnclosedBy){
+         %>
+            fieldDefinition_<%= cid %>.append(" OPTIONALLY ENCLOSED BY '");
+            fieldDefinition_<%= cid %>.append(<%= optionallyEnclosedBy %>);
+            fieldDefinition_<%= cid %>.append("'");
+         <%
+         }
+         }else if("DECIMAL".equalsIgnoreCase(ingestDataType) || "DEC".equalsIgnoreCase(ingestDataType)){
+         %>
+            fieldDefinition_<%= cid %>.append("(<%= lgth %>,<%= precision %>)");
+            <%
+            if(addExternal4Numeric){
+            %>
+               fieldDefinition_<%= cid %>.append(" EXTERNAL");
+            <%
+            }
+             %>
+         <%
+         }else if("DATE".equalsIgnoreCase(ingestDataType) || "TIME".equalsIgnoreCase(ingestDataType) || "TIMESTAMP".equalsIgnoreCase(ingestDataType)){
+         if(useDatePattern){
+         %>
+            fieldDefinition_<%= cid %>.append(" '");
+            fieldDefinition_<%= cid %>.append(<%= datePattern %>);
+            fieldDefinition_<%= cid %>.append("'");
+         <%
+         if(applyOptionallyEnclosedBy){
+         %>
+            fieldDefinition_<%= cid %>.append(" OPTIONALLY ENCLOSED BY '");
+            fieldDefinition_<%= cid %>.append(<%= optionallyEnclosedBy %>);
+            fieldDefinition_<%= cid %>.append("'");
+         <%
+                                      }
+         }else{
+         }
+         }else{//For Numeric Types
+         if(addExternal4Numeric){
+         %>
+            fieldDefinition_<%= cid %>.append(" EXTERNAL");
+         <%
+         }
+         }
+       index_y ++;
+    }
+%>
+           fieldDefinition_<%= cid %>.append(")");

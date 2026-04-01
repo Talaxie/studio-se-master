@@ -1,0 +1,63 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talaxie Inc. - www.deilink.fr
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talaxie SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.designer.core.ui.codereview;
+
+import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.swt.graphics.Image;
+import org.talend.commons.ui.runtime.image.ECoreImage;
+import org.talend.commons.ui.runtime.image.ImageProvider;
+import org.talend.core.PluginChecker;
+import org.talend.core.model.process.IProcess2;
+import org.talend.repository.ProjectManager;
+
+/**
+ * Label provider for the job codereview viewers.
+ */
+public class JobCodereviewLabelProvider extends LabelProvider {
+
+    private JobCodereviewLifeCycle fCodereview;
+
+    private boolean isTIS;
+
+    public JobCodereviewLabelProvider(JobCodereviewLifeCycle lifeCycle) {
+        super();
+        fCodereview = lifeCycle;
+        isTIS = PluginChecker.isRefProjectLoaded();
+    }
+
+    @Override
+    public Image getImage(Object element) {
+        return ImageProvider.getImage(ECoreImage.PROCESS_ICON);
+    }
+
+    @Override
+    public String getText(Object element) {
+        if (element instanceof IProcess2) {
+            IProcess2 process = (IProcess2) element;
+
+            String label = process.getLabel();
+            if (isTIS) {
+                label += "     [" + getProjectLabel(process) + "]"; //$NON-NLS-1$ //$NON-NLS-2$
+            }
+
+            return label;
+        }
+        return super.getText(element);
+    }
+
+    private String getProjectLabel(IProcess2 process) {
+        org.talend.core.model.properties.Project project = ProjectManager.getInstance().getProject(
+                process.getProperty().getItem());
+        return project.getTechnicalLabel();
+    }
+}

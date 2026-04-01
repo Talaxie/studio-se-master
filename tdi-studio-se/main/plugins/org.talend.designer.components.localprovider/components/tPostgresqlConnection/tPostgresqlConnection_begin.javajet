@@ -1,0 +1,55 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="../templates/DB/HelpClass/HelpClass.javajet"%>
+<%
+	class ConnectionUtil extends DefaultConnectionUtil{
+	
+		public void createURL(INode node) {
+			super.createURL(node);
+%>
+            String dbProperties_<%=cid%> = <%=dbproperties%>;
+            String url_<%=cid %> = "jdbc:postgresql://"+<%=dbhost%>+":"+<%=dbport%>+"/"+<%=dbname%>;
+            
+            if(dbProperties_<%=cid%> != null && !"".equals(dbProperties_<%=cid%>.trim())) {
+                url_<%=cid %> = url_<%=cid%> + "?" + dbProperties_<%=cid%>;
+            }
+<%
+		}
+	
+		public String getDirverClassName(INode node){
+			return "org.postgresql.Driver";
+		}
+		
+		public void adjustDriverRegisterOrderForConflcit() {
+%>
+        java.util.Enumeration<java.sql.Driver> drivers_<%=cid%> =  java.sql.DriverManager.getDrivers();
+        java.util.Set<String> redShiftDriverNames_<%=cid%> = new java.util.HashSet<String>(java.util.Arrays
+                .asList("com.amazon.redshift.jdbc.Driver","com.amazon.redshift.jdbc41.Driver","com.amazon.redshift.jdbc42.Driver"));
+    while (drivers_<%=cid%>.hasMoreElements()) {
+        java.sql.Driver d_<%=cid%> = drivers_<%=cid%>.nextElement();
+        if (redShiftDriverNames_<%=cid%>.contains(d_<%=cid%>.getClass().getName())) {
+            try {
+                java.sql.DriverManager.deregisterDriver(d_<%=cid%>);
+                java.sql.DriverManager.registerDriver(d_<%=cid%>);
+            } catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+                    //do nothing
+            }
+        }
+    }
+<%
+		}
+		
+	}//end class
+	connUtil = new ConnectionUtil();
+%>
+<%//----------------------------component codes-----------------------------------------%>
+
+	<%@ include file="../templates/DB/AbstractDBConnection.javajet"%>
+
+	globalMap.put("schema_" + "<%=cid%>",<%=dbschema%>);

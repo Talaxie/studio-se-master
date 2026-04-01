@@ -1,0 +1,537 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.MetadataTalendType
+		org.talend.core.model.metadata.MappingTypeRetriever
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+	"
+	skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	/***********************************************************************/
+	/** Read out parameters from the GUI                                  **/
+	/***********************************************************************/
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String host = ElementParameterParser.getValue(node, "__SERVER__");
+	String batchRow=ElementParameterParser.getValue(node,"__BATCHROW__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	//String server = ElementParameterParser.getValue(node, "__SERVERNAME__");
+	String port = ElementParameterParser.getValue(node, "__PORT__");
+	String vnode = ElementParameterParser.getValue(node, "__VNODE__");
+	String database = ElementParameterParser.getValue(node, "__DBNAME__");
+	String user = ElementParameterParser.getValue(node, "__USER__");
+
+	String table = ElementParameterParser.getValue(node, "__TABLE__");
+	String dataFile  = ElementParameterParser.getValue(node, "__FILENAME__");
+	boolean deleteWorkingFiles = ("true").equals(ElementParameterParser.getValue(node,"__DELETE_WORKING_FILES__"));
+	String headRow =  ElementParameterParser.getValue(node, "__HEAD__");
+	String dbtable = ElementParameterParser.getValue(node, "__TABLE__");
+	boolean useExistingConnection = ("true").equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+	List<IMetadataColumn> columnList = getColumnList(node);
+	String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+	String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+	String delimAction = ElementParameterParser.getValue(node,"__DELIM_ACTION__");
+	String onErrorAction = ElementParameterParser.getValue(node,"__ONERROR_ACTION__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	String errorCount = ElementParameterParser.getValue(node,"__ERROR_COUNT__");
+	String rejectFile = ElementParameterParser.getValue(node,"__REJECT_ROW_FILE__");
+	String rollBack = ElementParameterParser.getValue(node,"__ROLLBACK_ACTION__");
+	String nullIndicator = ElementParameterParser.getValue(node,"__NULL_INDICATOR__");
+	boolean trimSpace = ("true").equals(ElementParameterParser.getValue(node,"__TRIM_SPACE__"));
+	String allocation = ElementParameterParser.getValue(node,"__ALLOCATION__");
+	String extendOpt = ElementParameterParser.getValue(node,"__EXTEND__");
+	String fillFactor = ElementParameterParser.getValue(node,"__FILLFACTOR__");
+	String minPages = ElementParameterParser.getValue(node,"__MINPAGES__");
+	String maxPages = ElementParameterParser.getValue(node,"__MAXPAGES__");
+	String leafFill = ElementParameterParser.getValue(node,"__LEAFFILL__");
+	String nonLeafFill = ElementParameterParser.getValue(node,"__NONLEAFFILL__");
+	String rowEstimate = ElementParameterParser.getValue(node,"__ROW_ESTIMATE__");
+	String sessionUser = ElementParameterParser.getValue(node,"__SESSION_USER__");
+
+	/***********************************************************************/
+	/** prepare the record delimiter: strip off any enclosing quote marks **/
+	/** and backslash eg "\nl" converts to nl                             **/
+	/**                                                                   **/
+	/** TODO:                                                             **/
+	/** Only accepts small set of characters. Needs a generic means of    **/
+	/** stripping leading/trailing quote marks AND validation that the    **/
+	/** string is a permitted option .. and throw an error if not         **/
+	/***********************************************************************/
+
+	String rowSeperatorParam = ElementParameterParser.getValue(node,"__NEWLINE_ACTION__");
+
+	/***********************************************************************/
+	/** Default the record delimiter to a newline: replace it if a valid  **/
+	/** value was supplied by the user at runtime.                        **/
+	/***********************************************************************/
+	String recordDelimiter = "nl";
+
+	if (rowSeperatorParam.toLowerCase().equals("\":\"") ) { 
+		recordDelimiter = "colon";
+	} else if (rowSeperatorParam.toLowerCase().equals("\",\"") ) { 
+		recordDelimiter = "comma";
+	} else if (rowSeperatorParam.toLowerCase().equals("\"\\t\"") ) { 
+		recordDelimiter = "tab";
+	} else {
+		System.err.println("Illegal Row Separator pattern");
+	}
+
+    if (nullIndicator.startsWith("\"") && nullIndicator.endsWith("\"")) {
+		nullIndicator = nullIndicator.substring(1, nullIndicator.length()-1);
+    }
+
+	boolean convertToUppercase = false; // not active this function
+	%>
+	int deletedCount_<%=cid%>=0;
+	String tableName_<%=cid%> = <%=dbtable%>;
+
+	/***********************************************************************/
+	/** Obtain parameters for Ingres/NET connection				**/
+	/***********************************************************************/
+	String vnode_for_Copy<%=cid%> = <%=vnode%>;
+
+	String db_for_Copy<%=cid%> = "";
+	if ((vnode_for_Copy<%=cid%>.equals("\"\"")) || (vnode_for_Copy<%=cid%>.equals("\"\"")) ) {
+		db_for_Copy<%=cid%> = <%=database%>;
+	} else {
+		db_for_Copy<%=cid%> = vnode_for_Copy<%=cid%> + "::" + <%=database%>;
+	}
+<%
+	/***********************************************************************/
+	/** Talend init code to determine RDBMS and create                    **/
+	/** relevant Manager object                                           **/
+	/***********************************************************************/
+	Manager manager = null;
+	if(columnList != null && columnList.size() > 0) {
+		manager = getManager(dbmsId, cid);  
+	}
+ 
+    /***********************************************************************/
+    /** Format field delimiters                                           **/
+    /** TODO:                                                             **/
+    /** Would be nice to lowercase input parameter at start here, and     **/
+    /** automatically remove any enclosing quote characters.              **/
+    /***********************************************************************/
+
+	String fieldDelimiter = "comma"; 
+
+	String outputAction  = ElementParameterParser.getValue(node, "__OUTPUT__");
+
+	%>
+	StringBuilder command_<%=cid %> =  new StringBuilder();
+	String delimAction_<%=cid%> = <%=delimAction%>;
+	String field_delimiter_<%=cid %> = "";
+	if ("\nl".equals(delimAction_<%=cid%>.toLowerCase()) || "nl".equals(delimAction_<%=cid%>.toLowerCase())) { 
+		field_delimiter_<%=cid %> = "nl";
+	}
+	else if ("\t".equals(delimAction_<%=cid%>.toLowerCase()) || "tab".equals(delimAction_<%=cid%>.toLowerCase())){
+		field_delimiter_<%=cid %> = "tab";
+	}
+	else if (":".equals(delimAction_<%=cid%>.toLowerCase()) || "colon".equals(delimAction_<%=cid%>.toLowerCase())){
+		field_delimiter_<%=cid %> = "colon";
+	}else{
+		field_delimiter_<%=cid %> = "'"+<%=delimAction%>.charAt(0)+"'";
+	}
+
+
+
+	/***********************************************************************/
+	/** Build SQL statement for the COPY command					**/
+	/***********************************************************************/
+	<%
+	if(columnList != null && columnList.size() > 0) {
+		%>
+		java.text.SimpleDateFormat formatter_<%=cid %> = new java.text.SimpleDateFormat("dd-MMM-yyyy HH:mm:ss");
+		String formattedDate_<%=cid %> = formatter_<%=cid %>.format(new java.util.Date());
+		StringBuffer sqlBuffer_<%=cid %> = new StringBuffer();
+		sqlBuffer_<%=cid %>.append("/* SQL generated by Talend at " + formattedDate_<%=cid %> + "*/");
+		sqlBuffer_<%=cid %>.append("\n");
+		sqlBuffer_<%=cid %>.append("\n\\SQL");
+		sqlBuffer_<%=cid %>.append("\n\nSET AUTOCOMMIT OFF");
+		sqlBuffer_<%=cid %>.append("\n\\p\\g");
+		sqlBuffer_<%=cid %>.append("\n\nSET NOJOURNALING");
+		sqlBuffer_<%=cid %>.append("\n\\p\\g");
+		sqlBuffer_<%=cid %>.append("\n\nSET SESSION AUTHORIZATION " + <%=sessionUser%>);
+		sqlBuffer_<%=cid %>.append("\n\\p\\g");
+		<%
+		if(("TRUNCATE_BY_INGRESNET").equals(tableAction)) {
+		%>
+			// SQL statement added when TRUNCATE_BY_INGRESNET requested
+			sqlBuffer_<%=cid %>.append("\n\n");
+			sqlBuffer_<%=cid %>.append("MODIFY " + <%=dbtable%> + " TO TRUNCATED;");
+		<%
+		}
+		%>
+		sqlBuffer_<%=cid %>.append("\n\n");
+
+		// Call Ingres DB manager object to retrieve SQL for COPY
+		<%((IngresManager)manager).setTrimSpace(trimSpace);%>
+		String sqlString_<%=cid %>  = "<%=manager.getCopyFromCSVSQL(columnList, fieldDelimiter, recordDelimiter, nullIndicator)%>";
+		sqlBuffer_<%=cid %>.append(sqlString_<%=cid %>);
+		sqlBuffer_<%=cid %>.append("\nFROM ");
+		sqlBuffer_<%=cid %>.append("\n");
+		sqlBuffer_<%=cid %>.append("'" + <%=dataFile%> + "'");
+		sqlBuffer_<%=cid %>.append("\n");
+		sqlBuffer_<%=cid %>.append("WITH");
+		sqlBuffer_<%=cid %>.append("\n ROLLBACK=" + "<%=rollBack%>");
+		sqlBuffer_<%=cid %>.append(",\n ON_ERROR=" + "<%=onErrorAction%>");
+
+		// error count parameter should only be set if Terminate On Error has been selected. 
+
+		<%if (errorCount != null && !errorCount.equals("") && onErrorAction.equals("TERMINATE")) {
+			errorCount = errorCount.replaceAll("\"", "");
+			try {
+				int errorInt = Integer.parseInt(errorCount);
+
+				if (errorInt < 1) {
+					errorInt = 1;
+				} %>
+
+				// If user has entered an Error Count value less than 1, co-erce the value 
+				// to 1 (lesser values do not make sense). 
+				sqlBuffer_<%=cid %>.append(",\n ERROR_COUNT=" + <%=errorInt%>);
+			<%
+			} catch (NumberFormatException nfe) {
+				System.err.println(nfe.getStackTrace());
+			}
+		}
+		if (onErrorAction.equals("CONTINUE") && rejectFile != null && !rejectFile.equals("") && !rejectFile.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n LOG=" + "'" + <%=rejectFile%> + "'");
+		<%
+		}
+		if (allocation!= null && !allocation.equals("") && !allocation.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n ALLOCATION=" + <%=allocation%>);
+		<%
+		}
+		if (extendOpt!= null && !extendOpt.equals("")&& !extendOpt.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n EXTEND=" + <%=extendOpt%>);
+		<%
+		}
+		if (fillFactor!= null && !fillFactor.equals("")&& !fillFactor.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n FILLFACTOR=" + <%=fillFactor%>);
+		<%
+		}
+		if (minPages!= null && !minPages.equals("")&& !minPages.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n MINPAGES=" + <%=minPages%>);
+		<%
+		}
+		if (maxPages!= null && !maxPages.equals("")&& !maxPages.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n MAXPAGES=" + <%=maxPages%>);
+		<%
+		}
+		if (leafFill!= null && !leafFill.equals("")&& !leafFill.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n LEAFFILL=" + <%=leafFill%>);
+		<%
+		}
+		if (nonLeafFill!= null && !nonLeafFill.equals("")&& !nonLeafFill.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n NONLEAFFILL=" + <%=nonLeafFill%>);
+		<%
+		}
+		if (rowEstimate!= null && !rowEstimate.equals("")&& !rowEstimate.equals("\"\"")){%>
+			sqlBuffer_<%=cid %>.append(",\n ROW_ESTIMATE=" + <%=rowEstimate%>);
+		<%
+		}
+		%>
+		sqlBuffer_<%=cid %>.append(";\n");
+
+		// Note the "go block" extends from MODIFY though COPY and COMMIT ... this helps the
+		// MODIFY to be rolled back if an error occurs in the COPY. 
+		// Following ROLLBACK is only effective when this happens.
+
+		sqlBuffer_<%=cid %>.append("\nCOMMIT");
+		sqlBuffer_<%=cid %>.append("\n\\p\\g");
+
+		sqlBuffer_<%=cid %>.append("\n\nROLLBACK");
+		sqlBuffer_<%=cid %>.append("\n\\p\\g");
+
+		sqlBuffer_<%=cid %>.append("\n\n/* End of SQL file generated by Talend */");
+
+	/***********************************************************************/
+	/** Retrieve current TEMP directory.						**/
+	/***********************************************************************/
+
+	String tempDirectoryPath_<%=cid %> = System.getProperty("java.io.tmpdir");
+	String fileNameAndPath_<%=cid %> = "";
+	String sqlFileAndPath_<%=cid %> = "";
+	String executableFilePath_<%=cid %> = "";
+	String executableExtension_<%=cid %> = "";
+	String timestamp_<%=cid %> = "";
+
+	/***********************************************************************/
+	/** Determine OS to create correct executable extension			**/
+	/***********************************************************************/
+
+		String OS_<%=cid %> = System.getProperty("os.name").toLowerCase();
+		if (OS_<%=cid %>.indexOf("windows") > -1 || OS_<%=cid %>.indexOf("nt") > -1 )
+		{
+			executableExtension_<%=cid %> = ".bat";
+		}
+		else 
+		{
+			executableExtension_<%=cid %> = ".sh";
+		}
+
+		/***********************************************************************/
+		/** Write SQL file and executable to TEMP DIR.				**/
+		/***********************************************************************/
+		try {
+			java.text.SimpleDateFormat timestampFormatter = new java.text.SimpleDateFormat("yyyyMMddHHmmss");
+			timestamp_<%=cid %> = timestampFormatter.format(new java.util.Date()) + "_" + pid;
+			/*
+			*Under solaris and windows value of "java.io.tmpdir" ends with 
+			*system-dependent default name-separator character. But under linux
+			*the value does not contain trailing name-separator.
+			*/
+			if(System.getProperty("java.io.tmpdir").endsWith(System.getProperty("file.separator"))){
+				fileNameAndPath_<%=cid %> = tempDirectoryPath_<%=cid %> + jobName+"_<%=cid%>_ingres_sql_" + timestamp_<%=cid %>;
+			}else{
+				fileNameAndPath_<%=cid %> = tempDirectoryPath_<%=cid %> + System.getProperty("file.separator") + jobName+"_<%=cid%>_ingres_sql_" + timestamp_<%=cid %>;
+			}
+
+			sqlFileAndPath_<%=cid %>	= fileNameAndPath_<%=cid %> + ".sql";
+			executableFilePath_<%=cid %> = fileNameAndPath_<%=cid %> + executableExtension_<%=cid %>;
+
+			java.io.FileWriter fstream = new java.io.FileWriter(sqlFileAndPath_<%=cid %>);
+			java.io.BufferedWriter out = new java.io.BufferedWriter(
+					fstream);
+			out.write(sqlBuffer_<%=cid %>.toString());
+			out.close();
+			<%if(isLog4jEnabled){%>
+				log.trace("<%=cid%> - Sql content:"+sqlBuffer_<%=cid %>.toString()+".");
+				log.debug("<%=cid%> - Generate sql into file:"+sqlFileAndPath_<%=cid %>+".");
+			<%}%>
+			fstream = new java.io.FileWriter(executableFilePath_<%=cid %>);
+			out = new java.io.BufferedWriter(fstream);
+
+			<%
+			if(("TRUNCATE_BY_INGRESNET").equals(tableAction)) {
+			%>
+				// Set Ingres environment variables which allow the table 
+				// truncate statement to be rolled back if the copy fails.
+				out.write("set II_TM_ON_ERROR=NOCONTINUE\n");
+				out.write("set II_TM_SWITCH=true\n");
+			<%
+			}
+			%>
+
+			out.write("sql " +  db_for_Copy<%=cid%> + " < " + sqlFileAndPath_<%=cid %> );
+			out.close();
+			<%if(isLog4jEnabled){%>
+				log.trace("<%=cid%> - Command content:"+"sql " +  db_for_Copy<%=cid%> + " < " + sqlFileAndPath_<%=cid %>+".");
+				log.debug("<%=cid%> - Generate command into file:"+executableFilePath_<%=cid %>+".");
+			<%}%>
+		} catch (java.lang.Exception e) {
+            globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error");%>
+			e.printStackTrace();
+		}
+		/***********************************************************************/
+		/** Trigger executable to execute SQL against DB.                     **/
+		/***********************************************************************/
+		<%
+		if(isLog4jEnabled){
+		%>
+			log.info("<%=cid%> - Bulk loading.");
+		<%
+		}
+		%>
+		Runtime runtime_<%=cid%> = Runtime.getRuntime();
+		if (OS_<%=cid %>.indexOf("windows") < 0 && OS_<%=cid %>.indexOf("nt") < 0 ) {
+			final Process chmod_<%=cid %> = runtime_<%=cid%>.exec("chmod a+x "+ executableFilePath_<%=cid %>);
+
+			/***********************************************************************/
+			/** Create two threads to monitor above process without blocking      **/
+			/** logic executing. One thread prints standard console output, the   **/
+			/** other prints the error stream.                                    **/
+			/***********************************************************************/
+
+			// chmodstandard output monitor 
+			Thread chmodnormal_<%=cid %> = new Thread() {
+				public void run() {
+					try {
+						java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(chmod_<%=cid %>.getInputStream()));
+						String line = "";
+						try {
+							while((line = reader.readLine()) != null) {
+							}
+						} finally {
+							reader.close();
+						}
+					} catch(java.io.IOException ioe) {
+						<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+						ioe.printStackTrace();
+					}
+				}
+			};
+			chmodnormal_<%=cid%>.start();
+
+			// chmoderror output monitor
+			Thread chmoderror_<%=cid%> = new Thread() {
+				public void run() {
+					try {
+						java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(chmod_<%=cid %>.getErrorStream()));
+						String line = "";
+						try {
+							while((line = reader.readLine()) != null) {
+							<%
+							if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+								%>
+								System.err.println(line);
+								<%
+							} else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+								%>
+								globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+								<%
+							}
+							%>
+							}
+						} finally {
+							reader.close();
+						}
+					} catch(java.io.IOException ioe) {
+						<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+						ioe.printStackTrace();
+					}
+				}
+			};
+			chmoderror_<%=cid%>.start();
+			chmod_<%=cid %>.waitFor();
+			chmodnormal_<%=cid%>.join();
+			chmoderror_<%=cid%>.join();
+		}
+		final Process ps_<%=cid %> = runtime_<%=cid%>.exec(executableFilePath_<%=cid %>);
+		<%
+	}
+	%>
+
+	/***********************************************************************/
+	/** Create two threads to monitor above process without blocking      **/
+	/** logic executing. One thread prints standard console output, the   **/
+	/** other prints the error stream.                                    **/
+	/***********************************************************************/
+
+
+	// standard output monitor 
+	Thread normal_<%=cid %> = new Thread() {
+		public void run() {
+			try {
+				java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+				String line = "";
+				try {
+					while((line = reader.readLine()) != null) {
+					<%
+					if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+						%>
+						System.out.println(line);
+						<%
+					} else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+						%>
+						globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+						<%
+					}
+					%>
+					}
+				} finally {
+					reader.close();
+				}
+			} catch(java.io.IOException ioe) {
+				<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+				ioe.printStackTrace();
+			}
+		}
+	};
+	normal_<%=cid%>.start();
+
+	// error output monitor
+	Thread error_<%=cid%> = new Thread() {
+		public void run() {
+			try {
+				java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+				String line = "";
+				try {
+					while((line = reader.readLine()) != null) {
+						<%
+						if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+						%>
+							System.err.println(line);
+						<%
+						} else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+						%>
+							globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+						<%
+						}
+						%>
+					}
+				} finally {
+					reader.close();
+				}
+			} catch(java.io.IOException ioe) {
+				<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+				ioe.printStackTrace();
+			}
+		}
+	};
+	error_<%=cid%>.start();
+	ps_<%=cid %>.waitFor();
+	normal_<%=cid%>.join();
+	error_<%=cid%>.join();
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Bulk load has finished.");
+	<%
+	}
+	if (deleteWorkingFiles){
+	%>
+
+	/***********************************************************************/
+	/** Delete working files if not requested to keep them.               **/
+	/***********************************************************************/
+		try {
+
+			java.io.File f = new java.io.File(sqlFileAndPath_<%=cid %>);
+
+			boolean deletedOK = f.delete();
+
+			if (!deletedOK ){
+				throw new IllegalArgumentException("Failed to delete " + sqlFileAndPath_<%=cid %>);
+			}
+			<%
+			if(isLog4jEnabled) {
+			%>
+				log.debug("<%=cid%> - File : "+ sqlFileAndPath_<%=cid %> + " is deleted.");
+			<%
+			}
+			%>
+
+			f = new java.io.File(executableFilePath_<%=cid %>);
+
+			deletedOK = f.delete();
+
+			if (!deletedOK ){
+				throw new IllegalArgumentException("Failed to delete " + executableFilePath_<%=cid %>);
+			}
+			<%
+			if(isLog4jEnabled) {
+			%>
+				log.debug("<%=cid%> - File : "+ executableFilePath_<%=cid %> + " is deleted.");
+			<%
+			}
+			%>
+		} catch (java.lang.Exception e) {
+            globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error");%>
+			e.printStackTrace();
+		}
+	<%
+	}
+	%>

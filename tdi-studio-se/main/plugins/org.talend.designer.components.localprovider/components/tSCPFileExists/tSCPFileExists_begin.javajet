@@ -1,0 +1,161 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil
+  "
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	log4jFileUtil.componentStartInfo(node);
+    String cid = node.getUniqueName();
+    String host = ElementParameterParser.getValue(node,"__HOST__");
+    String port = ElementParameterParser.getValue(node,"__PORT__");
+    String user = ElementParameterParser.getValue(node,"__USERNAME__");
+    String authMethod = ElementParameterParser.getValue(node,"__AUTH_METHOD__");
+    String privatekey = ElementParameterParser.getValue(node,"__PRIVATEKEY__");
+    String password = ElementParameterParser.getValue(node,"__PASSWORD__");
+    String passphrase = ElementParameterParser.getValue(node,"__PASSPHRASE__");
+    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+%>
+     /* Create a connection instance */
+ 	<%
+ 	String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+ 	if(("true").equals(useExistingConn)){
+
+ 		String conn= "conn_" + connection;
+ 		INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+ 		    host = ElementParameterParser.getValue(connectionNode, "__HOST__");
+             port = ElementParameterParser.getValue(connectionNode, "__PORT__");
+             user = ElementParameterParser.getValue(connectionNode,"__USERNAME__");
+            authMethod = ElementParameterParser.getValue(connectionNode,"__AUTH_METHOD__");
+	%>
+		org.apache.sshd.client.SshClient client_<%=cid%> = (org.apache.sshd.client.SshClient)globalMap.get("conn_<%=connection%>");
+		<%
+        if (("PUBLICKEY").equals(authMethod)) {
+        %>
+		java.nio.file.Path privateKey_<%=cid%> = (java.nio.file.Path)globalMap.get("privateKey_<%=connection%>");
+        java.util.List<String> lines_<%=cid%> = (java.util.List<String>)globalMap.get("lines_<%=connection%>");
+        <%}%>
+ 		String hostname_<%=cid%> = <%=host%>;
+        String username_<%=cid%> = <%=user%>;
+ 		<%if(isLog4jEnabled){%>
+ 			if(client_<%=cid %>!=null) {
+ 				log.info("<%=cid%> - Uses an existing connection. Connection hostname: "+ <%=host %> + ". Connection port: "+ <%=port %> + "."); 
+ 			}
+ 		<%}%>
+ 	<%}else{%>
+ 	    	String hostname_<%=cid%> = <%=host%>;
+             String username_<%=cid%> = <%=user%>;
+            /* Create a connection instance */
+         		<%if(isLog4jEnabled){%>
+         			log.info("<%=cid%> - Connection attempt to '" +hostname_<%=cid%> + "' on the port '"+<%=port%>+"' as '" + username_<%=cid%> + "'.");
+         		<%}%>
+         		org.apache.sshd.client.SshClient client_<%=cid%> = org.apache.sshd.client.SshClient.setUpDefaultClient();
+		        org.apache.sshd.core.CoreModuleProperties.IDLE_TIMEOUT.set(client_<%=cid%>, java.time.Duration.ZERO );
+                org.apache.sshd.core.CoreModuleProperties.NIO2_READ_TIMEOUT.set(client_<%=cid%>, java.time.Duration.ZERO );
+         		<%
+                 if (("PUBLICKEY").equals(authMethod)) {
+                 %>
+         		<%if(isLog4jEnabled){%>
+         			log.info("<%=cid%> - Authentication using a public key.");
+         		<%}%>
+         		client_<%=cid%>.setUserAuthFactories(java.util.Collections.singletonList(org.apache.sshd.client.auth.pubkey.UserAuthPublicKeyFactory.INSTANCE));
+         		java.nio.file.Path privateKey_<%=cid%> = java.nio.file.Paths.get(<%=privatekey%>);
+         		<%String passwordFieldName = "__PASSPHRASE__";%>
+                <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>   
+				final org.apache.sshd.common.config.keys.FilePasswordProvider PASSWORD_PROVIDER_<%=cid%> = (sessionContext, namedResource, i) -> decryptedPassword_<%=cid%>;
+
+
+			    org.apache.sshd.common.util.io.resource.PathResource location_<%=cid%> = new org.apache.sshd.common.util.io.resource.PathResource(privateKey_<%=cid%>, org.apache.sshd.common.util.io.IoUtils.EMPTY_OPEN_OPTIONS);
+                final Iterable<java.security.KeyPair> keyPairs_<%=cid%> = org.apache.sshd.common.util.security.SecurityUtils.loadKeyPairIdentities(null, location_<%=cid%>, location_<%=cid%>.openInputStream(), PASSWORD_PROVIDER_<%=cid%>);
+                java.security.KeyPair kp_<%=cid%> = org.apache.sshd.common.util.GenericUtils.head(keyPairs_<%=cid%>);
+                client_<%=cid%>.setKeyIdentityProvider(new org.apache.sshd.common.keyprovider.FileKeyPairProvider(privateKey_<%=cid%>));
+                 <%}%>
+         		<%
+                 if (("KEYBOARDINTERACTIVE").equals(authMethod)) {
+                 %>
+
+         		client_<%=cid%>.setUserAuthFactories(java.util.Collections.singletonList(org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory.INSTANCE));
+
+         		<%if(isLog4jEnabled){%>
+         			log.info("<%=cid%> - Authentication using an interactive action.");
+         		<%}%>
+
+         		        client_<%=cid%>.setUserInteraction(new org.apache.sshd.client.auth.keyboard.UserInteraction() {
+
+                     @Override
+                     public String[] interactive(org.apache.sshd.client.session.ClientSession clientSession, String name, String instruction, String lang, String[] prompt,
+                             boolean[] echo) {
+
+         					<% String passwordFieldName = "__PASSWORD__"; %>
+         					<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+         					String[] reply = new String[prompt.length];
+         					for (int i = 0; i < reply.length; i++) {
+                 				reply[i] = decryptedPassword_<%=cid%>;
+                 			}
+                         return reply;
+                     }
+
+                     @Override public String getUpdatedPassword(org.apache.sshd.client.session.ClientSession clientSession, String prompt, String lang) {
+                         throw new IllegalStateException("getUpdatedPassword(" + clientSession + ")[" + prompt + "] unexpected call");
+                     }
+                 });
+
+         <%
+                 }
+         %>
+
+                 		<%if (("PASSWORD").equals(authMethod)) {%>
+                 			<%if(isLog4jEnabled){%>
+                 			    log.info("<%=cid%> - Authentication using a password.");
+                 		    <%}%>
+                 	        <%String passwordFieldName = "__PASSWORD__";%>
+                 		    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+                 		    client_<%=cid%>.addPasswordIdentity(decryptedPassword_<%=cid%>);
+                 		<%}%>
+                 		client_<%=cid%>.start();
+         <%
+         }//if(useExistingConn)
+         %>
+
+
+
+         		int port_<%=cid%> = Integer.parseInt(<%=port %>+"");
+         		StringBuilder stringStdout_<%=cid%> =new StringBuilder();
+                StringBuilder stringStderr_<%=cid%> =new StringBuilder();
+         		Integer exit_code_<%=cid%> = null;
+
+
+         		            /* open a session */
+
+
+                <%if(("true").equals(useExistingConn)){%>
+                                org.apache.sshd.client.session.ClientSession session_<%=cid%> =  (org.apache.sshd.client.session.ClientSession)globalMap.get("session_<%=connection%>");
+                <%}else{%>
+                                <%if(isLog4jEnabled){%>
+                                    log.info("<%=cid%> - Open up a session.");
+                                <%}%>
+                                org.apache.sshd.client.session.ClientSession session_<%=cid%> = client_<%=cid%>.connect(username_<%=cid%>, hostname_<%=cid%>, port_<%=cid%>).verify().getClientSession();
+                                <%
+                                if (("PUBLICKEY").equals(authMethod)) {	
+                                    %>
+                        			session_<%=cid%>.addPublicKeyIdentity(kp_<%=cid%>);
+                        			<%}%>
+                            try {
+                                session_<%=cid%>.auth().verify();
+                            }catch (org.apache.sshd.common.SshException se_<%=cid%>){
+                                globalMap.put("<%=cid %>_EXIT_CODE",se_<%=cid%>.getDisconnectCode());
+  
+                                if(14 == se_<%=cid%>.getDisconnectCode()){
+                                    throw new IllegalArgumentException("Authentication failed.");
+                                }else{
+                                    throw se_<%=cid%>;
+                                }
+                            }
+                <%}%>

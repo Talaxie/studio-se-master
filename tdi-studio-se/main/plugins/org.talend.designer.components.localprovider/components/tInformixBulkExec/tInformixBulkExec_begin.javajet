@@ -1,0 +1,312 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+		org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.MappingTypeRetriever
+        org.talend.core.model.metadata.MetadataTalendType        
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String action = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+String field_separator = ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__");
+String file = ElementParameterParser.getValue(node, "__DATA__");
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbport = ElementParameterParser.getValue(node, "__PORT__");
+String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbserver = ElementParameterParser.getValue(node, "__DBSERVER__");
+String dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String dbSchema = ElementParameterParser.getValue(node,"__SCHEMA_DB__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");	
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");		
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+
+String dateformat = ElementParameterParser.getValue(node, "__DATE_FORMAT__");
+String timeformat = ElementParameterParser.getValue(node, "__TIME_FORMAT__");
+String timestampformat = ElementParameterParser.getValue(node, "__TIMESTAMP_FORMAT__");
+boolean useExistingConnection = ("true").equals(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+String informixDir = ElementParameterParser.getValue(node,"__INFORMIX_DIR__");
+
+String outputAction  = ElementParameterParser.getValue(node, "__OUTPUT__");
+String executionPlatform = ElementParameterParser.getValue(node,"__EXECUTION_PLATFORM__");
+
+boolean setDbmoney = ("true").equals(ElementParameterParser.getValue(node,"__SET_DBMONEY__"));
+String decimalSeparator = ElementParameterParser.getValue(node, "__DECIMAL_SEPARATOR__");
+
+String datePattern = ElementParameterParser.getValue(node,"__DATE_FORMAT__");
+String[] datePatterns = datePattern.split(",");
+if(datePatterns.length > 1){
+	datePattern = datePatterns[1];
+}
+String datePatternCustom = ElementParameterParser.getValue(node,"__DATE_FORMAT_CUSTOM__");                
+if ("CUSTOM".equals(datePattern))
+	datePattern = datePatternCustom.substring(1,datePatternCustom.length()-1);
+
+String befroeCommit = ElementParameterParser.getValue(node, "__ROWS_BEFORE_COMMIT__");
+String badRows = ElementParameterParser.getValue(node, "__BAD_ROWS_BEFORE_ABORT__");
+
+List<IMetadataColumn> columnList = getColumnList(node);
+List<Column> stmtStructure = null;
+Manager manager = null;
+
+	if (useExistingConnection) {
+		String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+		String connectionName = "conn_" + connection;
+%>
+	String dbschema_<%=cid%> = dbschema_<%=cid%> = (String)globalMap.get("dbschema_<%=connection%>");
+	String dbName_<%=cid%> =  (String)globalMap.get("dbname_<%=connection%>");
+	String dbServer_<%=cid%> = (String)globalMap.get("dbserver_<%=connection%>");
+	java.sql.Connection conn_<%=cid%> = (java.sql.Connection) globalMap.get("<%=connectionName%>");
+<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	} else {
+
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+    String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%>;
+<%
+		} else {
+%>
+    String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%> + ";" + <%=dbproperties%>;
+<%
+		}
+%>
+	String driverClass_<%=cid%> = "com.informix.jdbc.IfxDriver";
+	java.lang.Class.forName(driverClass_<%=cid%>);
+	String dbschema_<%=cid%> = <%=dbSchema%>;
+	String dbName_<%=cid%> = <%=dbname%>;
+	String dbServer_<%=cid%> = <%=dbserver%>;
+	String dbUser_<%=cid %> = <%=dbuser%>;
+
+	<%
+	String passwordFieldName = "__PASS__";
+	%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+	String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	java.sql.Connection conn_<%=cid%> = null;
+<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect(node);
+	}
+%>
+		String tableName_<%=cid%> = null;
+		if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+    		tableName_<%=cid%> = <%=table%>;
+		} else {
+		    tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;    
+		}
+		
+<%
+if(columnList != null && columnList.size() > 0) {
+	stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);      
+%>
+<%@ include file="../templates/_tableActionForBulk.javajet"%>
+
+		String fileName_<%=cid%> = <%=file%>;
+		String cmdFile_<%=cid%> = fileName_<%=cid%> + ".cmd";
+		String logFile_<%=cid%> = fileName_<%=cid%> + ".log";
+		Character field_separator_<%=cid %> = (<%=field_separator%>).charAt(0);
+ 		java.io.BufferedWriter bw_<%=cid %> = new java.io.BufferedWriter(new java.io.FileWriter(cmdFile_<%=cid%>));
+    	java.io.PrintWriter pw_<%=cid%> = new java.io.PrintWriter(bw_<%=cid%> ,false) ;
+    	//file "c:\informix_bulk.txt" delimiter "|" 7 ;insert into feature9999;
+    	pw_<%=cid%>.print("FILE \"" + <%=file%> + "\"" );
+    	pw_<%=cid%>.print(" DELIMITER \"" + field_separator_<%=cid %> + "\"");
+    	pw_<%=cid%>.println(" " + <%=columnList.size()%> +" ;" );
+<% 
+    if(("INSERT").equals(action)) {
+    Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+    StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);   
+%>
+		pw_<%=cid%>.println("INSERT INTO " + tableName_<%=cid%> + "(<%=insertColName.toString()%>);" );
+<%
+    }   
+%>
+	bw_<%=cid %>.close();
+	pw_<%=cid %>.close();
+	//-----------------------dbload command
+	StringBuilder command_<%=cid %> =  new StringBuilder();
+	//-------------------------1. add dbload cmd
+<%
+	if ("Windows".equalsIgnoreCase(executionPlatform)) {
+	//this just windows 
+%>
+	command_<%=cid %>.append("dbload ");
+<%
+	} else if ("Linux".equalsIgnoreCase(executionPlatform)) {
+	//this just windows 
+%>
+	command_<%=cid %>.append("./dbload ");
+<%
+	}
+%>
+	//-------------------------2.add database name
+	command_<%=cid %>.append("-d " + dbName_<%=cid%> + " ");
+	//-------------------------3.add command file
+	command_<%=cid %>.append("-c " + cmdFile_<%=cid%> + " ");
+	//-------------------------4.add  error log file
+	command_<%=cid %>.append("-l " + logFile_<%=cid%> + " ");
+	//-------------------------5.add  bad rows before abort
+	command_<%=cid %>.append("-e " + <%=badRows%> + " ");
+	//-------------------------6.add commit interval
+	command_<%=cid %>.append("-n " + <%=befroeCommit%> + ";"); 
+	
+	//----------------get envionment variables
+<%
+	if ("Windows".equalsIgnoreCase(executionPlatform)) {
+	//this just windows 
+%>
+	Process ev_<%=cid%> = Runtime.getRuntime().exec("cmd /c set");
+	java.io.BufferedReader evReader_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(ev_<%=cid%>.getInputStream()));
+<%
+	} else if ("Linux".equalsIgnoreCase(executionPlatform)) {
+	//this just windows 
+%>
+
+	Process ev_<%=cid%> = Runtime.getRuntime().exec("env");
+	java.io.BufferedReader evReader_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(ev_<%=cid%>.getInputStream()));
+<%	
+	}
+%>
+	java.util.List<String> evPara_<%=cid%> = new java.util.ArrayList();
+	String line_<%=cid%> = null;
+	while((line_<%=cid%> = evReader_<%=cid%>.readLine()) != null) {
+	   evPara_<%=cid%>.add(line_<%=cid%>);
+	}
+	evReader_<%=cid%>.close();
+
+	evPara_<%=cid%>.add("INFORMIXDIR=" + <%=informixDir%>);
+	evPara_<%=cid%>.add("INFORMIXSERVER=" + dbServer_<%=cid%>);
+	evPara_<%=cid%>.add("DBDATE=" + "<%= datePattern %>");
+	
+<%
+	if (setDbmoney) {
+%>
+	evPara_<%=cid%>.add("DBMONEY=" + <%=decimalSeparator%>);
+<%
+	}
+%>
+	//----------------get envionment variables end
+	
+	//------------------get dbload directory
+	java.io.File dbLoadDirectory_<%=cid%> = new java.io.File (<%=informixDir%>+"/bin");
+	boolean dbloadExist_<%=cid%> = dbLoadDirectory_<%=cid%>.exists();
+	if(!dbloadExist_<%=cid%>){
+		throw new RuntimeException(dbLoadDirectory_<%=cid%>+"' is not exist!");
+	}
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Executing '"+command_<%=cid %>.toString()+"'.");
+	<%
+	}
+	%>
+ 	Runtime runtime_<%=cid%> = Runtime.getRuntime();
+<%
+	if ("Windows".equalsIgnoreCase(executionPlatform)) {
+%>
+	final Process ps_<%=cid %> = runtime_<%=cid%>.exec(new String[]{"cmd.exe","/c",command_<%=cid %>.toString()},
+								evPara_<%=cid%>.toArray(new String[]{}),dbLoadDirectory_<%=cid%>);
+<%
+	} else if ("Linux".equalsIgnoreCase(executionPlatform)) {
+%>
+	final Process ps_<%=cid %> = runtime_<%=cid%>.exec(command_<%=cid %>.toString(),
+								evPara_<%=cid%>.toArray(new String[]{}),dbLoadDirectory_<%=cid%>);
+<%
+	}
+%>
+
+<%
+} 		
+%>
+
+Thread normal_<%=cid %> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+				    <%
+				    if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+				        %>
+				        System.out.println(line);
+				        <%
+				    } else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+				        %>
+				        globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+				        <%
+				    }
+				    %>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+			ioe.printStackTrace();
+		}
+	}
+};
+normal_<%=cid%>.start();
+
+Thread error_<%=cid%> = new Thread() {
+	public void run() {
+		try {
+			java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+			String line = "";
+			try {
+				while((line = reader.readLine()) != null) {
+				    <%
+				    if (("OUTPUT_TO_CONSOLE").equals(outputAction)) {
+				        %>
+				        System.err.println(line);
+				        <%
+				    } else if (("RETRIEVE_OUTPUT").equals(outputAction)) {
+				        %>
+				        globalMap.put("<%=cid %>_OUTPUT",(String)globalMap.get("<%=cid %>_OUTPUT")+"\n"+line);
+				        <%
+				    }
+				    %>
+				}
+			} finally {
+				reader.close();
+			}
+		} catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+			<%log4jCodeGenerateUtil.logError(node,"error","ioe");%>
+			ioe.printStackTrace();
+		}
+	}
+};
+error_<%=cid%>.start();
+ps_<%=cid %>.waitFor();
+normal_<%=cid %>.join();
+error_<%=cid %>.join();
+    <%
+    if(isLog4jEnabled){
+    %>
+        log.info("<%=cid%> - Execute '"+command_<%=cid %>.toString()+"' has finished。");
+    <%
+    }
+    %>
+
+
+
+

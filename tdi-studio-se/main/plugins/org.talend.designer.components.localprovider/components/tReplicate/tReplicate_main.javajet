@@ -1,0 +1,64 @@
+<%@ jet
+imports="
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.INode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();	
+
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas != null) && (metadatas.size() > 0)) {//b
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata != null) {//a	
+%>
+
+<%
+    IMetadataTable preMetadata = null;
+    String incomingName = "";
+        
+  	List<? extends IConnection> inputConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+  	if ((inputConns!=null)&&(inputConns.size()>0)) {
+  		IConnection incomingConn = inputConns.get(0); 
+  		incomingName = incomingConn.getName();
+  		preMetadata = incomingConn.getMetadataTable();
+  	}else{
+  		return "";
+  	}
+	
+	List<IMetadataColumn> columns = metadata.getListColumns();
+	int columnSize = columns.size();
+	List<IMetadataColumn> preColumns = preMetadata.getListColumns();
+	int preColumnSize = preColumns.size();
+	int minSize = Math.min(columnSize, preColumnSize);
+	
+	List< ? extends IConnection> outConns = node.getOutgoingConnections();
+	for (IConnection conn : outConns) {	
+		if(conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)||conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)){
+		String outputConnName = conn.getName();				
+%>
+	<%=outputConnName %> = new <%=outputConnName %>Struct();
+	
+<%
+		for (int i = 0; i < minSize; i++) {//4
+			IMetadataColumn column = columns.get(i);
+			IMetadataColumn preColumn = preColumns.get(i);
+%>					
+	<%=outputConnName %>.<%=column.getLabel() %> = <%=incomingName %>.<%=preColumn.getLabel() %>;			
+<%			
+			} //4
+		}
+	}
+%>
+
+<%
+  	}//b
+ }//a	
+%>

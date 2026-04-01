@@ -1,0 +1,239 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever     
+    org.talend.core.model.utils.NodeUtil
+    java.util.List
+    java.util.ArrayList
+    java.util.Map
+    java.util.HashMap    
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String globalCid = ElementParameterParser.getValue(node, "__CID__");
+if(globalCid == null || "".equals(globalCid) || "\"\"".equals(globalCid)) {
+	globalCid = cid;
+}
+
+String field_separator = ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__");
+String null_string = ElementParameterParser.getValue(node, "__NULL_STRING__");
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String db = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbschema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+String user = ElementParameterParser.getValue(node, "__USER__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String escapechar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+boolean is_escape_char = ("true").equals(ElementParameterParser.getValue(node, "__ESCAPE_CHARACTER_OPTION__"));
+
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+boolean ros = ("true").equals(ElementParameterParser.getValue(node, "__ROS__"));
+boolean hasNullString = !null_string.matches("\"\"");
+boolean convertToUppercase = false; // not active this function
+boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+
+String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+String stream_name = "STREAM NAME '\"+"+ElementParameterParser.getValue(node, "__STREAM_NAME__")+"+\"'";
+boolean is_trailing_null = ("true").equals(ElementParameterParser.getValue(node, "__TRAILING_NULL__"));
+boolean is_skipping = ("true").equals(ElementParameterParser.getValue(node, "__SKIP_OPTION__"));
+String skipping_value = ElementParameterParser.getValue(node, "__SKIP_VALUE__");
+boolean has_terminator = ("true").equals(ElementParameterParser.getValue(node, "__RECORD_TERMINATOR_OPTION__"));
+String terminator_value = ElementParameterParser.getValue(node, "__RECORD_TERMINATOR_VALUE__");
+boolean has_enclosing_char = ("true").equals(ElementParameterParser.getValue(node, "__ENCLOSED_BY_OPTION__"));
+String enclosing_char = ElementParameterParser.getValue(node, "__ENCLOSED_BY_VALUE__");
+boolean is_enforcing_length = ("true").equals(ElementParameterParser.getValue(node, "__ENFORCELENGTH_OPTION__"));
+boolean is_rejected_max = ("true").equals(ElementParameterParser.getValue(node, "__REJECTMAX_OPTION__"));
+String rejected_max_value = ElementParameterParser.getValue(node, "__REJECTMAX_VALUE__");
+boolean is_abort_on_error = ("true").equals(ElementParameterParser.getValue(node, "__ON_ERROR_ABORT_OPTION__"));
+boolean is_no_commit = ("true").equals(ElementParameterParser.getValue(node, "__NO_COMMIT_OPTION__"));
+boolean useSchema = "true".equals(ElementParameterParser.getValue(node, "__USE_SCHEMA_FOR_COPY__"));
+boolean useExistingDynamic = ("true").equals(ElementParameterParser.getValue(node, "__USE_EXISTING_DYNAMIC__"));
+
+List<IMetadataColumn> columnList = getColumnList(node);
+String copySchema = null;
+if (useSchema && columnList != null && !columnList.isEmpty()) {
+    StringBuilder copySchemaBuilder = new StringBuilder(" (");
+    for(int i = 0; i < columnList.size() - 1; i++){
+        copySchemaBuilder.append(columnList.get(i).getOriginalDbColumnName()).append(", ");
+    }
+    copySchemaBuilder.append(columnList.get(columnList.size() - 1).getOriginalDbColumnName()).append(")");
+    copySchema = copySchemaBuilder.toString();
+}
+
+%>
+String tableName_<%=cid%> = null;
+String dbschema_<%=cid %> = null;
+java.sql.Connection conn_<%=cid%> = null;
+	<%
+	if(useExistingConnection) {
+    		String connName = ElementParameterParser.getValue(node,"__CONNECTION__");
+    		String conn = "conn_" + connName;
+    		String existDbSchema = "dbschema_" + connName;
+	%>
+		dbschema_<%=cid%> = (String)globalMap.get("<%=existDbSchema%>");
+	 	conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+	 <%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	 }else{
+	 %>
+		java.lang.Class.forName("com.vertica.jdbc.Driver").newInstance();
+		
+		<%if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {%>
+		String url_<%=cid %> = "jdbc:vertica://" + <%=host%> + ":" + <%=port%> + "/" + <%=db%>;
+	    <%} else {%>
+	    String url_<%=cid %> = "jdbc:vertica://" + <%=host%> + ":" + <%=port%> + "/" + <%=db%> + "?" + <%=dbproperties%>;
+	    <%}%>
+	    
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	   	
+		dbschema_<%=cid%> = <%=dbschema%>;
+		String dbUser_<%=cid %> = <%=user%>;
+		String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	<%
+		log4jCodeGenerateUtil.connect(node);
+	}
+	%>
+<%
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+
+List<Column> stmtStructure = null;
+Manager manager = null;
+if(columnList != null && columnList.size()>0) {
+	stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+}
+if((columnList != null && columnList.size() > 0) || useExistingDynamic || "CLEAR".equals(tableAction) || "NONE".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+%>
+	if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+	    tableName_<%=cid%> = <%=table%>;
+	} else {
+	    tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;
+	}
+	
+	<%@ include file="../templates/_tableActionForBulk.javajet"%>
+<%    
+}
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+
+// The following try is closed by a finally in the tVerticaBulkExec_end (only if !useExistingConnection)
+if(!useExistingConnection) {
+%>
+try {
+<%
+}
+if(("UPDATE").equals(dataAction)) {
+    if(columnList != null && columnList.size() > 0) {
+        int keyCount = 0;
+        for(IMetadataColumn column : columnList) {
+            if(column.isKey()) {
+                keyCount++;
+            }
+        }
+        %>
+        int keyCount_<%=cid%> = <%=keyCount%>;
+        if(keyCount_<%=cid%> == 0) {
+            throw new RuntimeException("For bulk update, Schema must have a key at least."); 
+        }
+        tableName_<%=cid%> = "tmp_<%=cid%>" + pid + Thread.currentThread().getId();
+        if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+	    	tableName_<%=cid%> = dbschema_<%=cid%> + "." + tableName_<%=cid%>;
+		}
+
+		String sql_create_tmpdb_<%=cid%> = "<%=manager.getCreateTableSQL(stmtStructure)%>)";
+
+<%
+	}
+}
+if(("INSERT").equals(dataAction) || columnList != null && columnList.size() > 0) {
+		String rejectedDataFile = ElementParameterParser.getValue(node, "__REJECTED_DATA_FILE__");
+		String exceptionFile = ElementParameterParser.getValue(node, "__EXCEPTION_FILE__");
+%>
+		Character OUT_DELIM_<%=cid %> = <%=field_separator%>.charAt(0);
+		<%if(is_escape_char){%>
+		String escapechar_<%=cid %> = <%=escapechar%>;
+		if(!escapechar_<%=cid %>.isEmpty()){
+			escapechar_<%=cid %> = "" + escapechar_<%=cid %>.charAt(0);
+		}
+		<%}%>
+<%
+		if (useSchema) {
+%>
+			String copySchema_<%=cid %> = "<%=copySchema%>";
+			if ("null".equals(copySchema_<%=cid %>)) {
+				throw new RuntimeException("Schema is not defined");
+			}
+<%
+		}
+%>
+		String sql_<%=cid %> = "COPY " + tableName_<%=cid%> 
+		<%if(useSchema) {%>
+			+ copySchema_<%=cid %>
+		<%}%>		
+		+ " FROM STDIN <%=compression%> <%=stream_name%> DELIMITER '" + OUT_DELIM_<%=cid %> + "'"
+		<%if(is_trailing_null){%>
+		+ " TRAILING NULLCOLS"
+		<%}%>
+		<%if(is_skipping){%>
+		+ " SKIP " + <%=skipping_value%>
+		<%}%>
+		<%if(has_terminator){%>
+		+ " RECORD TERMINATOR E'" + <%=terminator_value%> + "'"
+		<%}%>
+		<%if(has_enclosing_char){%>
+		+ " ENCLOSED BY E'" + <%=enclosing_char%> + "'"
+		<%}%>
+		<%if(is_enforcing_length){%>
+		+ " ENFORCELENGTH"
+		<%}%>
+		<%if(is_rejected_max){%>
+		+ " REJECTMAX " + <%=rejected_max_value%>
+		<%}%>
+		<%if(is_abort_on_error){%>
+		+ " ABORT ON ERROR"
+		<%}%>
+		<%if(is_escape_char){%>
+		+ " ESCAPE AS '" + escapechar_<%=cid %> + "'"
+		<%}else{%>
+		+" NO ESCAPE"
+		<%}%>
+	    <%if(hasNullString){
+		%> + " NULL '"  + <%=null_string%> + "'"
+		<%}%>
+		<%if(ros){%> + " DIRECT"<%}%>
+		
+		<%if(("INSERT").equals(dataAction) && rejectedDataFile!=null && !"".equals(rejectedDataFile) && !"\"\"".equals(rejectedDataFile)) {%>
+			+ " REJECTED DATA '" + <%=rejectedDataFile%> + "'"
+		<%}%>
+		
+		<%if(("INSERT").equals(dataAction) && exceptionFile!=null && !"".equals(exceptionFile) && !"\"\"".equals(exceptionFile)) {%>
+			+ " EXCEPTIONS '" + <%=exceptionFile%> + "'"
+		<%}%>
+	    <%if(is_no_commit){%>
+	        + " NO COMMIT"
+	    <%}%>
+		;
+		
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Bulk SQL:"+sql_<%=cid%>+".");
+			log.info("<%=cid%> - Bulk inserting data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+        <%}%>
+        
+		com.vertica.jdbc.VerticaCopyStream vcs_<%=cid%> = new com.vertica.jdbc.VerticaCopyStream((com.vertica.jdbc.VerticaConnection)conn_<%=cid%>,sql_<%=cid %>);
+		vcs_<%=cid%>.start();
+<%
+}
+%>

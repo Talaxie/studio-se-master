@@ -1,0 +1,179 @@
+<%@ jet 
+imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String businessArchive = ElementParameterParser.getValue(node, "__BUSINESS_ARCHIVE__");
+	String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+	
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+	String bonitaEnvironmentFile = ElementParameterParser.getValue(node, "__BONITA_ENVIRONMENT_FILE__");
+	String jassFile = ElementParameterParser.getValue(node, "__JASS_STANDARD_FILE__");
+	String loggingFile = ElementParameterParser.getValue(node, "__LOGGING_FILE__");
+	String loginModule = ElementParameterParser.getValue(node, "__LOGIN_MODULE__");
+	String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+	String bonitaHome = ElementParameterParser.getValue(node, "__BONITA_HOME__");
+	
+	String clientMode = ElementParameterParser.getValue(node, "__CLIENT_MODE__");
+	if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+		String passwordFieldName = "__PASSWORD__";
+%>
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+<%
+		if("HTTP_CLIENT".equals(clientMode)) {
+			String url = ElementParameterParser.getValue(node, "__BONITA_URL__");
+%>
+			org.talend.bonita.RestClient client_<%=cid%> = null;
+			String processId_<%=cid%> = null;
+			try {
+				client_<%=cid%> = new org.talend.bonita.RestClient(<%=url%>);
+			
+				client_<%=cid%>.loginAs(<%=userName%>, decryptedPassword_<%=cid%>);
+				
+				processId_<%=cid%> = client_<%=cid%>.deployProcess(<%=businessArchive%>);
+				
+				System.out.println("**** Process "+ processId_<%=cid%> + " deploy successful ****");
+			
+			} catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+			if (dieOnError) {
+%>
+				throw e_<%=cid%>;		
+<%
+			} else {
+%>
+				System.err.println(e_<%=cid%>.getMessage());
+<%
+			}
+%>
+			} finally {
+				if(client_<%=cid%>!=null) {
+					try {
+						client_<%=cid%>.logout();
+						client_<%=cid%>.close();
+					} catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+						//do nothing,keep quiet
+					}
+				}
+			}
+		
+			globalMap.put("<%=cid %>_ProcessDefinitionUUID", processId_<%=cid%>); 
+<%
+			
+		} else if("JAVA_CLIENT".equals(clientMode)) {
+%>
+			org.talend.bonita.Client client_<%=cid%> = null;
+			String processId_<%=cid%> = null;
+			try {
+				client_<%=cid%> = new org.talend.bonita.Client(<%=bonitaHome%>);
+		        client_<%=cid%>.login(<%=userName%>, decryptedPassword_<%=cid%>);
+		        processId_<%=cid%> = client_<%=cid%>.deployProcess(<%=businessArchive%>);
+		        
+		        System.out.println("**** Process "+ processId_<%=cid%> + " deploy successful ****");
+	        } catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+			if (dieOnError) {
+%>
+				throw e_<%=cid%>;		
+<%
+			} else {
+%>
+				System.err.println(e_<%=cid%>.getMessage());
+<%
+			}
+%>
+			} finally {
+				if(client_<%=cid%>!=null) {
+					try {
+						client_<%=cid%>.logout();
+					} catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+						//do nothing,keep quiet
+					}
+				}
+			}
+			
+			globalMap.put("<%=cid %>_ProcessDefinitionUUID", processId_<%=cid%>);
+<%
+		}
+		
+		return stringBuffer.toString();
+	}
+	
+	if("BONITA_561".equals(dbVersion) || "BONITA_5101".equals(dbVersion)){
+%>
+	System.setProperty("BONITA_HOME", <%=bonitaHome%>);
+<%
+	}else if("BONITA_531".equals(dbVersion)||"BONITA_523".equals(dbVersion)){
+%>
+	System.setProperty("org.ow2.bonita.environment", <%=bonitaEnvironmentFile%>);
+<%
+	}
+%>
+	System.setProperty("java.security.auth.login.config", <%=jassFile%> );
+	System.setProperty("java.util.logging.config.file", new java.io.File(<%=loggingFile%>).toURI().toURL().toString());
+	
+	
+	org.ow2.bonita.facade.ManagementAPI managementAPI_<%=cid%> = org.ow2.bonita.util.AccessorUtil.getAPIAccessor().getManagementAPI();
+	javax.security.auth.login.LoginContext loginContext_<%=cid%> = null;
+	org.ow2.bonita.facade.def.majorElement.ProcessDefinition process_<%=cid%> = null;
+	
+	String processDefinitionUUID_<%=cid%> = null;
+	try {
+			        
+		<%
+		String passwordFieldName = "__PASSWORD__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	   	
+		loginContext_<%=cid%> = new javax.security.auth.login.LoginContext(<%=loginModule%>, new org.ow2.bonita.util.SimpleCallbackHandler(<%=userName%>, decryptedPassword_<%=cid%>));
+		loginContext_<%=cid%>.login();
+		process_<%=cid%> = managementAPI_<%=cid%>.deploy(org.ow2.bonita.util.BusinessArchiveFactory.getBusinessArchive(new java.io.File(<%=businessArchive%>).toURI().toURL()));
+		processDefinitionUUID_<%=cid%> = process_<%=cid%>.getUUID().getValue();
+		
+		System.out.println("**** Process "+ processDefinitionUUID_<%=cid%> + " deploy successful ****");
+
+	} catch (javax.security.auth.login.LoginException le_<%=cid%>) {//just login exception
+globalMap.put("<%=cid%>_ERROR_MESSAGE",le_<%=cid%>.getMessage());
+<%
+	if (dieOnError) {
+%>
+		throw le_<%=cid%>;		
+<%
+	} else {
+%>
+		System.err.println(le_<%=cid%>.getCause().getMessage());
+<%	
+	}
+%>		
+	} catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+	if (dieOnError) {
+%>
+		throw e_<%=cid%>;		
+<%
+	} else {
+%>
+		System.err.println(e_<%=cid%>.getMessage());
+<%	
+	}
+%>
+	} finally {
+		loginContext_<%=cid%>.logout();
+	}
+
+	globalMap.put("<%=cid %>_ProcessDefinitionUUID", processDefinitionUUID_<%=cid%>); 

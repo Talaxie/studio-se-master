@@ -1,0 +1,148 @@
+				<%
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+					if(!isPrimitive) {
+    				%>   				
+	    				if(<%=conn.getName() %>.<%=column.getLabel() %> != null) {
+    				<%
+    				} 
+    				%>
+					
+//modif start
+					<%
+					//Detect the format required for the cell
+					String jxlWriteType;
+    				int staticWidth = 0;
+    				boolean isNumber = false;
+					if(javaType == JavaTypesManager.BOOLEAN){
+						staticWidth=5;
+						jxlWriteType="Boolean";
+					}else if(javaType == JavaTypesManager.DATE){
+						jxlWriteType="DateTime";
+				    }else if(javaType == JavaTypesManager.STRING||
+				    		 javaType == JavaTypesManager.CHARACTER||
+				    		 javaType == JavaTypesManager.BYTE_ARRAY||
+				    		 javaType == JavaTypesManager.LIST||
+				    		 javaType == JavaTypesManager.OBJECT||
+				    		 column.getTalendType().equals("id_Dynamic")||
+				    		 (advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable()))
+				    		 ){
+				    	jxlWriteType="Label";
+					}else{
+						isNumber=true;
+						jxlWriteType="Number";
+					};
+					if(hasDynamic && i+1>dynamic_index){
+					%>
+						columnIndex_<%=cid%> = excelDynamicUtil_<%=cid%>.getDynamicColCount()+<%=i-1%>;
+					<%
+					}else{
+					%>
+						columnIndex_<%=cid%> = <%=i%>;
+					<%
+					}
+					if(!column.getTalendType().equals("id_Dynamic")){
+   				%>
+
+					<%if(firstCellYAbsolute){%>
+						<%if(keepCellFormating){%>
+							jxl.write.WritableCell existingCell_<%=i%>_<%=cid%> = writableSheet_<%=cid %>.getWritableCell(columnIndex_<%=cid%> + <%=firstCellXStr%>, startRowNum_<%=cid %> + nb_line_<%=cid%>) ;
+						<%}%>
+						jxl.write.WritableCell cell_<%=i%>_<%=cid%> = new jxl.write.<%=jxlWriteType%>(columnIndex_<%=cid%> + <%=firstCellXStr%>, startRowNum_<%=cid %> + nb_line_<%=cid%> ,
+					<%}else{%>
+						jxl.write.WritableCell cell_<%=i%>_<%=cid%> = new jxl.write.<%=jxlWriteType%>(columnIndex_<%=cid%>, startRowNum_<%=cid %> + nb_line_<%=cid%>,
+					<%}%>
+//modif end
+<%
+    				String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+    				if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+						staticWidth = pattern.trim().length();
+%>
+								<%=conn.getName() %>.<%=column.getLabel() %>, cell_format_<%=column.getLabel() %>_<%= cid%>
+<%
+					} else {
+						if(javaType == JavaTypesManager.CHARACTER) {
+%>
+							String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)
+<%
+						} else if(javaType == JavaTypesManager.OBJECT || javaType == JavaTypesManager.LIST){
+%>					
+								<%=conn.getName() %>.<%=column.getLabel() %>.toString()
+<%
+						} else if(javaType == JavaTypesManager.BYTE_ARRAY){
+%>					
+								java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+<%
+						} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+%>
+							<% if(javaType == JavaTypesManager.BIGDECIMAL) {%>
+							FormatterUtils.format_Number(String.valueOf(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)				
+							<% } else { %>
+							FormatterUtils.format_Number(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)				
+							<% } %>
+<%
+						} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>		
+							(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>).doubleValue()
+<%
+					}else {
+%>
+								<%=conn.getName() %>.<%=column.getLabel() %>
+<%				
+					}
+					if(font !=null && font.length()!=0){ 
+%>
+						,format_<%=cid%>
+<%
+					}
+				}
+%>
+							);
+//modif start					
+							//If we keep the cell format from the existing cell in sheet
+							
+							<%if(keepCellFormating && firstCellYAbsolute){%>
+								if(existingCell_<%=i%>_<%=cid%>.getCellFormat()!=null)
+									cell_<%=i%>_<%=cid%>.setCellFormat( existingCell_<%=i%>_<%=cid%>.getCellFormat());
+							<%
+							}
+							%>
+//modif ends							
+							writableSheet_<%=cid %>.addCell(cell_<%=i%>_<%=cid%>);
+<%
+					if(isNumber){
+%>
+							int currentWith_<%=i%>_<%=cid%> = String.valueOf(((jxl.write.Number)cell_<%=i%>_<%=cid%>).getValue()).trim().length();
+							currentWith_<%=i%>_<%=cid%>=currentWith_<%=i%>_<%=cid%>>10?10:currentWith_<%=i%>_<%=cid%>;
+<%
+					}else{
+%>
+							int currentWith_<%=i%>_<%=cid%> = cell_<%=i%>_<%=cid%>.getContents().trim().length();
+<%
+					}
+					if(staticWidth ==0){
+%>
+							fitWidth_<%=cid%>[<%=i%>]=fitWidth_<%=cid%>[<%=i%>]>currentWith_<%=i%>_<%=cid%>?fitWidth_<%=cid%>[<%=i%>]:currentWith_<%=i%>_<%=cid%>+2;
+<%
+					}else{
+%>
+							currentWith_<%=i%>_<%=cid%>=<%=staticWidth%>;
+							fitWidth_<%=cid%>[<%=i%>]=fitWidth_<%=cid%>[<%=i%>]>currentWith_<%=i%>_<%=cid%>?fitWidth_<%=cid%>[<%=i%>]:currentWith_<%=i%>_<%=cid%>+2;
+<%
+					}
+					}else{
+					%>
+						excelDynamicUtil_<%=cid%>.writeValuesToExcelFile(<%=conn.getName() %>.<%=column.getLabel() %>, writableSheet_<%=cid %>,columnIndex_<%=cid%>+<%=firstCellYAbsolute?firstCellXStr:"0"%>,startRowNum_<%=cid %> + nb_line_<%=cid%>);
+						<%
+						if("true".equalsIgnoreCase(autColSizeMaping.get(column.getLabel()))){
+						%>
+							excelDynamicUtil_<%=cid%>.autoDynamicColumnSize(writableSheet_<%=cid %>,columnIndex_<%=cid%>+<%=firstCellYAbsolute?firstCellXStr:"0"%>);
+						<%
+						}
+					}
+					if(!isPrimitive) {
+    				%>
+	    				} 
+					<%
+    				} 
+    			%>

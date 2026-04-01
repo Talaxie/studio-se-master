@@ -1,0 +1,61 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode  
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+	"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	log = new LogUtil(node);
+%>
+	
+<%
+String priority = ElementParameterParser.getValue(node, "__PRIORITY__");
+String label = "WARN";
+if(priority.equals("1")){
+	label = "TRACE";
+}else if(priority.equals("2")){
+	label = "DEBUG";
+}else if(priority.equals("3")){
+	label = "INFO";
+}else if(priority.equals("4")){
+	label = "WARN";
+}else if(priority.equals("5")){
+	label = "ERROR";
+}else if(priority.equals("6")){
+	label = "FATAL";
+}
+%>	
+try {
+	
+	resumeUtil.addLog("USER_DEF_LOG", "NODE:<%=cid %>", "", Thread.currentThread().getId() + "", "<%=label %>","",<%=ElementParameterParser.getValue(node, "__MESSAGE__") %>,"", "");
+<%
+	log.log4j(label.toLowerCase(), log.str("Message: "), ElementParameterParser.getValue(node, "__MESSAGE__"), log.str(". Code: "), ElementParameterParser.getValue(node, "__CODE__"));
+			if (node.getProcess().getNodesOfType("tLogCatcher").size() > 0) {
+				List<INode> logCatchers = (List<INode>)node.getProcess().getNodesOfType("tLogCatcher");
+				for (INode logCatcher : logCatchers) {
+					if (("true").equals(ElementParameterParser.getValue(logCatcher, "__CATCH_TWARN__"))) {
+						log.debug(log.str("Sending message to " + logCatcher.getUniqueName() + "."));
+%>
+	<%=logCatcher.getUniqueName() %>.addMessage("tWarn", "<%=cid %>", <%=ElementParameterParser.getValue(node, "__PRIORITY__") %>, <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>, <%=ElementParameterParser.getValue(node, "__CODE__") %>);
+	<%=logCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+<%
+					}
+				}
+			}
+%>
+	globalMap.put("<%=cid %>_WARN_MESSAGES", <%=ElementParameterParser.getValue(node, "__MESSAGE__")%>); 
+	globalMap.put("<%=cid %>_WARN_PRIORITY", <%=ElementParameterParser.getValue(node, "__PRIORITY__") %>);
+	globalMap.put("<%=cid %>_WARN_CODE", <%=ElementParameterParser.getValue(node, "__CODE__") %>);
+	
+} catch (Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+	logIgnoredError(String.format("<%=cid%> - tWarn failed to log message due to internal error: %s", e_<%=cid%>), e_<%=cid%>);
+}
+

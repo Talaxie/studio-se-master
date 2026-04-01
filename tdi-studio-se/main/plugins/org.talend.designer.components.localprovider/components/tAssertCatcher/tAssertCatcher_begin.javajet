@@ -1,0 +1,39 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 		
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+%>
+	for (AssertCatcherUtils.AssertCatcherMessage acm : <%=cid %>.getMessages()) {
+<%
+	for (IConnection conn : node.getOutgoingConnections()) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+		<%=conn.getName() %>.moment = acm.getMoment();
+		<%=conn.getName() %>.pid = acm.getPid();
+		<%=conn.getName() %>.project = acm.getProject();
+		<%=conn.getName() %>.job = acm.getJob();
+		<%=conn.getName() %>.language = acm.getLanguage();
+		
+		<%=conn.getName() %>.origin = (acm.getOrigin()==null || acm.getOrigin().length()<1 ? null : acm.getOrigin());
+	
+    	<%=conn.getName() %>.status = acm.getStatus();
+		<%=conn.getName() %>.substatus = acm.getSubstatus();
+		<%=conn.getName() %>.description = acm.getDescription();
+		<%if("true".equals(ElementParameterParser.getValue(node, "__CATCH_JAVA_EXCEPTION__")) && "true".equals(ElementParameterParser.getValue(node, "__GET_ORIGINAL_EXCEPTION__"))){%>
+		<%=conn.getName() %>.exception = acm.getException();
+		<%}%>
+<%
+		}
+	}
+%>

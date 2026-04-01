@@ -1,0 +1,44 @@
+<%@ jet
+imports="
+        org.talend.core.model.process.INode
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.ElementParameterParser
+        java.util.List
+        "
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+
+    String authenticationType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+    String crmVersion = ElementParameterParser.getValue(node, "__MS_CRM_VERSION__");
+
+    boolean isMsCrm2015OnPremise = "ON_PREMISE".equals(authenticationType) && "CRM_2015".equals(crmVersion);
+
+    if(isMsCrm2015OnPremise){
+       %>
+          <%@ include file="./tMicrosoftCrmInput_end_CXF.javajet"%>
+       <%
+    }else{
+    	  String crmOnlineVersion = ElementParameterParser.getValue(node, "__API_VERSION__");
+        boolean isOnline2016WithOdata="ONLINE".equals(authenticationType) && ("API_2016_ODATA".equals(crmOnlineVersion) || "API_2018_ODATA".equals(crmOnlineVersion));
+        boolean isMsCrm2016OnPremise = "ON_PREMISE".equals(authenticationType) && ("CRM_2016".equals(crmVersion) || "CRM_2018".equals(crmVersion));
+
+    	  if(isOnline2016WithOdata || isMsCrm2016OnPremise){
+    	  %>
+           <%@ include file="./tMicrosoftCrmInput_end_odata.javajet"%>
+        <%
+    	  }else{
+        %>
+           <%@ include file="./tMicrosoftCrmInput_end_AXIS.javajet"%>
+        <%
+        }
+    }
+%>
+	globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);

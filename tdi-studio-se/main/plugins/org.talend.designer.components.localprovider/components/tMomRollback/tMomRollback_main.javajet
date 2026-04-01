@@ -1,0 +1,360 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+    
+    java.util.List
+    java.util.ArrayList
+" 
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+
+    String connectionCid = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    boolean close = ("true").equals(ElementParameterParser.getValue(node,"__CLOSE__"));
+
+    INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(),connectionCid,true);
+    
+    boolean isUseConnection = ("true").equals(ElementParameterParser.getValue(connectionNode, "__USE_CONNECTION__"));
+    
+    if(isUseConnection){
+    	String realConnNodeName = ElementParameterParser.getValue(connectionNode,"__CONNECTION__");
+    	connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(),realConnNodeName);
+    }
+    String serverType=ElementParameterParser.getValue(connectionNode, "__SERVER__");
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));//log4j enable
+	final boolean isLog4j2Enabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J2_ACTIVATE__"));//log4j2 enable
+	final boolean isLog4j1Enabled = !isLog4j2Enabled;//log4j1 enable
+	
+	if (("JBoss").equals(serverType) || ("ActiveMQ").equals(serverType)) {
+	%>
+		javax.jms.Session session_<%=cid%> = (javax.jms.Session)globalMap.get("session_<%=connectionCid%>");
+		javax.jms.Connection connection_<%=cid%> = (javax.jms.Connection)globalMap.get("connection_<%=connectionCid%>");
+		javax.jms.MessageProducer producer_<%=cid%> = (javax.jms.MessageProducer)globalMap.get("producer_<%=connectionCid%>");
+		if(session_<%=cid%> != null && connection_<%=cid %> != null) {
+			<%
+			if (isLog4jEnabled) {
+			%>
+				log.info("<%=cid%> - Rollback operations...");
+			<%
+			}
+			%>
+			session_<%=cid%>.rollback();
+			<%  
+			if (isLog4jEnabled) {
+			%>
+				log.info("<%=cid%> - Rollback successfully.");
+			<%
+			}
+			if(close){
+			%>
+				if (producer_<%=cid %> != null) { 
+					<%
+			    	if (isLog4jEnabled) {
+					%>
+						log.info("<%=cid%> - Closing producer...");
+					<%
+					}
+					%>
+					producer_<%=cid %>.close();
+					<%
+					if (isLog4jEnabled) {
+					%>
+						log.info("<%=cid%> - Closed successfully.");
+					<%
+					}
+					%> 
+				}
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closing connection...");
+				<%
+				}
+				%>
+		        session_<%=cid %>.close();
+		        connection_<%=cid %>.close();
+				<% 
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closed successfully.");
+				<%
+				}
+			}
+			%>
+		}
+	<%
+	} else {
+		List<INode> nodes = (List<INode>) node.getProcess().getGeneratingNodes();
+		boolean isAutoBackout = ("true").equals(ElementParameterParser.getValue(node, "__AUTO_BACKOUT__"));
+		if(isAutoBackout && connectionCid!=null){
+		%>
+			class BackOutUtil_<%=cid%>{
+				
+				int threshold = 0;
+				String inQueuename = null;
+				
+				public com.ibm.mq.MQQueue genInQueue(com.ibm.mq.MQQueueManager qMgr,String inQueueName,boolean isBrowse) throws com.ibm.mq.MQException{
+					this.inQueuename = inQueueName;
+					int openOptions=com.ibm.mq.MQC.MQOO_INPUT_SHARED | com.ibm.mq.MQC.MQOO_FAIL_IF_QUIESCING | com.ibm.mq.MQC.MQOO_INQUIRE;
+					if(isBrowse){
+						openOptions = openOptions | com.ibm.mq.MQC.MQOO_BROWSE;
+					}
+	    			return qMgr.accessQueue(inQueueName,openOptions);
+				}
+				
+				public com.ibm.mq.MQGetMessageOptions genGetMsgOptions (boolean isBrowse){
+					com.ibm.mq.MQGetMessageOptions gmo=new com.ibm.mq.MQGetMessageOptions();
+					if(!isBrowse){
+						gmo.options=gmo.options+com.ibm.mq.MQC.MQGMO_SYNCPOINT;
+					}else{
+						gmo.options=gmo.options+com.ibm.mq.MQC.MQGMO_BROWSE_FIRST;
+					}
+					gmo.options=gmo.options+com.ibm.mq.MQC.MQGMO_NO_WAIT;
+					gmo.options=gmo.options+com.ibm.mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+					gmo.waitInterval=com.ibm.mq.MQC.MQWI_UNLIMITED;
+					return gmo;
+				}
+			
+				public com.ibm.mq.MQQueue genBackOutQueue(com.ibm.mq.MQQueueManager qMgr,com.ibm.mq.MQQueue inQueue<%if(isLog4jEnabled){%>,<%if(isLog4j1Enabled){%>org.apache.log4j.Logger<%}%><%if(isLog4j2Enabled){%>org.apache.logging.log4j.Logger<%}%> log<%}%>){
+					int[] selectors = new int[2];
+					int[] intAttrs = new int[1];
+					String backoutQName = "";
+					byte[] charAttrs = new byte[com.ibm.mq.MQC.MQ_Q_NAME_LENGTH];
+					selectors[0] = com.ibm.mq.MQC.MQCA_BACKOUT_REQ_Q_NAME;
+					selectors[1] = com.ibm.mq.MQC.MQIA_BACKOUT_THRESHOLD;
+					com.ibm.mq.MQQueue backoutQueue = null;
+					try{
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - Initing backout queue ...");
+						<%
+						}
+						%>
+						inQueue.inquire(selectors, intAttrs, charAttrs);
+						this.threshold = intAttrs[0];
+						backoutQName = new String(charAttrs);
+						if(this.threshold > 0 && backoutQName.trim().length()>0){
+							backoutQueue = qMgr.accessQueue(backoutQName, 16);
+						}else{
+							throw new java.lang.Exception("Init backout queue unsuccessfully!");
+						}
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - The backout queue of "+this.inQueuename+" is:"+backoutQName);
+							log.info("<%=cid%> - The threshold value of messages in "+this.inQueuename+" is:"+this.threshold);
+							log.info("<%=cid%> - Init backout queue successfully.");
+						<%
+						}
+						%>
+					}catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.warn("<%=cid%> - Init backout queue unsuccessfully, poison messages will remain on the input queue.");
+						<%
+						}else{
+						%>
+							System.err.println("Init backout queue unsuccessfully, poison messages will remain on the input queue.");
+						<%
+						}
+						%>
+					}
+					return backoutQueue;
+				}
+				
+				public List<com.ibm.mq.MQMessage> getPoisonMsgs(com.ibm.mq.MQQueueManager qMgr,String inQueueName,com.ibm.mq.MQQueue backoutQueue<%if(isLog4jEnabled){%>,<%if(isLog4j1Enabled){%>org.apache.log4j.Logger<%}%><%if(isLog4j2Enabled){%>org.apache.logging.log4j.Logger<%}%> log<%}%>) throws com.ibm.mq.MQException{
+					com.ibm.mq.MQQueue inQueue = genInQueue(qMgr,inQueueName, true);
+					com.ibm.mq.MQGetMessageOptions gmo = genGetMsgOptions(true);
+					int browseCursor = 0;
+					boolean flag = true;
+					java.util.List<com.ibm.mq.MQMessage> backoutMsgs = new java.util.ArrayList<com.ibm.mq.MQMessage>();
+					if (backoutQueue == null || threshold <= 0 || Integer.valueOf(inQueue.getCurrentDepth()).equals(0)) {
+						flag = false;
+					}
+					while(flag){
+						if(Integer.valueOf(inQueue.getCurrentDepth()).equals(1)){
+							flag= false;
+						}
+						if (browseCursor > 0) {
+							gmo.options = com.ibm.mq.MQC.MQGMO_BROWSE_NEXT;
+							gmo.options = gmo.options
+									+ com.ibm.mq.MQC.MQGMO_NO_WAIT;
+							gmo.options = gmo.options
+									+ com.ibm.mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+						}
+						browseCursor++;
+						com.ibm.mq.MQMessage inMessage = new com.ibm.mq.MQMessage();
+						try{
+							inQueue.get(inMessage,gmo);
+						}catch (com.ibm.mq.MQException me) {   
+globalMap.put("<%=cid%>_ERROR_MESSAGE",me.getMessage());
+							if(inQueue!=null){
+								inQueue.close();
+							}
+				            if (me.reasonCode == com.ibm.mq.MQException.MQRC_NO_MSG_AVAILABLE) {
+				            	break;   
+				            }else{
+				            	throw me;
+				            }   
+		     			}
+		     			if (inMessage.backoutCount >= threshold) {
+		     				backoutMsgs.add(inMessage);
+		     			}
+					}
+					if(inQueue.isOpen()){
+		     			inQueue.close();
+		     		}
+		     		return backoutMsgs;
+				}
+				
+				public void backoutMsg(com.ibm.mq.MQQueueManager qMgr,String inQueueName<%if(isLog4jEnabled){%>,<%if(isLog4j1Enabled){%>org.apache.log4j.Logger<%}%><%if(isLog4j2Enabled){%>org.apache.logging.log4j.Logger<%}%> log<%}%>) throws com.ibm.mq.MQException{
+
+					com.ibm.mq.MQQueue inQueue = genInQueue(qMgr,inQueueName,false);
+					com.ibm.mq.MQQueue backoutQueue = genBackOutQueue(qMgr,inQueue<%if(isLog4jEnabled){%>,log<%}%>);
+					com.ibm.mq.MQGetMessageOptions gmo = genGetMsgOptions(false);
+					com.ibm.mq.MQException.log = null;
+					java.util.List<com.ibm.mq.MQMessage> backoutMsgs = getPoisonMsgs(qMgr,inQueueName,backoutQueue<%if(isLog4jEnabled){%>,log<%}%>);
+					if(inQueue != null && backoutQueue!=null){
+						for(com.ibm.mq.MQMessage inMessage:backoutMsgs){
+							try{
+								inQueue.get(inMessage,gmo);
+							}catch (com.ibm.mq.MQException me) {   
+globalMap.put("<%=cid%>_ERROR_MESSAGE",me.getMessage());
+					            if (me.reasonCode == com.ibm.mq.MQException.MQRC_NO_MSG_AVAILABLE) {
+					            	continue;   
+					            }else{
+					            	if(inQueue!=null){
+										inQueue.close();
+									}
+					            	throw me;
+					            }
+			     			}
+							<%
+							if(isLog4jEnabled){
+							%>	
+								log.info("<%=cid%> - Moving backout message to backout queue...");
+							<%
+							}
+							%>
+							backoutQueue.put(inMessage);
+							<%
+							if(isLog4jEnabled){
+							%>	
+								log.info("<%=cid%> - Moved successfully.");
+							<%
+							}
+							%>
+						}
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - Closing backout backout queue:"+(backoutQueue.name)+"...");
+						<%
+						}
+						%>
+						backoutQueue.close();
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - Closed successfully.");
+						<%
+						}
+						%>
+						if(inQueue.isOpen()){
+							<%
+							if(isLog4jEnabled){
+							%>	
+								log.info("<%=cid%> - Closing input queue:"+inQueueName+"...");
+							<%
+							}
+							%>
+							inQueue.close();
+							<%
+							if(isLog4jEnabled){
+							%>	
+								log.info("<%=cid%> - Closed successfully.");
+							<%
+							}
+							%>
+						}
+						qMgr.commit();
+					}
+				}
+			}
+			BackOutUtil_<%=cid%> backoutUtil_<%=cid%> = new BackOutUtil_<%=cid%>();
+		<%
+	  	}
+		%>
+		com.ibm.mq.MQQueueManager qMgr_<%=cid%> = (com.ibm.mq.MQQueueManager)globalMap.get("qMgr_<%=connectionCid%>");
+		if(qMgr_<%=cid%> != null) {
+			qMgr_<%=cid%>.backout();
+			<%  
+			if(isAutoBackout && connectionCid!=null){
+				List<String> inputComps= new ArrayList<String>();
+				connectionCid = connectionNode.getUniqueName();
+		        for (INode current_node : nodes) {
+		        	if(current_node.isVirtualGenerateNode()){
+		        		current_node = NodeUtil.getVirtualNode(current_node);
+		        	}
+		        	if(inputComps.contains(current_node.getUniqueName()) || !current_node.getUniqueName().startsWith("tMomInput")){
+		        		continue;
+		        	}else{
+		        		if(!connectionCid.equals(current_node.getUniqueName())){
+			        		boolean isUseExistConnection = ("true").equals(ElementParameterParser.getValue(current_node, "__USE_CONNECTION__"));
+			        		if(isUseExistConnection){
+			        			String connectionComponentName = ElementParameterParser.getValue(current_node, "__CONNECTION__");
+			        			if(!connectionCid.equals(connectionComponentName)){
+			        				continue;
+			        			}
+			        		}else{
+			        			continue;
+			        		}
+			        	}
+		        	}
+		        	inputComps.add(current_node.getUniqueName());
+		            String queue = ElementParameterParser.getValue(current_node, "__QUEUE__");
+					boolean isRollback = ("true").equals(ElementParameterParser.getValue(current_node, "__ROLLBACK__"));
+					boolean isCommit = ("true").equals(ElementParameterParser.getValue(current_node, "__COMMIT__"));
+					boolean isBrowse = ("true").equals(ElementParameterParser.getValue(current_node,"__BROWSE__"));
+					isAutoBackout = !("true").equals(ElementParameterParser.getValue(current_node, "__AUTO_BACKOUT__")) && !isBrowse && !isRollback && !isCommit;
+					if(isAutoBackout){
+					%>
+						if(start_Hash.get("<%=current_node.getUniqueName()%>_Loop")!=null){
+							backoutUtil_<%=cid%>.backoutMsg(qMgr_<%=cid%>,<%=queue%><%if (isLog4jEnabled) {%>,log<%}%>);
+						}
+				    <%
+				    }
+		        }
+		   	}
+			if(close){
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closing connection...");
+				<%
+				}
+				%>
+			    qMgr_<%=cid%>.disconnect();
+				<% 
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closed successfully.");
+				<%
+				}
+			}
+			%>
+		}
+	<%
+	}
+	%>

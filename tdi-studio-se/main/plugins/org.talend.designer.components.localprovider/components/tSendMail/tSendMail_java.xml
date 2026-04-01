@@ -1,0 +1,248 @@
+<!-- $Id: tSendMail_perl.xml 2234 2007-03-01 07:16:27 +0000 (星期四, 01 三月 2007) nrousseau $ -->
+<COMPONENT>
+  <HEADER
+    PLATEFORM="ALL"
+       SERIAL=""
+      VERSION="0.101"
+       STATUS="ALPHA"
+    COMPATIBILITY="ALL"
+       AUTHOR="Talaxie"
+    RELEASE_DATE="20050320A"
+    STARTABLE="true"
+    PARTITIONING="AUTO"
+    LOG4J_ENABLED="true"
+  >
+    <SIGNATURE></SIGNATURE>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Internet</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="1"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+    <CONNECTOR CTYPE="RUN_IF"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+    <PARAMETER NAME="TO" FIELD="TEXT" REQUIRED="true" NUM_ROW="10">
+      <DEFAULT>"receiver@example.com"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="FROM" FIELD="TEXT" REQUIRED="true" NUM_ROW="20">
+      <DEFAULT>"send@example.com"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="NEED_PERSONAL_NAME" FIELD="CHECK" REQUIRED="true" NUM_ROW="30">
+      <DEFAULT>"false"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="PERSONAL_NAME" FIELD="TEXT" REQUIRED="true" NUM_ROW="40" SHOW_IF="NEED_PERSONAL_NAME == 'true'">
+      <DEFAULT>"sender"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="CC" FIELD="TEXT" REQUIRED="false" NUM_ROW="50">
+      <DEFAULT>"carbon@example.com"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="BCC" FIELD="TEXT" REQUIRED="false" NUM_ROW="60">
+      <DEFAULT>"blindcarbon@example.com"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SUBJECT" FIELD="TEXT" REQUIRED="true" NUM_ROW="70">
+      <DEFAULT>"Talaxie Open Studio notification"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MESSAGE" FIELD="MEMO_MESSAGE" REQUIRED="false" NUM_ROW="80">
+      <DEFAULT>"Hello"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="CHECK_ATTACHMENT" FIELD="CHECK" REQUIRED="true" NUM_ROW="90">
+      <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="ATTACHMENTS" FIELD="TABLE" REQUIRED="false" NUM_ROW="100" NB_LINES="3">
+      <ITEMS>
+        <ITEM NAME="FILE" FIELD="FILE"/>
+        <ITEM NAME="CONTENT_TRANSFER_ENCODING" FIELD="CLOSED_LIST">
+			<ITEMS DEFAULT="DEFAULT">
+				<ITEM NAME="DEFAULT" VALUE="DEFAULT" />
+				<ITEM NAME="BASE64" VALUE="BASE64" />
+			</ITEMS>
+		</ITEM>
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="HEADERS"
+      FIELD="TABLE"
+      REQUIRED="false"
+      NUM_ROW="110"
+      NB_LINES="3"
+    >
+      <ITEMS>
+        <ITEM NAME="KEY" />
+        <ITEM NAME="VALUE" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="SMTP_HOST" FIELD="TEXT" REQUIRED="true" NUM_ROW="120">
+      <DEFAULT>"smtp.provider.com"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SMTP_PORT" FIELD="TEXT" REQUIRED="true" NUM_ROW="120">
+      <DEFAULT>25</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="SSL"
+      FIELD="CHECK"
+      REQUIRED="true"
+      NUM_ROW="130"
+    >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="STARTTLS"
+      FIELD="CHECK"
+      REQUIRED="true"
+      NUM_ROW="130"
+    >
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="IMPORTANCE"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="130"
+    >
+      <ITEMS DEFAULT="NORMAL">
+        <ITEM NAME="HIGH"   VALUE="High" />
+        <ITEM NAME="NORMAL"   VALUE="Normal" />
+        <ITEM NAME="LOW" VALUE="Low" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="AUTH_MODE"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="140"
+      GROUP="AUTHENTICATION"
+    >
+      <ITEMS DEFAULT="BASIC">
+        <ITEM NAME="NO_AUTH"   VALUE="NO_AUTH" />
+        <ITEM NAME="BASIC"   VALUE="BASIC" />
+        <ITEM NAME="OAUTH2" VALUE="OAUTH2" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="AUTH_USERNAME"
+      FIELD="TEXT"
+      REQUIRED="true"
+      NUM_ROW="150"
+      GROUP="AUTHENTICATION"
+      SHOW_IF="(AUTH_MODE == 'BASIC') OR (AUTH_MODE == 'OAUTH2')"
+    >
+      <DEFAULT>"username"</DEFAULT>
+    </PARAMETER>
+    <PARAMETER
+      NAME="AUTH_PASSWORD"
+      FIELD="PASSWORD"
+      REQUIRED="true"
+      NUM_ROW="150"
+      GROUP="AUTHENTICATION"
+      SHOW_IF="AUTH_MODE == 'BASIC'"
+    >
+      <DEFAULT>"password"</DEFAULT>
+    </PARAMETER>
+    
+        <PARAMETER
+      NAME="TOKEN"
+      FIELD="PASSWORD"
+      REQUIRED="true"
+      NUM_ROW="150"
+      GROUP="AUTHENTICATION"
+      SHOW_IF="AUTH_MODE == 'OAUTH2'"
+    >
+      <DEFAULT>"password"</DEFAULT>
+    </PARAMETER>
+
+	<PARAMETER
+      NAME="DIE_ON_ERROR"
+      FIELD="CHECK"
+      REQUIRED="true"
+      NUM_ROW="160">
+        <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+
+  </PARAMETERS>
+
+  <ADVANCED_PARAMETERS>
+  	 <PARAMETER	NAME="TEXT_SUBTYPE"	FIELD="CLOSED_LIST"	NUM_ROW="4"	REQUIRED="true">
+       <ITEMS DEFAULT="PLAIN">
+        <ITEM NAME="PLAIN" VALUE="plain" />
+        <ITEM NAME="HTML" VALUE="html" />
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER NAME="ENCODING" FIELD="ENCODING_TYPE" NUM_ROW="8" REQUIRED="true" REPOSITORY_VALUE="ENCODING">
+      <DEFAULT>"ISO-8859-15"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="SET_LOCALHOST"
+      FIELD="CHECK"
+      REQUIRED="true"
+      NUM_ROW="10">
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="LOCALHOST"
+      FIELD="TEXT"
+      REQUIRED="true"
+      NUM_ROW="10"
+      SHOW_IF="SET_LOCALHOST == 'true'"
+    >
+      <DEFAULT>"localhost"</DEFAULT>
+      
+    </PARAMETER>
+
+        <PARAMETER
+      NAME="USE_TWO_LINE_TOKEN"
+      FIELD="CHECK"
+      REQUIRED="true"
+      SHOW_IF="AUTH_MODE == 'OAUTH2'"
+      NUM_ROW="14">
+        <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    	 <PARAMETER NAME="CONFIGS" FIELD="TABLE" REQUIRED="false" NUM_ROW="15" NB_LINES="3">
+          <ITEMS>
+            <ITEM NAME="KEY" />
+            <ITEM NAME="VALUE" />
+          </ITEMS>
+        </PARAMETER>
+  </ADVANCED_PARAMETERS>
+
+  <CODEGENERATION>
+    <IMPORTS>
+            <IMPORT NAME="jakartaMail" MODULE="jakarta.mail-1.6.7.jar" MVN="mvn:com.sun.mail/jakarta.mail/1.6.7" REQUIRED="true" />
+      <IMPORT NAME="JAF" MODULE="activation-1.1.jar" MVN="mvn:javax.activation/activation/1.1/jar"  UrlPath="platform:/plugin/org.talend.libraries.apache.axis2/lib/activation.jar" REQUIRED="true" BundleID="" />
+  </IMPORTS>
+  </CODEGENERATION>
+
+  <RETURNS/>
+
+</COMPONENT>

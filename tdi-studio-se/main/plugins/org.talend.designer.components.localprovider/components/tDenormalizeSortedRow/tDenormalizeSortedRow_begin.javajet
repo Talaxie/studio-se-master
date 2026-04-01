@@ -1,0 +1,123 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    java.util.List
+    java.util.Map
+    java.util.ArrayList
+    java.util.HashMap
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+int nb_line_<%=cid%> = 0;
+<%
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+
+    IMetadataTable metadata = metadatas.get(0);
+    List< ? extends IConnection> inConns = node.getIncomingConnections();
+    IMetadataTable inMetadata = null;
+    if(inConns != null){ 
+    	for (IConnection conn : inConns) { 
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+				inMetadata = conn.getMetadataTable();
+    			break;
+			}
+		}
+	}
+    if (metadata != null && inMetadata != null) { 
+    	List<IMetadataColumn> inColumns = inMetadata.getListColumns();
+    	Map<String, String> typesMap = new HashMap<String, String>();
+    	for(IMetadataColumn column : inColumns){
+    		String type = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+    		typesMap.put(column.getLabel(), type);
+    	}
+        List<Map<String, String>> denormalizes = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DENORMALIZE_COLUMNS__");
+        List<String> denormalizeColumns = new ArrayList<String>();
+        List<String> denormalizeColumnsType = new ArrayList<String>();
+        List<String> denormalizeDelimiters = new ArrayList<String>();
+        List<Boolean> denormalizeMergeFlags = new ArrayList<Boolean>();
+        List<IMetadataColumn> groupColumns = new ArrayList<IMetadataColumn>();
+        for(Map<String, String> denormalize : denormalizes){
+        	String columnName = denormalize.get("INPUT_COLUMN");
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	denormalizeColumns.add(columnName);
+        	denormalizeColumnsType.add(typesMap.get(columnName));
+        	denormalizeDelimiters.add(denormalize.get("DELIMITER"));
+        	denormalizeMergeFlags.add(("true").equals(denormalize.get("MERGE")));
+        }
+        for(IMetadataColumn column : inColumns){
+        	String columnName = column.getLabel();
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	groupColumns.add(column);
+        }
+        
+		List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		if (conns!=null) {
+			if (conns.size()>0) {
+				IConnection conn = conns.get(0);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>final <%=conn.getName() %>Struct[] emmitArray_<%=cid %> = new <%=conn.getName() %>Struct[2];
+emmitArray_<%=cid %>[0] = new <%=conn.getName() %>Struct();
+emmitArray_<%=cid %>[1] = new <%=conn.getName() %>Struct();
+<%
+				}
+			}
+		}
+%>
+int currentRowIndex_<%=cid%> = 0;
+boolean  flag_<%=cid%> = true;//flag for the encounter of first row.
+
+	<%	
+	if (isLog4jEnabled) {
+	%>
+		log.info("<%=cid%> - Start to denormalize the data from datasource.");
+	<%
+	}
+	//gen groups variable
+	for(IMetadataColumn column : groupColumns){
+		String type = typesMap.get(column.getLabel());
+%><%=type %> group_<%=column.getLabel() %>_<%=cid %><%
+if(!JavaTypesManager.isJavaPrimitiveType(column.getTalendType(),column.isNullable())){%>=null<%}else if(("boolean").equals(type) || ("Boolean").equals(type)){%>=false<%}else{%>=(<%=type %>)0<%}%>;
+<%	}
+	
+	//gen denormalize variable
+	boolean flag = false;
+	for(int i = 0; i < denormalizeColumns.size(); i++){
+		String columnName = denormalizeColumns.get(i);
+		String columnType = denormalizeColumnsType.get(i);
+		if(denormalizeMergeFlags.get(i)){
+			if(!flag){
+				flag = true;
+%>
+StringBuilder tempSB_<%=cid %> = new StringBuilder();
+<%
+			}
+%>
+java.util.List<<%=columnType %>> denormalize_<%=columnName %>_<%=cid %> = new java.util.ArrayList<<%=columnType %>>();
+<%
+		}else{
+%>
+StringBuilder denormalize_<%=columnName %>_<%=cid %> = new StringBuilder();
+<%
+		}
+	}
+	}
+}
+%>

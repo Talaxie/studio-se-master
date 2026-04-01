@@ -1,0 +1,314 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+		org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.MappingTypeRetriever
+        org.talend.core.model.metadata.MetadataTalendType        
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	dbLog = new DBLogUtil(node);
+	String cid = node.getUniqueName();
+	
+	String frameworkType = ElementParameterParser.getValue(node,"__FRAMEWORK_TYPE__");		
+	
+    String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+    
+    String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+    
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");	
+    
+    String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+				
+    List<Map<String, String>> addCols =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,"__ADD_COLS__" );
+
+    boolean useFieldOptions = ("true").equals(ElementParameterParser.getValue(node, "__USE_FIELD_OPTIONS__"));
+    
+    List<Map<String, String>> fieldOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FIELD_OPTIONS__");    
+    
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+	
+	String tableName = ElementParameterParser.getValue(node,"__TABLE__");
+	
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	
+	String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+	
+	String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+	
+	String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+	
+	String dbRootPath = ElementParameterParser.getValue(node, "__DBPATH__");	
+
+	boolean isEnableDebug = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_DEBUG_MODE__"));
+	boolean isParallelize ="true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__PARALLELIZE__"));
+%>
+
+<%
+List<IMetadataColumn> columnList = getColumnList(node);
+List<Column> stmtStructure = null;
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, useFieldOptions, fieldOptions, addCols);
+}
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/CheckKeysForUpdateAndDelete.javajet"%>
+
+String jdbcDriver_<%=cid%> = null;
+String url_<%=cid%> = null;
+String dbProperties_<%=cid%> = <%=dbproperties%>;
+
+
+<%
+if(("EMBEDED").equals(frameworkType)) {
+	%>
+	jdbcDriver_<%=cid%> = "org.apache.derby.jdbc.EmbeddedDriver";
+    
+    url_<%=cid%> = "jdbc:derby:" + <%=dbname%>;
+
+	//set the root path of the database
+	System.setProperty("derby.system.home",<%=dbRootPath%>);
+	<%
+} else {
+	if(("JCCJDBC").equals(frameworkType)) {
+		%>
+		jdbcDriver_<%=cid%> = "com.ibm.db2.jcc.DB2Driver";
+        url_<%=cid%> = "jdbc:derby:net://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+
+<%
+	} else {
+%>
+		jdbcDriver_<%=cid%> = "org.apache.derby.jdbc.ClientDriver";
+        url_<%=cid%> = "jdbc:derby://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+	}
+	String connectionFlag = ElementParameterParser.getValue(node, "__CONNECTION_FLAG__");
+	if(("false").equals(connectionFlag)) {
+	    %>
+    	org.apache.derby.drda.NetworkServerControl serverControl_<%=cid%>;
+    	serverControl_<%=cid%> = new org.apache.derby.drda.NetworkServerControl(java.net.InetAddress.getByName(<%=dbhost%>),Integer.parseInt(<%=dbport%>));
+    	//start server
+    	serverControl_<%=cid%>.start(new java.io.PrintWriter(System.out,true));
+    	boolean isServerUp_<%=cid%> = false;
+    	int timeOut_<%=cid%> = 5;
+    	while(!isServerUp_<%=cid%> && timeOut_<%=cid%> > 0) {
+    		try {
+    			timeOut_<%=cid%>--;
+    			/*
+    			* testing for connection to see if the network server is up and running.
+    			* if server is not ready yet, this method will throw an exception.		
+    			*/
+    			serverControl_<%=cid%>.ping();
+    			isServerUp_<%=cid%> = true;
+    		} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    			//Unable to obtain a connection to network server, trying again after 3000 ms.
+    			Thread.currentThread().sleep(3000);
+    		}    				
+    	}
+    	if(!isServerUp_<%=cid%>) {
+    		/*
+    		 * can not obtain a connection to network server.
+    		 */ 	 
+    		throw new java.lang.Exception("Can not obtain a connection to network server");
+    	}
+    	//derby network server started.
+	<%
+	}
+}
+%>
+
+if(dbProperties_<%=cid%> != null && !"".equals(dbProperties_<%=cid%>.trim())) {
+    url_<%=cid %> = url_<%=cid%> + ";" + dbProperties_<%=cid%>;
+}
+
+int nb_line_<%=cid%> = 0;
+int nb_line_update_<%=cid%> = 0;
+int nb_line_inserted_<%=cid%> = 0;
+int nb_line_deleted_<%=cid%> = 0;
+int nb_line_rejected_<%=cid%> = 0;
+
+int deletedCount_<%=cid%>=0;
+int updatedCount_<%=cid%>=0;
+int insertedCount_<%=cid%>=0;
+int rowsToCommitCount_<%=cid%>=0;
+String tableName_<%=cid%> = <%=tableName%>;
+boolean whetherReject_<%=cid%> = false;
+
+Class.forName(jdbcDriver_<%=cid%>).newInstance();
+<%dbLog.conn().logJDBCDriver(dbLog.var("jdbcDriver"));%>
+java.util.Properties properties_<%=cid%> = new java.util.Properties();
+properties_<%=cid%>.put("user",<%=dbuser%>);
+
+<%
+String passwordFieldName = "__PASS__";
+%>
+
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>  
+
+properties_<%=cid%>.put("password",decryptedPassword_<%=cid%>);
+<%dbLog.conn().connTry(dbLog.var("url"), dbuser);%>
+java.sql.Connection conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>,properties_<%=cid%>);
+<%dbLog.conn().connDone(dbLog.var("url"));%>
+resourceMap.put("conn_<%=cid%>", conn_<%=cid%>);
+
+        <%
+          if(!("").equals(commitEvery)&&!("0").equals(commitEvery)){
+              %>
+                conn_<%=cid%>.setAutoCommit(false);
+              <%
+        } 
+        %>
+        
+<%
+dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
+if(columnList != null && columnList.size() > 0) {    
+    if(!isParallelize && !("NONE").equals(tableAction)) {
+        Manager manager = getManager(dbmsId, cid);
+        if(("DROP_CREATE").equals(tableAction)) {
+            %>
+            try (java.sql.Statement stmtDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+                    java.sql.Statement stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                <%dbLog.table().dropTry(dbLog.var("tableName"));%>
+                stmtDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+                <%dbLog.table().dropDone(dbLog.var("tableName"));%>
+                <%dbLog.table().createTry(dbLog.var("tableName"));%>
+                stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+                <%dbLog.table().createDone(dbLog.var("tableName"));%>
+            }
+            <%
+        } else if(("CREATE").equals(tableAction)) {
+            %>
+            try (java.sql.Statement stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                <%dbLog.table().createTry(dbLog.var("tableName"));%>
+                stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+                <%dbLog.table().createDone(dbLog.var("tableName"));%>
+            }
+            <%
+        } else if(("CREATE_IF_NOT_EXISTS").equals(tableAction) || ("DROP_IF_EXISTS_AND_CREATE").equals(tableAction)) {
+            %>
+            java.sql.DatabaseMetaData dbMetaData_<%=cid%> = conn_<%=cid%>.getMetaData();
+            boolean whetherExist_<%=cid%> = false;
+            try (java.sql.ResultSet rsTable_<%=cid%> = dbMetaData_<%=cid%>.getTables(null, null, null, new String[]{"TABLE"})) {
+                while(rsTable_<%=cid%>.next()) {
+                    String table_<%=cid%> = rsTable_<%=cid%>.getString("TABLE_NAME");
+                    if(table_<%=cid%>.equalsIgnoreCase(<%=tableName%>)) {
+                        whetherExist_<%=cid%> = true;
+                        break;
+                    }
+                }
+            }
+            <%
+            if(("CREATE_IF_NOT_EXISTS").equals(tableAction)) {
+                %>
+                if(!whetherExist_<%=cid%>) {
+                    try (java.sql.Statement stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                        <%dbLog.table().createTry(dbLog.var("tableName"));%>
+                        stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+                        <%dbLog.table().createDone(dbLog.var("tableName"));%>
+                    }
+                }
+                <%
+            } else {
+                %>
+                if(whetherExist_<%=cid%>) {
+                    try (java.sql.Statement stmtDrop_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                        <%dbLog.table().dropTry(dbLog.var("tableName"));%>
+                        stmtDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+                        <%dbLog.table().dropDone(dbLog.var("tableName"));%>
+                    }
+                }
+
+                try (java.sql.Statement stmtCreate_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                    <%dbLog.table().createTry(dbLog.var("tableName"));%>
+                    stmtCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+                    <%dbLog.table().createDone(dbLog.var("tableName"));%>
+                }
+            <%
+            }
+        } else if(("CLEAR").equals(tableAction)) {
+            %>
+            try (java.sql.Statement stmtClear_<%=cid%> = conn_<%=cid%>.createStatement()) {
+                <%dbLog.table().clearTry(dbLog.var("tableName"));%>
+                deletedCount_<%=cid%> = deletedCount_<%=cid%> + stmtClear_<%=cid%>.executeUpdate("<%=manager.getDeleteTableSQL()%>");
+                <%dbLog.table().clearDone(dbLog.var("tableName"));%>
+            }
+            <%
+        }
+    }
+    Map<String, StringBuilder> actionSQLMap = getManager(dbmsId, cid).createProcessSQL(stmtStructure);
+    StringBuilder insertColName = actionSQLMap.get(INSERT_COLUMN_NAME);   
+    StringBuilder insertValueStmt = actionSQLMap.get(INSERT_VALUE_STMT);    
+    StringBuilder updateSetStmt = actionSQLMap.get(UPDATE_SET_STMT);    
+    StringBuilder updateWhereStmt = actionSQLMap.get(UPDATE_WHERE_STMT);
+    StringBuilder deleteWhereStmt = actionSQLMap.get(DELETE_WHERE_STMT);
+
+	if(("INSERT").equals(dataAction)) {
+	    %>
+	    String insert_<%=cid%> = "INSERT INTO \"" + <%=tableName%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+        resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	} else if (("UPDATE").equals(dataAction)) {
+	    %>
+	    String update_<%=cid%> = "UPDATE \"" + <%=tableName%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+        resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	} else if (("INSERT_OR_UPDATE").equals(dataAction)) {
+	    %>
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement("SELECT COUNT(1) FROM \"" + <%=tableName%> + "\" WHERE <%=updateWhereStmt.toString()%>");
+        resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    String insert_<%=cid%> = "INSERT INTO \"" + <%=tableName%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+        resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+	    String update_<%=cid%> = "UPDATE \"" + <%=tableName%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+        resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+	    <%
+	} else if (("UPDATE_OR_INSERT").equals(dataAction)) {
+	    %>
+	    String update_<%=cid%> = "UPDATE \"" + <%=tableName%> + "\" SET <%=updateSetStmt.toString()%> WHERE <%=updateWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmtUpdate_<%=cid %> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+        resourceMap.put("pstmtUpdate_<%=cid %>", pstmtUpdate_<%=cid %>);
+	    String insert_<%=cid%> = "INSERT INTO \"" + <%=tableName%> + "\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
+	    java.sql.PreparedStatement pstmtInsert_<%=cid %> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+        resourceMap.put("pstmtInsert_<%=cid %>", pstmtInsert_<%=cid %>);
+	    <%
+
+	} else if (("DELETE").equals(dataAction)) {
+	    %>
+	    String delete_<%=cid%> = "DELETE  FROM \"" + <%=tableName%> + "\" WHERE <%=deleteWhereStmt.toString()%>";
+	    java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(delete_<%=cid%>);
+        resourceMap.put("pstmt_<%=cid %>", pstmt_<%=cid %>);
+	    <%
+	}
+    if(isEnableDebug) {
+        %>
+        StringBuffer query_<%=cid%> = null;
+        <%@ include file="../templates/DB/Output/splitSQLForAllDBInBegin.javajet" %>
+        <%
+    }
+    if(!("").equals(commitEvery) && !("0").equals(commitEvery)) {
+        %>
+
+        int commitEvery_<%=cid%> = <%=commitEvery%>;
+
+        int commitCounter_<%=cid%> = 0;
+
+        <%
+    }
+}
+%>

@@ -1,0 +1,106 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IContextParameter
+    	java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+    boolean disError=ElementParameterParser.getValue(node, "__DISABLE_ERROR__").equals("true");
+    boolean disWarning=ElementParameterParser.getValue(node, "__DISABLE_WARNINGS__").equals("true");
+    boolean bDieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIEONERROR__"));
+    boolean disInfo=ElementParameterParser.getValue(node, "__DISABLE_INFO__").equals("true");
+    String newVariable = ElementParameterParser.getValue(node, "__LOAD_NEW_VARIABLE__");
+    String oldVariable = ElementParameterParser.getValue(node, "__NOT_LOAD_OLD_VARIABLE__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>	
+	java.util.Enumeration<?> enu_<%=cid %> = context.propertyNames();
+    while(enu_<%=cid %>.hasMoreElements())
+    {           
+    	String key_<%=cid %> = (String)enu_<%=cid %>.nextElement();
+        if(!assignList_<%=cid %>.contains(key_<%=cid %>) && !newPropertyList_<%=cid %>.contains(key_<%=cid %>))
+        {
+            noAssignList_<%=cid %>.add(key_<%=cid %>);
+        }          
+    }
+<%
+	if( (newVariable.equals("Error") && disError==false) 
+		|| (newVariable.equals("Warning") && disWarning==false)
+		|| (newVariable.equals("Info") && disInfo==false) ){
+%>
+	for(Object obj_<%=cid %> :newPropertyList_<%=cid%>){
+		<%if(isLog4jEnabled){%>
+			String newLog_<%=cid %> = "<%=cid%>: Parameter \"" + obj_<%=cid %> + "\" is a new parameter of <%=cid %>";
+			<%if(newVariable.equals("Error")){%>
+				log.error(newLog_<%=cid%>);
+			<%}else if(newVariable.equals("Warning")){%>
+				log.warn(newLog_<%=cid%>);
+			<%}else{%>	
+				log.info(newLog_<%=cid%>);
+			<%}%>
+		<%}%>
+		System.<%="Error".equals(newVariable)?"err":"out"%>.println("<%=newVariable%>: Parameter \"" + obj_<%=cid %> + "\" is a new parameter of <%=cid %>");
+        <%if (bDieOnError && newVariable.equals("Error")){%>
+		  throw new RuntimeException("<%=newVariable%>: Parameter \"" + obj_<%=cid %> + "\" is a new parameter of <%=cid %>");
+		<%}%>        
+	}
+<%
+	}
+	if( (oldVariable.equals("Error") && disError==false) 
+		|| (oldVariable.equals("Warning") && disWarning==false)
+		|| (oldVariable.equals("Info") && disInfo==false) ){
+%>
+	for(Object obj_<%=cid %> :noAssignList_<%=cid %>){
+		<%if(isLog4jEnabled){%>
+			String oldLog_<%=cid %> = "<%=cid%>: Parameter \"" + obj_<%=cid %> + "\" has not been set by <%=cid %>";
+			<%if(oldVariable.equals("Error")){%>
+				log.error(oldLog_<%=cid %>);
+			<%}else if(oldVariable.equals("Warning")){%>
+				log.warn(oldLog_<%=cid %>);
+			<%}else{%>	
+				log.info(oldLog_<%=cid %>);
+			<%}%>
+		<%}%>
+		System.<%=oldVariable.equals("Error")?"err":"out"%>.println("<%=oldVariable%>: Parameter \"" + obj_<%=cid %> + "\" has not been set by <%=cid %>");
+		<%if (bDieOnError && oldVariable.equals("Error")){%>
+		  throw new RuntimeException("<%=oldVariable%>: Parameter \"" + obj_<%=cid %> + "\" has not been set by <%=cid %>");
+		<%}%>
+	}
+<%
+	}
+%> 
+
+    String newPropertyStr_<%=cid %> = newPropertyList_<%=cid %>.toString();
+    String newProperty_<%=cid %> = newPropertyStr_<%=cid %>.substring(1, newPropertyStr_<%=cid %>.length() - 1);
+    
+    String noAssignStr_<%=cid %> = noAssignList_<%=cid %>.toString();
+    String noAssign_<%=cid %> = noAssignStr_<%=cid %>.substring(1, noAssignStr_<%=cid %>.length() - 1);
+    
+    globalMap.put("<%=cid%>_KEY_NOT_INCONTEXT", newProperty_<%=cid %>);
+    globalMap.put("<%=cid%>_KEY_NOT_LOADED", noAssign_<%=cid %>);
+
+    globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+
+	List<String> parametersToEncrypt_<%=cid%> = new java.util.ArrayList<String>();
+	<%
+	List<IContextParameter> params = node.getProcess().getContextManager().getDefaultContext().getContextParameterList();
+	for(IContextParameter ctxParam :params) {
+    	if ("id_Password".equals(ctxParam.getType())) {
+		%>
+		parametersToEncrypt_<%=cid%>.add("<%=ctxParam.getName()%>");
+		<%
+    	}
+    }
+	%>
+	
+	resumeUtil.addLog("NODE", "NODE:<%=cid %>", "", Thread.currentThread().getId() + "", "","","","",resumeUtil.convertToJsonText(context,ContextProperties.class,parametersToEncrypt_<%=cid%>));    
+    <%if(isLog4jEnabled){%>
+    	log.info("<%=cid%> - Loaded contexts count: " + nb_line_<%=cid %> + ".");
+    <%}%>
+    

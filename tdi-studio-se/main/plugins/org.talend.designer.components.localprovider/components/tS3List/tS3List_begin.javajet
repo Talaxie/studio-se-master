@@ -1,0 +1,154 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	%>
+	<%@ include file="../tS3Connection/S3Client.javajet" %>
+
+	int nb_bucket_<%=cid%> = 0;
+	int nb_bucket_object_<%=cid%> = 0;
+	try{
+		<%
+		List<Map<String, String>> buckets = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__BUCKETS__");
+		boolean listAll = "true".equals(ElementParameterParser.getValue(node,"__LISTALL__"));
+		if(listAll){
+			String objects_prefix=ElementParameterParser.getValue(node,"__OBJECTS_PREFIX__");
+			%>
+			java.util.List<com.amazonaws.services.s3.model.Bucket> buckets_<%=cid%> = conn_<%=cid%>.listBuckets();
+			for (com.amazonaws.services.s3.model.Bucket bucket_<%=cid%> : buckets_<%=cid%>) {
+				String currentBucketName_<%=cid%> = bucket_<%=cid%>.getName();
+				<%
+				if(isLog4jEnabled){
+				%>
+					log.debug("<%=cid%> - Retrieving objects from:" + currentBucketName_<%=cid%> + ".");
+				<%
+				}
+				%>
+				com.amazonaws.services.s3.model.ObjectListing objects_<%=cid%> = null;
+				try{
+					objects_<%=cid%> = conn_<%=cid%>.listObjects(currentBucketName_<%=cid%>,<%=objects_prefix!=null && objects_prefix.trim().length()>0 ?objects_prefix:null%>);
+				}catch(com.amazonaws.AmazonClientException e_<%=cid%>){
+					globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+					<%
+					if (("true").equals(dieOnError)) {
+					%>
+						throw(e_<%=cid%>);
+					<%
+					} else {
+						if(isLog4jEnabled){
+						%>
+							log.warn("<%=cid%> - Failed to list objects from bucket "+currentBucketName_<%=cid%>);
+							log.warn("<%=cid%> - "+e_<%=cid%>.getMessage());
+						<%
+						}else{
+						%>
+							System.err.println("WARNING: [<%=cid%>] failed to list objects from bucket "+currentBucketName_<%=cid%>);
+							System.err.println("WARNING: [<%=cid%>] "+e_<%=cid%>.getMessage());
+						<%}%>
+						continue;
+					<%}%>
+				}
+		<%
+		} else if(buckets.size()>0){
+		%>
+			java.util.List<java.util.Map<String,String>> buckets_map_list_<%=cid%> = new java.util.ArrayList<java.util.Map<String,String>>();
+			java.util.Map<String,String> bucket_prefix_map_<%=cid%> = null;
+			String object_prefix_<%=cid%> = "";
+			<%
+			for(Map<String, String> map: buckets){
+				String bucket_name =map.get("BUCKET_NAME");
+				String object_prefix =map.get("OBJECT_PREFIX");
+				if(object_prefix!=null && object_prefix.trim().length()>0){
+				%>
+					object_prefix_<%=cid%> = <%=object_prefix%>;
+				<%
+				}
+				%>
+				bucket_prefix_map_<%=cid%> = new java.util.HashMap<String,String>();
+				bucket_prefix_map_<%=cid%>.put(<%=bucket_name%>,object_prefix_<%=cid%>);
+				buckets_map_list_<%=cid%>.add(bucket_prefix_map_<%=cid%>);
+				object_prefix_<%=cid%> = "";
+			<%
+			}
+			%>
+			for (java.util.Map<String,String> bucketMap_<%=cid%>: buckets_map_list_<%=cid%>) {
+				String currentBucketName_<%=cid%> = "";
+				String currentPrefix_<%=cid%> = "";
+				for(java.util.Map.Entry<String,String> entry_<%=cid%>:bucketMap_<%=cid%>.entrySet()){
+					currentBucketName_<%=cid%> = entry_<%=cid%>.getKey();
+					currentPrefix_<%=cid%> = entry_<%=cid%>.getValue();
+				}
+				com.amazonaws.services.s3.model.ObjectListing objects_<%=cid%> = null;
+				try{
+					<%
+					if(isLog4jEnabled){
+					%>
+						log.debug("<%=cid%> - Retrieving objects from:" + currentBucketName_<%=cid%> + ".");
+					<%
+					}
+					%>
+					objects_<%=cid%> = conn_<%=cid%>.listObjects(currentBucketName_<%=cid%>,currentPrefix_<%=cid%>);
+				}catch(com.amazonaws.AmazonClientException e_<%=cid%>){
+					globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+					<%
+					if (("true").equals(dieOnError)) {
+					%>
+						throw(e_<%=cid%>);
+					<%
+					} else {
+						if(isLog4jEnabled){
+						%>
+							log.warn("<%=cid%> - Failed to list objects from bucket "+currentBucketName_<%=cid%>);
+							log.warn("<%=cid%> - "+e_<%=cid%>.getMessage());
+						<%
+						}else{
+						%>
+							System.err.println("WARNING: [<%=cid%>] failed to list objects from bucket "+currentBucketName_<%=cid%>);
+							System.err.println("WARNING: [<%=cid%>] "+e_<%=cid%>.getMessage());
+						<%}%>
+						continue;
+					<%}%>
+				}
+			<%
+			}
+			if(listAll || buckets.size()>0){
+			%>
+				while(true){
+					java.util.List<com.amazonaws.services.s3.model.S3ObjectSummary> list_objects_<%=cid%> = objects_<%=cid%>.getObjectSummaries();
+					if(list_objects_<%=cid%>.size()>0){
+						nb_bucket_<%=cid%>++;
+					}
+					for (com.amazonaws.services.s3.model.S3ObjectSummary objectSummary_<%=cid%> : list_objects_<%=cid%>) {
+						nb_bucket_object_<%=cid%>++;
+						globalMap.put("<%=cid%>_CURRENT_BUCKET", currentBucketName_<%=cid%>);
+						globalMap.put("<%=cid%>_CURRENT_KEY", objectSummary_<%=cid%>.getKey());
+
+						globalMap.put("<%=cid%>_CURRENT_SIZE", objectSummary_<%=cid%>.getSize());
+						globalMap.put("<%=cid%>_CURRENT_LASTMODIFIED", objectSummary_<%=cid%>.getLastModified());
+						if(objectSummary_<%=cid%>.getOwner()!=null) {
+							globalMap.put("<%=cid%>_CURRENT_OWNER", objectSummary_<%=cid%>.getOwner().getDisplayName());
+							globalMap.put("<%=cid%>_CURRENT_OWNER_ID", objectSummary_<%=cid%>.getOwner().getId());
+						}
+						globalMap.put("<%=cid%>_CURRENT_ETAG", objectSummary_<%=cid%>.getETag());
+						globalMap.put("<%=cid%>_CURRENT_STORAGECLASS", objectSummary_<%=cid%>.getStorageClass());
+						<%
+						if(isLog4jEnabled){
+						%>
+							log.debug("<%=cid%> - Retrieving the object " + nb_bucket_object_<%=cid%> + ".");
+							log.trace("<%=cid%> - Key of current object : " + objectSummary_<%=cid%>.getKey());
+						<%
+						}
+						%>
+			<%
+			}
+			%>

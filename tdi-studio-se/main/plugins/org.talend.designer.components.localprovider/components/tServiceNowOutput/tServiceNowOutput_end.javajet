@@ -1,0 +1,43 @@
+<%@ jet 
+imports="
+org.talend.core.model.process.INode 
+org.talend.designer.codegen.config.CodeGeneratorArgument
+org.talend.core.model.process.ElementParameterParser
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+log = new LogUtil(node);
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String dataAction = ElementParameterParser.getValue(node,"__ACTION__");
+%>
+
+globalMap.put("<%=cid %>_NB_LINE", nb_line_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_INSERTED", nb_line_inserted_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_UPDATED", nb_line_update_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_REJECTED", nb_line_rejected_<%=cid%>);
+
+<%
+if(isLog4jEnabled) {
+	%>
+	if (nb_line_inserted_<%=cid%> == 0 && nb_line_update_<%=cid%> == 0 && nb_line_rejected_<%=cid%> != 0) {
+		log.warn("<%=cid%> - All '" + "<%=dataAction%>".toUpperCase() + "' requests have been rejected.");
+	} else {
+		<%
+		if("insert".equals(dataAction)) {
+			%>log.info("<%=cid%> - Inserted records count: " + nb_line_inserted_<%=cid%> + ".'");<%
+		} else {
+			%>log.info("<%=cid%> - Updated records count: " + nb_line_update_<%=cid%> + ".'");<%
+		}
+		%>
+	}
+	<%
+}
+%>
+
+<%=cid%>_httpclient.close();
+resourceMap.put("finish_<%=cid%>", true);

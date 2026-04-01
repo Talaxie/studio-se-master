@@ -1,0 +1,83 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+
+boolean MD5 = new Boolean(ElementParameterParser.getValue(node, "__MD5__"));
+
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+log4jFileUtil.componentStartInfo(node);
+String outputConnName = null;
+IConnection outputConn = null;
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+if (conns!=null) {
+	if (conns.size()>0) {
+		for (int i=0;i<conns.size();i++) {
+			IConnection connTemp = conns.get(i);
+			if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				outputConn = connTemp;
+				outputConnName = connTemp.getName();
+				break;
+			}
+		}
+	}
+}
+
+if (outputConnName != null){
+%>
+
+java.io.File file_<%=cid %> = new java.io.File(<%=filename %>);
+<%=outputConnName %> = new <%=outputConnName %>Struct();
+
+if(file_<%=cid %>.exists()) {
+    <%=outputConnName %>.abs_path = file_<%=cid %>.getAbsolutePath();
+    <%=outputConnName %>.dirname = file_<%=cid %>.getParent();
+    <%=outputConnName %>.basename = file_<%=cid %>.getName();
+    String r_<%=cid%> = (file_<%=cid%>.canRead())?"r":"-";
+	String w_<%=cid%> = (file_<%=cid%>.canWrite())?"w":"-";
+	//String x_ = (file_.canExecute())?"x":"-"; /*since JDK1.6*/
+    <%=outputConnName %>.mode_string = r_<%=cid%> + w_<%=cid%>;
+    <%=outputConnName %>.size = file_<%=cid %>.length();
+    <%=outputConnName %>.mtime = file_<%=cid %>.lastModified();
+    <%=outputConnName %>.mtime_string =(new java.util.Date(file_<%=cid%>.lastModified())).toString();
+	
+	<%if(MD5){%>
+		// Calculation of the Message Digest MD5
+		java.io.InputStream is_<%=cid %> = new java.io.FileInputStream(file_<%=cid %>);
+		byte[] buffer_<%=cid %> = new byte[8192];
+		int read_<%=cid %> = 0;
+		java.security.MessageDigest dgs_<%=cid %> = java.security.MessageDigest.getInstance("MD5");
+		while( (read_<%=cid %> = is_<%=cid %>.read(buffer_<%=cid %>)) > 0) {
+			dgs_<%=cid %>.update(buffer_<%=cid %>, 0, read_<%=cid %>);
+		}
+		<%=outputConnName %>.md5 =String.format("%032x", new java.math.BigInteger(1, dgs_<%=cid %>.digest()));
+		is_<%=cid %>.close();
+	<%}%>
+}
+<%
+    if(isLog4jEnabled) {
+%>
+	else {
+		log.info("<%=cid%> - File : " + file_<%=cid %>.getAbsolutePath() + " doesn't exist.");
+	}
+<%
+    }
+}
+
+%>

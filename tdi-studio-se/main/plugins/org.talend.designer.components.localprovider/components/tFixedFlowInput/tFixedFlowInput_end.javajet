@@ -1,0 +1,80 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.process.IConnection  
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory    
+    java.util.List
+    java.util.Map"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    
+    String nbRows = ElementParameterParser.getValue(node, "__NB_ROWS__");
+    
+    boolean use_singleMode = ("true").equals(ElementParameterParser.getValue(node, "__USE_SINGLEMODE__"));
+    boolean use_inTable = ("true").equals(ElementParameterParser.getValue(node, "__USE_INTABLE__"));
+    boolean use_inlineContent = ("true").equals(ElementParameterParser.getValue(node, "__USE_INLINECONTENT__"));
+    
+    List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__VALUES__"
+    );
+
+	List<Map<String, String>> inTableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__INTABLE__"
+    );
+    
+    List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+    if(use_singleMode){
+    	if(tableValues != null && tableValues.size() > 0 && conns != null && conns.size() > 0) {
+        %>
+        }
+        globalMap.put("<%=cid%>_NB_LINE", <%=nbRows%>);        
+        <%
+    	}
+//********************the new part*****************************************************    	
+    }else if(use_inTable){
+    	if(inTableValues != null && inTableValues.size() > 0 && conns != null && conns.size() > 0) {
+    		String firstConnName = null;
+    	    for(IConnection conn : conns) {
+                if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+             		firstConnName = conn.getName();
+             		break;
+                }
+            }
+            if(firstConnName!=null && !firstConnName.equals("")){
+%>
+		}
+<%
+			}
+%>
+	}
+<%
+			if(firstConnName!=null && !firstConnName.equals("")){
+%>
+	cacheList_<%=cid %>.clear();
+<%
+			}
+%>
+	globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid %>);
+<%
+    	}
+//********************the new part*****************************************************
+    } else if(use_inlineContent){
+%>
+		}
+	  fid_<%=cid %>.close();
+	}
+
+	globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid %>);
+<%
+	}
+%>

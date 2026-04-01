@@ -1,0 +1,82 @@
+<%@ jet 
+imports="
+    java.util.List
+    java.util.Map
+    
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.IProcess
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+IProcess currentProcess = node.getProcess();
+
+boolean isInThread = false;
+
+List< ? extends IConnection> connsInIterate = node.getIncomingConnections(EConnectionType.ITERATE);
+if(connsInIterate != null && connsInIterate.size() > 0){
+	IConnection conn = connsInIterate.get(0);
+	isInThread = "true".equals(ElementParameterParser.getValue(conn, "__ENABLE_PARALLEL__")); 
+}
+
+String destination = ElementParameterParser.getValue(
+    node,
+    "__DESTINATION__"
+);
+
+List<Map<String, String>> mapping =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__MAPPING__"
+    );
+%>
+OnSubjobOkStruct<%=destination%> struct_<%=cid%> = new OnSubjobOkStruct<%=destination%>();
+<%
+for (Map<String, String> mappingColumn : mapping) {
+%>
+struct_<%=cid%>.<%=mappingColumn.get("SCHEMA_COLUMN")%>  = <%=mappingColumn.get("VALUE")%>;
+<%
+}
+if(log.isActive()){
+%>
+	log.trace("struct_<%=cid%> - " + struct_<%=cid%>.toLogString());
+<%
+}
+%>
+
+<%if(isInThread){//tIterateToFlow is a little special, it link with OnSubJobOK in virtual level, so, in Multi-Thread, there should be synchronized.%>
+	<%
+	// if codeGenArgument.getIsRunInMultiThread() is true, the job.this.globalMap will wrapped with synchronizedMap, use synchronized(job.this.globalMap)
+	// when codeGenArgument.getIsRunInMultiThread() is false, the job.this.globalMap is HashMap, use synchronized(job.this.object) when do the job.this.globalMap.put() operation(tMap,tIterateToFlow).
+	if(codeGenArgument.getIsRunInMultiThread()){%>
+		synchronized (<%=currentProcess.getName()%>.this.globalMap) {
+	<%}else{%>
+		synchronized (<%=currentProcess.getName()%>.this.obj) {
+	<%}%>
+		    if(<%=currentProcess.getName() %>.this.globalMap.containsKey("<%=destination %>")){
+		    	java.util.List<OnSubjobOkStruct<%=destination%>> list_<%=cid%> = (java.util.List<OnSubjobOkStruct<%=destination%>>)<%=currentProcess.getName() %>.this.globalMap.get("<%=destination %>"); 
+		    	list_<%=cid%>.add(struct_<%=cid%>);
+		    }else{
+		    	java.util.List<OnSubjobOkStruct<%=destination%>> list_<%=cid%> = java.util.Collections.synchronizedList(new java.util.ArrayList<OnSubjobOkStruct<%=destination%>>());
+		    	list_<%=cid%>.add(struct_<%=cid%>);
+		    	<%=currentProcess.getName() %>.this.globalMap.put("<%=destination %>",list_<%=cid%>);
+		    }
+		}
+<%}else{%>
+    if(globalMap.get("<%=destination %>") != null){
+    	java.util.List<OnSubjobOkStruct<%=destination%>> list_<%=cid%> = (java.util.List<OnSubjobOkStruct<%=destination%>>)globalMap.get("<%=destination %>"); 
+    	list_<%=cid%>.add(struct_<%=cid%>);
+    }else{
+    	java.util.List<OnSubjobOkStruct<%=destination%>> list_<%=cid%> = new java.util.ArrayList<OnSubjobOkStruct<%=destination%>>();
+    	list_<%=cid%>.add(struct_<%=cid%>);
+    	globalMap.put("<%=destination %>",list_<%=cid%>);
+    }
+<%}%>

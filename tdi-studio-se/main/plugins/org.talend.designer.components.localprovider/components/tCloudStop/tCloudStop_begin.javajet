@@ -1,0 +1,65 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Map
+		java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String accesskey = ElementParameterParser.getValue(node, "__ACCESS_KEY__");
+	String provider = ElementParameterParser.getValue(node, "__PROVIDER__");
+	String predicates = ElementParameterParser.getValue(node, "__PREDICATES__");
+	
+	String instanceName = ElementParameterParser.getValue(node, "__INSTANCE_NAME__");
+	String id = ElementParameterParser.getValue(node, "__ID__");
+	
+	String providerId = "";
+	if("AWS_EC2".equals(provider)) {
+		providerId = "aws-ec2";
+	}
+
+%>
+	        
+	<%
+	String passwordFieldName = "__SECRET_KEY__";
+	%>
+	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+   	
+	org.jclouds.compute.ComputeServiceContext context_<%=cid%> = org.jclouds.ContextBuilder.newBuilder("<%=providerId%>").credentials(<%=accesskey%>, decryptedPassword_<%=cid%>).buildView(org.jclouds.compute.ComputeServiceContext.class);
+	org.jclouds.compute.ComputeService client_<%=cid%> = context_<%=cid%>.getComputeService();
+
+<%
+	if(!("WITH_IDS".equals(predicates))) {
+%>
+	
+		client_<%=cid%>.<%=ElementParameterParser.getValue(node, "__ACTION__").toLowerCase()%>NodesMatching(org.jclouds.compute.predicates.NodePredicates.
+<%
+		if("RUNNING".equals(predicates)) {
+%>
+			RUNNING);
+<%
+		}
+		if("IN_GROUP".equals(predicates)) {
+%>
+			inGroup(<%=instanceName%>.toLowerCase()));
+<%
+		}
+		if("RUNNING_IN_GROUP".equals(predicates)) {
+%>
+			runningInGroup(<%=instanceName%>.toLowerCase()));
+<%
+		}
+	} else {
+%>
+		client_<%=cid%>.<%=ElementParameterParser.getValue(node, "__ACTION__").toLowerCase()%>Node(<%=id%>);
+<%
+	}
+%>

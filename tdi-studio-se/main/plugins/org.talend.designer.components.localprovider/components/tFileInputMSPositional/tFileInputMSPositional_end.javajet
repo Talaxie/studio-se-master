@@ -1,0 +1,36 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+	" 
+%>
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();	
+
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if (conns!=null && conns.size()>0) { //1
+%>
+		nb_line_<%=cid%>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+%>
+		
+		if(limit_<%=cid %> != -1 && nb_line_<%=cid %> >= limit_<%=cid %>){
+			break;
+		}
+	}
+	reader_<%=cid %>.close();
+	reader_<%=cid %> = null;
+	globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid%>);
+	globalMap.put("<%=cid%>_NB_LINE_REJECTED", nb_line_rejected_<%=cid%>);
+	globalMap.put("<%=cid%>_NB_LINE_UNKOWN_HEADER_TYPES", nb_line_unknownHeader_<%=cid%>);
+	globalMap.put("<%=cid%>_NB_LINE_PARSE_ERRORS", nb_line_parseError_<%=cid%>);
+<%
+		log4jFileUtil.retrievedDataNumberInfo();
+	} //1
+%>

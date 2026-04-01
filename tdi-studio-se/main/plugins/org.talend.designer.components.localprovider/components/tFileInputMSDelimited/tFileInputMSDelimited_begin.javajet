@@ -1,0 +1,740 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.utils.TalendTextUtils
+		java.util.List
+		java.util.Map
+	" 
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+boolean hasDataLink = false;
+if(conns!=null){
+	for(int i=0;i<conns.size();i++){
+		IConnection connTemp = conns.get(i);
+	    if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	   		hasDataLink = true;
+	   		break;
+	    }
+	}
+}
+
+final boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+List<Map<String, String>> schemas_o = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMAS__");
+List<Map<String, String>> schemas = new java.util.ArrayList<Map<String, String>>();
+for(Map<String, String> schema_o : schemas_o){
+	Map<String, String> schema = new java.util.HashMap<String, String>();
+	schemas.add(schema);
+	schema.put("SCHEMA", TalendTextUtils.removeQuotes(schema_o.get("SCHEMA")));
+	schema.put("RECORD", schema_o.get("RECORD"));
+	schema.put("PARENT_RECORD", schema_o.get("PARENT_RECORD"));
+	schema.put("KEY_COLUMN_INDEX", TalendTextUtils.removeQuotes(schema_o.get("KEY_COLUMN_INDEX")));
+	schema.put("CARDINALITY", TalendTextUtils.removeQuotes(schema_o.get("CARDINALITY")));
+	schema.put("FIELDDELIMITED",schema_o.get("FIELDDELIMITED"));
+	String strInfinitude = "false"; // used to support *
+	if(!("\"\"").equals(schema.get("PARENT_RECORD"))){//has parent node
+		String cardString = schema.get("CARDINALITY");
+		if(("*").equals(cardString)){
+			strInfinitude = "true";
+		}else if(cardString.contains(",")){
+			String[] cards = cardString.split(",");
+			if(("*").equals(cards[1])){
+				strInfinitude = "true";
+			}
+		}
+	}
+	schema.put("IS_INFINITUDE",strInfinitude);
+}
+
+String filename_o = ElementParameterParser.getValue(node,"__FILENAME__");
+String filename = filename_o;
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+String rowSeparator = ElementParameterParser.getValue(node,"__ROWSEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+String columnIndex = ElementParameterParser.getValue(node,"__COLUMNINDEX__");
+
+String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false; 
+		
+boolean trimAll = ("true").equals(ElementParameterParser.getValue(node,"__TRIMALL__"));
+
+String checkDateStr = ElementParameterParser.getValue(node,"__CHECK_DATE__");
+boolean checkDate = (checkDateStr!=null&&!("").equals(checkDateStr))?("true").equals(checkDateStr):false;
+
+boolean useMulSeprators = "true".equals(ElementParameterParser.getValue(node,"__USE_MULTISEPARATORS__"));
+
+String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+
+if (hasDataLink) {//FIM_000
+////////////////////////
+
+log4jFileUtil.startRetriveDataInfo();
+
+if(useMulSeprators==false && ("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {//FIM_0000
+	List<String> connections = new java.util.ArrayList<String>();
+    Map<String, List<IMetadataColumn>> connectionMapColumnList = new java.util.HashMap<String, List<IMetadataColumn>>();
+    Map<String, String> schemaConnectionMap = new java.util.HashMap<String, String>();
+    
+    for(int i=0;i<conns.size();i++){
+    	IConnection connTemp = conns.get(i);
+    	if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    		IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+    		for(Map<String, String> schema : schemas){
+				if(tempMetadataTable.getLabel().equals(schema.get("SCHEMA"))){
+					schemaConnectionMap.put(schema.get("SCHEMA"), connTemp.getName());
+					break;
+				}
+			}
+    		List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+    		connections.add(connTemp.getName());
+    		connectionMapColumnList.put(connTemp.getName(), listColumns);
+    	}
+	}
+	
+	for(int i=0; i<schemas.size();i++){//FIM_001
+		Map<String, String> schema = schemas.get(i);
+		String schemaName = schema.get("SCHEMA");
+		for(int j=0; j<schemas.size();j++){
+			if(i == j){
+				continue;
+			}
+			Map<String, String> schema2 = schemas.get(j);
+			if(schema.get("RECORD").equals(schema2.get("PARENT_RECORD"))){//has child node
+				String keyIndex = schema.get("KEY_COLUMN_INDEX");
+				if(("").equals(keyIndex)){//no key __________PROBLEM_2_________
+%>
+int key_<%=schemaName %>_<%=cid %> = 0;
+<%
+				}else{
+%>
+String key_<%=schemaName %>_<%=cid %> = "";
+<%
+				}
+				break;
+			}
+		}
+		if(!("\"\"").equals(schema.get("PARENT_RECORD"))){//has parent node
+			String cardString = schema.get("CARDINALITY");
+			String lowBound = String.valueOf(0);
+			String highBound = String.valueOf(Integer.MAX_VALUE);
+			//way to parse the cardinality string.............__________PROBLEM_3_________
+			if(("").equals(cardString)){
+				//do nothing
+			}else if(cardString.contains(",")){
+				String[] cards = cardString.split(",");
+				lowBound = cards[0];
+				highBound = cards[1];
+			}else{
+				lowBound = cardString;
+				highBound = cardString;
+			}
+%>
+int count_<%=schemaName %>_<%=cid %> = <%=lowBound %>;
+final int lowBound_<%=schemaName %>_<%=cid %> = <%=lowBound %>;
+<%if(("false").equals(schema.get("IS_INFINITUDE"))){%>final int highBound_<%=schemaName %>_<%=cid %> = <%=highBound %>;<%}%>
+<%
+		}
+	}//FIM_001
+%>
+org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(<%=filename %>,<%=encoding %>,<%=fieldSeparator %>,<%=rowSeparator %>, true, 0, 0,-1, -1, false);
+String temp_<%=cid %> = null;
+while (fid_<%=cid %>.nextRecord()) {
+<%
+	for(String conName : connections){
+%>
+	<%=conName %> = null;
+<%
+	}
+%>
+	try{
+<%
+	for(int i=0; i<schemas.size();i++){//FIM_002
+		Map<String, String> schema = schemas.get(i);
+		String record = schema.get("RECORD");
+%>
+	<%=(i==0) ? "" : "else " %>if(fid_<%=cid %>.get(Integer.parseInt(<%=columnIndex %>))<%=trimAll?".trim()":""%>.equals(<%=record %>)){
+<%
+		String schemaName = schema.get("SCHEMA");
+		boolean keyUpdated = false;
+		for(int j=0; j<schemas.size();j++){
+			if(i == j){
+				continue;
+			}
+			Map<String, String> schema2 = schemas.get(j);
+			if(schema.get("RECORD").equals(schema2.get("PARENT_RECORD"))){//FIM_003
+			//get child node
+				if(!keyUpdated){//FIM_003_1
+					keyUpdated = true;
+					String keyIndex = schema.get("KEY_COLUMN_INDEX");
+					if(("").equals(keyIndex)){//no key ??? 
+%>
+		key_<%=schemaName %>_<%=cid %>++;
+<%
+					}else{
+%>
+		key_<%=schemaName %>_<%=cid %> = fid_<%=cid %>.get(<%=keyIndex%>)<%=trimAll?".trim()":""%>;
+<%
+					}
+				}//FIM_003_1
+				String schemaNameChild = schema2.get("SCHEMA");
+				String cardinality = schema2.get("CARDINALITY");
+				String childRecord = schema2.get("RECORD");
+%>
+		if((count_<%=schemaNameChild %>_<%=cid %> < lowBound_<%=schemaNameChild %>_<%=cid %>)<%if(("false").equals(schema2.get("IS_INFINITUDE"))){%> || (count_<%=schemaNameChild %>_<%=cid %> > highBound_<%=schemaNameChild %>_<%=cid %>)<%}%>){
+			throw new java.lang.Exception("Data error in file: The cardinality for " + <%=childRecord %> + " is <%=cardinality %>, but we have found " + count_<%=schemaNameChild %>_<%=cid %> + ".");//thow exception............
+		}
+		count_<%=schemaNameChild %>_<%=cid %> = 0;
+<%
+			}//FIM_003
+		}
+		if(!("\"\"").equals(schema.get("PARENT_RECORD"))){//has parent node
+			String cardinality = schema.get("CARDINALITY");
+%>
+		count_<%=schemaName %>_<%=cid %>++;
+		if((count_<%=schemaName %>_<%=cid %> < lowBound_<%=schemaName %>_<%=cid %>)<%if(("false").equals(schema.get("IS_INFINITUDE"))){%> || (count_<%=schemaName %>_<%=cid %> > highBound_<%=schemaName %>_<%=cid %>)<%}%>){
+			throw new java.lang.Exception("Data error in file: The cardinality for " + <%=record %> + " is <%=cardinality %>, but we have found " + count_<%=schemaName %>_<%=cid %> + ".");//thow exception............
+		}
+<%
+		}
+		String connection = schemaConnectionMap.get(schemaName);
+		if(connection != null){//FIM_004 has connection......
+%>
+		<%=connection %> = new <%=connection %>Struct();
+<%
+			String parentRecord = schema.get("PARENT_RECORD");
+			String parentSchema = null;
+			for(int j=0; j<schemas.size();j++){
+				if(i == j){
+					continue;
+				}
+				Map<String, String> schema2 = schemas.get(j);
+				if(schema2.get("RECORD").equals(parentRecord)){//has child node
+					parentSchema = schema2.get("SCHEMA");
+					break;
+				}
+			}
+			
+			List<IMetadataColumn> listColumns = connectionMapColumnList.get(connection);
+			//
+			for (int valueN=0; valueN < listColumns.size(); valueN++) {//FIM_005
+				IMetadataColumn column = listColumns.get(valueN);
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+				if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){//FIM_006
+					if(valueN + 1 == listColumns.size() && parentSchema != null){
+%>
+		<%=connection %>.<%=column.getLabel() %> = String.valueOf(key_<%=parentSchema %>_<%=cid %>);
+<%
+					}else{
+%>
+		<%=connection %>.<%=column.getLabel() %> = fid_<%=cid %>.get(<%=valueN%>)<%=trimAll?".trim()":""%>;
+<%
+					}
+				}else{ //FIM_006
+					if(valueN + 1 == listColumns.size() && parentSchema != null){
+%>
+		temp_<%=cid %> = String.valueOf(key_<%=parentSchema %>_<%=cid %>);
+<%
+					}else{
+%>
+		temp_<%=cid %> = fid_<%=cid %>.get(<%=valueN%>)<%=trimAll?".trim()":""%>;
+<%
+					}
+%>
+		if(temp_<%=cid %>.length() > 0) {
+<%
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+%>
+			<%=connection %>.<%=column.getLabel() %> = temp_<%=cid %>.getBytes(<%=encoding%>);
+<%
+					}else if(javaType == JavaTypesManager.DATE) { 
+						if(checkDate) {
+%>			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>,false);
+<%
+						} else {
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>);
+<%
+						}
+					} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_<%=cid %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+					} else {
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_<%=cid %>);
+<%
+					}
+%>
+		} else {						
+<%
+					String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+					if(defaultValue == null) {
+%>
+			throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=connection %>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+					} else {
+%>			<%=connection %>.<%=column.getLabel() %> = <%=defaultValue %>;
+<%
+					}
+%>		}
+<%
+				} //FIM_006
+			}//FIM_005
+			//
+		}//FIM_004
+%>
+	}
+<%
+	}//FIN_002
+%>
+	} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+        if (dieOnError) {
+ %>
+            throw(e);
+            <%
+        } else {
+			if(isLog4jEnabled) {
+%>
+		log.error("<%=cid%> - " + e.getMessage());
+<%
+			}
+%>
+        System.err.println(e.getMessage());
+<%
+			for(String conName : connections){
+%>
+		<%=conName %> = null;
+<%
+			}
+        }
+%>
+	}
+<%
+}else{//FIM_0000
+//CVS OPTION
+	String delim1 = fieldSeparator;     	
+    String rowSeparator1 = rowSeparator;
+    	
+    String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+    if(("").equals(escapeChar1)){
+    	escapeChar1 = "\"\"";
+    }
+    String escapeChar = escapeChar1.substring(1,escapeChar1.length()-1);
+    if(("'").equals(escapeChar)){
+    	escapeChar = "\\'";
+    }
+    String textEnclosure1 = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+    if(("").equals(textEnclosure1)){
+    	textEnclosure1 = "\"\"";
+    }
+    String textEnclosure = textEnclosure1.substring(1,textEnclosure1.length()-1);
+    if ("".equals(textEnclosure)) textEnclosure = "\0";
+    if(("'").equals(textEnclosure)){
+    	textEnclosure = "\\'";
+    }
+    
+    String strIndex = ElementParameterParser.getValue(node, "__COLUMNINDEX__");
+    	
+	List<String> connections = new java.util.ArrayList<String>();
+    Map<String, List<IMetadataColumn>> connectionMapColumnList = new java.util.HashMap<String, List<IMetadataColumn>>();
+    Map<String, String> schemaConnectionMap = new java.util.HashMap<String, String>();
+    
+    for(int i=0;i<conns.size();i++){
+    	IConnection connTemp = conns.get(i);
+    	if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    		IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+    		for(Map<String, String> schema : schemas){
+				if(tempMetadataTable.getLabel().equals(schema.get("SCHEMA"))){
+					schemaConnectionMap.put(schema.get("SCHEMA"), connTemp.getName());
+					break;
+				}
+			}
+    		List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+    		connections.add(connTemp.getName());
+    		connectionMapColumnList.put(connTemp.getName(), listColumns);
+    	}
+	}
+	
+	for(int i=0; i<schemas.size();i++){//FIM_001
+		Map<String, String> schema = schemas.get(i);
+		String schemaName = schema.get("SCHEMA");
+		for(int j=0; j<schemas.size();j++){
+			if(i == j){
+				continue;
+			}
+			Map<String, String> schema2 = schemas.get(j);
+			if(schema.get("RECORD").equals(schema2.get("PARENT_RECORD"))){//has child node
+				String keyIndex = schema.get("KEY_COLUMN_INDEX");
+				if(("").equals(keyIndex)){//no key __________PROBLEM_2_________
+%>
+int key_<%=schemaName %>_<%=cid %> = 0;
+<%
+				}else{
+%>
+String key_<%=schemaName %>_<%=cid %> = "";
+<%
+				}
+				break;
+			}
+		}
+		if(!("\"\"").equals(schema.get("PARENT_RECORD"))){//has parent node
+			String cardString = schema.get("CARDINALITY");
+			String lowBound = String.valueOf(0);
+			String highBound = String.valueOf(Integer.MAX_VALUE);
+			//way to parse the cardinality string.............__________PROBLEM_3_________
+			if(("").equals(cardString)){
+				//do nothing
+			}else if(cardString.contains(",")){
+				String[] cards = cardString.split(",");
+				lowBound = cards[0];
+				highBound = cards[1];
+			}else{
+				lowBound = cardString;
+				highBound = cardString;
+			}
+%>
+int count_<%=schemaName %>_<%=cid %> = <%=lowBound %>;
+final int lowBound_<%=schemaName %>_<%=cid %> = <%=lowBound %>;
+<%if(("false").equals(schema.get("IS_INFINITUDE"))){%>final int highBound_<%=schemaName %>_<%=cid %> = <%=highBound %>;<%}%>
+<%
+		}
+	}//FIM_001
+%>
+char fieldSeparator_<%=cid %>[] = null;
+		
+//support passing value (property: Field Separator) by 'context.fs' or 'globalMap.get("fs")'. 
+if ( ((String)<%=delim1%>).length() > 0 ){
+	fieldSeparator_<%=cid %> = ((String)<%=delim1%>).toCharArray();
+}else {			
+	throw new IllegalArgumentException("Field Separator must be assigned a char."); 
+}
+		
+char rowSeparator_<%=cid %>[] = null;
+		
+//support passing value (property: Row Separator) by 'context.rs' or 'globalMap.get("rs")'. 
+if ( ((String)<%=rowSeparator1%>).length() > 0 ){
+	rowSeparator_<%=cid %> = ((String)<%=rowSeparator1%>).toCharArray();
+}else {
+	throw new IllegalArgumentException("Row Separator must be assigned a char."); 
+}
+		
+com.talend.csv.CSVReader <%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>=new com.talend.csv.CSVReader(new java.io.BufferedReader(new java.io.InputStreamReader( new java.io.FileInputStream(<%=filename %>),<%=encoding %>)), <%=useMulSeprators?"';'" : "fieldSeparator_"+cid+"[0]" %>);
+<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setTrimWhitespace(false);
+
+<%if(useMulSeprators) {%>
+	tmpcsvReader<%=cid %>.setStoreRawRecord(true);
+<%}%>
+
+if ( (rowSeparator_<%=cid %>[0] != '\n') && (rowSeparator_<%=cid %>[0] != '\r') )
+	<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setLineEnd(""+rowSeparator_<%=cid %>[0]);
+
+<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setQuoteChar('<%=textEnclosure %>');
+
+<%
+	if(("\\\\").equals(escapeChar)){
+        %>
+<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setEscapeChar('\\');
+<%
+	}else if(escapeChar.equals(textEnclosure)){
+        %>
+<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setEscapeChar(<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.getQuoteChar());
+<%
+	}else{
+        %>
+//?????doesn't work for other escapeChar
+//the default escape mode is double escape
+<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.setEscapeChar(<%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.getQuoteChar());
+<%
+	}
+if(useMulSeprators==true){%>	
+String[] delim_<%=cid %> = new String[]{
+<%
+		for(int i=0; i<schemas.size(); i++){
+			Map<String, String> schema = schemas.get(i);
+%>
+<%=(i==0? "":",")%><%=schema.get("FIELDDELIMITED") %>
+<%
+		}
+%>
+};
+
+//java.io.BufferedReader reader_<%=cid %> = new java.io.BufferedReader(new java.io.FileReader(<%=filename %>));
+
+String tmp<%=cid %> = "";
+<%}%>      
+
+int index_<%=cid %> = Integer.parseInt(<%=strIndex %>);
+
+String[] row<%=cid %>=null;
+  
+String temp_<%=cid %> = null;
+
+while ( <%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.readNext() ) {
+<%
+if(useMulSeprators==false){
+%>
+	row<%=cid %>=csvReader<%=cid %>.getValues();
+	<%if(trimAll){%>
+	for(int ii_<%=cid %>=0;ii_<%=cid %> < row<%=cid%>.length;ii_<%=cid %>++){
+		row<%=cid %>[ii_<%=cid %>] = row<%=cid %>[ii_<%=cid %>].trim(); 
+	}
+	<%}%>
+<%
+}else{
+%>
+	tmp<%=cid %> = <%=useMulSeprators? "tmp":"" %>csvReader<%=cid %>.getRawRecord();
+	for(int i_<%=cid %>=0; i_<%=cid %><delim_<%=cid %>.length; i_<%=cid %>++){ //NS000
+		com.talend.csv.CSVReader csvReader<%=cid %> = new com.talend.csv.CSVReader(new java.io.BufferedReader(new java.io.InputStreamReader(
+			new java.io.ByteArrayInputStream(tmp<%=cid %>.getBytes()), <%=encoding %>)), delim_<%=cid %>[i_<%=cid %>].charAt(0));
+		csvReader<%=cid %>.setTrimWhitespace(false);
+		if ( (rowSeparator_<%=cid %>[0] != '\n') && (rowSeparator_<%=cid %>[0] != '\r') )
+			csvReader<%=cid %>.setLineEnd("" + rowSeparator_<%=cid %>[0]);
+		
+		csvReader<%=cid %>.setQuoteChar('<%=textEnclosure %>');
+<%
+	if(("\\\\").equals(escapeChar)){
+        %>
+		csvReader<%=cid %>.setEscapeChar('\\');
+<%
+	}else if(escapeChar.equals(textEnclosure)){
+        %>
+		csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+<%
+	}else{
+        %>
+		//?????doesn't work for other escapeChar
+		csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+<%
+	}
+}%>
+
+<% 
+	for(String conName : connections){
+%>
+	<%=conName %> = null;
+<% 
+	}
+%>		
+<%if(useMulSeprators==true){%>
+
+		if(csvReader<%=cid %>.readNext()==false) {
+			csvReader<%=cid %>.close();
+			break;
+		}
+		
+		row<%=cid %> = csvReader<%=cid %>.getValues();
+    	<%if(trimAll){%>
+    	for(int ii_<%=cid %>=0;ii_<%=cid %> < row<%=cid%>.length;ii_<%=cid %>++){
+    		row<%=cid %>[ii_<%=cid %>] = row<%=cid %>[ii_<%=cid %>].trim(); 
+    	}
+    	<%}%>
+		if (row<%=cid %> == null
+				|| row<%=cid %>.length <= index_<%=cid %>) {
+			continue;
+		}
+<%}%>
+		try{
+<%
+	for(int i=0; i<schemas.size();i++){//FIM_002
+		Map<String, String> schema = schemas.get(i);
+		String record = schema.get("RECORD");
+%>
+	<%=(i==0) ? "" : "else " %>if((row<%=cid %>.length == 0) ? ("".equals(<%=record %>)) : 
+	(row<%=cid %>[index_<%=cid %>].equals(<%=record %>)<%=useMulSeprators? " && delim_"+cid+"[i_"+cid+"].equals("+ schema.get("FIELDDELIMITED") +")":"" %>)){
+<%
+		String schemaName = schema.get("SCHEMA");
+		boolean keyUpdated = false;
+		for(int j=0; j<schemas.size();j++){
+			if(i == j){
+				continue;
+			}
+			Map<String, String> schema2 = schemas.get(j);
+			if(schema.get("RECORD").equals(schema2.get("PARENT_RECORD"))){//FIM_003
+			//get child node
+				if(!keyUpdated){//FIM_003_1
+					keyUpdated = true;
+					String keyIndex = schema.get("KEY_COLUMN_INDEX");
+					if(("").equals(keyIndex)){//no key ??? 
+%>
+		key_<%=schemaName %>_<%=cid %>++;
+<%
+				}else{
+%>
+		key_<%=schemaName %>_<%=cid %> = (row<%=cid %>.length <= <%=keyIndex%>) ? "" : row<%=cid %>[<%=keyIndex %>];
+<%
+					}
+				}//FIM_003_1
+				String schemaNameChild = schema2.get("SCHEMA");
+				String cardinality = schema2.get("CARDINALITY");
+				String childRecord = schema2.get("RECORD");
+%>
+		if((count_<%=schemaNameChild %>_<%=cid %> < lowBound_<%=schemaNameChild %>_<%=cid %>) || (count_<%=schemaNameChild %>_<%=cid %> > highBound_<%=schemaNameChild %>_<%=cid %>)){
+			throw new java.lang.Exception("Data error in file: The cardinality for " + <%=childRecord %> + " is <%=cardinality %>, but we have found " + count_<%=schemaNameChild %>_<%=cid %> + ".");//thow exception............
+		}
+		count_<%=schemaNameChild %>_<%=cid %> = 0;
+<%
+			}//FIM_003
+		}
+		if(!("\"\"").equals(schema.get("PARENT_RECORD"))){//has parent node
+			String cardinality = schema.get("CARDINALITY");
+%>
+		count_<%=schemaName %>_<%=cid %>++;
+		if((count_<%=schemaName %>_<%=cid %> < lowBound_<%=schemaName %>_<%=cid %>) || (count_<%=schemaName %>_<%=cid %> > highBound_<%=schemaName %>_<%=cid %>)){
+			throw new java.lang.Exception("Data error in file: The cardinality for " + <%=record %> + " is <%=cardinality %>, but we have found " + count_<%=schemaName %>_<%=cid %> + ".");//thow exception............
+		}
+<%
+		}
+		String connection = schemaConnectionMap.get(schemaName);
+		if(connection != null){//FIM_004 has connection......
+%>
+		<%=connection %> = new <%=connection %>Struct();
+<%
+			String parentRecord = schema.get("PARENT_RECORD");
+			String parentSchema = null;
+			for(int j=0; j<schemas.size();j++){
+				if(i == j){
+					continue;
+				}
+				Map<String, String> schema2 = schemas.get(j);
+				if(schema2.get("RECORD").equals(parentRecord)){//has child node
+					parentSchema = schema2.get("SCHEMA");
+					break;
+				}
+			}
+			
+			List<IMetadataColumn> listColumns = connectionMapColumnList.get(connection);
+			//
+			for (int valueN=0; valueN < listColumns.size(); valueN++) {//FIM_005
+				IMetadataColumn column = listColumns.get(valueN);
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+				if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){//FIM_006
+					if(valueN + 1 == listColumns.size() && parentSchema != null){
+%>
+		<%=connection %>.<%=column.getLabel() %> = String.valueOf(key_<%=parentSchema %>_<%=cid %>);
+<%
+					}else{
+%>
+		<%=connection %>.<%=column.getLabel() %> = (row<%=cid %>.length <= <%=valueN %>) ? "" : row<%=cid %>[<%=valueN %>];
+<%
+					}
+				}else{ //FIM_006
+					if(valueN + 1 == listColumns.size() && parentSchema != null){
+%>
+		temp_<%=cid %> = String.valueOf(key_<%=parentSchema %>_<%=cid %>);
+<%
+					}else{
+%>
+		temp_<%=cid %> = (row<%=cid %>.length <= <%=valueN %>) ? "" : row<%=cid %>[<%=valueN %>];
+<%
+					}
+%>
+		if(temp_<%=cid %>.length() > 0) {
+<%
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+%>
+			<%=connection %>.<%=column.getLabel() %> = temp_<%=cid %>.getBytes(<%=encoding%>);
+<%
+					}else if(javaType == JavaTypesManager.DATE) { 
+						if(checkDate) {
+%>			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>,false);
+<%
+						} else {
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_<%=cid %>, <%= patternValue %>);
+<%
+						}
+					} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_<%=cid %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+					} else {
+%>
+			<%=connection %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_<%=cid %>);
+<%
+					}
+%>
+		} else {						
+<%
+					String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+					if(defaultValue == null) {
+%>
+			throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=connection %>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+					} else {
+%>			<%=connection %>.<%=column.getLabel() %> = <%=defaultValue %>;
+<%
+					}
+%>		}
+<%
+				} //FIM_006
+			}//FIM_005
+			if(useMulSeprators==true){
+%>
+		if(csvReader<%=cid %>!=null) {
+			csvReader<%=cid %>.close();
+		}
+		break;
+<%
+			}
+		}//FIM_004
+%>
+	}
+<%
+	}//FIN_002
+%>
+	} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+        if (dieOnError) {
+ %>
+            throw(e);
+            <%
+        } else {
+			if(isLog4jEnabled) {
+%>
+		log.error("<%=cid%> - " + e.getMessage());
+<%
+			}
+%>
+        System.err.println(e.getMessage());
+<%
+			for(String conName : connections){
+%>
+		<%=conName %> = null;
+<%
+			}
+        }
+%>
+	}
+<%=useMulSeprators==true? "}":""%>
+<%
+}
+}//FIM_000
+////////////////////////
+%>

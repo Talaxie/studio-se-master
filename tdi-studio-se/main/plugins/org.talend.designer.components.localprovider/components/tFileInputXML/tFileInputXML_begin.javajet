@@ -1,0 +1,1121 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.Map
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%@ include file="../templates/Row/RowHelper.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+        
+List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValueXML(node, "__MAPPING__");
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String loopQuery = ElementParameterParser.getValue(node, "__LOOP_QUERY__"); 
+
+String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+
+boolean ignore_NS="true".equals(ElementParameterParser.getValue(node, "__IGNORE_NS__"));
+String tmp_filename = ElementParameterParser.getValue(node, "__TMP_FILENAME__");
+
+String useSeparator = ElementParameterParser.getValue(node, "__USE_SEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node, "__FIELD_SEPARATOR__");
+
+String limit = ElementParameterParser.getValue(node, "__LIMIT__");
+if (("").equals(limit)) {
+	limit = "-1";
+}
+
+String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+
+
+boolean ignoreDTD="true".equals(ElementParameterParser.getValue(node, "__IGNORE_DTD__"));
+
+String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+
+int schemaOptNum=100;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+	schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+}
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		
+/* -------------------------- */
+%>
+int nb_line_<%=cid%> = 0;
+
+<%
+      if(ignoreDTD){
+%>
+class IgnoreDTDEntityResolver_<%=cid%> implements org.xml.sax.EntityResolver {
+
+ public org.xml.sax.InputSource resolveEntity(String publicId, String systemId)
+   throws org.xml.sax.SAXException, java.io.IOException {
+        return new org.xml.sax.InputSource(new java.io.ByteArrayInputStream("<?xml version='1.0' encoding='UTF-8'?>".getBytes()));
+ }
+
+}
+<%
+	}
+%>
+	String os_<%=cid %> = System.getProperty("os.name").toLowerCase();
+	boolean isWindows_<%=cid%>=false;
+	if(os_<%=cid %>.indexOf("windows") > -1 || os_<%=cid %>.indexOf("nt") > -1){
+		isWindows_<%=cid%>=true;
+	}
+<%
+// *** Xerces *** //
+if(("Xerces").equals(mode)){
+%>
+class TalendPrefixResolver_<%=cid%> {
+
+    private java.util.Map<String, String> map = new java.util.HashMap<String, String>();
+    
+	private java.util.List<String> defualtNSPath = new java.util.ArrayList<String>();
+	
+	public java.util.List<String> getDefualtNSPath() {
+		return defualtNSPath;
+	}
+	
+    public String getNamespaceURI(String prefix) {
+        if (("xml").equals(prefix)) {
+            return "http://www.w3.org/XML/1998/namespace";
+        } else {
+            return map.get(prefix);
+        }
+    }
+
+    public boolean countNSMap(org.w3c.dom.Node el) {
+    	boolean hasDefaultPrefix = false;
+        if (el.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+            org.w3c.dom.NamedNodeMap attris = el.getAttributes();
+            for (int i = 0; i < attris.getLength(); i++) {
+                org.w3c.dom.Node attr = attris.item(i);
+                String aname = attr.getNodeName();
+                if (aname.startsWith("xmlns")) {
+                    int index = aname.indexOf(":");
+                    if(index > 0){
+                    	aname = aname.substring(index + 1);
+                    }else{
+                    	aname = "pre"+defualtNSPath.size();
+                    	hasDefaultPrefix = true;
+                    	String path = "";
+                    	org.w3c.dom.Node elTmp = el;
+                    	while(elTmp!=null && !(elTmp instanceof org.w3c.dom.Document)){
+							path = "/"+elTmp.getNodeName()+path;
+                    		elTmp = elTmp.getParentNode();
+                    	}
+                        defualtNSPath.add(path);
+                    }
+                    map.put(aname, attr.getNodeValue());
+                }
+            }
+        }
+        org.w3c.dom.NodeList nodeList = el.getChildNodes();
+        for (int i = 0; i < nodeList.getLength(); i++) {
+            hasDefaultPrefix = hasDefaultPrefix | countNSMap(nodeList.item(i));
+        }
+        return hasDefaultPrefix;
+    }
+    
+}
+
+class XML_API_<%=cid%>{
+
+	javax.xml.xpath.XPath xpathEvaluator = new net.sf.saxon.xpath.XPathFactoryImpl().newXPath();
+	
+	String loopPath = null;
+	boolean hasDefaultNS = false;
+	
+	public boolean isDefNull(org.w3c.dom.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null && node.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE) {
+            return ((org.apache.xerces.xs.ElementPSVI) node).getNil();
+        }
+        return false;
+    }
+
+    public boolean isMissing(org.w3c.dom.Node node) throws javax.xml.transform.TransformerException {
+        return node == null ? true : false;
+    }
+
+    public boolean isEmpty(org.w3c.dom.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null) {
+            return node.getTextContent().length() == 0;
+        }
+        return false;
+    }
+
+    private final org.talend.xpath.XPathUtil util = new  org.talend.xpath.XPathUtil();
+
+    public void initXPath(org.w3c.dom.Node root){
+        final TalendPrefixResolver_<%=cid%> pr = new TalendPrefixResolver_<%=cid%>();
+        hasDefaultNS = pr.countNSMap(root);
+        util.setDefaultNSPath(pr.getDefualtNSPath());
+        
+        xpathEvaluator.setNamespaceContext(new javax.xml.namespace.NamespaceContext() {
+            @Override
+            public String getNamespaceURI(String prefix) {
+                return pr.getNamespaceURI(prefix);
+            }
+
+            @Override
+            public String getPrefix(String namespaceURI) {
+                return null;
+            }
+
+            @Override
+            public java.util.Iterator getPrefixes(String namespaceURI) {
+                return null;
+            }
+        });
+    }
+
+//==============add for feature 10753 start================================
+	public String getNodeString(org.w3c.dom.Node node, String xpath) throws javax.xml.xpath.XPathExpressionException {
+		javax.xml.xpath.XPathExpression expression = xpathEvaluator.compile(util.addDefaultNSPrefix(xpath,loopPath));
+		return expression.evaluate(node);
+	}
+
+    public org.w3c.dom.Node getSingleNode(org.w3c.dom.Node node, String xpath) throws javax.xml.xpath.XPathExpressionException {
+        javax.xml.xpath.XPathExpression expression = xpathEvaluator.compile(util.addDefaultNSPrefix(xpath,loopPath));
+        Object result = expression.evaluate(node, javax.xml.xpath.XPathConstants.NODESET);
+        return org.w3c.dom.NodeList.class.cast(result).item(0);
+    }
+//=====================end=================================================
+
+    public org.w3c.dom.NodeList getNodeList(org.w3c.dom.Node node, String xpath) throws javax.xml.xpath.XPathExpressionException {
+        javax.xml.xpath.XPathExpression expression = xpathEvaluator.compile(util.addDefaultNSPrefix(xpath));
+        Object result = expression.evaluate(node, javax.xml.xpath.XPathConstants.NODESET);
+        return org.w3c.dom.NodeList.class.cast(result);
+    }
+    
+}
+
+<%if("true".equals(useSeparator)){%>
+class ContentTool_<%=cid %>{
+	public String field_separator=",";//default value
+	
+	public String getNodeContent(org.w3c.dom.Node node){
+		String result=getSubNodeContent(node);
+		if(result.equals("")) return "";
+		else return result.substring(1);
+	}
+	
+	private String getSubNodeContent(org.w3c.dom.Node node){
+		if(node==null) return "";
+		
+		String tmp=node.getNodeValue();
+		
+		if(tmp==null){
+			tmp="";
+		}else{
+			tmp=field_separator+tmp;
+		}
+		
+		if(node.hasChildNodes()){
+			org.w3c.dom.NodeList nodeList = node.getChildNodes();
+			for(int i=0;i<nodeList.getLength();i++){
+				org.w3c.dom.Node tmpNode= nodeList.item(i);	
+				tmp=tmp+getSubNodeContent(tmpNode);
+
+			}
+		}
+		
+		return tmp;
+	}
+}
+ContentTool_<%=cid %> contentTool_<%=cid %> = new ContentTool_<%=cid %>();
+contentTool_<%=cid %>.field_separator=<%=fieldSeparator %>;
+<%}%>
+
+XML_API_<%=cid%> xml_api_<%=cid%> = new XML_API_<%=cid%>();
+xml_api_<%=cid%>.loopPath=<%=loopQuery%>;
+org.apache.xerces.parsers.DOMParser parser_<%=cid%> = new org.apache.xerces.parsers.DOMParser();
+<%
+      if(ignoreDTD){
+%>
+parser_<%=cid%>.setEntityResolver(new IgnoreDTDEntityResolver_<%=cid%>());
+<%
+      }
+%>
+parser_<%=cid%>.setProperty("http://apache.org/xml/properties/dom/document-class-name",
+        "org.apache.xerces.dom.PSVIDocumentImpl");
+parser_<%=cid%>.setFeature("http://xml.org/sax/features/validation", true);
+parser_<%=cid%>.setFeature("http://apache.org/xml/features/validation/schema", true);
+parser_<%=cid%>.setFeature("http://apache.org/xml/features/validation/schema-full-checking", true);
+parser_<%=cid%>.setFeature("http://xml.org/sax/features/namespaces", true);
+parser_<%=cid%>.setErrorHandler(null);
+Object filename_<%=cid %> = null;
+try {
+	filename_<%=cid %> = <%=filename %>;
+} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	<%if (dieOnError) {%>
+	throw(e);
+	<%}else{%>
+	<%if(isLog4jEnabled){%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+	System.err.println(e.getMessage());
+	<%}%>
+}
+
+boolean isValidFile_<%=cid %> = true;
+java.io.Closeable toClose_<%=cid%> = null;
+try{
+    if(filename_<%=cid %> != null && filename_<%=cid %> instanceof String && filename_<%=cid %>.toString().startsWith("//")){
+		if (!isWindows_<%=cid%>){
+			filename_<%=cid %> = filename_<%=cid %>.toString().replaceFirst("//","/");
+		}
+    }
+    if(filename_<%=cid %> instanceof java.io.InputStream){
+    	java.io.InputStream inputStream_<%=cid%> = (java.io.InputStream)filename_<%=cid %>;
+    	toClose_<%=cid%> = inputStream_<%=cid%>;
+    	parser_<%=cid%>.parse(new org.xml.sax.InputSource(inputStream_<%=cid%>));
+    }else{
+    	java.io.InputStream in_<%=cid %>= new java.io.FileInputStream(String.valueOf(filename_<%=cid %>));
+    	java.io.Reader unicodeReader_<%=cid%> = new UnicodeReader(in_<%=cid %>,<%=encoding%>);
+    	toClose_<%=cid%> = unicodeReader_<%=cid%>;
+    	org.xml.sax.InputSource xmlInputSource_<%=cid%> = new org.xml.sax.InputSource(unicodeReader_<%=cid%>);
+    	parser_<%=cid%>.parse(xmlInputSource_<%=cid%>);
+    }
+}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%if (dieOnError) {%>
+	throw(e);
+<%}else{%>
+	<%if(isLog4jEnabled){%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+	System.err.println(e.getMessage());
+	isValidFile_<%=cid %> = false;
+<%}%>
+}finally {
+	if(toClose_<%=cid%>!=null) {
+		toClose_<%=cid%>.close();
+	}
+}
+if(isValidFile_<%=cid %>){
+org.w3c.dom.Document doc_<%=cid%> = parser_<%=cid%>.getDocument();
+
+xml_api_<%=cid%>.initXPath(doc_<%=cid%>);
+org.w3c.dom.NodeList nodelist_<%=cid %> = xml_api_<%=cid%>.getNodeList(doc_<%=cid %>,<%=loopQuery%>);
+
+org.w3c.dom.Node node_<%=cid%>  = null;
+String str_<%=cid%> = null;
+<%log4jFileUtil.startRetriveDataInfo();%>
+for (int i_<%=cid %> = 0; i_<%=cid %> < nodelist_<%=cid %>.getLength(); i_<%=cid %>++) {
+	org.w3c.dom.Node tmp_<%=cid %> = nodelist_<%=cid %>.item(i_<%=cid %>);
+<%
+// *** Dom4j *** //
+}else if(("Dom4j").equals(mode)){
+%>
+class NameSpaceTool_<%=cid%> {
+
+    public java.util.HashMap<String, String> xmlNameSpaceMap = new java.util.HashMap<String, String>();
+    
+	private java.util.List<String> defualtNSPath = new java.util.ArrayList<String>();
+
+    public void countNSMap(org.dom4j.Element el) {
+        for (org.dom4j.Namespace ns : (java.util.List<org.dom4j.Namespace>) el.declaredNamespaces()) {
+            if (ns.getPrefix().trim().length() == 0) {
+                xmlNameSpaceMap.put("pre"+defualtNSPath.size(), ns.getURI());
+                String path = "";
+                org.dom4j.Element elTmp = el;
+                while (elTmp != null) {
+                	if (elTmp.getNamespacePrefix() != null && elTmp.getNamespacePrefix().length() > 0) {
+                        path = "/" + elTmp.getNamespacePrefix() + ":" + elTmp.getName() + path;
+                    } else {
+                        path = "/" + elTmp.getName() + path;
+                    }
+                    elTmp = elTmp.getParent();
+                }
+                defualtNSPath.add(path);
+            } else {
+                xmlNameSpaceMap.put(ns.getPrefix(), ns.getURI());
+            }
+
+        }
+        for (org.dom4j.Element e : (java.util.List<org.dom4j.Element>) el.elements()) {
+            countNSMap(e);
+        }
+    }
+    
+    private final org.talend.xpath.XPathUtil util = new  org.talend.xpath.XPathUtil();
+    
+    {
+    	util.setDefaultNSPath(defualtNSPath);
+    }
+    
+	public String addDefaultNSPrefix(String path) {
+		return util.addDefaultNSPrefix(path);
+	}
+	
+	public String addDefaultNSPrefix(String relativeXpression, String basePath) {
+		return util.addDefaultNSPrefix(relativeXpression,basePath);
+	}
+    
+}
+
+class XML_API_<%=cid%>{
+	public boolean isDefNull(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null && node instanceof org.dom4j.Element) {
+        	org.dom4j.Attribute attri = ((org.dom4j.Element)node).attribute("nil");
+        	if(attri != null && ("true").equals(attri.getText())){
+            	return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isMissing(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        return node == null ? true : false;
+    }
+
+    public boolean isEmpty(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null) {
+            return node.getStringValue().isEmpty();
+        }
+        return false;
+    }
+}
+
+<%
+	if(ignore_NS){
+%>
+	class XML_NS_RMV_<%=cid %>{	
+
+		public void removeNamespace(org.dom4j.Document reader,
+				org.dom4j.Document writer) {
+			org.dom4j.Element elemReader = reader.getRootElement();
+			org.dom4j.Element elemTo = writer.addElement(elemReader
+					.getName());
+			if(elemReader!=null && elemReader.getText()!=null && !"".equals(elemReader.getText())){
+				elemTo.setText(elemReader.getText());
+			}
+			for (org.dom4j.Attribute attri : (List<org.dom4j.Attribute>) elemReader
+					.attributes()) {
+				elemTo.addAttribute(attri.getName(),attri.getText());
+			}
+			removeSubNamespace(elemReader, elemTo);
+		}
+
+		public void removeSubNamespace(org.dom4j.Element elemFrom,
+				org.dom4j.Element elemTo) {
+			for (org.dom4j.Element subFrom : (List<org.dom4j.Element>) elemFrom
+					.elements()) {
+				org.dom4j.Element tmpElemTo = elemTo.addElement(subFrom
+						.getName());
+				if(subFrom!=null && subFrom.getText()!=null && !"".equals(subFrom.getText())){
+					tmpElemTo.setText(subFrom.getText());
+				}
+				for (org.dom4j.Attribute attri : (List<org.dom4j.Attribute>) subFrom
+						.attributes()) {
+					tmpElemTo.addAttribute(attri.getName(),attri.getText());
+				}
+				removeSubNamespace(subFrom, tmpElemTo);
+			}
+		}
+	}
+<%
+	}
+%>
+
+org.dom4j.io.SAXReader reader_<%=cid%> = new org.dom4j.io.SAXReader();
+<%
+      if(ignoreDTD){
+%>
+reader_<%=cid %>.setEntityResolver(new IgnoreDTDEntityResolver_<%=cid%>());
+<%
+      }
+%>
+Object filename_<%=cid %> = null;
+try {
+	filename_<%=cid %> = <%=filename %>;
+} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	<%if (dieOnError) {%>
+	throw(e);
+	<%}else{%>
+	<%if(isLog4jEnabled){%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+	System.err.println(e.getMessage());
+	<%}%>
+}
+if(filename_<%=cid %> != null && filename_<%=cid %> instanceof String && filename_<%=cid %>.toString().startsWith("//")){
+	if (!isWindows_<%=cid%>){
+		filename_<%=cid %> = filename_<%=cid %>.toString().replaceFirst("//","/");
+	}
+}
+
+<%
+	if(ignore_NS){
+%>
+org.dom4j.Document doc_reader_<%=cid %> = null;
+org.dom4j.Document doc_tmp_<%=cid %> = org.dom4j.DocumentHelper.createDocument();
+org.dom4j.io.OutputFormat format_<%=cid %> = org.dom4j.io.OutputFormat.createPrettyPrint();
+try {
+	if(filename_<%=cid %> instanceof java.io.InputStream){
+		doc_reader_<%=cid %> = reader_<%=cid %>.read((java.io.InputStream)filename_<%=cid %>);
+	}else{
+		doc_reader_<%=cid %> = reader_<%=cid %>.read(new java.io.File(String.valueOf(filename_<%=cid %>)).toURI().toString());
+	}
+	format_<%=cid %>.setTrimText(false);
+	format_<%=cid %>.setEncoding(<%=encoding %>);
+	new XML_NS_RMV_<%=cid %>().removeNamespace(doc_reader_<%=cid %>,doc_tmp_<%=cid %>);
+	doc_reader_<%=cid %>.clearContent();
+	doc_reader_<%=cid %> = null;
+	java.io.FileOutputStream stream_<%=cid %> = new java.io.FileOutputStream(<%=tmp_filename %>);
+	org.dom4j.io.XMLWriter output_<%=cid %> = new org.dom4j.io.XMLWriter(stream_<%=cid %>, format_<%=cid %>);
+	output_<%=cid %>.write(doc_tmp_<%=cid %>);
+	output_<%=cid %>.close();
+} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	<%if (dieOnError) {%>
+	throw(e);
+	<%}else{%>
+	<%if(isLog4jEnabled){%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+	System.err.println(e.getMessage());
+	<%}%>
+} finally {
+	if(filename_<%=cid %> instanceof java.io.InputStream && filename_<%=cid %>!=null){
+		((java.io.InputStream)filename_<%=cid %>).close();
+	}
+}
+filename_<%=cid %> = <%=tmp_filename %>;
+<%
+	}
+%>
+boolean isValidFile_<%=cid %> = true;
+org.dom4j.Document doc_<%=cid%> = null;
+java.io.Closeable toClose_<%=cid%> = null;
+try{
+	if(filename_<%=cid %> instanceof java.io.InputStream){
+		java.io.InputStream inputStream_<%=cid%> = (java.io.InputStream)filename_<%=cid %>;
+		toClose_<%=cid%> = inputStream_<%=cid%>;
+		doc_<%=cid%> = reader_<%=cid %>.read(inputStream_<%=cid%>);
+	}else{
+		java.io.Reader unicodeReader_<%=cid%> = new UnicodeReader(new java.io.FileInputStream(String.valueOf(filename_<%=cid %>)),<%=encoding%>);
+		toClose_<%=cid%> = unicodeReader_<%=cid%>;
+		org.xml.sax.InputSource in_<%=cid %>= new org.xml.sax.InputSource(unicodeReader_<%=cid%>);
+		doc_<%=cid%> = reader_<%=cid %>.read(in_<%=cid %>);
+	}
+}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%if (dieOnError) {%>
+	throw(e);
+<%}else{%>
+	<%if(isLog4jEnabled){%>
+		log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+	System.err.println(e.getMessage());
+	isValidFile_<%=cid %> = false;
+<%}%>
+} finally {
+	if(toClose_<%=cid%>!=null) {
+		toClose_<%=cid%>.close();
+	}
+}
+if(isValidFile_<%=cid %>){
+NameSpaceTool_<%=cid%> nsTool_<%=cid%> = new NameSpaceTool_<%=cid%>();
+nsTool_<%=cid%>.countNSMap(doc_<%=cid%>.getRootElement());
+java.util.HashMap<String,String> xmlNameSpaceMap_<%=cid%> = nsTool_<%=cid%>.xmlNameSpaceMap;  
+
+org.dom4j.XPath x_<%=cid%> = doc_<%=cid%>.createXPath(nsTool_<%=cid%>.addDefaultNSPrefix(<%=loopQuery%>));  
+x_<%=cid%>.setNamespaceURIs(xmlNameSpaceMap_<%=cid%>); 
+<%if(ignore_NS){%>
+org.jaxen.NamespaceContext namespaceContext_<%=cid%> = new org.jaxen.NamespaceContext() {
+
+	public String translateNamespacePrefixToUri(String prefix) { 
+		return "";//ignore prefix in xpath when evaluate
+	}
+	
+};
+x_<%=cid%>.setNamespaceContext(namespaceContext_<%=cid%>);
+<%}%>
+
+java.util.List<org.dom4j.Node> nodeList_<%=cid%> = (java.util.List<org.dom4j.Node>)x_<%=cid%>.selectNodes(doc_<%=cid%>);	
+XML_API_<%=cid%> xml_api_<%=cid%> = new XML_API_<%=cid%>();
+String str_<%=cid %> = "";
+org.dom4j.Node node_<%=cid%> = null;
+
+//init all mapping xpaths
+java.util.Map<Integer,org.dom4j.XPath> xpaths_<%=cid%>=new java.util.HashMap<Integer,org.dom4j.XPath>();
+<%
+if(schemaOptNum>0){
+%>
+	class XPathUtil_<%=cid%>{
+	<%
+	   int mappingSize=mapping.size();
+		for (int i=0;i<mappingSize;i++) {
+			String query = mapping.get(i).get("QUERY");
+			if(i%schemaOptNum==0){
+			%>
+			   public void initXPaths_<%=i/schemaOptNum%>(java.util.Map<Integer,org.dom4j.XPath> xpaths,NameSpaceTool_<%=cid%> nsTool,
+			       java.util.HashMap<String,String> xmlNameSpaceMap<%if(ignore_NS){%>,org.jaxen.NamespaceContext namespaceContext<%}%>){
+			<%
+			}
+	      %>
+	org.dom4j.XPath xpath_<%=i%> = org.dom4j.DocumentHelper.createXPath(nsTool.addDefaultNSPrefix(<%=query%>,<%=loopQuery%>));
+	xpath_<%=i%>.setNamespaceURIs(xmlNameSpaceMap);
+	<%
+			if(ignore_NS){
+	%>
+	xpath_<%=i%>.setNamespaceContext(namespaceContext);
+	<%
+			}
+			%>
+			xpaths.put(<%=i%>,xpath_<%=i%>);
+			<%
+			if((i+1)%schemaOptNum==0){
+	      %>
+	         }
+	      <%
+	      }
+		}
+		if(mappingSize>0&&(mappingSize%schemaOptNum)>0){
+	   %>
+	     }
+	   <%
+	   }
+	   %>
+	      public void initXPaths(java.util.Map<Integer,org.dom4j.XPath> xpaths,NameSpaceTool_<%=cid%> nsTool,
+			    java.util.HashMap<String,String> xmlNameSpaceMap<%if(ignore_NS){%>,org.jaxen.NamespaceContext namespaceContext<%}%>){
+			    <%
+			    for (int i=0;i<=((mappingSize-1)/schemaOptNum);i++) {
+			    %>
+			        initXPaths_<%=i%>(xpaths,nsTool, xmlNameSpaceMap<%if(ignore_NS){%>,namespaceContext<%}%>);
+			    <%
+			    }
+			    %>
+		   }
+	}
+	XPathUtil_<%=cid%> xPathUtil_<%=cid%> = new XPathUtil_<%=cid%>();
+	xPathUtil_<%=cid%>.initXPaths(xpaths_<%=cid%>, nsTool_<%=cid%>, xmlNameSpaceMap_<%=cid%><%if(ignore_NS){%>, namespaceContext_<%=cid%><%}%>);
+<%
+}else{
+%>
+	if(true){
+		throw new IllegalArgumentException("Min column number of optimize code should be bigger than 0!");
+	}
+<%
+}
+%>
+<%log4jFileUtil.startRetriveDataInfo();%>
+for (org.dom4j.Node temp_<%=cid%>: nodeList_<%=cid%>) {
+<%
+// *** SAX *** //
+}else if(("SAX").equals(mode)){
+%>
+class XML_API_<%=cid%>{
+	public boolean isDefNull(String[] node) throws javax.xml.transform.TransformerException {
+        if(node[0] != null && node[1]!=null && ("true").equals(node[1])){
+        	return true;
+        }
+        return false;
+    }
+
+    public boolean isMissing(String[] node) throws javax.xml.transform.TransformerException {
+        return node[0] == null ? true : false;
+    }
+
+    public boolean isEmpty(String[] node) throws javax.xml.transform.TransformerException {
+        if(node[0]!=null ){
+        	return node[0].length() == 0;
+        }
+        return false;
+    }
+}
+XML_API_<%=cid%> xml_api_<%=cid%> = new XML_API_<%=cid%>();
+
+String[] queryPaths_<%=cid%> = new String[]{
+<%
+	boolean first = true;
+	for(Map<String,String> path:mapping){
+%>	
+	<%=first?"":","%><%=path.get("QUERY")%>
+<%
+		String query = path.get("QUERY");
+		if(query!=null && query.indexOf("@")<0){
+%>		
+	,<%=query%>+"/@xsi:nil"
+<%
+		}
+		first=false;
+	}
+%>
+};
+
+boolean[] asXMLs_<%=cid%> = new boolean[]{
+<%
+	first = true;
+	for(Map<String,String> path:mapping){
+%>	
+	<%=first?"":","%><%="true".equals(path.get("NODECHECK"))? "true":"false" %>
+<%
+		String query = path.get("QUERY");
+		if(query!=null && query.indexOf("@")<0){
+%>		
+	,false
+<%
+		}
+		first=false;
+	}
+%>
+};
+
+String str_<%=cid %> = "";
+String[] node_<%=cid%> = null;
+org.talend.xml.sax.SAXLooper looper_<%=cid%> = new org.talend.xml.sax.SAXLooper(<%=loopQuery%>,queryPaths_<%=cid%>,asXMLs_<%=cid%>);
+<%if(ignoreDTD){%>
+looper_<%=cid%>.setIgnoreDTD(true);
+<%}%>
+looper_<%=cid%>.setEncoding(<%=encoding %>);
+Object filename_<%=cid %> = null;
+try {
+	filename_<%=cid %> = <%=filename %>;
+} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	<%if (dieOnError) {%>
+	throw(e);
+	<%}else{
+		if(isLog4jEnabled){%>
+	log.error("<%=cid%> - " + e.getMessage());
+		<%}%>
+	System.err.println(e.getMessage());
+	<%}%>
+}
+if(filename_<%=cid %> != null && filename_<%=cid %> instanceof String && filename_<%=cid %>.toString().startsWith("//")){
+	if (!isWindows_<%=cid%>){
+		filename_<%=cid %> = filename_<%=cid %>.toString().replaceFirst("//","/");
+	}
+}
+if(filename_<%=cid %> instanceof java.io.InputStream){
+	looper_<%=cid%>.parse((java.io.InputStream)filename_<%=cid %>);
+}else{
+	looper_<%=cid%>.parse(String.valueOf(filename_<%=cid %>));
+}
+java.util.Iterator<java.util.Map<String, String>> it_<%=cid%>  = looper_<%=cid%>.iterator();
+<%log4jFileUtil.startRetriveDataInfo();%>
+while (it_<%=cid%>.hasNext()) {
+	java.util.Map<String, String> row_<%=cid%> = it_<%=cid%>.next();
+<%
+}
+			// limit
+		if (limit.compareTo("-1")!=0) {
+%>
+	if (nb_line_<%=cid %>>=<%=limit %>) {
+	<%if(("SAX").equals(mode)) {%>
+			looper_<%=cid%>.stopRead();
+	<%}%>
+		break;
+	}
+<% 
+		}
+		%>
+		nb_line_<%=cid%>++;
+		<%
+List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+String firstConnName = "";
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		if (conns!=null) {
+//************ add for reject start*****************
+		    String rejectConnName = "";
+		    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+		    if(rejectConns != null && rejectConns.size() > 0) {
+		        IConnection rejectConn = rejectConns.get(0);
+		        rejectConnName = rejectConn.getName();
+		    }
+		    List<IMetadataColumn> rejectColumnList = null;
+		    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+		    if(metadataTable != null) {
+		        rejectColumnList = metadataTable.getListColumns();      
+		    }
+			for (int i=0;i<conns.size();i++) {
+				IConnection connTemp = conns.get(i);
+				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+	<%=connTemp.getName() %> = null;			
+<%
+				}
+    		}
+//***************************end********************
+			Map<String,String> varsMap=new java.util.HashMap<String,String>();
+			varsMap.put("xml_api_"+cid,"XML_API_"+cid);
+			if("true".equals(useSeparator)){
+				varsMap.put("contentTool_"+cid,"ContentTool_"+cid);
+			}
+			if(("Xerces").equals(mode)){
+				varsMap.put("tmp_"+cid,"org.w3c.dom.Node");
+				varsMap.put("node_"+cid,"org.w3c.dom.Node");
+			}
+			if(("Dom4j").equals(mode)){
+				varsMap.put("node_"+cid,"org.dom4j.Node");
+				varsMap.put("nsTool_"+cid,"NameSpaceTool_"+cid);
+				varsMap.put("xmlNameSpaceMap_"+cid,"java.util.HashMap<String,String>");
+				varsMap.put("temp_"+cid,"org.dom4j.Node");
+				if(ignore_NS){
+					varsMap.put("namespaceContext_"+cid,"org.jaxen.NamespaceContext");
+				}
+				varsMap.put("xpaths_"+cid,"java.util.Map<Integer,org.dom4j.XPath>");
+			}
+			if(("SAX").equals(mode)){
+				varsMap.put("row_"+cid,"java.util.Map<String, String>");
+				varsMap.put("node_"+cid,"String[]");
+			}
+			class RowUtil extends DefaultRowUtil{
+				public void codeForValueToConn(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, int start , int end){
+					cid = node.getUniqueName();
+					boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+					List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValueXML(node, "__MAPPING__");
+					List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+					IConnection conn = conns.get(0);
+					String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+					boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+					String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+					String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+					
+					String checkDateStr = ElementParameterParser.getValue(node,"__CHECK_DATE__");
+					boolean checkDate = (checkDateStr!=null&&!("").equals(checkDateStr))?("true").equals(checkDateStr):false;
+					boolean ignoreDTD="true".equals(ElementParameterParser.getValue(node, "__IGNORE_DTD__"));
+					String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+					
+					String useSeparator = ElementParameterParser.getValue(node, "__USE_SEPARATOR__");
+					
+					String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+					
+					for (int i=start;i<end;i++) { // S_for_a_1_0
+						String query = mapping.get(i).get("QUERY");
+						String nodeCheck = mapping.get(i).get("NODECHECK");
+						if(("Xerces").equals(mode)){
+%>
+	try {
+		node_<%=cid%> = xml_api_<%=cid%>.getSingleNode(tmp_<%=cid %>,<%=query%>);
+<%
+							if("true".equals(useSeparator)){
+%>
+    	if(node_<%=cid %>!=null && node_<%=cid %>.getNodeType()==org.w3c.dom.Node.ELEMENT_NODE && node_<%=cid %>.hasChildNodes()){
+    		str_<%=cid %> = contentTool_<%=cid %>.getNodeContent(node_<%=cid%>);
+    	}else{
+    		str_<%=cid %> = node_<%=cid%>!=null?node_<%=cid%>.getTextContent():"";
+    	}
+<%
+							}else{
+%>
+		str_<%=cid %> = node_<%=cid%>!=null?node_<%=cid%>.getTextContent():"";
+<%
+							}
+%>
+	} catch (javax.xml.xpath.XPathExpressionException xee) {
+		node_<%=cid %> = tmp_<%=cid %>;
+		str_<%=cid %> = xml_api_<%=cid%>.getNodeString(tmp_<%=cid %>,<%=query%>);
+	}
+<%
+						}else if(("Dom4j").equals(mode)){
+							//TDI-18498
+							boolean isWrongConfig = false;
+							
+							for(IMetadataColumn column:metadata.getListColumns()) {
+								if (mapping.get(i).get("SCHEMA_COLUMN")!=null) {
+									if (column.getLabel().compareTo(mapping.get(i).get("SCHEMA_COLUMN"))==0) {
+										if("id_Document".equals(column.getTalendType()) && "false".equals(nodeCheck)) {
+											isWrongConfig = true;
+											break;
+										}
+									}
+								}
+							}
+							
+							if(isWrongConfig) {
+%>
+	if(true) {
+		throw new RuntimeException("Error Config: \"Get Nodes\" should be checked when type is \"Document\"");
+	}
+<%
+							}
+%>
+    Object obj<%=i%>_<%=cid%> = xpaths_<%=cid%>.get(<%=i%>).evaluate(temp_<%=cid%>);
+    if(obj<%=i%>_<%=cid%> == null) {
+    	node_<%=cid%> = null;
+<%
+							if(("true").equals(nodeCheck)){
+%>
+		str_<%=cid %> = null;
+<%
+							
+							}else{
+%>
+    	str_<%=cid %> = "";
+<%
+						}
+%>
+    	
+    } else if(obj<%=i%>_<%=cid%> instanceof org.dom4j.Node) {
+    	node_<%=cid%> = (org.dom4j.Node)obj<%=i%>_<%=cid%>;
+<%
+							if(("true").equals(nodeCheck)){
+%>
+		str_<%=cid %> = node_<%=cid %>.asXML();
+<%
+							
+							}else{
+%>
+    	str_<%=cid %> = org.jaxen.function.StringFunction.evaluate(node_<%=cid %>,org.jaxen.dom4j.DocumentNavigator.getInstance());
+<%
+							}
+%>
+    } else if(obj<%=i%>_<%=cid%> instanceof String || obj<%=i%>_<%=cid%> instanceof Number){
+    	node_<%=cid%> = temp_<%=cid%>;
+    	str_<%=cid %> = String.valueOf(obj<%=i%>_<%=cid%>);
+    } else if(obj<%=i%>_<%=cid%> instanceof java.util.List){
+    	java.util.List<org.dom4j.Node> nodes_<%=cid%> = (java.util.List<org.dom4j.Node>)obj<%=i%>_<%=cid%>;
+    	node_<%=cid%> = nodes_<%=cid%>.size()>0 ? nodes_<%=cid%>.get(0) : null;
+<%
+							if(("true").equals(nodeCheck)){
+%>
+		str_<%=cid %> = node_<%=cid %>==null?null:node_<%=cid %>.asXML();
+<%
+							
+							}else{
+%>
+    	str_<%=cid %> = node_<%=cid %>==null?"":org.jaxen.function.StringFunction.evaluate(node_<%=cid %>,org.jaxen.dom4j.DocumentNavigator.getInstance());
+<%
+							}
+%>
+	}
+<%
+						}else if(("SAX").equals(mode)){
+%>
+	str_<%=cid %> = row_<%=cid%>.get(<%=query%>);
+<%
+							if(query!=null && query.indexOf("@")<0){
+%>
+	node_<%=cid%> = new String[]{str_<%=cid %>,row_<%=cid%>.get(<%=query%>+"/@xsi:nil")};
+<%
+							}else{
+%>
+	node_<%=cid%> = new String[]{str_<%=cid %>,null};
+<%
+							}
+						}
+						for(IMetadataColumn column:metadata.getListColumns()) {  // S_for_0_1
+							if (mapping.get(i).get("SCHEMA_COLUMN")!=null) { // S_if_0_2
+								if (column.getLabel().compareTo(mapping.get(i).get("SCHEMA_COLUMN"))==0) { // S_if_0_3
+									String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+									JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+									String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+									
+									boolean isNotSetDefault = false;
+									String defaultValue=column.getDefault();
+									if(defaultValue!=null){
+										isNotSetDefault = defaultValue.length()==0;
+									}else{
+										isNotSetDefault=true;
+									}
+									if(("Dom4j").equals(mode) && ("true").equals(nodeCheck)){
+										if("id_Document".equals(column.getTalendType())) {
+%>
+								<%=conn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_Document(str_<%=cid %>,<%=ignoreDTD%>,<%=encoding%>);
+<%
+										} else {
+%>
+								<%=conn.getName() %>.<%=column.getLabel() %> = str_<%=cid %>;
+<%
+										}
+										continue;
+									}
+									if(javaType == JavaTypesManager.STRING){
+										if(column.isNullable()){
+%>
+									if(xml_api_<%=cid%>.isDefNull(node_<%=cid%>)){
+											<%=conn.getName() %>.<%=column.getLabel() %> =null;
+									}else if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+										<%=conn.getName() %>.<%=column.getLabel() %> ="";
+									}else if(xml_api_<%=cid%>.isMissing(node_<%=cid%> )){ 
+										<%=conn.getName() %>.<%=column.getLabel() %> =<%=isNotSetDefault?null:column.getDefault()%>;
+									}else{
+<%
+										}else{ // column.isNullable()
+%>
+									if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+										<%=conn.getName() %>.<%=column.getLabel() %> ="";
+									}else if(xml_api_<%=cid%>.isMissing(node_<%=cid%> )){ 
+										<%=conn.getName() %>.<%=column.getLabel() %> =<%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;
+									}else{
+<%
+										}
+									}else{ // other type
+										if(column.isNullable()){
+%>	
+										if(xml_api_<%=cid%>.isDefNull(node_<%=cid%>)){
+											<%=conn.getName() %>.<%=column.getLabel() %> =null;
+										}else if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>) || xml_api_<%=cid%>.isMissing(node_<%=cid%>)){
+											<%=conn.getName() %>.<%=column.getLabel() %>=<%=isNotSetDefault?null:column.getDefault()%>;
+										}else{
+<%
+								  		}else{ // column.isNullable()
+%>
+										if(xml_api_<%=cid%>.isMissing(node_<%=cid%>) || xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+											<%=conn.getName() %>.<%=column.getLabel() %> =<%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;
+										}else{
+<%
+										}
+									}
+									if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = str_<%=cid %>;
+<%
+									} else if (javaType == JavaTypesManager.DATE) {
+										if(checkDate) {
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(str_<%=cid %>, <%= patternValue %>,false);
+<%  
+										} else {
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(str_<%=cid %>, <%= patternValue %>);
+<%
+										}
+									} else if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+%>							
+		<%=conn.getName() %>.<%=column.getLabel() %> = str_<%=cid %>.getBytes(<%=encoding %>);
+<%
+									} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType)) { 
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(str_<%=cid %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+									} else {
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(str_<%=cid %>);
+<%
+									}
+%>
+	}
+<%
+								} //S_if_1_2
+							} // S_if_1_1
+						} // S_for_1_0
+					} // S_for_a_1_0
+				}
+				
+				public void codeForConnToConn(INode node, IMetadataTable metadata, String sourceConnName, String targetConnName, int start , int end){
+	    			for(int colNum=start;colNum<end;colNum++) {
+	    				IMetadataColumn column=metadata.getListColumns().get(colNum);
+%>
+    				<%=targetConnName%>.<%=column.getLabel()%> = <%=sourceConnName%>.<%=column.getLabel()%>;
+<%
+					}
+				}
+			}//class defined end
+			RowUtil rowUtil = new RowUtil(); 
+			if (conns.size()>0) { // S_if_a_0_0	
+				IConnection conn = conns.get(0);
+				firstConnName = conn.getName();
+			    if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {
+			    	rowUtil.genVarsParmsStr(varsMap);
+					rowUtil.prepareValueToConn(node, metadata, "String", "str_"+cid, firstConnName, schemaOptNum);
+					if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+						rowUtil.prepareConnToConn(metadata, firstConnName, rejectConnName);
+					}
+					rowUtil.generateClass();
+				}
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { // add for reject
+%>
+	boolean whetherReject_<%=cid %> = false;
+	<%=firstConnName %> = new <%=conn.getName() %>Struct();
+	try{
+<%
+	rowUtil.callValueToConn("str_"+cid, firstConnName);
+%>
+<% log4jFileUtil.debugRetriveData(node); %> 
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>
+			
+    } catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        whetherReject_<%=cid%> = true;
+<%
+        if (dieOnError) {
+            %>
+            throw(e);
+            <%
+        } else {
+			if(isLog4jEnabled){%>
+				log.error("<%=cid%> - " + e.getMessage());
+			<%}
+            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+
+                %>
+                    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+                <%
+                rowUtil.callConnToConn(firstConnName, rejectConnName);
+                %>
+                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                <%=firstConnName %> = null;
+                <%
+            } else if(("").equals(rejectConnName)){
+                %>
+                System.err.println(e.getMessage());
+                <%=firstConnName %> = null;
+                <%
+            } else if(rejectConnName.equals(firstConnName)){%>
+            	<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+          <%}
+		}
+        %>
+    }
+<%
+				} //if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			} // S_if_a_1_1
+
+//***********************************
+			if (conns.size()>0) {	
+				boolean isFirstEnter = true;
+				for (int i=0;i<conns.size();i++) {
+					IConnection tmpconn = conns.get(i);
+					if ((tmpconn.getName().compareTo(firstConnName)!=0)&&(tmpconn.getName().compareTo(rejectConnName)!=0)&&(tmpconn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>      
+             if(<%=tmpconn.getName() %> == null){ 
+            	 <%=tmpconn.getName() %> = new <%=tmpconn.getName() %>Struct();
+             }
+<%
+			    	 	for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+	    	 <%=tmpconn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;    				
+<%
+				 		}
+					}
+				}
+%>
+		<% if(!isFirstEnter) {%> } <% } %>	
+<%
+			}
+//***********************************
+
+		} // if(conn!=null)
+		
+
+	}// if (metadata!=null)
+} //if ((metadatas!=null)&&(metadatas.size()>0))
+%>
+			

@@ -1,0 +1,95 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    String conn = "conn_" + connection;
+    
+    String db = "db_" + connection;
+    
+    String table = ElementParameterParser.getValue(node,"__TABLE_NAME__");
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%log4jCodeGenerateUtil.useExistConnection(node);%>
+String db_<%=cid%> = (String)globalMap.get("<%=db %>");
+
+String table_<%=cid%> = <%=table %>;
+
+String query_<%=cid %> = "SELECT column_name,data_type,column_default,is_nullable,column_key,character_maximum_length,numeric_precision,numeric_scale  FROM information_schema.columns WHERE table_schema='" + db_<%=cid %> + "' AND table_name='" + table_<%=cid %> + "' ORDER BY ordinal_position";
+
+<%
+if(isLog4jEnabled){
+%>
+    log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+<%
+}
+%>
+int nb_column_<%=cid%> = 0;
+
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+
+while (rs_<%=cid %>.next()) {
+
+	String currentColumnName_<%=cid %> = rs_<%=cid %>.getString(1);
+	
+	String dataType_<%=cid %> = rs_<%=cid %>.getString(2);
+	
+	String columnDefault_<%=cid %> = rs_<%=cid %>.getString(3);
+	
+	String isNullable_<%=cid %> = rs_<%=cid %>.getString(4);
+	
+	String columKey_<%=cid %> = rs_<%=cid %>.getString(5);
+	
+	String characterMaximumLength_<%=cid %> = rs_<%=cid %>.getString(6);
+	
+	String numericPrecision_<%=cid %> = rs_<%=cid %>.getString(7);
+	
+	String numericScale_<%=cid %> = rs_<%=cid %>.getString(8);
+
+	nb_column_<%=cid %>++;
+        
+		<%
+		if(isLog4jEnabled){
+		%>
+			log.debug("<%=cid%> - Retrieving the column "+nb_column_<%=cid%>+".");
+			StringBuffer logSB_<%=cid%> = new StringBuffer("<%=cid%> - Name of column "+nb_column_<%=cid%>+":"+currentColumnName_<%=cid %>+" | ");
+			logSB_<%=cid%>.append("Data type of column "+nb_column_<%=cid%>+":"+dataType_<%=cid %>+" | ")
+			.append("Default value of column "+nb_column_<%=cid%>+":"+columnDefault_<%=cid %>+" | ")
+			.append("Is nullable of column "+nb_column_<%=cid%>+":"+isNullable_<%=cid %>+" | ")
+			.append("Column key of column "+nb_column_<%=cid%>+":"+columKey_<%=cid %>+" |")
+			.append("Character maximum length of column "+nb_column_<%=cid%>+":"+characterMaximumLength_<%=cid %>+" | ")
+			.append("Numeric precision of column "+nb_column_<%=cid%>+":"+numericPrecision_<%=cid %>+" | ")
+			.append("Numeric scale of column "+nb_column_<%=cid%>+":"+numericScale_<%=cid %>+" | ");
+			log.trace(logSB_<%=cid%>.toString());
+		<%
+		}
+		%>
+	globalMap.put("<%=cid %>_COLUMN_NAME", currentColumnName_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_DATA_TYPE", dataType_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_COLUMN_DEFAULT", columnDefault_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_IS_NULLABLE", isNullable_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_COLUMN_KEY", columKey_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_CHARACTER_MAXIMUM_LENGTH", characterMaximumLength_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_NUMERIC_PRECISION", numericPrecision_<%=cid %>);
+	
+	globalMap.put("<%=cid %>_NUMERIC_SCALE", numericScale_<%=cid %>);

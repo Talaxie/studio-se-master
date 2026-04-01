@@ -1,0 +1,53 @@
+<%@ jet 
+imports="
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+
+   if(commitCounter_<%=cid%> > 0){
+	int[] resultArr = pstmt_<%=cid %>.executeBatch();
+	pstmt_<%=cid %>.clearBatch();
+	commitCounter_<%=cid%>=0;
+	
+	int sum = 0;
+	for(int i : resultArr){
+		sum += (i<0 ? 0 : i);
+	}
+	insertedCount_<%=cid%> += sum;
+}
+
+pstmt_<%=cid %>.close();
+
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Starting to commit.");
+<%}%>
+
+conn_<%=cid%>.commit();
+
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Commit has succeeded.");
+	log.info("<%=cid%> - Closing the connection to the database.");
+<%}%>
+
+conn_<%=cid%> .close();
+
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Connection to the database closed.");
+<%}%>
+
+	nb_line_inserted_<%=cid%> += insertedCount_<%=cid%>;
+	globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);
+	globalMap.put("<%=cid %>_NB_LINE_INSERTED",nb_line_inserted_<%=cid%>);
+
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Loaded records count:" + nb_line_inserted_<%=cid%> + "." );
+<%}%>

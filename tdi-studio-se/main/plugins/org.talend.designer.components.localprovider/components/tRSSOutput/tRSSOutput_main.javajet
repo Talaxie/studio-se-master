@@ -1,0 +1,153 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.io.File
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+	    String cid = node.getUniqueName();
+	    String filename = ElementParameterParser.getValueWithUIFieldKey(node,"__FILENAME__", "FILENAME");
+	    
+        boolean rssMode = "true".equals(ElementParameterParser.getValue(node,"__RSS__"));
+        boolean atomMode = "true".equals(ElementParameterParser.getValue(node,"__ATOM__"));
+        
+      	String title= null;
+      	String description= null;
+      	String pubdate= null;
+      	String link= null;
+      	String aTitle= null;
+      	String aLink= null;
+      	String aId= null;
+      	String aUpdated= null;
+        if(rssMode){
+	      	title= ElementParameterParser.getValue(node,"__TITLE__");
+	      	description= ElementParameterParser.getValue(node,"__DESCRIPTION__");
+	      	pubdate= ElementParameterParser.getValue(node,"__PUBDATE__");
+	      	link= ElementParameterParser.getValue(node,"__LINK__");
+        }
+        if(atomMode){
+	      	aTitle= ElementParameterParser.getValue(node,"__aTITLE__");
+	      	aLink= ElementParameterParser.getValue(node,"__aLINK__");
+	      	aId= ElementParameterParser.getValue(node,"__aID__");
+	      	aUpdated= ElementParameterParser.getValue(node,"__aUPDATED__");
+        }
+	    File file=new File(filename);
+	    boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+	    List< ? extends IConnection> conns = node.getIncomingConnections();
+		if(conns!=null){
+			if (conns.size()>0){
+				IConnection conn =conns.get(0);
+	    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					List<IMetadataColumn> columns = metadata.getListColumns();
+	    			int sizeColumns = columns.size();
+	    			if(rssMode){
+%>	
+						if(<%=isAppend%> && file<%=cid%>.exists()){
+							java.util.List list<%=cid%>= document<%=cid%>.selectNodes("/rss/channel" );
+			        		channelElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/rss/channel/title" );
+			        		titleHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		titleHElement<%=cid%>.setText(<%=title%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/rss/channel/description" );
+			        		descriptionHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		descriptionHElement<%=cid%>.setText(<%=description%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/rss/channel/pubdate" );
+			        		pubdateHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		pubdateHElement<%=cid%>.setText(<%=pubdate%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/rss/channel/link" );
+			        		linkHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		linkHElement<%=cid%>.setText(<%=link%>);
+			        	}
+			  		 	org.dom4j.Element rootElement = channelElement<%=cid%>.addElement("item");
+<%
+					}
+					if(atomMode){
+%>
+						if(<%=isAppend%> && file<%=cid%>.exists()){
+							java.util.List list<%=cid%>= document<%=cid%>.selectNodes("/feed" );
+			        		feedElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/feed/title" );
+			        		titleHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		titleHElement<%=cid%>.setText(<%=aTitle%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/feed/id" );
+			        		idHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		idHElement<%=cid%>.setText(<%=aId%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/feed/updated" );
+			        		updatedHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		updatedHElement<%=cid%>.setText(<%=aUpdated%>);
+			        		list<%=cid%>= document<%=cid%>.selectNodes("/feed/link" );
+			        		linkHElement<%=cid%>=(org.dom4j.Element)list<%=cid%>.get(0);
+			        		linkHElement<%=cid%>.setText(<%=aLink%>);
+			        	}
+			  		 	org.dom4j.Element rootElement = feedElement<%=cid%>.addElement("entry");
+
+<%
+					}
+	    			for (int i = 0; i < sizeColumns; i++) {
+		    			IMetadataColumn column = columns.get(i);
+		    			String coluLabel=column.getLabel();
+		    			coluLabel=coluLabel.toLowerCase();
+		    			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+%> 	
+   						org.dom4j.Element <%=coluLabel%>Element=rootElement.addElement("<%=coluLabel%>");
+<%		
+						if(coluLabel.equals("link")){
+							if(atomMode){
+%>
+							<%=coluLabel%>Element.addAttribute("href", <%=conn.getName() %>.<%=column.getLabel() %> ==null ? "" : <%=conn.getName() %>.<%=column.getLabel() %>);
+						    
+							<% } else if(rssMode){%>
+
+							<%=coluLabel%>Element.setText(<%=conn.getName() %>.<%=column.getLabel() %> ==null ? "" : <%=conn.getName() %>.<%=column.getLabel() %>);
+<%
+				            }
+    					}else if(javaType == JavaTypesManager.STRING ){
+%>	
+ 							<%=coluLabel%>Element.setText(<%=conn.getName() %>.<%=column.getLabel() %> ==null ? "" : <%=conn.getName() %>.<%=column.getLabel() %>);
+<%		
+						}else if(javaType == JavaTypesManager.DATE ){
+							if(rssMode){
+%>
+								java.text.SimpleDateFormat sdfTemp<%=cid%> = new java.text.SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss z",java.util.Locale.US);
+<%
+							}
+							if(atomMode){
+%>
+								java.text.SimpleDateFormat sdfTemp<%=cid%> = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ssZ",java.util.Locale.US);
+<%
+							}
+%>
+							java.util.SimpleTimeZone aZone<%=cid%> = new java.util.SimpleTimeZone(8,"GMT");
+							sdfTemp<%=cid%>.setTimeZone(aZone<%=cid%>);
+							<%=coluLabel%>Element.setText(<%=conn.getName() %>.<%=column.getLabel() %> ==null ? "" : sdfTemp<%=cid%>.format( <%=conn.getName() %>.<%=column.getLabel()%>));
+<%			
+						}else{
+%>
+ 							<%=coluLabel%>Element.setText(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>));
+<%						
+						}
+					}
+				}
+			}
+		}
+%>		 
+		nb_line_<%=cid%>++;
+<%		 	
+	}
+}
+%>

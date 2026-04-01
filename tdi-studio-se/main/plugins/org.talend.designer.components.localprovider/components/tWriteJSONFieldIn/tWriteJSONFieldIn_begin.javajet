@@ -1,0 +1,147 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable
+    java.util.List
+    org.talend.core.model.process.ElementParameterParser
+   	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.utils.NodeUtil
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+final boolean allowEmptyStrings = ("true").equals(ElementParameterParser.getValue(node, "__ALLOW_EMPTY_STRINGS__"));
+final boolean useScientificNotation = ("true").equals(ElementParameterParser.getValue(node, "__USE_SCIENTIFIC_NOTATION__"));
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		if(conns!=null && conns.size()>0){
+			if (conns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			    String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+			    boolean removeRoot="true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__REMOVE_ROOT__"));
+			    String outputRowStructName = conns.get(0).getName()+"Struct";//row2
+				%>
+				int nb_line_<%=cid%> = 0;
+				net.sf.json.xml.XMLSerializer xmlSerializer_<%=cid%> = new net.sf.json.xml.XMLSerializer(); 
+			    xmlSerializer_<%=cid%>.clearNamespaces();
+			    xmlSerializer_<%=cid%>.setSkipNamespaces(true);
+			    xmlSerializer_<%=cid%>.setForceTopLevelObject(<%=(removeRoot?false:true)%>);
+			    xmlSerializer_<%=cid%>.setUseEmptyStrings(<%=allowEmptyStrings%>);
+			    xmlSerializer_<%=cid%>.setUseScientificNotation(<%=useScientificNotation%>);
+				<%
+				INode sourceNode = node.getIncomingConnections(EConnectionType.ON_COMPONENT_OK).get(0).getSource();
+				String virtualSourceCid = sourceNode.getUniqueName();
+				INode startNode = NodeUtil.getSpecificStartNode(sourceNode);
+				String startNodeCid = null; 
+				if(startNode != null){
+					startNodeCid = startNode.getUniqueName();
+				} 
+				IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+				if(nextMergeConn != null && nextMergeConn.getInputId()>1 && startNodeCid != null){
+					if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+					%>
+						java.util.Map map_<%=cid%> = new java.util.HashMap();
+				        java.util.Queue<java.util.Map> queue_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<java.util.Map>();
+					<%
+				    }else{
+					%>
+					   java.util.Queue<<%= outputRowStructName %>> queue_<%=cid%> = new java.util.concurrent.ConcurrentLinkedQueue<<%= outputRowStructName %>>();
+					<%
+				    }
+					%>
+					
+					class ThreadXMLField_<%=cid%> extends Thread {
+						<%
+						if(destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0){
+						%>
+							java.util.Queue<java.util.Map> queue;
+						<%
+						}else{
+						%>
+						    java.util.Queue<<%= outputRowStructName %>> queue;
+						<%
+						}
+						%>
+						java.util.List<java.util.Map<String,String>> flows;
+						java.lang.Exception lastException;
+						java.lang.Error lastError;
+						String currentComponent;
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q) {
+							this.queue = q;
+							globalMap.put("queue_<%=virtualSourceCid%>", queue);
+							lastException = null;
+						}
+						
+						ThreadXMLField_<%=cid%>(java.util.Queue q, java.util.List<java.util.Map<String,String>> l) {
+							this.queue = q;
+							this.flows = l;
+							lastException = null;
+							globalMap.put("queue_<%=virtualSourceCid%>", queue);
+							globalMap.put("flows_<%=virtualSourceCid%>", flows);
+						}
+						
+						public java.lang.Exception getLastException() {
+							return this.lastException;
+						}
+						
+						public java.lang.Error getLastError() {
+							return this.lastError;
+						}
+						
+						public String getCurrentComponent() {
+							return this.currentComponent;
+						}
+					
+						@Override
+						public void run() {
+							try {
+								<%=startNodeCid%>Process(globalMap);
+							} catch (TalendException te) {
+								this.lastException = te.getException();
+								this.currentComponent = te.getCurrentComponent();
+								globalMap.put("<%=cid%>_FINISH"+(this.queue==null?"":this.queue.hashCode()), "true");
+							} catch (java.lang.Error error) {
+								this.lastError = error;
+								globalMap.put("<%=cid%>_FINISH"+(this.queue==null?"":this.queue.hashCode()), "true");
+							}
+						}
+					}
+					
+					ThreadXMLField_<%=cid%> txf_<%=cid%> = new ThreadXMLField_<%=cid%>(queue_<%=cid%>);
+					txf_<%=cid%>.start();
+				<%
+				}else{
+
+    				if(destination!=null && (destination.indexOf("tCouchbaseOutput_")>=0 || destination.indexOf("tCouchDBOutput_")>=0)){
+					%>
+				        java.util.Map map_<%=cid%> = new java.util.HashMap();
+				        java.util.Queue<java.util.Map> queue_<%=cid%> = (java.util.Queue<java.util.Map>) globalMap.get("queue_<%=cid%>");
+					<%
+    				}else{
+					%>
+					   java.util.Queue<<%= outputRowStructName %>> queue_<%=cid%> = (java.util.Queue<<%= outputRowStructName %>>) globalMap.get("queue_<%=cid%>");
+					<%
+				    }
+				}
+				%>
+				String readFinishMarkWithPipeId_<%=cid%> = "<%=cid%>_FINISH"+(queue_<%=cid%>==null?"":queue_<%=cid%>.hashCode());
+				String str_<%=cid %> = null;
+				
+				while(!globalMap.containsKey(readFinishMarkWithPipeId_<%=cid%>) || !queue_<%=cid%>.isEmpty()) {
+					if (!queue_<%=cid%>.isEmpty()) {
+			<%
+			}
+		}
+	}
+}
+%>

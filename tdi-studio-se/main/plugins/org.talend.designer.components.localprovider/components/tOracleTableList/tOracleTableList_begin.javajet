@@ -1,0 +1,107 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    String conn = "conn_" + connection;
+    
+    String schema = "dbschema_" + connection;
+    
+    String whereClause = ElementParameterParser.getValue(node,"__WHERE_CLAUSE__");
+    String query = ElementParameterParser.getValue(node,"__QUERY__");
+    
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    
+    String fetch_from = ElementParameterParser.getValue(node,"__FETCH_FROM__");
+%>
+java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%log4jCodeGenerateUtil.useExistConnection(node);%>
+
+<%
+if("USER_TABLES".equals(fetch_from) || "ALL_TABLES".equals(fetch_from) || "TAB".equals(fetch_from)) {
+%>
+	String statement_<%=cid %> = <%=whereClause %>;
+<%
+} else {
+%>
+	String statement_<%=cid %> = <%=query %>;
+<%
+}
+%>
+
+String query_<%=cid %> = "";
+
+if(statement_<%=cid %> != null && statement_<%=cid %>.length() > 0){
+<%
+	if("USER_TABLES".equals(fetch_from) || "ALL_TABLES".equals(fetch_from)) {
+%>
+	query_<%=cid %> = "SELECT TABLE_NAME FROM <%=fetch_from%> WHERE (" + statement_<%=cid %> + ") ORDER BY TABLE_NAME ASC";
+<%
+	} else if("TAB".equals(fetch_from)) {
+%>
+	query_<%=cid %> = "SELECT tname FROM tab WHERE tabtype='TABLE' AND (" + statement_<%=cid %> + ") ORDER BY tname ASC";
+<%
+	} else {//custom query
+%>
+	query_<%=cid %> = statement_<%=cid %>;
+<%
+	}
+%>
+
+}else{
+<%
+if("USER_TABLES".equals(fetch_from) || "ALL_TABLES".equals(fetch_from)) {
+%>
+	query_<%=cid %> = "SELECT TABLE_NAME FROM <%=fetch_from%> ORDER BY TABLE_NAME ASC";
+<%
+} else if("TAB".equals(fetch_from)) {
+%>
+	query_<%=cid %> = "SELECT tname FROM tab WHERE tabtype='TABLE' ORDER BY tname ASC";
+<%
+} else {
+%>
+	query_<%=cid %> = "SELECT TABLE_NAME FROM USER_TABLES ORDER BY TABLE_NAME ASC";
+<%
+}
+%>
+}
+<%
+if(isLog4jEnabled){
+%>
+    log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+<%
+}
+%>
+
+int nb_table_<%=cid%> = 0;
+
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+
+while (rs_<%=cid %>.next()) {
+
+	String currentTableName_<%=cid %> = rs_<%=cid %>.getString(1); 
+
+	nb_table_<%=cid %>++;
+        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.debug("<%=cid%> - Retrieving the table "+nb_table_<%=cid %>+".");
+		log.trace("<%=cid%> - Name of table "+nb_table_<%=cid%>+":"+currentTableName_<%=cid %>+".");
+	<%
+	}
+	%>
+	globalMap.put("<%=cid %>_CURRENT_TABLE", currentTableName_<%=cid %>);

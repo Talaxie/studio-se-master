@@ -1,0 +1,112 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.BlockCode
+    java.util.Map
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+String jsonField = ElementParameterParser.getValue(node, "__JSONFIELD__");
+String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+
+int schemaOptNum=1;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+    schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+}
+//get JSON field content
+IConnection inConn = null;
+List< ? extends IConnection> inConns = node.getIncomingConnections();
+List<IMetadataColumn> inColumns = null;
+if (inConns!=null) {
+    for (IConnection incomingConn : inConns) {
+        if (incomingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            inConn = incomingConn;
+            inColumns = inConn.getMetadataTable().getListColumns();
+            break;
+        }
+    }
+}
+if (inConn!=null) {
+    for (IMetadataColumn inputCol : inColumns) {
+        if(inputCol.getLabel().equals(jsonField))
+        {
+%>
+            if(<%=inConn.getName()%>.<%=jsonField%>!=null){// C_01
+                jsonStr_<%=cid%> = <%=inConn.getName()%>.<%=jsonField%>.toString();
+<%
+			List<BlockCode> blockCodes = new java.util.ArrayList<BlockCode>(1);
+			blockCodes.add(new BlockCode("C_01"));
+			((org.talend.core.model.process.AbstractNode) node).setBlocksCodeToClose(blockCodes);
+			break;
+        }
+    }
+}
+%>
+   
+<%
+
+String rejectConnName = "";
+List<IMetadataColumn> rejectColumnList = null;
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+    IConnection rejectConn = rejectConns.get(0);
+    rejectColumnList = rejectConn.getMetadataTable().getListColumns();
+    rejectConnName = rejectConn.getName(); 
+}
+
+IConnection outConn = null;
+String firstConnName = "";
+List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+if(outConns!=null){
+    for (IConnection conn : outConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            outConn = conn;
+            firstConnName = outConn.getName();
+            break;
+        }
+    }
+}
+
+if(outConns!=null){
+    for (IConnection conn : outConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+<%=conn.getName() %> = null;
+<%
+        }
+    }
+}
+
+String readBy = ElementParameterParser.getValue(node, "__READ_BY__");
+%>
+
+<%if(!"JSONPATH".equals(readBy)) {
+	List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__MAPPING__");
+	String loopQuery = ElementParameterParser.getValue(node, "__LOOP_QUERY__");
+%>
+	<%@ include file="./read_by_xpath_process.javajet"%> 
+<%} else {
+	List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__MAPPING_4_JSONPATH__");
+	String loopQuery = ElementParameterParser.getValue(node, "__JSON_LOOP_QUERY__");
+%>
+	<%@ include file="./read_by_jsonpath_process.javajet"%>
+<%}%>
+

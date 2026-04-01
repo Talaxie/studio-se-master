@@ -1,0 +1,91 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+	"
+%>
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String filename = ElementParameterParser.getValue(node, "__FILENAME__");
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	
+	boolean asString = "true".equals(ElementParameterParser.getValue(node, "__AS_STRING__"));
+	boolean asBytearray = "true".equals(ElementParameterParser.getValue(node, "__AS_BYTEARRAY__"));
+	boolean asInputstream = "true".equals(ElementParameterParser.getValue(node, "__AS_INPUTSTREAM__"));
+	
+	boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+	java.util.List<IMetadataColumn> columnList = null;
+	java.util.List<IMetadataTable> metadatas = node.getMetadataList();
+	if(metadatas != null && metadatas.size() > 0) {
+		IMetadataTable metadata = metadatas.get(0);
+		if(metadata != null) {
+		    columnList = metadata.getListColumns();
+		}
+	}
+	java.util.List< ? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+	if(columnList!=null && outgoingConns!=null && outgoingConns.size()>0) {
+		IConnection outgoingConn = outgoingConns.get(0);// only have one flow output
+		if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		
+			final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+			log4jFileUtil.componentStartInfo(node);
+			
+			if(asInputstream) {
+%>
+				java.io.FileInputStream fis_<%=cid%> = null;
+<%
+			}
+%>
+
+				try {
+<%
+			if(asString) {
+%>					
+					String content_<%=cid %> = org.apache.commons.io.FileUtils.readFileToString(new java.io.File(<%=filename %>), <%=encoding%>);
+					<%=outgoingConn.getName()%>.<%=columnList.get(0).getLabel()%> = content_<%=cid%>;
+<%
+			} else if(asInputstream) {
+%>
+					fis_<%=cid%> = org.apache.commons.io.FileUtils.openInputStream(new java.io.File(<%=filename%>));
+					<%=outgoingConn.getName()%>.<%=columnList.get(0).getLabel()%> = fis_<%=cid%>;
+<%
+			} else if(asBytearray) {
+%>
+					byte[] content_<%=cid%> = org.apache.commons.io.FileUtils.readFileToByteArray(new java.io.File(<%=filename %>));
+					<%=outgoingConn.getName()%>.<%=columnList.get(0).getLabel()%> = content_<%=cid%>;
+<%
+			}
+%>					
+					globalMap.put("<%=cid %>_FILENAME_PATH", <%=filename%>);
+				} catch (java.io.IOException e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+			if(dieOnError) {
+%>
+					throw e_<%=cid%>;
+<%
+			} else {
+%>
+					<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - " +e_<%=cid%>.getMessage());
+					<%}%>
+					System.err.println(e_<%=cid%>);
+<%
+			}
+%>
+				}
+<%
+		}
+	}
+%>
+

@@ -1,0 +1,396 @@
+<%@ jet%>
+
+<%
+if (outConn!=null) {
+%>
+    org.dom4j.io.SAXReader reader_<%=cid%> = new org.dom4j.io.SAXReader();
+    org.dom4j.Document doc_<%=cid%> = null;
+    java.util.HashMap xmlNameSpaceMap_<%=cid%> = new java.util.HashMap<String, String>();
+    org.dom4j.XPath x_<%=cid%> = null;
+    java.util.List<org.dom4j.Node> nodeList_<%=cid%> = null;
+    boolean isStructError_<%=cid %> = true;
+
+    String loopQuery_<%=cid %> =  <%=loopQuery %> ;
+    String oraginalJsonStr_<%=cid %> = jsonStr_<%=cid%>;
+    cjs_<%=cid %>.setJsonString(jsonStr_<%=cid %>);
+    cjs_<%=cid %>.setLoopString(loopQuery_<%=cid %>);
+    java.io.ByteArrayInputStream bais_<%=cid %> = null;
+    java.io.ByteArrayOutputStream  baos_<%=cid %> = new java.io.ByteArrayOutputStream();
+    try {
+        cjs_<%=cid %>.generate();
+        jsonStr_<%=cid %> = cjs_<%=cid %>.getJsonString4XML();
+        loopQuery_<%=cid %> = cjs_<%=cid %>.getLoopString4XML();
+        bais_<%=cid %> = new ByteArrayInputStream(jsonStr_<%=cid%>.getBytes(<%=encoding%>));
+        javax.xml.stream.XMLEventReader xmlEventReader_<%=cid %> = jsonXMLInputFactory_<%=cid %>.createXMLEventReader(bais_<%=cid %>);
+        javax.xml.stream.XMLEventWriter xmLEventWriter_<%=cid %> = xmlOutputFactory_<%=cid %>.createXMLEventWriter(baos_<%=cid %>,<%=encoding%>);
+        xmLEventWriter_<%=cid %>.add(xmlEventReader_<%=cid %>);
+        //convert json string to xml
+        xmlStr_<%=cid%> = baos_<%=cid %>.toString();  
+        xmLEventWriter_<%=cid %>.close();
+        xmlEventReader_<%=cid %>.close();
+    
+        doc_<%=cid%>= reader_<%=cid%>.read(new java.io.StringReader(xmlStr_<%=cid%>));
+        x_<%=cid%> = doc_<%=cid%>.createXPath(loopQuery_<%=cid %>);
+        x_<%=cid%>.setNamespaceURIs(xmlNameSpaceMap_<%=cid%>); 
+        nodeList_<%=cid%> = (java.util.List<org.dom4j.Node>)x_<%=cid%>.selectNodes(doc_<%=cid%>);
+        isStructError_<%=cid %> = false;
+        
+    }catch(java.lang.Exception ex_<%=cid %>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+<%
+    if(dieOnError){
+%>
+        throw(ex_<%=cid %>);
+<%
+    }else{
+		if(isLog4jEnabled){%>
+			log.error("<%=cid%> - " + ex_<%=cid %>.getMessage());
+		<%}
+        if(!("").equals(rejectConnName) && rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+            if(inConn!=null){
+                int columnNo=0;
+                for(IMetadataColumn column : outConn.getMetadataTable().getListColumns()) {
+                    if(!jsonField.equals(column.getLabel())){
+                        for(IMetadataColumn inColumn : inConn.getMetadataTable().getListColumns()){
+                            if(inColumn.getLabel().equals(column.getLabel())){
+                                if(schemaOptNum < mapping.size()){
+                                    if(columnNo%schemaOptNum==0){
+%>
+            xml_api_<%=cid%>.putRejectValueBeforeExtract_<%=columnNo/schemaOptNum%>(<%=rejectConnName%>,<%=inConn.getName()%>);
+<%
+                                    }
+                                    columnNo++;
+                                }else{
+%>
+    <%=rejectConnName%>.<%=column.getLabel()%> = <%=inConn.getName() %>.<%=column.getLabel()%>;
+<%
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+%>
+    <%=rejectConnName %>.errorJSONField = oraginalJsonStr_<%=cid %>;
+    <%=rejectConnName %>.errorMessage = ex_<%=cid %>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+        } else if(("").equals(rejectConnName)){
+%>
+    System.err.println(ex_<%=cid %>.getMessage());
+<%
+        }
+    }
+%>
+    }finally {
+        baos_<%=cid %>.close();
+        if(bais_<%=cid %>!=null){
+            bais_<%=cid %>.close();
+        }
+    }
+    
+    org.dom4j.Node node_<%=cid %> = null;
+    String str_<%=cid %> = "";
+    for(int i_<%=cid %>=0; isStructError_<%=cid %> || (nodeList_<%=cid %>!=null && i_<%=cid %> < nodeList_<%=cid %>.size());i_<%=cid %>++){
+        
+        if(!isStructError_<%=cid %>){
+<%
+if(outConns!=null){
+    for (IConnection conn : outConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+            <%=conn.getName() %> = null;
+<%
+        }
+    }
+}
+%>
+            <%=firstConnName %> = new <%=firstConnName %>Struct();
+        
+            org.dom4j.Node temp_<%=cid %> = nodeList_<%=cid %>.get(i_<%=cid %>);
+    
+            nb_line_<%=cid%>++; 
+            try{
+<%
+        if(inConn!=null){
+            int unExtractColNo=0;
+            for (int i=0;i<mapping.size();i++) {
+                if (mapping.get(i).get("SCHEMA_COLUMN")!=null) {
+                    String query = mapping.get(i).get("QUERY");
+                    if(query==null || query.trim().length() < 1 ){
+                        for(IMetadataColumn inColumn:inColumns) {
+                            if (inColumn.getLabel().compareTo(mapping.get(i).get("SCHEMA_COLUMN"))==0) {
+                                if(schemaOptNum < mapping.size()){
+                                    if(unExtractColNo%schemaOptNum==0){
+%>
+            xml_api_<%=cid%>.putUnExtractValue_<%=unExtractColNo/schemaOptNum%>(<%=firstConnName%>,<%=inConn.getName()%>);
+<%
+                                    }
+                                    unExtractColNo++;
+                                }else{
+%>
+            <%=firstConnName%>.<%=inColumn.getLabel()%> = <%=inConn.getName() %>.<%=inColumn.getLabel()%>;
+<%
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        //get the mapping column 
+        int extractColNo=0;
+        for (int i=0;i<mapping.size();i++) {  //for S_0
+            String query = mapping.get(i).get("QUERY");
+            String nodeCheck = mapping.get(i).get("NODECHECK");
+            boolean isArrayCheck = "true".equals(mapping.get(i).get("ISARRAY"));
+            if(schemaOptNum < mapping.size()){
+                if(query!=null && query.trim().length()>0){  // if S_0_0
+                    if(extractColNo%schemaOptNum==0){
+%>
+            xml_api_<%=cid%>.putExtractValue_<%=extractColNo/schemaOptNum%>(<%=firstConnName%>,<%if(inConn!=null){%><%=inConn.getName()%>,<%}%>xmlStr_<%=cid%>,temp_<%=cid %>,loopQuery_<%=cid %>,xmlNameSpaceMap_<%=cid%>,node_<%=cid %>,str_<%=cid %>,xml_api_<%=cid%>,originalJSONString_<%=cid %>,cjs_<%=cid %>,isGetWholeJson_<%=cid %>);
+<%
+                    }
+                    extractColNo++;
+                }
+            }else{
+              if(query!=null && query.trim().length()>0){  // if S_0_0
+            		if("true".equals(nodeCheck)){
+						if((".").equals(query.substring(1,query.length()-1)) && ("/").equals(loopQuery.substring(1,loopQuery.length()-1))){
+%>
+						isGetWholeJson_<%=cid %>  = true;
+<%
+						}
+					}
+%>
+                org.dom4j.XPath xTmp<%=i%>_<%=cid%> = temp_<%=cid%>.createXPath(<%=query%>);
+                xTmp<%=i%>_<%=cid%>.setNamespaceURIs(xmlNameSpaceMap_<%=cid%>);
+                <%
+                if(!isArrayCheck){
+                %>
+	                Object obj<%=i%>_<%=cid%> = xTmp<%=i%>_<%=cid%>.evaluate(temp_<%=cid%>);
+	                if(obj<%=i%>_<%=cid%> instanceof String || obj<%=i%>_<%=cid%> instanceof Number){
+	                    node_<%=cid%> = temp_<%=cid%>;
+	                    str_<%=cid %> = String.valueOf(obj<%=i%>_<%=cid%>);
+	                }else{
+                    	node_<%=cid%> = xTmp<%=i%>_<%=cid%>.selectSingleNode(temp_<%=cid%>);
+						<%
+	                    if(("true").equals(nodeCheck)){
+						%>
+							if(node_<%=cid %>==null){
+								str_<%=cid%> = null;
+							}else{
+								str_<%=cid %> = originalJSONString_<%=cid %>.getOriginalJSONString(node_<%=cid %>.asXML(),cjs_<%=cid %>.getAdditionRoot(),<%=encoding%>,isGetWholeJson_<%=cid %>);
+							}
+							isGetWholeJson_<%=cid%> = false;
+						<%
+	                    }else{
+						%>
+	                        str_<%=cid %> = xTmp<%=i%>_<%=cid%>.valueOf(temp_<%=cid %>);
+						<%
+	                    }
+						%>
+	                }
+				<%
+				}else{
+                	if(("true").equals(nodeCheck)){
+					%>
+						String xmlStrTemp<%=i%>_<%=cid%> = "";
+						for(Object tempNode_<%=cid%> : xTmp<%=i%>_<%=cid%>.selectNodes(temp_<%=cid%>)){
+							node_<%=cid%> = (org.dom4j.Node)tempNode_<%=cid%>;
+							xmlStrTemp<%=i%>_<%=cid%> += node_<%=cid%>.asXML();
+						}
+						if("".equals(xmlStrTemp<%=i%>_<%=cid%>)){
+							str_<%=cid%> = null;
+						}else{
+							str_<%=cid%> = originalJSONString_<%=cid%>.getOriginalJSONString(xmlStrTemp<%=i%>_<%=cid%>,cjs_<%=cid%>.getAdditionRoot(),<%=encoding%>,isGetWholeJson_<%=cid%>, true);
+						}
+						isGetWholeJson_<%=cid%> = false;
+                	<%
+                	}else{
+					%>
+						java.util.List<String> xmlListTemp<%=i%>_<%=cid%> = new java.util.ArrayList<String>();
+						for(Object tempNode_<%=cid%> : xTmp<%=i%>_<%=cid%>.selectNodes(temp_<%=cid%>)){
+							xmlListTemp<%=i%>_<%=cid%>.add(((org.dom4j.Node)tempNode_<%=cid%>).getStringValue());
+						}
+					<%
+                	}
+                }
+                for(IMetadataColumn column:outConn.getMetadataTable().getListColumns()) { // for S_0_0_0
+                    if (mapping.get(i).get("SCHEMA_COLUMN")!=null) { // if S_0_0_0_0
+                        if (column.getLabel().compareTo(mapping.get(i).get("SCHEMA_COLUMN"))==0) { //if S_0_0_0_0_0
+                            
+                            String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                            JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                            String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                            
+                            boolean isNotSetDefault = false;
+                            String defaultValue=column.getDefault();
+                            if(defaultValue!=null){
+                                isNotSetDefault = defaultValue.trim().length()==0;
+                            }else{
+                                isNotSetDefault=true;
+                            }
+                            
+                            if(("true").equals(nodeCheck)){
+							%>
+                                <%=firstConnName %>.<%=column.getLabel() %> = str_<%=cid %>;
+								<%
+                                continue;
+                            }
+                            if(!isArrayCheck){
+	                            if(javaType == JavaTypesManager.STRING){
+									if(column.isNullable()){
+									%>
+	                                    if(xml_api_<%=cid%>.isDefNull(node_<%=cid%>)){
+	                                        <%=firstConnName %>.<%=column.getLabel() %> = null;
+	                                    }else if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+	                                        <%=firstConnName %>.<%=column.getLabel() %> = "";
+	                                    }else if(xml_api_<%=cid%>.isMissing(node_<%=cid%> )){ 
+	                                        <%=firstConnName %>.<%=column.getLabel() %> = <%=isNotSetDefault?null:column.getDefault()%>;
+	                                    }else{
+									<%
+									}else{ // column.isNullable()
+									%>
+										if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+											<%=firstConnName %>.<%=column.getLabel() %> ="";
+										}else if(xml_api_<%=cid%>.isMissing(node_<%=cid%> )){ 
+											<%=firstConnName %>.<%=column.getLabel() %> =<%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;
+										}else{
+									<%
+									}
+	                            }else{ // other type
+									if(column.isNullable()){
+									%>  
+	                                	if(xml_api_<%=cid%>.isDefNull(node_<%=cid%>)){
+	                                    	<%=firstConnName %>.<%=column.getLabel() %> = null;
+	                                	}else if(xml_api_<%=cid%>.isEmpty(node_<%=cid%>) || xml_api_<%=cid%>.isMissing(node_<%=cid%>)){
+	                                    	<%=firstConnName %>.<%=column.getLabel() %> = <%=isNotSetDefault?null:column.getDefault()%>;
+	                                	}else{
+									<%
+									}else{ // column.isNullable()
+									%>
+										if(xml_api_<%=cid%>.isMissing(node_<%=cid%>) || xml_api_<%=cid%>.isEmpty(node_<%=cid%>)){
+											<%=firstConnName %>.<%=column.getLabel() %> =<%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;
+										}else{
+									<%
+									}
+								}
+								if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+								%>
+									<%=firstConnName%>.<%=column.getLabel() %> = str_<%= cid %>;
+								<%
+								} else {
+									if (javaType == JavaTypesManager.DATE) {
+									%>
+										<%=firstConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(str_<%= cid %>, <%= patternValue %>);
+<%
+									} else if (javaType == JavaTypesManager.BYTE_ARRAY){
+%>
+										<%=firstConnName%>.<%=column.getLabel() %> = str_<%= cid %>.toString().getBytes();
+<%
+									} else {
+%>
+										<%=firstConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(str_<%= cid %>);
+									<%
+									}
+								}
+								%>
+										}
+							<%
+							}else{
+							%>
+								if(xmlListTemp<%=i%>_<%=cid%>.isEmpty()){
+									<%=firstConnName%>.<%=column.getLabel() %> = null;									
+								}else{
+									<%
+									if(javaType == JavaTypesManager.STRING){
+									%>
+										<%=firstConnName%>.<%=column.getLabel() %> = xmlListTemp<%=i%>_<%=cid%>.toString();
+									<%
+									}else if(javaType == JavaTypesManager.LIST || javaType == JavaTypesManager.OBJECT){
+									%>
+										<%=firstConnName%>.<%=column.getLabel() %> = xmlListTemp<%=i%>_<%=cid%>;
+									<%
+									}
+									%>
+								}
+							<%
+							}
+	                        break;
+                        } // if S_0_0_0_0_1
+                    } // if S_0_0_0_1
+                } // for S_0_0_1
+              }// if S_0_1
+            }
+        } // for S_1
+        if(!("").equals(rejectConnName) && rejectConnName.equals(firstConnName)){
+%>
+    <%=outConn.getName() %> = null;
+<%
+        }
+%>
+}catch(java.lang.Exception ex_<%=cid %>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+<%
+    if(dieOnError){
+%>
+    throw(ex_<%=cid %>);
+<%
+    }else{
+		if(isLog4jEnabled){%>
+			log.error("<%=cid%> - " + ex_<%=cid %>.getMessage());
+		<%}
+        if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+            int columnNo=0;
+            for(IMetadataColumn column : outConn.getMetadataTable().getListColumns()) {
+                if(schemaOptNum < mapping.size()){
+                    if(columnNo%schemaOptNum==0){
+%>
+            xml_api_<%=cid%>.putRejectValueAfterExtract_<%=columnNo/schemaOptNum%>(<%=rejectConnName%>,<%=firstConnName %>);
+<%
+                    }
+                    columnNo++;
+                }else{
+%>
+     <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName %>.<%=column.getLabel() %>;
+<%
+                }
+            }
+%>
+    <%=rejectConnName %>.errorJSONField = oraginalJsonStr_<%=cid %>;
+    <%=rejectConnName %>.errorMessage = ex_<%=cid %>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+    <%=firstConnName %> = null;
+<%
+        } else if(("").equals(rejectConnName)){
+%>
+    System.err.println(ex_<%=cid %>.getMessage());
+    <%=firstConnName %> = null;
+<%
+        } else if(rejectConnName.equals(firstConnName)){
+%>
+    <%=rejectConnName %>.errorJSONField = oraginalJsonStr_<%=cid %>;
+    <%=rejectConnName %>.errorMessage = ex_<%=cid %>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+        }
+    }
+%>
+        }
+    }
+    
+    isStructError_<%=cid %> = false;
+
+<%
+}
+%>
+
+<%if(isLog4jEnabled){%>
+	log.debug("<%=cid%> - Extracting the record " + nb_line_<%=cid %> + ".");
+<%}%>

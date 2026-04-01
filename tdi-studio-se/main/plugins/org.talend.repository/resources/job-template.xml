@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0">
+
+	<!-- Talend Job OSGi blueprint descriptor -->
+
+#if ($useSAM)
+	<reference id="eventFeature" interface="org.talend.esb.sam.agent.feature.EventFeature" />
+#end
+
+	<bean id="job" class="${className}" #if(${hasDestroyMethod})destroy-method="destroy"#end>
+
+#if (!$dataSources.isEmpty())
+		<property name="dataSourceReferences">
+		    <ref component-id="dataSourceReferenceList" /> 
+		</property>
+#end
+	</bean>
+
+	<service ref="job">
+		<interfaces>
+			<value>routines.system.api.TalendJob</value>
+#if ($isESBJob)
+			<value>routines.system.api.TalendESBJob</value>
+#if ($isESBJobFactory)
+			<value>routines.system.api.TalendESBJobFactory</value>
+#end
+#end
+#if ($isTalendStepTemplate)
+			<value>routines.system.api.TalendStepTemplateFactory</value>
+#end
+		</interfaces>
+		<service-properties>
+			<entry key="name" value="${name}" />
+			<entry key="version" value="${version}" />
+			<entry key="type" value="job" />
+#if ($isESBJobFactory)
+			<entry key="multithreading" value="true" />
+#end
+		</service-properties>
+	</service>
+	
+#if (!$dataSources.isEmpty())
+	<reference-list id="dataSourceReferenceList" member-type="service-reference" interface="javax.sql.DataSource" />
+#end
+</blueprint>

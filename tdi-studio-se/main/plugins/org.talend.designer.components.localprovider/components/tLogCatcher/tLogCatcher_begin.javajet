@@ -1,0 +1,42 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.ElementParameterParser
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+%>
+try {
+	for (LogCatcherUtils.LogCatcherMessage lcm : <%=cid %>.getMessages()) {
+<%
+	for (IConnection conn : node.getOutgoingConnections()) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+		<%=conn.getName() %>.type = lcm.getType();
+		<%=conn.getName() %>.origin = (lcm.getOrigin()==null || lcm.getOrigin().length()<1 ? null : lcm.getOrigin());
+		<%=conn.getName() %>.priority = lcm.getPriority();
+		<%=conn.getName() %>.message = lcm.getMessage();
+		<%=conn.getName() %>.code = lcm.getCode();
+		
+		<%=conn.getName() %>.moment = java.util.Calendar.getInstance().getTime();
+	
+    	<%=conn.getName() %>.pid = pid;
+		<%=conn.getName() %>.root_pid = rootPid;
+		<%=conn.getName() %>.father_pid = fatherPid;
+	
+    	<%=conn.getName() %>.project = projectName;
+    	<%=conn.getName() %>.job = jobName;
+    	<%=conn.getName() %>.context = contextStr;
+    		
+<%
+		}
+	}
+%>

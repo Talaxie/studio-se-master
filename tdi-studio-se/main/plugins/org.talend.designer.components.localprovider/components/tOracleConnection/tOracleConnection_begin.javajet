@@ -1,0 +1,200 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+	<%@ include file="../templates/DB/HelpClass/HelpClass.javajet"%>
+<%
+    class ConnectionUtil extends DefaultConnectionUtil{
+    
+        public void beforeComponentProcess(INode node){
+            super.beforeComponentProcess(node);
+            cid = node.getUniqueName();
+            String dbVersion =  ElementParameterParser.getValue(node, "__DB_VERSION__");
+            String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+			if("ORACLE_RAC".equals(connectionType) && ("ORACLE_12".equals(dbVersion) || "ORACLE_18".equals(dbVersion))){
+	            boolean useSSL = "true".equals(ElementParameterParser.getValue(node,"__USE_SSL__"));
+	            if( useSSL){
+	            %>
+	                java.security.Security.insertProviderAt(new oracle.security.pki.OraclePKIProvider(), 3);
+	            <%
+	            }
+			}
+	    }
+
+	public void createURL(INode node) {
+			super.createURL(node);
+%>
+<%
+    		String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+			String jdbcURL = ElementParameterParser.getValue(node, "__JDBC_URL__");
+    		String localServiceName = ElementParameterParser.getValue(node, "__LOCAL_SERVICE_NAME__");
+    		String rac_url = ElementParameterParser.getValue(node, "__RAC_URL__");
+			if("ORACLE_RAC".equals(connectionType)) {
+%>
+        String url_<%=cid %> = <%=rac_url%>;
+<%
+    		} else if(("ORACLE_SID").equals(connectionType)) {
+%>
+        String url_<%=cid %> = "jdbc:oracle:thin:@" + <%=dbhost%> + ":" + <%=dbport%> + ":" + <%=dbname%>;
+<%
+    		} else if(("ORACLE_SERVICE_NAME").equals(connectionType)) {
+%>
+        String url_<%=cid %> = "jdbc:oracle:thin:@(description=(address=(protocol=tcp)(host=" + <%=dbhost%> + ")(port=" + <%=dbport%> + "))(connect_data=(service_name=" + <%=dbname%> + ")))";
+<%
+    		} else if(("ORACLE_OCI").equals(connectionType)) {
+%>
+        String url_<%=cid%> = "jdbc:oracle:oci8:@" + <%=localServiceName%>;
+<%
+			}else if(("ORACLE_WALLET").equals(connectionType)){
+			%>
+			String url_<%=cid%>=<%=jdbcURL%>;
+			<%
+			}
+%>
+    	globalMap.put("connectionType_" + "<%=cid%>", "<%=connectionType%>");
+<%
+		}
+
+		public String getDirverClassName(INode node){
+			String dbVersion =  ElementParameterParser.getValue(node, "__DB_VERSION__");
+			if("ORACLE_11".equals(dbVersion) || "ORACLE_12".equals(dbVersion) || "ORACLE_18".equals(dbVersion) ){
+			    return "oracle.jdbc.OracleDriver";
+			}else {
+				return "oracle.jdbc.driver.OracleDriver";
+			}
+		}
+
+
+
+		public void useShareConnection(INode node) {
+		String sharedConnectionName = ElementParameterParser.getValue(node, "__SHARED_CONNECTION_NAME__");
+		String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+		String shareDBClass = "SharedDBConnection";
+		if(isLog4jEnabled){
+			shareDBClass = "SharedDBConnectionLog4j";
+%>
+			SharedDBConnectionLog4j.initLogger(log.getName(),"<%=cid%>");
+<%
+		}
+%>
+		String sharedConnectionName_<%=cid%> = <%=sharedConnectionName%>;
+<%
+			if(("ORACLE_WALLET").equals(connectionType)) {
+%>
+			conn_<%=cid%> = <%=shareDBClass%>.getDBConnection("<%=this.getDirverClassName(node)%>",url_<%=cid%>,sharedConnectionName_<%=cid%>);
+
+<%
+			} else {
+%>
+
+				conn_<%=cid%> = <%=shareDBClass%>.getDBConnection("<%=this.getDirverClassName(node)%>",url_<%=cid%>,dbUser_<%=cid%> , dbPwd_<%=cid%> , sharedConnectionName_<%=cid%>);
+
+<%
+			}
+%>
+		globalMap.put("conn_<%=cid%>", conn_<%=cid%>);
+<%
+		}
+
+		public void createConnection(INode node) {
+		//dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+		String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+		boolean useSSL = false;
+		String dbVersion =  ElementParameterParser.getValue(node, "__DB_VERSION__");
+		if("ORACLE_RAC".equals(connectionType) && ("ORACLE_12".equals(dbVersion) || "ORACLE_18".equals(dbVersion))){
+		    useSSL = "true".equals(ElementParameterParser.getValue(node,"__USE_SSL__"));
+		}
+		boolean disableCDCProtection="true".equals(ElementParameterParser.getValue(node,"__DISABLE_CBC_PROTECTION__"));
+			if((("ORACLE_WALLET").equals(connectionType))) {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>);
+<%
+			} else if(!useSSL && (dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties))) {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+			} else {
+%>
+			java.util.Properties atnParamsPrope_<%=cid%> = new java.util.Properties();
+<%
+            if("ORACLE_RAC".equals(connectionType) && useSSL){
+%>
+			    if(dbUser_<%=cid%>!=null && dbPwd_<%=cid%>!=null && !"".equals(dbUser_<%=cid%>)&& !"".equals(dbPwd_<%=cid%>)){
+			        atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid%>);
+			        atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid%>);
+				}
+<%
+			}else{
+%>
+			    atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid%>);
+			    atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid%>);
+<%
+		    }
+		    if(disableCDCProtection && useSSL){
+%>
+                System.setProperty("jsse.enableCBCProtection","false");
+<%
+		    }
+%>
+			if(<%= dbproperties %> != null && !"\"\"".equals(<%= dbproperties %>) && !"".equals(<%= dbproperties %>)){
+                atnParamsPrope_<%=cid%>.load(new java.io.ByteArrayInputStream(<%=dbproperties%>.replace("&", "\n").getBytes()));
+            }
+<%
+         String passwordFieldName = null;
+%>
+         <%@ include file="../tOracleConnection/Oracle_SSL_inc.javajet"%>
+         
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, atnParamsPrope_<%=cid%>);
+<%
+			}
+%>
+<%
+		}
+
+		public void afterComponentProcess(INode node){
+%>
+<%
+	    	String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+    		String localServiceName = ElementParameterParser.getValue(node, "__LOCAL_SERVICE_NAME__");
+			if(("ORACLE_OCI").equals(connectionType)) {
+%>
+        globalMap.put("localServiceName_" + "<%=cid%>",<%=localServiceName%>);
+<%
+    		} else if("ORACLE_RAC".equals(connectionType)){
+	    		String rac_url = ElementParameterParser.getValue(node, "__RAC_URL__");
+%>
+        globalMap.put("rac_url_" + "<%=cid%>", <%=rac_url%>);
+<%    		}else {
+%>
+        globalMap.put("host_" + "<%=cid%>",<%=dbhost%>);
+        globalMap.put("port_" + "<%=cid%>",<%=dbport%>);
+        globalMap.put("dbname_" + "<%=cid%>",<%=dbname%>);
+<%
+    		}
+%>
+<%
+	    }
+	}//end class
+	connUtil = new ConnectionUtil();
+%>
+<%//----------------------------component codes-----------------------------------------%>
+
+	<%@ include file="../templates/DB/AbstractDBConnection.javajet"%>
+
+<%
+	String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+	if(("ORACLE_WALLET").equals(connectionType)&&(dbschema==null||"".equals(dbschema)||"\"\"".equals(dbschema))) {
+%>
+  	globalMap.put("dbschema_" + "<%=cid%>",conn_<%=cid%>.getMetaData().getUserName());
+<%
+	}else{
+%>
+	globalMap.put("dbschema_" + "<%=cid%>", <%=dbschema%>);
+<%
+	}
+%>
+	globalMap.put("username_" + "<%=cid%>",<%=dbuser%>);
+	globalMap.put("password_" + "<%=cid%>",dbPwd_<%=cid%>);

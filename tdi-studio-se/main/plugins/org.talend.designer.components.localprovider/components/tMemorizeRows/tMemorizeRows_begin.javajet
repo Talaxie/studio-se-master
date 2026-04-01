@@ -1,0 +1,55 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection 
+    org.talend.core.model.process.EConnectionType
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager   
+    java.util.List
+	org.talend.core.model.process.IConnectionCategory
+  "
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+
+  IMetadataTable metadata = metadatas.get(0);
+  List<? extends IConnection> connsIn = node.getIncomingConnections();
+    	for(IConnection conn:connsIn){//-----111
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//-----222
+  IMetadataTable preMetadata = conn.getMetadataTable();
+  List<IMetadataColumn> preColumns = preMetadata.getListColumns();
+  String sRowsCount = ElementParameterParser.getValue(node, "__ROW_COUNT__");
+  %>
+  int iRows_<%=cid%> = <%=sRowsCount%>;
+  <%
+  for (IMetadataColumn column : preColumns){
+    String sType = JavaTypesManager.getTypeToGenerate(column.getTalendType(), true);
+    String sColumnName = column.getLabel();
+    
+    if ("byte[]".equals(sType)){
+    %>
+      byte[][] <%=sColumnName%>_<%=cid%> = new byte[iRows_<%=cid%>][];
+    <%
+    } else{
+    %>
+      <%=sType%>[] <%=sColumnName%>_<%=cid%> = new <%=sType%>[iRows_<%=cid%>];
+    <%
+    }
+    %>
+    globalMap.put("<%=cid%>_<%=sColumnName%>", <%=sColumnName%>_<%=cid%>);
+    <%
+  }
+%>
+	globalMap.put("<%=cid %>_NB_LINE_ROWS", iRows_<%=cid%>);
+<%
+  			}//-----222
+  		}//-----111
+}
+%>

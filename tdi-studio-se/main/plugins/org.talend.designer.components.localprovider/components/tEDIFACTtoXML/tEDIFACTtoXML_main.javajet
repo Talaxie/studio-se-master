@@ -1,0 +1,108 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.metadata.IMetadataTable 
+	org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.ElementParameterParser 
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+" 
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+	
+	String version = ElementParameterParser.getValue(node, "__EDI_VERSION__");
+	String filename = ElementParameterParser.getValue(node, "__EDI_FILE__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	String ignoreNewLines = ElementParameterParser.getValue(node, "__IGNORE_NEW_LINE__");
+%>
+
+String modelURI_<%=cid%> = "urn:org.milyn.edi.unedifact:"+"<%=version%>"+"-mapping:1.4";
+
+org.milyn.edisax.unedifact.UNEdifactInterchangeParser parser_<%=cid%> = new org.milyn.edisax.unedifact.UNEdifactInterchangeParser();
+
+routines.system.Document d_<%=cid%>=new routines.system.Document();
+java.io.FileInputStream fis_<%=cid%> = new java.io.FileInputStream(<%=filename%>);
+
+try {
+	org.milyn.edisax.registry.DefaultMappingsRegistry mappingsRegistry_<%=cid%> = new org.milyn.edisax.registry.DefaultMappingsRegistry();
+	mappingsRegistry_<%=cid%>.addModelReferences(modelURI_<%=cid%>, new java.net.URI("/"));
+	parser_<%=cid%>.setMappingsRegistry(mappingsRegistry_<%=cid%>);
+	parser_<%=cid%>.setFeature(org.milyn.edisax.EDIParser.FEATURE_IGNORE_NEWLINES, <%="true".equals(ignoreNewLines)?"true":"false"%>);
+	parser_<%=cid%>.setFeature(org.milyn.edisax.EDIParser.FEATURE_IGNORE_EMPTY_NODES, false);
+	org.dom4j.io.SAXContentHandler handler_<%=cid%> = new org.dom4j.io.SAXContentHandler();
+	parser_<%=cid%>.setContentHandler(new routines.system.xml.sax.NamespaceFilter(handler_<%=cid%>, new routines.system.xml.sax.NamespaceFilter.Matcher() {
+		public boolean matches(String uri) {
+			return uri.startsWith("urn:org.milyn.edi.");
+		}
+	}));
+	parser_<%=cid%>.parse(new org.xml.sax.InputSource(fis_<%=cid%>));
+
+	d_<%=cid%>.setDocument((org.dom4j.Document)handler_<%=cid%>.getDocument());
+
+} catch (org.milyn.SmooksException sE_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",sE_<%=cid%>.getMessage());
+<%
+	if ("true".equals(dieOnError)) {
+%>
+		throw sE_<%=cid%>;
+<%
+	} else {
+%>
+		System.err.println(sE_<%=cid%>.getMessage());
+<%
+	}
+%>
+} catch (java.lang.Exception dE_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",dE_<%=cid%>.getMessage());
+<%
+	if ("true".equals(dieOnError)) {
+%>
+		throw dE_<%=cid%>;
+<%
+	} else {
+%>
+		System.err.println(dE_<%=cid%>.getMessage());
+<%
+	}
+%>
+} finally {
+	fis_<%=cid%>.close();
+}
+<%
+
+List< ? extends IConnection> conns = node.getOutgoingConnections();
+
+if (conns!=null) {
+    if (conns.size()>0) {
+		for (int i=0;i<conns.size();i++) {
+			IConnection conn = conns.get(i);
+			if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				List<IMetadataTable> metadatas = node.getMetadataList();
+				if ((metadatas!=null)&&(metadatas.size()>0)) {
+					IMetadataTable metadata = metadatas.get(0);
+					List<IMetadataColumn> listColumns = metadata.getListColumns();
+					int sizeListColumns = listColumns.size();
+					for (int j=0; j<sizeListColumns; j++) {
+						IMetadataColumn column = listColumns.get(j);
+						if("id_Document".equals(column.getTalendType())) {
+%>
+							<%=conn.getName()%>.<%=column.getLabel()%>=d_<%=cid%>;
+<%
+						}
+					}
+				}
+			}
+		}
+	}
+}
+%>
+
+
+

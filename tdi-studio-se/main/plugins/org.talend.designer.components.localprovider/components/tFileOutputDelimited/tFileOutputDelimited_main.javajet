@@ -1,0 +1,810 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.utils.NodeUtil
+    org.talend.core.model.process.AbstractNode
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean isTSalesforceWaveOutputBulkExec = ((cid == null) ? false : (cid.startsWith("tSalesforceWaveOutputBulkExec")));
+boolean useDoubleQuoteEnclosure = "true".equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))
+                                  && ("\"\"\"").equals(ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__"));
+boolean applyNA4Null = isTSalesforceWaveOutputBulkExec;
+String str4Nil = "#N/A";
+
+boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+int schemaOptNum=100;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+    schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+}
+int dynamic_column_index=-1;
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    %>
+
+    <%
+
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {
+
+
+            String encoding = ElementParameterParser.getValue(
+                node,
+                "__ENCODING__"
+            );
+
+            boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+
+            boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+
+            boolean isInRowMode = ("true").equals(ElementParameterParser.getValue(node,"__ROW_MODE__"));
+
+            boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+
+            boolean flushOnRow = ("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__"));
+            String flushMod = ElementParameterParser.getValue(node, "__FLUSHONROW_NUM__");
+
+            String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+            boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+            String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+            String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+
+            String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+            boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+
+            boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+
+            boolean hasDynamic = metadata.isDynamicSchema();
+
+            List< ? extends IConnection> conns = node.getIncomingConnections();
+            for (IConnection conn : conns) {
+                if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                    List<IMetadataColumn> columns = metadata.getListColumns();
+                    int sizeColumns = columns.size();
+                    %>
+                    StringBuilder sb_<%=cid %> = new StringBuilder();
+                    <%
+                    if(isIncludeHeader && hasDynamic){
+                        if(codeGenArgument.getIsRunInMultiThread()){
+                %>
+                synchronized (multiThreadLockWrite) {
+                <%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                %>
+                synchronized (fileName_<%=cid%>.intern()) {
+                <%
+                        }
+                        if (isParallelize) {
+                %>
+                Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                synchronized (pLockWrite) {
+                <%
+                        }
+                        if(!split && compress && !isAppend){
+                        %>
+                    if(isFirstCheckDyn_<%=cid %> <%if(!useStream){%>&& (file_<%=cid%>.length()==0)<%}%>){
+                        <%
+                        }else{
+                    %>
+                    if(isFirstCheckDyn_<%=cid %> <%if(!useStream){%>&& file<%=cid%>.length()==0<%}%>){
+                        <%
+                        }
+                        for (int i = 0; i < sizeColumns; i++) {
+                            IMetadataColumn column = columns.get(i);
+                            if(sizeColumns> schemaOptNum){
+                                if(i%schemaOptNum==0){
+                                %>
+                                    fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(out<%=cid %>,OUT_DELIM_<%=cid %>, <%=conn.getName() %>);
+                                <%
+                                }
+                            }else{//AA
+                            if(!("id_Dynamic".equals(column.getTalendType()))) {
+                         %>
+                        out<%=cid %>.write("<%=column.getLabel() %>");
+                         <%
+                            }else{
+                         %>
+                        routines.system.DynamicUtils.writeHeaderToDelimitedFile(<%=conn.getName() %>.<%=column.getLabel() %>, out<%=cid %>, OUT_DELIM_<%=cid %>);
+                         <%
+                            }
+                            if(i != sizeColumns - 1) {
+                         %>
+                        out<%=cid %>.write(OUT_DELIM_<%=cid %>);
+                         <%
+                            }
+                            }//AA
+                        }
+                        %>
+                        out<%=cid %>.write(OUT_DELIM_ROWSEP_<%=cid %>);
+                        isFirstCheckDyn_<%=cid %> = false;
+                    }
+                <%
+                        if (isParallelize) {
+                %>
+                }
+                <%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                %>
+                }
+                <%
+                        }
+                        if(codeGenArgument.getIsRunInMultiThread()){
+                %>
+                }
+                <%
+                        }
+                %>
+                                <%
+                    }
+                    for (int i = 0; i < sizeColumns; i++) {
+
+                        IMetadataColumn column = columns.get(i);
+                        JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                        boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+                        if(sizeColumns> schemaOptNum){
+                            if(i%schemaOptNum==0){
+%>
+                            fileOutputDelimitedUtil_<%=cid%>.putValue_<%=i/schemaOptNum%>(<%=conn.getName() %>,sb_<%=cid %>,OUT_DELIM_<%=cid %>);
+<%
+                            }
+                        }else{//BB
+                        if(!isPrimitive) {
+                            %>
+                            if(<%=conn.getName() %>.<%=column.getLabel() %> != null) {
+                            <%
+                        }
+                        if(column.getTalendType().equals("id_Dynamic")){
+                            dynamic_column_index = i;
+                            if(advancedSeparator){
+%>
+                            routines.system.DynamicUtils.writeValuesToStringBuilder(<%=conn.getName() %>.<%=column.getLabel() %>, sb_<%=cid %>, OUT_DELIM_<%=cid %>, <%= thousandsSeparator %>, <%= decimalSeparator %>, java.nio.charset.Charset.forName(<%=encoding %>));
+<%
+							}else{%>
+							routines.system.DynamicUtils.writeValuesToStringBuilder(<%=conn.getName() %>.<%=column.getLabel() %>, sb_<%=cid %>, OUT_DELIM_<%=cid %>, java.nio.charset.Charset.forName(<%=encoding %>));
+							<%}
+                        }else{
+                        %>
+                        sb_<%=cid %>.append(
+                        <%
+                            String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                            if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+                            %>
+                            FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>)
+                            <%
+                            } else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+                            %>
+                                    <% if(javaType == JavaTypesManager.BIGDECIMAL) {%>
+                                    FormatterUtils.format_Number(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>)
+                                    <% } else { %>
+                                    FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>)
+                                    <% } %>
+                            <%
+                            } else if(javaType == JavaTypesManager.BIGDECIMAL){
+                            %>
+                            <%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+                            <%
+                            } else if(javaType == JavaTypesManager.BYTE_ARRAY){
+                            %>
+                            java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+                            <%
+                            } else {
+                            %>
+                            <%=conn.getName() %>.<%=column.getLabel() %>
+                            <%
+                            }
+                        %>
+                        );
+                        <%
+                        }
+                        if(!isPrimitive) {
+                            %>
+                            }
+                        <%
+                        }
+                        if(i != sizeColumns - 1) {
+                            %>
+                            sb_<%=cid %>.append(OUT_DELIM_<%=cid %>);
+                            <%
+                        }
+                        }//BB
+                    }
+                    %>
+                    sb_<%=cid %>.append(OUT_DELIM_ROWSEP_<%=cid %>);
+
+
+                    <%
+                        if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                    synchronized (multiThreadLockWrite) {
+                    <%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                    %>
+                    synchronized (fileName_<%=cid%>.intern()) {
+                    <%
+                        }
+                        if (isParallelize) {
+                    %>
+                    Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                    synchronized (pLockWrite) {
+                    <%
+                        }
+                    %>
+                    nb_line_<%=cid %>++;
+                    resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+                    <%
+                    // add a prerequisite useStream to support output stream feature:8873
+                    if(!useStream && split){
+                        %>
+                        if(currentRow_<%=cid%> % splitEvery_<%=cid%>==0 && currentRow_<%=cid%>!=0){
+                            splitedFileNo_<%=cid%>++;
+                            out<%=cid %>.close();
+                            //close original outputStream
+
+                            file<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+
+                            <%if(!isAppend) {%>
+                            if(file<%=cid%>.exists()) {
+                                file<%=cid%>.delete();
+                            }
+                            <%}%>
+                            out<%=cid %> = new <%=isInRowMode?"routines.system.BufferedOutput":"java.io.BufferedWriter"%>(new java.io.OutputStreamWriter(
+                                    new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%= isAppend%>),<%= encoding%>));
+                            resourceMap.put("out_<%=cid%>", out<%=cid %>);
+                            <%
+                            if(isIncludeHeader){
+                                %>
+                                if(file<%=cid%>.length()==0){
+                                    <%
+                                    //List<IMetadataColumn> columns = metadata.getListColumns();
+                                    //int sizeColumns = columns.size();
+                                    for (int i = 0; i < sizeColumns; i++) {
+                                        IMetadataColumn column = columns.get(i);
+                                        if(sizeColumns> schemaOptNum){
+                                            if(i%schemaOptNum==0){
+%>
+                                        fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(out<%=cid %>,OUT_DELIM_<%=cid %><%if(hasDynamic){%>, <%=conn.getName() %><%}%>);
+<%
+                                            }
+                                        }else{//CC
+                                        if(!("id_Dynamic".equals(column.getTalendType()))) {
+                                        %>
+                                        out<%=cid %>.write("<%=column.getLabel() %>");
+                                        <%
+                                        }else{
+                                        %>
+                                        routines.system.DynamicUtils.writeHeaderToDelimitedFile(<%=conn.getName() %>.<%=column.getLabel() %>, out<%=cid %>, OUT_DELIM_<%=cid %>);
+                                        <%
+                                        }
+                                        if(i != sizeColumns - 1) {
+                                            %>
+                                            out<%=cid %>.write(OUT_DELIM_<%=cid %>);
+                                            <%
+                                        }
+                                        }//CC
+                                    }
+                                    %>
+                                    out<%=cid %>.write(OUT_DELIM_ROWSEP_<%=cid %>);
+                                }
+                                <%
+                            }
+                            %>
+                            out<%=cid %>.write(sb_<%=cid %>.toString());
+                            <%
+                            if(flushOnRow) {
+                                %>
+                                if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                out<%=cid %>.flush();
+                                }
+                                <%
+                            }
+                            %>
+                        }else{
+                            out<%=cid %>.write(sb_<%=cid %>.toString());
+                            <%
+                            if(flushOnRow) {
+                                %>
+                                if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                out<%=cid %>.flush();
+                                }
+                                <%
+                            }
+                            %>
+                        }
+                        currentRow_<%=cid%>++;
+
+
+                        <%
+                    } else {
+                        %>
+
+                        out<%=cid %>.write(sb_<%=cid %>.toString());
+                        <%
+                        if(flushOnRow) {
+                            %>
+                                if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                out<%=cid %>.flush();
+                                }
+                            <%
+                        }
+                        %>
+                        <%
+                    }
+                    %>
+                    <%if(isLog4jEnabled){%>
+                        log.debug("<%=cid%> - Writing the record " + nb_line_<%=cid%> + ".");
+                    <%}%>
+
+                    <%
+                        if (isParallelize) {
+                    %>
+                    }
+                    <%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                    %>
+                    }
+                    <%
+                        }
+                        if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                    }
+                    <%
+                        }
+                    %>
+
+                    <%
+                }
+            }
+        }
+    }
+    %>
+
+<%
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}else{//the following is the tFileOutputCSV component
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    %>
+
+    <%
+
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {
+            String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+            String delim = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+            boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+            boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+
+            boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+
+            boolean isInRowMode = ("true").equals(ElementParameterParser.getValue(node,"__ROW_MODE__"));
+
+            boolean flushOnRow = ("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__"));
+            String flushMod = ElementParameterParser.getValue(node, "__FLUSHONROW_NUM__");
+
+            String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+            boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+            String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+            String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+
+            String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+            boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+
+            List< ? extends IConnection> conns = node.getIncomingConnections();
+
+            boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+
+            boolean useOSLineSeparator = ("true").equals(ElementParameterParser.getValue(node,"__OS_LINE_SEPARATOR_AS_ROW_SEPARATOR__"));
+
+            boolean hasDynamic = metadata.isDynamicSchema();
+            IMetadataColumn dynamicCol = metadata.getDynamicColumn();
+            if(hasDynamic){
+                %>
+                dynamic_column_count_<%=cid%> = 1;
+                <%
+            }
+            if(conns!=null){
+                if (conns.size()>0){
+                    IConnection conn =conns.get(0);
+                    if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                        List<IMetadataColumn> columns = metadata.getListColumns();
+                        int sizeColumns = columns.size();
+                        if(isIncludeHeader && hasDynamic){
+
+                            if(codeGenArgument.getIsRunInMultiThread()){
+                            %>
+                    synchronized (multiThreadLockWrite) {
+                            <%
+                            }
+                            if (((AbstractNode)node).getParallelIterator() != null) {
+                            %>
+                    synchronized (fileName_<%=cid%>.intern()) {
+                            <%
+                            }
+                            if (isParallelize) {
+                            %>
+                    Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                    synchronized (pLockWrite) {
+                            <%
+                            }
+                            if(!split && compress && !isAppend){
+                            %>
+                        if(isFirstCheckDyn_<%=cid %> <%if(!useStream){%>&& (file_<%=cid%>.length()==0)<%}%>){
+                            headColu<%=cid%> = new String[<%=sizeColumns%>-1+<%=conn.getName()%>.<%=dynamicCol.getLabel()%>.getColumnCount()];
+                            <%
+                            }else{
+                        %>
+                        if(isFirstCheckDyn_<%=cid %> <%if(!useStream){%>&& file<%=cid%>.length()==0<%}%>){
+                            headColu<%=cid%> = new String[<%=sizeColumns%>-1+<%=conn.getName()%>.<%=dynamicCol.getLabel()%>.getColumnCount()];
+                        <%
+                            }
+                            for (int i = 0; i < sizeColumns; i++) {
+                                IMetadataColumn column = columns.get(i);
+                                if(("id_Dynamic").equals(column.getTalendType())) {
+                                    %>
+                                    dynamic_column_count_<%=cid%> = <%=conn.getName()%>.<%=column.getLabel()%>.getColumnCount();
+                                    <%
+                                }
+                                if(sizeColumns> schemaOptNum){
+                                    if(i%schemaOptNum==0){
+%>
+                                    fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(headColu<%=cid%>, <%=conn.getName() %>,dynamic_column_count_<%=cid%>);
+<%
+                                    }
+                                }else{//DD
+                                if(!("id_Dynamic".equals(column.getTalendType()))) {
+                                    if(i>dynamic_column_index&& dynamic_column_index != -1){
+                             %>
+                            headColu<%=cid%>[<%=i-1%>+dynamic_column_count_<%=cid%>]="<%=column.getLabel() %>";
+                             <%
+                                    }else{
+                             %>
+                            headColu<%=cid%>[<%=i%>]="<%=column.getLabel() %>";
+                             <%
+                                    }
+                                }else{
+                                dynamic_column_index = i;
+                             %>
+                             for(int mi=0;mi<dynamic_column_count_<%=cid%>;mi++){
+                                headColu<%=cid%>[<%=i%>+mi]=<%=conn.getName()%>.<%=column.getLabel()%>.getColumnMetadata(mi).getName();
+                             }
+                             <%
+                                }
+                                }//DD
+                            }
+                            %>
+                            CsvWriter<%=cid%>.writeNext(headColu<%=cid%>);
+                            CsvWriter<%=cid%>.flush();
+                            <%if(isInRowMode){%>
+                            out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                            out<%=cid%>.flush();
+                            strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                            <%}%>
+                        }
+                        <%
+                            if (isParallelize) {
+                        %>
+                    }
+                        <%
+                            }
+                            if (((AbstractNode)node).getParallelIterator() != null) {
+                        %>
+                    }
+                        <%
+                            }
+                            if(codeGenArgument.getIsRunInMultiThread()){
+                        %>
+                    }
+                        <%
+                            }
+                        %>
+                        if(isFirstCheckDyn_<%=cid %>){
+                            CsvWriter<%=cid %>.setEscapeChar(csvSettings_<%=cid %>.getEscapeChar());
+                            CsvWriter<%=cid %>.setQuoteChar(csvSettings_<%=cid %>.getTextEnclosure());
+                            CsvWriter<%=cid %>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.FORCE);
+                            isFirstCheckDyn_<%=cid %> = false;
+                        }
+                        <%
+                        }
+                        %>
+                        String[] row<%=cid%>=new String[<%=sizeColumns%><%=hasDynamic?"+"+conn.getName()+".":"" %><%=dynamicCol==null?"":dynamicCol.getLabel()+".getColumnCount()-1" %>];
+                        <%
+                        if(hasDynamic){
+                        %>
+                        dynamic_column_count_<%=cid%> =1;
+                        <%
+                        }
+                        for (int i = 0; i < sizeColumns; i++) {
+                            IMetadataColumn column = columns.get(i);
+                            JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                            String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                            boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable());
+                            if(("id_Dynamic").equals(column.getTalendType())) {
+                                %>
+                                dynamic_column_count_<%=cid%> = <%=conn.getName()%>.<%=dynamicCol.getLabel()%>.getColumnCount();
+                                <%
+                            }
+                            if(sizeColumns> schemaOptNum){
+                                if(i%schemaOptNum==0){
+%>
+                                fileOutputDelimitedUtil_<%=cid%>.putValue_<%=i/schemaOptNum%>(<%=conn.getName() %>,row<%=cid%><%if(hasDynamic){%>,dynamic_column_count_<%=cid%> <%}%>);
+<%
+                                }
+                            }else{//EE
+                            if(("id_Dynamic").equals(column.getTalendType())) {
+                                dynamic_column_index=i;
+                            %>
+                            if (<%=conn.getName()%>.<%=column.getLabel()%> != null) {
+                                routines.system.DynamicUtils.writeValuesToStringArrayEnhance(<%=conn.getName()%>.<%=column.getLabel()%>, row<%=cid%>, <%=dynamic_column_index%>,
+                                <%
+                                   if(applyNA4Null){
+                                        %>
+                                           "<%= str4Nil %>"
+                                        <%
+                                   }else{
+                                        %>
+                                           null
+                                        <%
+                                   }
+                                 %>, java.nio.charset.Charset.forName(<%=encoding %>));
+                            }
+                            <%
+                            }else{
+                                if(i>dynamic_column_index && dynamic_column_index !=-1){
+                            %>
+                            row<%=cid%>[<%=i-1%>+dynamic_column_count_<%=cid%>]=<%=isPrimitive? "":conn.getName()+"."+column.getLabel()+ " == null ? null : "%><%
+                                }else{
+                            %>
+                            row<%=cid%>[<%=i%>]=<%=isPrimitive? "":conn.getName()+"."+column.getLabel()+ " == null ? null : "%><%
+                                }
+                                if(javaType == JavaTypesManager.STRING ){
+                            %><%=conn.getName() %>.<%=column.getLabel() %>;
+                            <%
+                                }else if(javaType == JavaTypesManager.DATE && pattern != null){
+                            %>FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+                            <%
+                                }else if(javaType == JavaTypesManager.BYTE_ARRAY){
+                            %>java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString();
+                            <%
+                                } else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+                                    if(javaType == JavaTypesManager.BIGDECIMAL) {%>FormatterUtils.format_Number(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+                            <%      } else { %>FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+                            <%      }
+                                } else if (javaType == JavaTypesManager.BIGDECIMAL) {
+                            %><%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString();
+                            <%
+                                } else{
+                            %>String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+                            <%
+                                }
+                            }
+                            }//EE
+                        }
+%>
+<%                      if(codeGenArgument.getIsRunInMultiThread()){
+%>
+                synchronized (multiThreadLockWrite) {
+<%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+%>
+                synchronized (fileName_<%=cid%>.intern()) {
+<%
+                        }
+                        if (isParallelize) {
+%>
+                Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                synchronized (pLockWrite) {
+<%
+                        }
+%>
+                nb_line_<%=cid %>++;
+                resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+<%
+                        if(!useStream && split){
+                            %>
+                            if(currentRow_<%=cid%> % splitEvery_<%=cid%>==0 && currentRow_<%=cid%>!=0){
+                                splitedFileNo_<%=cid%>++;
+                                CsvWriter<%=cid%>.close();
+                                //close original outputStream
+
+                                <%if(!isAppend) {%>
+                                java.io.File fileToDelete_<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+                                if(fileToDelete_<%=cid%>.exists()) {
+                                    fileToDelete_<%=cid%>.delete();
+                                }
+                                <%}%>
+
+                                <%if(isInRowMode){%>
+                                out<%=cid %>.close();
+                                out<%=cid %> = new routines.system.BufferedOutput(new java.io.OutputStreamWriter(
+                                    new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%=isAppend%>),<%=encoding%>));
+                                strWriter<%=cid%> = new java.io.StringWriter();
+                                CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                                CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid %>.getFieldDelim());
+                                resourceMap.put("out_<%=cid%>", out<%=cid%>);
+                                <%}else{%>
+                                CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+                                    new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%=isAppend%>),<%=encoding%>)));
+                                CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid %>.getFieldDelim());
+                                <%}%>
+                                
+                                resourceMap.put("CsvWriter_<%=cid%>", CsvWriter<%=cid%>);
+                                
+                                <%
+                                if(!useOSLineSeparator) {
+                                %>
+                                if(csvSettings_<%=cid%>.isUseCRLFRecordDelimiter()) {
+                                    CsvWriter<%=cid%>.setLineEnd("\r\n");
+                                } else {
+                                    CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                                }
+                                <%
+                                } else {
+                                %>
+                                if(!csvSettings_<%=cid%>.isUseCRLFRecordDelimiter() && csvSettings_<%=cid%>.getRowDelim()!='\r' && csvSettings_<%=cid%>.getRowDelim()!='\n') {
+                                    CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                                }
+                                <%
+                                }
+                                %>
+
+                                //set header.
+                                <%
+                                if(isIncludeHeader && !isAppend){
+                                    %>
+                                    CsvWriter<%=cid%>.writeNext(headColu<%=cid%>);
+                                    <%if(isInRowMode){%>
+                                    out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                                    strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                                    <%}
+                                }
+                                if(isIncludeHeader && isAppend){
+                                    %>
+                                    file<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+                                    if(file<%=cid%>.length() == 0) {
+                                        CsvWriter<%=cid%>.writeNext(headColu<%=cid%>);
+                                        <%if(isInRowMode){%>
+                                        out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                                        strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                                        <%}%>
+                                    }
+                                    <%
+                                }
+                                %>
+                                //initialize new CsvWriter information
+                                CsvWriter<%=cid %>.setEscapeChar(csvSettings_<%=cid %>.getEscapeChar());
+                                CsvWriter<%=cid %>.setQuoteChar(csvSettings_<%=cid %>.getTextEnclosure());
+                                CsvWriter<%=cid %>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.FORCE);
+
+                                           CsvWriter<%=cid%>.writeNext(row<%=cid%>);
+                                <%if(isInRowMode){%>
+                                out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                                strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                                <%}
+                                if(flushOnRow) {
+                                    %>
+                                    if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                    <%if(isInRowMode){%>
+                                    out<%=cid%>.flush();
+                                    <%}else{%>
+                                    CsvWriter<%=cid %>.flush();
+                                    <%}%>
+                                    }
+                                    <%
+                                }
+                                %>
+
+                            }else{
+                                           CsvWriter<%=cid%>.writeNext(row<%=cid%>);
+                                <%if(isInRowMode){%>
+                                out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                                strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                                <%}
+                                if(flushOnRow) {
+                                    %>
+                                    if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                    <%if(isInRowMode){%>
+                                    out<%=cid%>.flush();
+                                    <%}else{%>
+                                    CsvWriter<%=cid %>.flush();
+                                    <%}%>
+                                    }
+                                    <%
+                                }
+                                %>
+                            }
+                            currentRow_<%=cid%>++;
+                            <%
+                        }else{
+                            %>
+                            <%
+                               if(applyNA4Null){
+                                    %>
+                                       CsvWriter<%=cid%>.writeNextEnhance(row<%=cid%>,"<%= str4Nil %>");
+                                    <%
+                               }else{
+                                    %>
+                                       CsvWriter<%=cid%>.writeNext(row<%=cid%>);
+                                    <%
+                               }
+                             %>
+                            <%if(isInRowMode){%>
+                            out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                            strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                            <%}
+                            if(flushOnRow) {
+                                %>
+                                    if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+                                    <%if(isInRowMode){%>
+                                    out<%=cid%>.flush();
+                                    <%}else{%>
+                                    CsvWriter<%=cid %>.flush();
+                                    <%}%>
+                                    }
+                                <%
+                            }
+                            %>
+                            <%
+
+                        }
+                        %>
+                        <%if(isLog4jEnabled){%>
+                            log.debug("<%=cid%> - Writing the record " + nb_line_<%=cid%> + ".");
+                        <%}%>
+
+<%
+                        if ( isParallelize) {
+%>
+                }
+<%
+                        }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+%>
+                }
+<%
+                        }
+                        if(codeGenArgument.getIsRunInMultiThread()){
+%>
+                }
+<%
+                        }
+%>
+
+                        <%
+                    }
+
+                }
+            }
+
+        }
+
+    }
+    %>
+
+<%
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+%>

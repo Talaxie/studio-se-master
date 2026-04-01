@@ -1,0 +1,76 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String filename = ElementParameterParser.getValue(node,"__TEMP_FILE__");
+ 		List< ? extends IConnection> conns = node.getIncomingConnections();
+    	if(conns!=null && conns.size()>0){
+       		IConnection conn =conns.get(0);
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    			List<IMetadataColumn> columns = metadata.getListColumns();
+        		int sizeColumns = columns.size();
+%>  	
+            String[] row_<%=cid%>=new String[<%=sizeColumns%>];		
+<%
+    			for (int i = 0; i < sizeColumns; i++) {
+        			IMetadataColumn column = columns.get(i);
+        			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+        			String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+        			if(JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable())){
+%>
+			row_<%=cid%>[<%=i%>] =String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>); 
+<%
+    				}else { 
+%>
+ 			if(<%=conn.getName() %>.<%=column.getLabel() %> == null){
+ 				row_<%=cid%>[<%=i%>]="";
+ 			}else{
+<%						if(javaType == JavaTypesManager.STRING ){
+%>
+				row_<%=cid%>[<%=i%>] = <%=conn.getName() %>.<%=column.getLabel() %>;
+<%
+						}else if(javaType == JavaTypesManager.DATE && pattern != null){
+%>
+				row_<%=cid%>[<%=i%>] = FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+<%
+						}else if(javaType == JavaTypesManager.BYTE_ARRAY){
+%>
+				row_<%=cid%>[<%=i%>] = java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString();
+<%
+						}else{
+%>
+				row_<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+<%
+ 						}
+%>
+			}
+<%
+  					}
+				}
+%>
+ 			CsvWriter_<%=cid%>.writeNext(row_<%=cid%>);	
+ 			nb_line_<%=cid %>++;
+<%
+			}
+ 	 	}
+	}
+}
+%>

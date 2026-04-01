@@ -1,0 +1,202 @@
+<%@ jet
+%>
+
+<%
+final boolean needPassphrase = "PUBLICKEY".equals(authMethod) || "PUBLIC_KEY_AND_PASSWORD".equals(authMethod);
+%>
+
+class MyUserInfo_<%=cid%> implements com.jcraft.jsch.UserInfo, com.jcraft.jsch.UIKeyboardInteractive {
+
+    <%
+    if(needPassphrase) {
+        passwordFieldName = "__PASSPHRASE__";
+        if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+        %> 
+            String decryptedPassphrase_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+        <%
+        } else {
+        %>
+            String decryptedPassphrase_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>;
+        <%
+        }
+    %>
+
+    String passphrase_<%=cid %> = decryptedPassphrase_<%=cid%>;
+    
+    public String getPassphrase() { return passphrase_<%=cid %>; }
+
+    <%
+    } else {
+    //here use the default one in component XML to avoid some risk
+    %>
+    public String getPassphrase() { return "secret"; }
+    <%
+    }
+    %>
+
+    public boolean promptPassword(String arg0) { return true; } 
+
+    public boolean promptPassphrase(String arg0) { return true; } 
+
+    public boolean promptYesNo(String arg0) { return true; } 
+
+    public void showMessage(String arg0) { } 
+
+    public String[] promptKeyboardInteractive(String destination, String name, String instruction, String[] prompt,
+    boolean[] echo) {
+        return new String[] {getPassword()};
+    }
+
+    public String getPassword() {
+        <% if ("PASSWORD".equals(authMethod) || "PUBLIC_KEY_AND_PASSWORD".equals(authMethod)) { %>
+            <% passwordFieldName = passwordFieldKey; %>
+
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+            return decryptedPassword_<%=cid%>;
+        <% } else { %>
+            return null;
+        <% } %>
+    }
+};
+final com.jcraft.jsch.UserInfo defaultUserInfo_<%=cid%> = new MyUserInfo_<%=cid%>();
+
+<%
+passwordFieldName = passwordFieldKey;
+%>
+
+boolean retry_<%=cid%> = false;
+int retry_count_<%=cid%> = 0;
+int retry_max_<%=cid%> = 5;
+
+com.jcraft.jsch.Session session_<%=cid%> = null;
+com.jcraft.jsch.Channel channel_<%=cid%> = null;
+
+class JschLogger_<%=cid %> implements com.jcraft.jsch.Logger {
+    public boolean isEnabled(int level){
+        return true;
+    }
+    public void log(int level, String message){
+    	<%if(isLog4jEnabled){%>
+        	log.debug(message);
+        <%}%>
+    }
+}
+
+do {
+    retry_<%=cid%> = false;
+
+    <%if (isConfigClient && clientParams.size() > 0) {
+    	for (Map<String, String> map : clientParams) {
+    		String parameter = map.get("PARAMETER");
+    		String value = map.get("VALUE");
+    %>
+    		com.jcraft.jsch.JSch.setConfig(<%=parameter %>, <%=value %>);
+    <%	}
+    }
+    %>
+    com.jcraft.jsch.JSch.setLogger(new JschLogger_<%=cid %>());
+    com.jcraft.jsch.JSch jsch_<%=cid%> = new com.jcraft.jsch.JSch(); 
+
+    <%if (needPassphrase){%>
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - SFTP authentication using a public key.");
+            log.debug("<%=cid%> - Private key: '" + <%=privateKey%> + "'.");
+        <%}%>
+        jsch_<%=cid%>.addIdentity(<%=privateKey %>, defaultUserInfo_<%=cid%>.getPassphrase());
+    <%}%>
+
+    session_<%=cid%> = jsch_<%=cid%>.getSession(<%=user%>, <%=host%>, <%=port%>);
+    session_<%=cid%>.setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive,gssapi-with-mic");
+
+    <%if (("PASSWORD").equals(authMethod)) {%>
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - SFTP authentication using a password.");
+        <%}%>
+
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+        session_<%=cid%>.setPassword(decryptedPassword_<%=cid%>); 
+    <%}%>
+
+    session_<%=cid%>.setUserInfo(defaultUserInfo_<%=cid%>); 
+    <%if (!useProxy) {%>
+        if(("true").equals(System.getProperty("http.proxySet"))) {
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/checkIfProxyHostExcluded.javajet"%>
+            if (!isHostIgnored_<%=cid %>) {
+                com.jcraft.jsch.ProxyHTTP proxy_<%=cid%> = new com.jcraft.jsch.ProxyHTTP(System.getProperty("http.proxyHost"),Integer.parseInt(System.getProperty("http.proxyPort")));
+                if(!"".equals(System.getProperty("http.proxyUser"))){
+                    proxy_<%=cid%>.setUserPasswd(System.getProperty("http.proxyUser"),System.getProperty("http.proxyPassword"));
+                }
+                session_<%=cid%>.setProxy(proxy_<%=cid%>);
+            }
+        } else if ("local".equals(System.getProperty("http.proxySet"))) {
+            String uriString = <%=host %> + ":" + <%=port%>;
+            java.net.Proxy proxyToUse = org.talend.proxy.TalendProxySelector.getInstance().getProxyForUriString(uriString);
+
+            if (!proxyToUse.equals(java.net.Proxy.NO_PROXY)) {
+                java.net.InetSocketAddress proxyAddress = (java.net.InetSocketAddress) proxyToUse.address();
+                String proxyHost = proxyAddress.getAddress().getHostAddress();
+                int proxyPort = proxyAddress.getPort();
+
+                com.jcraft.jsch.ProxyHTTP proxy_<%=cid%> = new com.jcraft.jsch.ProxyHTTP(proxyHost, proxyPort);
+
+                org.talend.proxy.ProxyCreds proxyCreds = org.talend.proxy.TalendProxyAuthenticator.getInstance().getCredsForProxyURI(proxyHost + ":" + proxyPort);
+                if (proxyCreds != null) {
+                    proxy_<%=cid%>.setUserPasswd(proxyCreds.getUser(), proxyCreds.getPass());
+                }
+
+                session_<%=cid%>.setProxy(proxy_<%=cid%>);
+            }
+        }
+    <%}%>
+
+    <%if(isLog4jEnabled){%>
+        log.info("<%=cid%> - Attempt to connect to  '" + <%=host %> + "' with username '" + <%=user%> + "'.");
+    <%}%>
+
+    channel_<%=cid%> = null;
+    try {
+        if (connectionTimeout_<%=cid %> > 0) {
+            session_<%=cid%>.connect(connectionTimeout_<%=cid %>);
+        } else {
+            session_<%=cid%>.connect();
+        }
+        channel_<%=cid%> = session_<%=cid%>.openChannel("sftp");
+        if (connectionTimeout_<%=cid %> > 0) {
+            channel_<%=cid%>.connect(connectionTimeout_<%=cid %>);
+        } else {
+            channel_<%=cid%>.connect();
+        }
+        <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - Connect to '" + <%=host %> + "' has succeeded.");
+        <%}%>
+    } catch (com.jcraft.jsch.JSchException e_<%=cid%>) {
+        try {
+            if(channel_<%=cid%>!=null) {
+                channel_<%=cid%>.disconnect();
+            }
+
+            if(session_<%=cid%>!=null) {
+                session_<%=cid%>.disconnect();
+            }
+        } catch(java.lang.Exception ce_<%=cid%>) {
+            <%if(isLog4jEnabled){%>
+                log.warn("<%=cid%> - close sftp connection failed : " + ce_<%=cid%>.getClass() + " : " + ce_<%=cid%>.getMessage());
+            <%}%>
+        }
+
+        String message_<%=cid%> = new TalendException(null, null, null).getExceptionCauseMessage(e_<%=cid%>);
+        if(message_<%=cid%>.contains("Signature length not correct") || message_<%=cid%>.contains("connection is closed by foreign host")) {
+            retry_<%=cid%> = true;
+            retry_count_<%=cid%>++;
+            <%if(isLog4jEnabled){%>
+            log.info("<%=cid%> - connect: Signature length not correct or connection is closed by foreign host, so retry, retry time : " + retry_count_<%=cid%>);
+            <%}%>
+        } else {
+            throw e_<%=cid%>;
+        }
+    }
+} while(retry_<%=cid%> && (retry_count_<%=cid%> < retry_max_<%=cid%>));
+
+com.jcraft.jsch.ChannelSftp c_<%=cid%> = (com.jcraft.jsch.ChannelSftp)channel_<%=cid%>;

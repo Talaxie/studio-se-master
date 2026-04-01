@@ -1,0 +1,1769 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators"
+	imports="
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.core.model.process.INode
+		java.util.List
+		java.util.HashSet
+		java.util.Set
+		java.util.Map
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.process.IHashableInputConnections
+		org.talend.core.model.process.IHashConfiguration
+		org.talend.core.model.process.IHashableColumn
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.utils.TalendTextUtils
+	"
+	class="SubProcessHeader"
+	skeleton="subprocess_header_java.skeleton"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	NodesSubTree subTree = (NodesSubTree) codeGenArgument.getArgument();
+	boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+	boolean stat = codeGenArgument.isStatistics();
+	boolean containsTPartitioner = subTree.getRootNode().getProcess().getNodesOfType("tPartitioner").size() > 0 ? true : false;
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(subTree.getRootNode().getProcess(), "__LOG4J_ACTIVATE__"));
+    boolean isLog4j2Enabled = ("true").equals(ElementParameterParser.getValue(subTree.getRootNode().getProcess(), "__LOG4J2_ACTIVATE__"));//log4j2 enable
+    String MDC_CLASS = "org.slf4j.MDC";
+%>
+
+<%
+	HashSet<String> hSet = new HashSet<String>();
+	for (INode node : subTree.getNodes()) {
+		List<IMetadataTable> metadatas = node.getMetadataList();
+			List< ? extends IConnection> conns = node.getOutgoingConnections();
+			for (IConnection conn : conns) {
+				// templateOrigin is used for Virtual COmponents
+				String templateOrigin = "";
+				if (conn.getTarget()!=null) {
+					templateOrigin = ElementParameterParser.getValue(conn.getTarget(), "__ORIGIN__");
+				}
+				boolean isLookup = false;
+				if (
+					(templateOrigin.compareTo("")!=0) ||
+					(conn.getLineStyle().equals(EConnectionType.FLOW_MAIN))||
+					(conn.getLineStyle().equals(EConnectionType.FLOW_REF)) ||
+					(conn.getLineStyle().equals(EConnectionType.FLOW_MERGE))||
+					(conn.getLineStyle().equals(EConnectionType.RUN_AFTER))
+				) {
+
+					if(conn.getLineStyle().equals(EConnectionType.RUN_AFTER)){
+						templateOrigin = ElementParameterParser.getValue(conn.getSource(), "__ORIGIN__");
+					}
+					if (!hSet.contains(conn.getName() + templateOrigin)) {
+						hSet.add(conn.getName() + templateOrigin);
+						IMetadataTable metadata = conn.getMetadataTable();
+
+						boolean changeHashAndEqualsForBigDecimal = false;
+						Set<String> hashableColumnsNames = new HashSet<String>();
+
+						INode targetNode = conn.getTarget();
+						if(targetNode instanceof IHashableInputConnections) {
+							if(targetNode.getUniqueName().startsWith("tMap")) {
+								changeHashAndEqualsForBigDecimal = "true".equals(ElementParameterParser.getValue(targetNode, "__CHANGE_HASH_AND_EQUALS_FOR_BIGDECIMAL__"));
+							}
+							IHashableInputConnections target = (IHashableInputConnections)targetNode;
+							IHashConfiguration hashConfiguration = target.getHashConfiguration(conn.getName());
+							if(hashConfiguration != null) {
+								for(IHashableColumn hashableColumn : hashConfiguration.getHashableColumns()) {
+									isLookup = true;
+									hashableColumnsNames.add(hashableColumn.getName());
+								}
+							}
+						} else {
+
+							//only for the lookup branch of the tJoin
+							boolean isLookOftJoin = false;
+							boolean isLookOftRecordMatching = false;
+							boolean isLookOfHashOutput = false;
+							if(conn.getLineStyle().equals(EConnectionType.FLOW_REF)){
+								IProcess process = conn.getTarget().getProcess();
+								for (INode tjoinNode : process.getNodesOfType("tJoin")) {
+									if(conn.getTarget().getUniqueName().equals(tjoinNode.getUniqueName())){
+										List<Map<String, String>> joinKeys = (List<Map<String,String>>)ElementParameterParser.getObjectValue(conn.getTarget(), "__JOIN_KEY__");
+										for(Map<String, String> joinKeyLine : joinKeys){
+											String lookupKey = joinKeyLine.get("LOOKUP_COLUMN");
+											hashableColumnsNames.add(lookupKey);
+										}
+										isLookOftJoin = true;
+										isLookup = true;
+									}
+								}
+
+								// for tRecordMatching
+								if(conn.getTarget().getUniqueName().indexOf("tRecordMatching")>-1){
+									List<Map<String, String>> joinKeys = (List<Map<String,String>>)ElementParameterParser.getObjectValue(conn.getTarget(), "__BLOCKING_DEFINITION__");
+									for(Map<String, String> joinKeyLine : joinKeys){
+										String lookupKey = joinKeyLine.get("LOOKUP_COLUMN");
+										hashableColumnsNames.add(lookupKey);
+										isLookup = true;
+									}
+									isLookOftRecordMatching = true;
+								}
+							} else if(conn.getLineStyle() == EConnectionType.FLOW_MAIN) {
+								IProcess process = conn.getTarget().getProcess();
+								for (INode thashNode : process.getNodesOfType("tHashOutput")) {
+									if(conn.getTarget().getUniqueName().equals(thashNode.getUniqueName())){
+										boolean isLinked = "true".equals(ElementParameterParser.getValue(thashNode, "__LINK_WITH__"));
+										String matchingMode = ElementParameterParser.getValue(thashNode,"__KEYS_MANAGEMENT__");
+										boolean hashKeyFromInputConnector = "true".equals(ElementParameterParser.getValue(thashNode, "__HASH_KEY_FROM_INPUT_CONNECTOR__"));
+										if(isLinked || !"KEEP_FIRST".equals(matchingMode) || hashKeyFromInputConnector) {
+											continue;
+										}
+                                    	IMetadataTable thashNodeMetadata = null;
+                                    	List<IMetadataTable> thashNodeMetadatas = thashNode.getMetadataList();
+                                    	if (thashNodeMetadatas != null && thashNodeMetadatas.size() > 0) {
+                                        	thashNodeMetadata = thashNodeMetadatas.get(0);
+                                        }
+                                        if(thashNodeMetadata!=null) {
+            								for (IMetadataColumn column: thashNodeMetadata.getListColumns()) {
+            									if (column.isKey()) {
+            										hashableColumnsNames.add(column.getLabel());
+            									}
+            								}
+										}
+										isLookOfHashOutput = true;
+									}
+								}
+							}
+
+							if (!isLookOftJoin && !isLookOftRecordMatching && !isLookOfHashOutput && metadata!=null) {
+								for (IMetadataColumn column: metadata.getListColumns()) {
+									if (column.isKey()) {
+										hashableColumnsNames.add(column.getLabel());
+									}
+								}
+							}
+						}
+						boolean hasAtLeastOneKey = hashableColumnsNames.size() > 0;
+
+%>
+
+public static class <%=conn.getName() %>Struct<%=templateOrigin %> implements routines.system.<%= isLookup ? "IPersistableComparableLookupRow<"+conn.getName()+"Struct>" : "IPersistableRow<"+conn.getName()+"Struct"+ templateOrigin + ">" %> {
+    final static byte[] commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[0];
+    static byte[] commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[0];
+<%
+	if(hasAtLeastOneKey) {
+%>
+	protected static final int DEFAULT_HASHCODE = 1;
+    protected static final int PRIME = 31;
+    protected int hashCode = DEFAULT_HASHCODE;
+    public boolean hashCodeDirty = true;
+
+    public String loopKey;
+
+
+<%
+	}
+%>
+
+	<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+   				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+   				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+   				if("id_Document".equals(javaType.getId()) || "id_Dynamic".equals(javaType.getId())) {
+   					typeToGenerate = javaType.getNullableClass().getCanonicalName();
+   				}
+			    %>
+			    public <%= typeToGenerate %> <%=column.getLabel() %><%
+
+			    	if(javaType == JavaTypesManager.CHARACTER && !column.isNullable()) {
+			    		%> = ' '<%
+			    	}
+
+			    	%>;
+
+				public <%= typeToGenerate %> get<%=column.getLabel().substring(0, 1).toUpperCase()%><%=column.getLabel().substring(1)%> () {
+					return this.<%=column.getLabel()%>;
+				}
+
+				public Boolean <%=column.getLabel()%>IsNullable(){
+				    return <%=column.isNullable()%>;
+				}
+				public Boolean <%=column.getLabel()%>IsKey(){
+				    return <%=column.isKey()%>;
+				}
+				public Integer <%=column.getLabel()%>Length(){
+				    return <%=column.getLength()%>;
+				}
+				public Integer <%=column.getLabel()%>Precision(){
+				    return <%=column.getPrecision()%>;
+				}
+				public String <%=column.getLabel()%>Default(){
+				<% if (column.getDefault() == null) { %>
+					return null;
+				<% } else { %>
+					return "<%=TalendTextUtils.escapeJavaText(TalendTextUtils.removeQuotes(column.getDefault()))%>";
+				<% } %>
+				}
+				public String <%=column.getLabel()%>Comment(){
+				<% if (column.getComment() == null) { %>
+				    return null;
+				<% } else { %>
+				    return "<%=TalendTextUtils.escapeJavaText(TalendTextUtils.removeQuotes(column.getComment()))%>";
+				<% } %>
+				}
+				public String <%=column.getLabel()%>Pattern(){
+				<% if (column.getPattern() == null) { %>
+				    return null;
+				<% } else { %>
+					return "<%=TalendTextUtils.escapeJavaText(TalendTextUtils.removeQuotes(column.getPattern()))%>";
+				<% } %>
+				}
+				public String <%=column.getLabel()%>OriginalDbColumnName(){
+				<% if (column.getOriginalDbColumnName() == null) { %>
+				    return null;
+				<% } else { %>
+					return "<%=TalendTextUtils.escapeJavaText(column.getOriginalDbColumnName())%>";
+				<% } %>
+				}
+
+				<%
+				if((conn.getLineStyle() == EConnectionType.FLOW_REF) && conn.getTarget().getUniqueName().startsWith("tXMLMap") && "id_Document".equals(javaType.getId())) {
+				%>
+				public java.util.Map<String,Object> documentLookupResult =  new java.util.HashMap<String,Object>();
+				<%
+				}
+			}
+		}
+    %>
+
+    <%
+	if(hasAtLeastOneKey) { // T_SH_001
+	%>
+
+	@Override
+	public int hashCode() {
+		if (this.hashCodeDirty) {
+			final int prime = PRIME;
+			int result = DEFAULT_HASHCODE;
+	<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+				if (hashableColumnsNames.contains(column.getLabel())) {
+
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+
+					if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+
+					 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					 	if(javaType == JavaTypesManager.BOOLEAN) {
+						%>
+		        			result = prime * result + (this.<%=column.getLabel() %> ? 1231 : 1237);
+						<%
+						} else {
+						%>
+							result = prime * result + (int) this.<%=column.getLabel() %>;
+						<%
+						}
+
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+
+						%>
+						result = prime * result + java.util.Arrays.hashCode(this.<%=column.getLabel() %>);
+						<%
+
+					} else if((javaType == JavaTypesManager.BIGDECIMAL) && changeHashAndEqualsForBigDecimal) {
+						%>
+						result = prime * result + ((this.<%=column.getLabel() %> == null) ? 0 : new Double(this.<%=column.getLabel() %>.doubleValue()).hashCode());
+						<%
+					} else {
+					%>
+						result = prime * result + ((this.<%=column.getLabel() %> == null) ? 0 : this.<%=column.getLabel() %>.hashCode());
+					<%
+					}
+
+				}
+			}
+		}
+    %>
+    		this.hashCode = result;
+    		this.hashCodeDirty = false;
+		}
+		return this.hashCode;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) return true;
+		if (obj == null) return false;
+		if (getClass() != obj.getClass()) return false;
+		final <%=conn.getName() %>Struct<%=templateOrigin %> other = (<%=conn.getName() %>Struct<%=templateOrigin %>) obj;
+		<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+				if (hashableColumnsNames.contains(column.getLabel())) {
+
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+
+					if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					%>
+						if (this.<%=column.getLabel() %> != other.<%=column.getLabel() %>)
+							return false;
+					<%
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+					%>
+						if(!java.util.Arrays.equals(this.<%=column.getLabel() %>, other.<%=column.getLabel() %>)) {
+							return false;
+						}
+					<%
+					} else {
+					%>
+						if (this.<%=column.getLabel() %> == null) {
+							if (other.<%=column.getLabel() %> != null)
+								return false;
+						<%if((javaType == JavaTypesManager.BIGDECIMAL) && changeHashAndEqualsForBigDecimal) {%>
+						} else if ((other.<%=column.getLabel() %> == null) || (this.<%=column.getLabel() %>.compareTo(other.<%=column.getLabel() %>)!=0))
+						<%} else {%>
+						} else if (!this.<%=column.getLabel() %>.equals(other.<%=column.getLabel() %>))
+						<%}%>
+							return false;
+					<%
+					}
+
+				}
+			}
+    	}
+    	%>
+
+		return true;
+    }
+
+	public void copyDataTo(<%=conn.getName() %>Struct<%=templateOrigin %> other) {
+
+		<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+
+				%>other.<%= column.getLabel() %> = this.<%= column.getLabel() %>;
+	            <%
+			}
+		}
+		%>
+	}
+
+	public void copyKeysDataTo(<%=conn.getName() %>Struct<%=templateOrigin %> other) {
+
+		<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+        		if (hashableColumnsNames.contains(column.getLabel())) {
+
+					%>other.<%= column.getLabel() %> = this.<%= column.getLabel() %>;
+	            	<%
+	            }
+			}
+		}
+		%>
+	}
+
+
+    <%
+	} // T_SH_001
+	%>
+
+<%
+		if (metadata !=null) {
+			boolean hasString1 = false;
+			boolean hasString2 = false;
+			boolean hasDate1 = false;
+			boolean hasDate2 = false;
+			boolean hasByteArray1 = false;
+			boolean hasByteArray2 = false;
+			boolean hasInteger1 = false;
+			boolean hasInteger2 = false;
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+			 	if(JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) continue;
+				if(typeToGenerate.equals("String")) {
+					if (!hasString1 && (!isLookup || hashableColumnsNames.contains(column.getLabel()))) {
+						hasString1 =true;
+%>
+
+	private String readString(ObjectInputStream dis) throws IOException{
+		String strReturn = null;
+		int length = 0;
+        length = dis.readInt();
+		if (length == -1) {
+			strReturn = null;
+		} else {
+			if(length > commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+				if(length < 1024 && commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+   					commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+				} else {
+   					commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+   				}
+			}
+			dis.readFully(commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+			strReturn = new String(commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+		}
+		return strReturn;
+	}
+	
+	private String readString(org.jboss.marshalling.Unmarshaller unmarshaller) throws IOException{
+		String strReturn = null;
+		int length = 0;
+        length = unmarshaller.readInt();
+		if (length == -1) {
+			strReturn = null;
+		} else {
+			if(length > commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+				if(length < 1024 && commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+   					commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+				} else {
+   					commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+   				}
+			}
+			unmarshaller.readFully(commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+			strReturn = new String(commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+		}
+		return strReturn;
+	}
+
+    private void writeString(String str, ObjectOutputStream dos) throws IOException{
+		if(str == null) {
+            dos.writeInt(-1);
+		} else {
+            byte[] byteArray = str.getBytes(utf8Charset);
+	    	dos.writeInt(byteArray.length);
+			dos.write(byteArray);
+    	}
+    }
+    
+    private void writeString(String str, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(str == null) {
+			marshaller.writeInt(-1);
+		} else {
+            byte[] byteArray = str.getBytes(utf8Charset);
+            marshaller.writeInt(byteArray.length);
+            marshaller.write(byteArray);
+    	}
+    }
+<%
+					} else if(!hasString2 && (isLookup && !hashableColumnsNames.contains(column.getLabel()))){
+						hasString2 = true;
+%>
+	
+	private String readString(DataInputStream dis, ObjectInputStream ois) throws IOException{
+		String strReturn = null;
+		int length = 0;
+        length = dis.readInt();
+		if (length == -1) {
+			strReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			dis.read(byteArray);
+			strReturn = new String(byteArray, utf8Charset);
+		}
+		return strReturn;
+	}
+	
+	private String readString(DataInputStream dis, org.jboss.marshalling.Unmarshaller unmarshaller) throws IOException{
+		String strReturn = null;
+		int length = 0;
+        length = unmarshaller.readInt();
+		if (length == -1) {
+			strReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			unmarshaller.read(byteArray);
+			strReturn = new String(byteArray, utf8Charset);
+		}
+		return strReturn;
+	}
+	
+	private void writeString(String str, DataOutputStream dos, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(str == null) {
+			marshaller.writeInt(-1);
+		} else {
+            byte[] byteArray = str.getBytes(utf8Charset);
+            marshaller.writeInt(byteArray.length);
+            marshaller.write(byteArray);
+    	}
+	}
+
+	private void writeString(String str, DataOutputStream dos, ObjectOutputStream oos) throws IOException{
+		if(str == null) {
+            dos.writeInt(-1);
+		} else {
+            byte[] byteArray = str.getBytes(utf8Charset);
+	    	dos.writeInt(byteArray.length);
+			dos.write(byteArray);
+    	}
+	}
+<%
+					}
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					if(!hasDate1 && (!isLookup || hashableColumnsNames.contains(column.getLabel()))) {
+						hasDate1 = true;
+%>
+
+	private java.util.Date readDate(ObjectInputStream dis) throws IOException{
+		java.util.Date dateReturn = null;
+        int length = 0;
+        length = dis.readByte();
+		if (length == -1) {
+			dateReturn = null;
+		} else {
+	    	dateReturn = new Date(dis.readLong());
+		}
+		return dateReturn;
+	}
+	
+	private java.util.Date readDate(org.jboss.marshalling.Unmarshaller unmarshaller) throws IOException{
+		java.util.Date dateReturn = null;
+        int length = 0;
+        length = unmarshaller.readByte();
+		if (length == -1) {
+			dateReturn = null;
+		} else {
+	    	dateReturn = new Date(unmarshaller.readLong());
+		}
+		return dateReturn;
+	}
+
+    private void writeDate(java.util.Date date1, ObjectOutputStream dos) throws IOException{
+		if(date1 == null) {
+            dos.writeByte(-1);
+		} else {
+			dos.writeByte(0);
+	    	dos.writeLong(date1.getTime());
+    	}
+    }
+    
+    private void writeDate(java.util.Date date1, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(date1 == null) {
+			marshaller.writeByte(-1);
+		} else {
+			marshaller.writeByte(0);
+			marshaller.writeLong(date1.getTime());
+    	}
+    }
+<%
+					}else if (!hasDate2 && (isLookup && !hashableColumnsNames.contains(column.getLabel()))) {
+						hasDate2 = true;
+%>
+
+	private java.util.Date readDate(DataInputStream dis, ObjectInputStream ois) throws IOException{
+		java.util.Date dateReturn = null;
+		int length = 0;
+        length = dis.readByte();
+		if (length == -1) {
+			dateReturn = null;
+		} else {
+	    	dateReturn = new Date(dis.readLong());
+		}
+		return dateReturn;
+	}
+	
+	private java.util.Date readDate(DataInputStream dis, org.jboss.marshalling.Unmarshaller unmarshaller ) throws IOException{
+		java.util.Date dateReturn = null;
+		int length = 0;
+        length = unmarshaller.readByte();
+		if (length == -1) {
+			dateReturn = null;
+		} else {
+	    	dateReturn = new Date(unmarshaller.readLong());
+		}
+		return dateReturn;
+	}
+
+	private void writeDate(java.util.Date date1, DataOutputStream dos, ObjectOutputStream oos) throws IOException{
+		if(date1 == null) {
+            dos.writeByte(-1);
+		} else {
+			dos.writeByte(0);
+	    	dos.writeLong(date1.getTime());
+    	}
+	}
+	
+	private void writeDate(java.util.Date date1, DataOutputStream dos, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(date1 == null) {
+			marshaller.writeByte(-1);
+		} else {
+			marshaller.writeByte(0);
+			marshaller.writeLong(date1.getTime());
+    	}
+	}
+<%
+					}
+				} else if(typeToGenerate.equals("byte[]")) {
+					if(!hasByteArray1 && (!isLookup || hashableColumnsNames.contains(column.getLabel()))) {
+						hasByteArray1 = true;
+%>
+	private byte[] readByteArray(ObjectInputStream dis) throws IOException{
+		byte[] byteArrayReturn;
+		int length = 0;
+        length = dis.readInt();
+		if (length == -1) {
+			byteArrayReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			dis.readFully(byteArray);
+			byteArrayReturn = byteArray;
+		}
+		return byteArrayReturn;
+	}
+	
+	private byte[] readByteArray(org.jboss.marshalling.Unmarshaller dis) throws IOException{
+		byte[] byteArrayReturn;
+		int length = 0;
+        length = dis.readInt();
+		if (length == -1) {
+			byteArrayReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			dis.readFully(byteArray);
+			byteArrayReturn = byteArray;
+		}
+		return byteArrayReturn;
+	}
+
+    private void writeByteArray(byte[] byteArray, ObjectOutputStream dos) throws IOException{
+		if(byteArray == null) {
+            dos.writeInt(-1);
+		} else {
+	    	dos.writeInt(byteArray.length);
+			dos.write(byteArray);
+    	}
+    }
+    
+    private void writeByteArray(byte[] byteArray, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(byteArray == null) {
+			marshaller.writeInt(-1);
+		} else {
+			marshaller.writeInt(byteArray.length);
+			marshaller.write(byteArray);
+    	}
+    }
+<%
+					}else if (!hasByteArray2 && (isLookup && !hashableColumnsNames.contains(column.getLabel()))) {
+						hasByteArray2 = true;
+%>
+	private byte[] readByteArray(DataInputStream dis, ObjectInputStream ois) throws IOException{
+		byte[] byteArrayReturn;
+        int length = 0;
+        length = dis.readInt();
+		if (length == -1) {
+			byteArrayReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			dis.read(byteArray);
+			byteArrayReturn = byteArray;
+		}
+		return byteArrayReturn;
+	}
+	
+	private byte[] readByteArray(DataInputStream dis, org.jboss.marshalling.Unmarshaller unmarshaller ) throws IOException{
+		byte[] byteArrayReturn;
+        int length = 0;
+        length = unmarshaller.readInt();
+		if (length == -1) {
+			byteArrayReturn = null;
+		} else {
+			byte[] byteArray = new byte[length];
+			unmarshaller.read(byteArray);
+			byteArrayReturn = byteArray;
+		}
+		return byteArrayReturn;
+	}
+
+	private void writeByteArray(byte[] byteArray, DataOutputStream dos, ObjectOutputStream oos) throws IOException{
+		if(byteArray == null) {
+            dos.writeInt(-1);
+		} else {
+	    	dos.writeInt(byteArray.length);
+			dos.write(byteArray);
+    	}
+	}
+	
+	private void writeByteArray(byte[] byteArray, DataOutputStream dos, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(byteArray == null) {
+			marshaller.writeInt(-1);
+		} else {
+			marshaller.writeInt(byteArray.length);
+			marshaller.write(byteArray);
+    	}
+	}
+<%
+					}
+				}else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+						if(!hasInteger1 && (!isLookup || hashableColumnsNames.contains(column.getLabel()))) {
+							hasInteger1 = true;
+%>
+	private Integer readInteger(ObjectInputStream dis) throws IOException{
+		Integer intReturn;
+        int length = 0;
+        length = dis.readByte();
+		if (length == -1) {
+			intReturn = null;
+		} else {
+	    	intReturn = dis.read<%= typeToGenerate %>();
+		}
+		return intReturn;
+	}
+	
+	private Integer readInteger(org.jboss.marshalling.Unmarshaller dis) throws IOException{
+		Integer intReturn;
+        int length = 0;
+        length = dis.readByte();
+		if (length == -1) {
+			intReturn = null;
+		} else {
+	    	intReturn = dis.read<%= typeToGenerate %>();
+		}
+		return intReturn;
+	}
+
+	private void writeInteger(Integer intNum, ObjectOutputStream dos) throws IOException{
+		if(intNum == null) {
+            dos.writeByte(-1);
+		} else {
+			dos.writeByte(0);
+	    	dos.write<%= typeToGenerate %>(intNum);
+    	}
+	}
+	
+	private void writeInteger(Integer intNum, org.jboss.marshalling.Marshaller marshaller) throws IOException{
+		if(intNum == null) {
+			marshaller.writeByte(-1);
+		} else {
+			marshaller.writeByte(0);
+			marshaller.write<%= typeToGenerate %>(intNum);
+    	}
+	}
+<%
+						} else if(!hasInteger2 && (isLookup && !hashableColumnsNames.contains(column.getLabel()))){
+							hasInteger2 = true;
+%>
+	private Integer readInteger(DataInputStream dis, ObjectInputStream ois) throws IOException{
+		Integer intReturn;
+        int length = 0;
+        length = dis.readByte();
+		if (length == -1) {
+			intReturn = null;
+		} else {
+			intReturn = dis.read<%= typeToGenerate %>();
+		}
+		return intReturn;
+	}
+	
+	private Integer readInteger(DataInputStream dis, org.jboss.marshalling.Unmarshaller unmarshaller) throws IOException{
+		Integer intReturn;
+        int length = 0;
+        length = unmarshaller.readByte();
+		if (length == -1) {
+			intReturn = null;
+		} else {
+			intReturn = unmarshaller.read<%= typeToGenerate %>();
+		}
+		return intReturn;
+	}
+
+	private void writeInteger(Integer intNum, DataOutputStream dos, ObjectOutputStream oos) throws IOException{
+		if(intNum == null) {
+            dos.writeByte(-1);
+		} else {
+			dos.writeByte(0);
+	    	dos.write<%= typeToGenerate %>(intNum);
+    	}
+	}
+	
+	private void writeInteger(Integer intNum, DataOutputStream dos,org.jboss.marshalling.Marshaller marshaller ) throws IOException{
+		if(intNum == null) {
+			marshaller.writeByte(-1);
+		} else {
+			marshaller.writeByte(0);
+			marshaller.write<%= typeToGenerate %>(intNum);
+    	}
+	}
+<%
+						}
+					}
+				}
+			}
+    	}
+%>
+
+    public void <%= isLookup ? "readKeys" : "read" %>Data(ObjectInputStream dis) {
+
+		synchronized(commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>) {
+
+        	try {
+
+        		int length = 0;
+		<%
+		boolean hasAtLeastOneRead = false;
+		boolean hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!isLookup || hashableColumnsNames.contains(column.getLabel())) {
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			        this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+					this.<%=column.getLabel() %> = readString(dis);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+					this.<%=column.getLabel() %> = readDate(dis);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+					this.<%=column.getLabel() %> = readByteArray(dis);
+					<%
+				} else if(javaType.isObjectBased() || typeToGenerate.equals("Geometry") || typeToGenerate.equals("Dynamic")) {
+			 		hasAtLeastOneObjectType = true;
+			 		if("id_Document".equals(javaType.getId()) || "id_Dynamic".equals(javaType.getId())) {
+			 			typeToGenerate = javaType.getNullableClass().getCanonicalName();
+			 		}
+					%>
+						this.<%=column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						this.<%=column.getLabel() %> = readInteger(dis);
+					<%
+					} else {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.<%=column.getLabel() %> = null;
+           				} else {
+           			    	this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           				}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+	    if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+
+		<%
+		if(!hasAtLeastOneRead) {
+		%>
+			finally {}
+		<%
+		}
+		%>
+
+      }
+
+
+    }
+    
+    public void <%= isLookup ? "readKeys" : "read" %>Data(org.jboss.marshalling.Unmarshaller dis) {
+
+		synchronized(commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>) {
+
+        	try {
+
+        		int length = 0;
+		<%
+		 hasAtLeastOneRead = false;
+		 hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!isLookup || hashableColumnsNames.contains(column.getLabel())) {
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			        this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+					this.<%=column.getLabel() %> = readString(dis);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+					this.<%=column.getLabel() %> = readDate(dis);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+					this.<%=column.getLabel() %> = readByteArray(dis);
+					<%
+				} else if(javaType.isObjectBased() || typeToGenerate.equals("Geometry") || typeToGenerate.equals("Dynamic")) {
+			 		hasAtLeastOneObjectType = true;
+			 		if("id_Document".equals(javaType.getId()) || "id_Dynamic".equals(javaType.getId())) {
+			 			typeToGenerate = javaType.getNullableClass().getCanonicalName();
+			 		}
+					%>
+						this.<%=column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						this.<%=column.getLabel() %> = readInteger(dis);
+					<%
+					} else {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.<%=column.getLabel() %> = null;
+           				} else {
+           			    	this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           				}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+	    if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+
+		<%
+		if(!hasAtLeastOneRead) {
+		%>
+			finally {}
+		<%
+		}
+		%>
+
+      }
+
+
+    }
+
+    public void <%= isLookup ? "writeKeys" : "write" %>Data(ObjectOutputStream dos) {
+        try {
+
+		<%
+		boolean hasAtLeastOneWrite = false;
+		hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!isLookup || hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				%>
+					// <%=typeToGenerate %>
+				<%
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						writeString(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						writeDate(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						writeByteArray(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(javaType.isObjectBased() || typeToGenerate.equals("Geometry") || typeToGenerate.equals("Dynamic")) {
+					%>
+       			    	dos.writeObject(this.<%=column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						writeInteger(this.<%=column.getLabel() %>,dos);
+					<%
+					} else {
+					%>
+						if(this.<%=column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+		            	}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+	    if(hasAtLeastOneWrite) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        }
+
+        <%
+		if(!hasAtLeastOneWrite) {
+		%>
+			finally {}
+		<%
+		}
+		%>
+
+    }
+    
+    public void <%= isLookup ? "writeKeys" : "write" %>Data(org.jboss.marshalling.Marshaller dos) {
+        try {
+
+		<%
+		hasAtLeastOneWrite = false;
+		hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!isLookup || hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				%>
+					// <%=typeToGenerate %>
+				<%
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						writeString(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						writeDate(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						writeByteArray(this.<%=column.getLabel() %>,dos);
+					<%
+				} else if(javaType.isObjectBased() || typeToGenerate.equals("Geometry") || typeToGenerate.equals("Dynamic")) {
+					%>
+						dos.clearInstanceCache();
+						dos.writeObject(this.<%=column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						writeInteger(this.<%=column.getLabel() %>,dos);
+					<%
+					} else {
+					%>
+						if(this.<%=column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+		            	}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+	    if(hasAtLeastOneWrite) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        }
+
+        <%
+		if(!hasAtLeastOneWrite) {
+		%>
+			finally {}
+		<%
+		}
+		%>
+
+    }
+
+    <%
+	if(isLookup) { // T SH 002
+	%>
+
+
+    /**
+     * Fill Values data by reading ObjectInputStream.
+     */
+    public void readValuesData(DataInputStream dis, ObjectInputStream ois) {
+        try {
+
+			int length = 0;
+		<%
+		hasAtLeastOneRead = false;
+		hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneRead = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						this.<%=column.getLabel() %> = readString(dis,ois);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						this.<%=column.getLabel() %> = readByteArray(dis,ois);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						this.<%=column.getLabel() %> = readDate(dis,ois);
+					<%
+				} else if(typeToGenerate.equals("Object") || typeToGenerate.equals("Geometry") || typeToGenerate.equals("BigDecimal") || typeToGenerate.equals("List") || typeToGenerate.equals("Dynamic") || typeToGenerate.equals("Document")) {
+			 		hasAtLeastOneObjectType = true;
+			 		if("id_Document".equals(javaType.getId()) || "id_Dynamic".equals(javaType.getId())) {
+			 			typeToGenerate = javaType.getNullableClass().getCanonicalName();
+			 		}
+					%>
+       			    	this.<%=column.getLabel() %> = (<%= typeToGenerate %>) ois.readObject();
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						this.<%=column.getLabel() %> = readInteger(dis,ois);
+					<%
+					} else {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.<%=column.getLabel() %> = null;
+           				} else {
+           			    	this.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           				}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+    	if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+
+		<%
+    	if(!hasAtLeastOneRead) {
+	    %>
+        	finally {}
+        <%
+        }
+        %>
+
+    }
+    
+    public void readValuesData(DataInputStream dis, org.jboss.marshalling.Unmarshaller objectIn) {
+        try {
+			int length = 0;
+		<%
+		hasAtLeastOneRead = false;
+		hasAtLeastOneObjectType = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneRead = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.<%=column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						this.<%=column.getLabel() %> = readString(dis,objectIn);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						this.<%=column.getLabel() %> = readByteArray(dis,objectIn);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						this.<%=column.getLabel() %> = readDate(dis,objectIn);
+					<%
+				} else if(typeToGenerate.equals("Object") || typeToGenerate.equals("Geometry") || typeToGenerate.equals("BigDecimal") || typeToGenerate.equals("List") || typeToGenerate.equals("Dynamic") || typeToGenerate.equals("Document")) {
+			 		hasAtLeastOneObjectType = true;
+			 		if("id_Document".equals(javaType.getId()) || "id_Dynamic".equals(javaType.getId())) {
+			 			typeToGenerate = javaType.getNullableClass().getCanonicalName();
+			 		}
+					%>
+       			    	this.<%=column.getLabel() %> = (<%= typeToGenerate %>) objectIn.readObject();
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+						this.<%=column.getLabel() %> = readInteger(dis,objectIn);
+					<%
+					} else {
+					%>
+			            length = objectIn.readByte();
+           				if (length == -1) {
+           	    			this.<%=column.getLabel() %> = null;
+           				} else {
+           			    	this.<%=column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+           				}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+    	if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+
+		<%
+    	if(!hasAtLeastOneRead) {
+	    %>
+        	finally {}
+        <%
+        }
+        %>
+
+    }
+
+    /**
+     * Return a byte array which represents Values data.
+     */
+    public void writeValuesData(DataOutputStream dos, ObjectOutputStream oos) {
+        try {
+
+		<%
+		hasAtLeastOneWrite = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						writeString(this.<%=column.getLabel() %>, dos, oos);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						writeByteArray(this.<%=column.getLabel() %>, dos, oos);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						writeDate(this.<%=column.getLabel() %>, dos, oos);
+					<%
+				} else if(typeToGenerate.equals("Object") || typeToGenerate.equals("Geometry") || typeToGenerate.equals("BigDecimal") || typeToGenerate.equals("List") || typeToGenerate.equals("Dynamic") || typeToGenerate.equals("Document")) {
+					%>
+       			    	oos.writeObject(this.<%=column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+					writeInteger(this.<%=column.getLabel() %>, dos, oos);
+					<%
+					} else {
+					%>
+						if(this.<%=column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+		            	}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+
+    	if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        	}
+        <%
+    	if(!hasAtLeastOneRead) {
+	    %>
+        	finally {}
+        <%
+        }
+        %>
+
+    }
+    
+    public void writeValuesData(DataOutputStream dos, org.jboss.marshalling.Marshaller objectOut){
+                try {
+
+		<%
+		hasAtLeastOneWrite = false;
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+			  if (!hashableColumnsNames.contains(column.getLabel())) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+					objectOut.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+					<%
+				} else if(typeToGenerate.equals("String")) {
+					%>
+						writeString(this.<%=column.getLabel() %>, dos, objectOut);
+					<%
+				} else if(typeToGenerate.equals("byte[]")) {
+					%>
+						writeByteArray(this.<%=column.getLabel() %>, dos, objectOut);
+					<%
+				} else if(typeToGenerate.equals("java.util.Date")) {
+					%>
+						writeDate(this.<%=column.getLabel() %>, dos, objectOut);
+					<%
+				} else if(typeToGenerate.equals("Object") || typeToGenerate.equals("Geometry") || typeToGenerate.equals("BigDecimal") || typeToGenerate.equals("List") || typeToGenerate.equals("Dynamic") || typeToGenerate.equals("Document")) {
+					%>
+						objectOut.clearInstanceCache();
+						objectOut.writeObject(this.<%=column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					if(typeToGenerate.equals("Int")){
+					%>
+					writeInteger(this.<%=column.getLabel() %>, dos, objectOut);
+					<%
+					} else {
+					%>
+						if(this.<%=column.getLabel() %> == null) {
+							objectOut.writeByte(-1);
+						} else {
+							objectOut.writeByte(0);
+							objectOut.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+		            	}
+					<%
+					}
+				}
+			  }
+			}
+    	}
+
+    	if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        	}
+        <%
+    	if(!hasAtLeastOneRead) {
+	    %>
+        	finally {}
+        <%
+        }
+        %>
+    }
+
+
+    
+    public boolean supportMarshaller(){
+        return true;
+    }
+
+    <%
+	} // T SH 002
+	%>
+
+    public String toString() {
+
+		StringBuilder sb = new StringBuilder();
+		sb.append(super.toString());
+		sb.append("[");
+<%
+		if (metadata !=null) {
+			List<IMetadataColumn> clmlist = metadata.getListColumns();
+			for(int i=0; i< clmlist.size(); i++) {
+				IMetadataColumn column = clmlist.get(i);
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if(typeToGenerate.equals("String")) {
+%>
+		sb.append("<%=i==0?"":"," %><%=column.getLabel() %>="+<%=column.getLabel() %>);
+<%
+				}else{
+%>
+		sb.append("<%=i==0?"":"," %><%=column.getLabel() %>="+String.valueOf(<%=column.getLabel() %>));
+<%
+				}
+			}
+    	}
+%>
+	    sb.append("]");
+
+	    return sb.toString();
+    }
+    <%if(isLog4jEnabled){%>
+        public String toLogString(){
+        	StringBuilder sb = new StringBuilder();
+        	<%
+        	if (metadata !=null) {
+    			List<IMetadataColumn> columnList = metadata.getListColumns();
+        		for(IMetadataColumn column : columnList){
+        			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+        			String columnName = column.getLabel();
+        			boolean isPrimit = JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable());
+        			if(isPrimit){
+        			%>
+        				sb.append(<%=columnName%>);
+        			<%
+        			}else{
+        			%>
+        				if(<%=columnName%> == null){
+        					sb.append("<null>");
+        				}else{
+            				sb.append(<%=columnName%>);
+            			}
+            		<%
+            		}
+            		%>
+        			sb.append("|");
+        		<%
+        		}
+        	}
+        	%>
+        	return sb.toString();
+        }
+    <%}%>
+
+    /**
+     * Compare keys
+     */
+    public int compareTo(<%=conn.getName() %>Struct<%=templateOrigin %> other) {
+
+		int returnValue = -1;
+		<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+				if (hashableColumnsNames.contains(column.getLabel())) {
+					%>
+						returnValue = checkNullsAndCompare(this.<%=column.getLabel() %>, other.<%=column.getLabel() %>);
+						if(returnValue != 0) {
+							return returnValue;
+						}
+
+					<%
+				}
+			}
+    	}
+	    %>
+	    return returnValue;
+    }
+
+
+    private int checkNullsAndCompare(Object object1, Object object2) {
+        int returnValue = 0;
+		if (object1 instanceof Comparable && object2 instanceof Comparable) {
+            returnValue = ((Comparable) object1).compareTo(object2);
+        } else if (object1 != null && object2 != null) {
+            returnValue = compareStrings(object1.toString(), object2.toString());
+        } else if (object1 == null && object2 != null) {
+            returnValue = 1;
+        } else if (object1 != null && object2 == null) {
+            returnValue = -1;
+        } else {
+            returnValue = 0;
+        }
+
+        return returnValue;
+    }
+
+    private int compareStrings(String string1, String string2) {
+        return string1.compareTo(string2);
+    }
+
+
+}
+<%
+						}
+					}
+				}
+	}
+%>
+
+<% if (subTree.isMethodSizeNeeded()){ %>
+/**
+ * Start of Function: <%=subTree.getName() %>Process.
+ * Byte Length of Source Code: ?SIZE?
+ */
+ <% } %>
+public void <%=subTree.getName() %>Process(final java.util.Map<String, Object> globalMap) throws TalendException {
+	globalMap.put("<%=subTree.getName() %>_SUBPROCESS_STATE", 0);
+
+ final boolean execStat = this.execStat;
+	<%if(isLog4jEnabled && isLog4j2Enabled) {%>
+		mdcInfo.forEach(<%=MDC_CLASS%>::put);
+		<%=MDC_CLASS%>.put("_subJobName", "<%=subTree.getName() %>");
+		<%=MDC_CLASS%>.put("_subJobPid", "<%=getAsciiRandomString(6)%>_" + subJobPidCounter.getAndIncrement());
+	<%}%>
+
+<%
+	boolean isParallelize = false;
+	for (INode node : subTree.getNodes()) {
+		if(node!=null){
+			String parallelize = ElementParameterParser.getValue(node, "__PARALLELIZE__");
+			if(parallelize!=null &&parallelize.equals("true")){
+				// temporary modification : if tAsyncIn is available, this is always a parallelized process
+				isParallelize = true;
+			}
+		}
+	}
+	if(isParallelize){
+%>
+
+	try {
+		final ParallelThreadPool pool = (ParallelThreadPool) globalMap
+				.get("PARALLEL_FLOW_POOL_<%=(subTree.getName()).replaceAll("tAsyncIn", "tAsyncOut")%>");
+		class <%=subTree.getName() %>_ParallelThread extends ParallelThread {
+
+			public <%=subTree.getName() %>_ParallelThread(
+					java.util.Map<String, Object> globalMap,
+					Object[] lockWrite) {
+				super(globalMap, lockWrite);
+			}
+			boolean isRunning = false;
+			String iterateId = "";
+			<%if(containsTPartitioner){%>
+				int iterateLoop = 0;
+			<%}%>
+
+			public void run() {
+				java.util.Map threadRunResultMap = new java.util.HashMap();
+				threadRunResultMap.put("errorCode", null);
+				threadRunResultMap.put("status", "");
+				threadLocal.set(threadRunResultMap);
+
+				this.isRunning = true;
+				String currentComponent = "";
+				String cLabel = null;
+				<%
+				   	if(NodeUtil.hasVirtualComponent(subTree.getNodes())){
+					   %>
+				   		String currentVirtualComponent = null;
+					   <%
+				   	}
+				 %>
+				java.util.Map<String, Object> resourceMap = new java.util.HashMap<String, Object>();
+				try{
+
+<%
+	}else{ // else part for "if(isParallelize)" Line: 1054
+	if(NodeUtil.hasVirtualComponent(subTree.getNodes())){
+%>
+		String currentVirtualComponent = null;
+<%
+	}
+%>
+	<%
+	if(subTree.getRootNode().getComponent().getName().equals("tCollector")){
+	%>
+		String iterateId = "." + globalMap.get("<%=subTree.getRootNode().getDesignSubjobStartNode().getUniqueName()%>_THREAD_ID");
+	<%
+	}else{
+	%>
+		String iterateId = "";
+	<%
+	}
+	%>
+	<%if(containsTPartitioner){%>
+		int iterateLoop = 0;
+	<%}%>
+	String currentComponent = "";
+	String cLabel =  null;
+	java.util.Map<String, Object> resourceMap = new java.util.HashMap<String, Object>();
+
+	try {
+			// TDI-39566 avoid throwing an useless Exception
+			boolean resumeIt = true;
+			if (globalResumeTicket == false && resumeEntryMethodName != null) {
+				String currentMethodName = new java.lang.Exception().getStackTrace()[0].getMethodName();
+				resumeIt = resumeEntryMethodName.equals(currentMethodName);
+			}
+			if (resumeIt || globalResumeTicket) { //start the resume
+				globalResumeTicket = true;
+
+<%
+//this part for "Resume Management"
+{
+    INode firstNode = subTree.getNode(subTree.getName());
+
+    //System.out.println(firstNode.getUniqueName());
+    List<? extends IConnection> inConns = firstNode.getIncomingConnections();
+
+    //System.out.println(inConns.size());
+    for(IConnection conn : inConns){
+
+    	boolean activeResume = "true".equals(ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+
+    	//System.out.println("Test:" + ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+
+    	if(activeResume){
+    		EConnectionType lineStyle = conn.getLineStyle();
+    		 INode sourceNode = conn.getSource();
+    		 String sourceNodeName = sourceNode.getUniqueName();
+    		%>
+    			//resumeUtil.addLog("CHECKPOINT", "CONNECTION:<%=lineStyle.getName() %>:<%=sourceNodeName %>:<%=conn.getName() %><%=conn.getOutputId() > 0 ? conn.getOutputId() : "" %>", "", Thread.currentThread().getId() + "", "", "", "", "", "");
+    		<%
+    	}
+    }
+}
+%>
+
+<%
+	// Call for RUN AFTER links
+	for (String after : subTree.getAfterSubProcesses()) {
+%>
+		<%=after %>Process(globalMap);
+<%
+	}
+	}//isParallelize
+%>
+
+<%
+	if(!subTree.isMergeSubTree()) {
+	List< ? extends IConnection> rootConns = subTree.getRootNode().getOutgoingConnections();
+	if ((rootConns!=null)&&(rootConns.size()>0)) {
+%>
+		<%=createPrivateClassInstance(subTree.getRootNode(), rootConns.get(0).getName(), false)%>
+<%
+	}
+  } else {
+    List<INode> sortedMergeBranchStarts = subTree.getSortedMergeBranchStarts();
+    for (INode startNode : sortedMergeBranchStarts) {
+       List< ? extends IConnection> rootConns = startNode.getOutgoingConnections();
+       if ((rootConns!=null)&&(rootConns.size()>0)) {
+%>
+		<%=createPrivateClassInstance(startNode, rootConns.get(0).getName(), false)%>
+<%
+      }
+    }
+    List<INode> mergeNodes =subTree.getMergeNodes();
+    for(INode mNode:mergeNodes){
+		List< ? extends IConnection> rootConns = mNode.getOutgoingConnections();
+		if ((rootConns!=null)&&(rootConns.size()>0)) {
+%>
+			<%=createPrivateClassInstance(mNode, rootConns.get(0).getName(), false)%>
+<%
+		}
+    }
+
+  }
+%>
+

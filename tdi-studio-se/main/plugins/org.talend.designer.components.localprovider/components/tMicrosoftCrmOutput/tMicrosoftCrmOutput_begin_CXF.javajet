@@ -1,0 +1,127 @@
+class CrmEntityHelper{
+      private com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService iorgService;
+      public CrmEntityHelper(){}
+      public CrmEntityHelper(com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService iorgService){
+             this.iorgService = iorgService;
+      }
+      public void setIOrgService(com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService iorgService){
+             this.iorgService = iorgService;
+      }
+      public com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService getIOrgService(){
+            return this.iorgService;
+      }
+
+      public com.microsoft.schemas.xrm._2011.contracts.Entity buildEntity(java.util.Map<String, Object> attrMap){
+             com.microsoft.schemas.xrm._2011.contracts.Entity
+                           entity = new com.microsoft.schemas.xrm._2011.contracts.Entity();
+             com.microsoft.schemas.xrm._2011.contracts.AttributeCollection
+                           attrColl = new com.microsoft.schemas.xrm._2011.contracts.AttributeCollection();
+             java.util.List<org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType>
+                          kvPairList = new java.util.ArrayList<org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType>();
+             java.util.Set<java.util.Map.Entry<String, Object>> set = attrMap.entrySet();
+             for(java.util.Map.Entry<String, Object> entry: set){
+                String key = entry.getKey();
+                Object value = entry.getValue();
+                if("Id".equals(key)){
+                    com.microsoft.schemas._2003._10.serialization.Guid guid = new com.microsoft.schemas._2003._10.serialization.Guid();
+                    if(value instanceof java.lang.String){
+                        guid.setValue((String)value);
+                    }else{
+                        guid.setValue(value.toString());
+                    }
+                    entity.setId(guid);
+                }else{
+                    org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType
+                           kvPair = new org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType();
+                           kvPair.setKey(key);
+                           kvPair.setValue(value);
+                           kvPairList.add(kvPair);
+                }
+             }
+             attrColl.getKeyValuePairOfstringanyTypes().addAll(kvPairList);
+             entity.setAttributes(attrColl);
+             return entity;
+      }
+
+      public void createEntity(String entityName,java.util.Map<String, Object> attrMap){
+             com.microsoft.schemas.xrm._2011.contracts.Entity entity = buildEntity(attrMap);
+             entity.setLogicalName(entityName);
+             try{
+                 this.iorgService.create(entity);
+             }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                 e.printStackTrace();
+             }
+      }
+
+      public void deleteEntity(String entityName, String guid){
+             com.microsoft.schemas._2003._10.serialization.Guid
+                 guidObj = new com.microsoft.schemas._2003._10.serialization.Guid();
+                 guidObj.setValue(guid);
+             try{
+                 this.iorgService.delete(entityName, guidObj);
+             }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                 e.printStackTrace();
+             }
+      }
+
+      public void updateEntity(String entityName,java.util.Map<String, Object> attrMap){
+             com.microsoft.schemas.xrm._2011.contracts.Entity entity = buildEntity(attrMap);
+             entity.setLogicalName(entityName);
+             try{
+                 this.iorgService.update(entity);
+             }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                 e.printStackTrace();
+             }
+      }
+}
+
+class XmlHelper{
+    public String parseXml(org.dom4j.Document document, String xpath){
+        @SuppressWarnings("unchecked")
+        List<org.dom4j.Node> nodeList = document.selectNodes(xpath);
+        org.dom4j.Node node = nodeList.get(0);
+        return node.getStringValue();
+    }
+}
+
+<%
+    String domainUserName = ElementParameterParser.getValue(node, "__USERNAME__");
+
+    String passwordFieldName = "__PASSWORD__";
+    %>
+       <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+    <%
+
+    String organizationWsdl = ElementParameterParser.getValue(node, "__ORGANIZATION_WSDL__");
+    String securityServiceWsdl = ElementParameterParser.getValue(node, "__SECURITY_SERVICE_URL__");
+    String certificatePath = ElementParameterParser.getValue(node, "__CERTIFICATE_PATH__");
+
+    if(certificatePath != null && !"".equals(certificatePath) && !"\"\"".equals(certificatePath)){
+        %>
+           System.setProperty("javax.net.ssl.trustStore", <%= certificatePath %>);
+        <%
+    }
+        %>
+            com.talend.microsoft.crm._2015_.utils.MsCrmWsdl
+                                 msCrmWsdl_<%= cid %> = new com.talend.microsoft.crm._2015_.utils.MsCrmWsdl(
+                                 <%= organizationWsdl %>, <%= securityServiceWsdl %>
+                                 );
+            com.talend.microsoft.crm._2015_.utils.DynamicsCRMConnector
+                                crmConnector_<%= cid %> = new com.talend.microsoft.crm._2015_.utils.DynamicsCRMConnector(
+                                <%= domainUserName %>, decryptedPassword_<%=cid%>, msCrmWsdl_<%= cid %>
+                                );
+           com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService
+                                           iorgService_<%= cid %> = crmConnector_<%= cid %>.getOrganizationService();
+        <%
+ %>
+
+CrmEntityHelper crmEntityHelper_<%= cid %> = new CrmEntityHelper(iorgService_<%= cid %>);
+XmlHelper xmlHelper_<%= cid %> = new XmlHelper();
+int nb_line_<%=cid%> = 0;
+
+final String guid_xpath_<%= cid %> = "//entity_reference/guid";
+final String logical_name_xpath_<%= cid %> = "//entity_reference/logical_name";
+final String name_xpath_<%= cid %> = "//entity_reference/name";

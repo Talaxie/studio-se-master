@@ -1,0 +1,721 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+		java.util.List
+		java.util.Map
+		org.talend.core.model.process.IConnection    
+		org.talend.core.model.process.IConnectionCategory
+	    org.talend.core.model.metadata.IMetadataColumn
+	    java.util.ArrayList
+	    java.util.LinkedList
+	    org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.utils.NodeUtil
+	"
+	skeleton="tAdvancedFileOutputXML_java.skeleton"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String cid_original = cid;
+cid = cid_original.replace("tAdvancedFileOutputXML","tAFOX");
+List< ? extends IConnection> conns = node.getIncomingConnections();
+
+%>
+
+<%@ include file="tAdvancedFileOutputXML_begin.inc.javajet"%>
+
+<%
+if (conns == null || conns.isEmpty()) {
+	return "";			
+} else {
+	IConnection conn = conns.get(0);
+
+	if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+		return "";
+	}
+}
+List<IMetadataTable> metadatas = node.getMetadataList();
+
+if ((metadatas != null) && (metadatas.size() > 0)) {
+	IMetadataTable metadata = metadatas.get(0);
+
+	if (metadata != null) {
+		String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+		String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+		String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+		String outStream = ElementParameterParser.getValue(node,"__STREAMNAME__");
+		String dtdRootName = ElementParameterParser.getValue(node, "__DTD_NAME__");
+		String dtdFileName = ElementParameterParser.getValue(node, "__DTD_SYSTEMID__");
+		String xslType = ElementParameterParser.getValue(node, "__XSL_TYPE__");
+		String xslHref = ElementParameterParser.getValue(node, "__XSL_HREF__");
+		boolean split = "true".equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+		boolean trim = "true".equals(ElementParameterParser.getValue(node, "__TRIM__"));
+		boolean isMerge= ("true").equals(ElementParameterParser.getValue(node, "__MERGE__"));
+		boolean isCompact = ("true").equals(ElementParameterParser.getValue(node, "__PRETTY_COMPACT__"));
+		boolean needFileValid = ("true").equals(ElementParameterParser.getValue(node, "__FILE_VALID__"));
+		boolean needDTDValid = ("true").equals(ElementParameterParser.getValue(node, "__DTD_VALID__"));
+		boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+		boolean needXSLValid = ("true").equals(ElementParameterParser.getValue(node, "__XSL_VALID__"));
+		List<Map<String, String>> rootTable = 
+		(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+		List<Map<String, String>> groupTable = 
+		(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+		List<Map<String, String>> loopTable = 
+		(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+		
+		if(isMerge){
+		    mode = "Dom4j";
+		}
+
+		if (!useStream) {
+		%>
+			int nb_line_<%=cid%> = 0;
+
+			<%if (isMerge) {%>
+				boolean needRoot_<%=cid%>  = false;
+			<%} else {%>
+				boolean	needRoot_<%=cid%> = true;
+			<%}%>
+			String fileName_<%=cid%> = <%=fileName%>;
+			Boolean alreadyExistsFile_<%=cid%> = new java.io.File(fileName_<%=cid %>).exists();
+			fileName_<%=cid%> = new java.io.File(fileName_<%=cid%>).getAbsolutePath().replace("\\", "/");
+			
+			String fileNameWithoutSuffix_<%=cid%> = "";
+			
+			if (fileName_<%=cid%>.indexOf("/") < 0) {
+				throw new IllegalArgumentException("not a correct file name.");				
+			} else {
+				String tail_<%=cid%> = fileName_<%=cid %>.substring(fileName_<%=cid %>.lastIndexOf("/"));
+				fileNameWithoutSuffix_<%=cid%> = tail_<%=cid%>.lastIndexOf(".") > 0 ? fileName_<%=cid%>.substring(0, fileName_<%=cid%>.lastIndexOf(".")) : fileName_<%=cid%>;
+			}
+			
+			final String file_<%=cid%> = fileNameWithoutSuffix_<%=cid%>;
+			
+			java.io.File createFile<%=cid%> = new java.io.File(fileName_<%=cid%>); 
+
+			<%if (("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))) {%>
+				if (!createFile<%=cid%>.exists()) { 
+					(new java.io.File(fileName_<%=cid%>.substring(0,fileName_<%=cid%>.lastIndexOf("/")))).mkdirs(); 
+					needRoot_<%=cid%>=true;
+				}
+			<%}
+
+			if (isMerge) {
+			%>
+				if (!createFile<%=cid%>.exists() || (createFile<%=cid %>.isFile() && createFile<%=cid %>.length() < 1)) {
+					needRoot_<%=cid %> = true;
+				}
+			<%
+			}
+
+			if (split) {
+			%>
+				int currentRowCount_<%=cid%> = 0;
+				int currentFileCount_<%=cid%> = 0;
+				String suffix_<%=cid %> = "";
+
+				if (fileName_<%=cid %>.substring(fileName_<%=cid %>.lastIndexOf("/")).lastIndexOf(".") > 0) {
+					suffix_<%=cid %> = fileName_<%=cid %>.substring(fileName_<%=cid%>.lastIndexOf("."));
+				}
+				fileName_<%=cid%> = file_<%=cid%>+"0" + suffix_<%=cid %>;
+			<%
+			}
+		} else {
+		%>
+			int nb_line_<%=cid%> = 0;
+			boolean	needRoot_<%=cid%> = true;
+		<%
+		}//***************************the part of the output stream end************************************************
+		%>
+		java.util.List<java.util.List<String>> groupbyList_<%=cid%> = new java.util.ArrayList<java.util.List<String>>();
+		final java.util.Map<String,String> valueMap_<%=cid%> = new java.util.HashMap<String,String>();
+		<%
+		if(!useStream && isMerge){
+		%>
+			org.dom4j.io.OutputFormat compactFormat_<%=cid%> = org.dom4j.io.OutputFormat.createCompactFormat();
+			compactFormat_<%=cid%>.setSuppressDeclaration(true); 
+		<%
+		}
+		%>
+
+		<%
+		// *** generation mode init ***
+		if (("Dom4j").equals(mode)) {
+		%>
+
+			class NestXMLTool_<%=cid%> {
+				public void parseAndAdd(org.dom4j.Element nestRoot, String value) {
+					try {
+						org.dom4j.Document doc4Str = org.dom4j.DocumentHelper.parseText("<root>"+ value + "</root>");
+						nestRoot.setContent(doc4Str.getRootElement().content());
+					} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+						nestRoot.setText(value);
+					}
+				}
+
+				public void setText(org.dom4j.Element element, String value) {
+					if (value.startsWith("<![CDATA[") && value.endsWith("]]>")) {
+						String text = value.substring(9, value.length()-3);
+						element.addCDATA(text);
+					} else {
+						element.setText(value);
+					}
+				}
+				public void appendContent(org.dom4j.Element element, org.dom4j.Document doc) {
+					element.appendContent(doc);
+				}
+				public void replaceDefaultNameSpace(org.dom4j.Element nestRoot){
+					if (nestRoot != null) {
+						boolean isDefaultNameSpaceAtRoot = "".equals(nestRoot.getQName().getNamespace().getPrefix());
+						for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) nestRoot.elements()) {
+							if (isDefaultNameSpaceAtRoot && ("").equals(tmp.getQName().getNamespace().getURI()) && ("").equals(tmp.getQName().getNamespace().getPrefix())) {
+								tmp.setQName(org.dom4j.DocumentHelper.createQName(tmp.getName(), nestRoot.getQName().getNamespace()));
+							}
+							replaceDefaultNameSpace(tmp);
+						}
+					}
+				}
+
+				public void removeEmptyElement(org.dom4j.Element root) {
+					if (root != null) {
+						for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) root.elements()) {
+							removeEmptyElement(tmp);
+						}
+						if (root.content().size() == 0 
+							&& root.attributes().size() == 0 
+								&& root.declaredNamespaces().size() == 0) {
+							if (root.getParent() != null) {
+								root.getParent().remove(root);
+							}
+						}
+					}
+				}
+				
+				/**
+				 * remove the whiteSpace Node between the elements when appending the source file under dom4j
+				 * @param root
+				 */
+				public void removeWhiteSpaceTextNode(org.dom4j.Element root) {
+					if(root != null) {
+						List<org.dom4j.Node> textNodes = new java.util.ArrayList<org.dom4j.Node>();
+						for (int i=0; i< root.nodeCount(); i++) {
+							if (root.node(i).getNodeType()==org.dom4j.Node.ELEMENT_NODE) {
+								removeWhiteSpaceTextNode((org.dom4j.Element)root.node(i));
+							} else if(root.node(i).getNodeType()==org.dom4j.Node.TEXT_NODE) {
+								textNodes.add(root.node(i));
+							} 
+						}
+						if(root.nodeCount() > 1) { // when root.nodeCount==1, that means the text node is the content of the element
+							for (org.dom4j.Node textNode: textNodes) {
+								if(textNode.getText()==null || "".equals(textNode.getText().trim())) {
+									root.remove(textNode);
+								} 
+							}
+						}
+					}
+				}
+				/**
+				 * Get element by QNames which get from the path
+				 */
+				public org.dom4j.Element getElement(org.dom4j.Element parent,String[] elemNames){
+					if(parent==null){
+						return null;
+					}
+					org.dom4j.Element tempElem = parent;
+					for(int i=0;elemNames != null && i<elemNames.length; i++){
+						tempElem=tempElem.element(parent.getQName(elemNames[i]));
+						if(tempElem==null){
+							return null;
+						}
+					}
+					return tempElem;
+				}
+			}
+
+			final NestXMLTool_<%=cid%> nestXMLTool_<%=cid%> = new NestXMLTool_<%=cid%>();
+			// sort group root element for judgement of group
+			java.util.List<org.dom4j.Element> groupElementList_<%=cid%> = new java.util.ArrayList<org.dom4j.Element>();
+			org.dom4j.Element root4Group_<%=cid%> = null;
+			org.dom4j.Document doc_<%=cid %>=null;
+			
+			final java.util.Map<String,org.dom4j.Branch> nameToElement_<%=cid%> = new java.util.HashMap<String,org.dom4j.Branch>();
+
+			<%if (!useStream && isMerge) {//append mode and the code of file path%>
+				if (needRoot_<%=cid %> == false) {
+					try {
+						org.dom4j.io.SAXReader saxReader_<%=cid %>= new org.dom4j.io.SAXReader();
+						doc_<%=cid %> = saxReader_<%=cid %>.read(createFile<%=cid %>);
+						nestXMLTool_<%=cid%>.removeWhiteSpaceTextNode(doc_<%=cid %>.getRootElement());
+					} catch (java.lang.Exception ex) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+						ex.printStackTrace();
+						throw new java.lang.Exception("can not find the file:" + fileName_<%=cid %>);
+					}
+				} else {
+					doc_<%=cid %>=org.dom4j.DocumentHelper.createDocument();
+				}
+				<%if(groupTable.size()>0){%>
+					org.dom4j.Element firstGroupPathElement_<%=cid%> = null;
+				<%}%>
+			<%} else {	%>
+				doc_<%=cid %>=org.dom4j.DocumentHelper.createDocument();
+			<%
+			}
+
+			if (!isMerge) {
+				if (needFileValid) {
+					if (needDTDValid) {
+					%>
+						doc_<%=cid %>.addDocType(<%=dtdRootName %>, null, <%=dtdFileName %>);
+					<%} else if (needXSLValid) {%>
+						java.util.Map<String, String> inMap_<%=cid %> = new java.util.HashMap<String, String>();
+						inMap_<%=cid %>.put("type",<%=xslType %>);
+						inMap_<%=cid %>.put("href",<%=xslHref %>);
+						doc_<%=cid %>.addProcessingInstruction("xml-stylesheet", inMap_<%=cid %>);
+					<%
+					}
+				}
+			}
+
+			if (isCompact==true) {//generate compact file
+			%>
+				org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createCompactFormat();
+			<%} else {	%>
+				org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createPrettyPrint();
+			<%
+			}
+			%>
+			format_<%=cid %>.setTrimText(<%=trim%>);
+			format_<%=cid %>.setEncoding(<%=encoding%>);
+			<%
+			int groupSize = 0;
+
+			if (groupTable != null && groupTable.size() > 0) {
+				for (java.util.Map<String, String> tmpMap : groupTable) {
+					if (tmpMap.get("ATTRIBUTE").equals("main")) {
+						groupSize++;
+					}
+				}
+			}
+			%>
+			final int[] orders_<%=cid %> = new int[<%=groupSize + 1%>];
+		<%
+		} else if (("Null").equals(mode)) {
+		%>
+			java.util.List<String> endTabStrs_<%=cid%> = new java.util.ArrayList<String>();
+			java.util.List<String> startTabStrs_<%=cid%> = new java.util.ArrayList<String>();
+
+			<%
+			if (loopTable.size() > 0) {
+				String emptyspace = "";
+				String endPath = loopTable.get(0).get("PATH");
+				String[] endTabs = endPath.split("/");
+
+				for (int len = 1; len < endTabs.length-1; len++) {
+				%>
+					endTabStrs_<%=cid%>.add("<%=emptyspace%></<%=endTabs[len]%>>");
+					startTabStrs_<%=cid%>.add("<%=isCompact?"":"\\n"%><%=emptyspace%><<%=endTabs[len]%>>");
+
+					<%
+					if (isCompact == false) {//generate pretty file
+						emptyspace += "  ";
+					}
+				}
+			}
+			%>
+			int preUnNullMaxIndex_<%=cid%> = -1;
+			int preNewTabIndex_<%=cid%> = -1;
+			String[] startTabs_<%=cid%> = new String[endTabStrs_<%=cid%>.size()];
+			String[] endTabs_<%=cid %> = new String[endTabStrs_<%=cid%>.size()];
+			<%
+			int rootSize = 0;
+
+			if (rootTable != null && rootTable.size() > 0) {
+				for (java.util.Map<String, String> tmpMap : rootTable) {
+					if (tmpMap.get("ATTRIBUTE").equals("main")) {
+						rootSize++;
+					}
+				}
+			}
+			%>
+			//String[] mainEndTabs_<%=cid %> = new String[<%=rootSize%>];
+
+			<%if (!useStream) {// the part of file path---the old code%>
+				java.io.BufferedWriter out_<%=cid%> = new java.io.BufferedWriter(
+				new java.io.OutputStreamWriter(new java.io.FileOutputStream(fileName_<%=cid%>), <%=encoding%>));
+			<%} else {// the part of output stream%>
+				java.io.OutputStreamWriter outWriter_<%=cid %> = new java.io.OutputStreamWriter(<%=outStream %>, <%=encoding%>);
+				java.io.BufferedWriter out_<%=cid%> = new java.io.BufferedWriter(outWriter_<%=cid %>);
+			<%}%>
+			out_<%=cid%>.write("<?xml version=\"1.0\" encoding=\""+<%=encoding%>+"\"?>");
+			out_<%=cid%>.newLine();
+			
+			<%
+			if (needFileValid) {
+				if (needDTDValid) {
+				%>
+					out_<%=cid%>.write("<!DOCTYPE "+<%=dtdRootName %>+" SYSTEM \"" + <%=dtdFileName %> + "\">");
+					out_<%=cid%>.newLine();
+				<%} else if (needXSLValid) {%>
+					out_<%=cid%>.write("<?xml-stylesheet type=\""+<%=xslType %>+"\" href=\""+<%=xslHref%>+"\">");
+					out_<%=cid%>.newLine();
+				<%
+				}
+			}
+		}
+    	if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){ 
+    		
+                String allowEmpty = ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__");
+                String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+        		boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+        		String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+        		String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+        		String outputAsXSD = ElementParameterParser.getValue(node, "__OUTPUT_AS_XSD__");
+        		boolean isSaveDocAsNode = ("true").equals(ElementParameterParser.getValue(node,"__ADD_DOCUMENT_AS_NODE__"));
+        		boolean bAddEmptyAttr = "true".equals(ElementParameterParser.getValue(node, "__ADD_EMPTY_ATTRIBUTE__"));
+                boolean bAddUnmappedAttr = "true".equals(ElementParameterParser.getValue(node, "__ADD_UNMAPPED_ATTRIBUTE__"));
+        		int schemaOptNum=100;
+				String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+				if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+					schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+				} 
+        		
+        		// init tool
+                XMLTool tool = new XMLTool();
+                tool.connName = NodeUtil.getPrivateConnClassName(conn);
+                tool.advancedSeparator=advancedSeparator;
+                tool.thousandsSeparator=thousandsSeparator;
+                tool.decimalSeparator=decimalSeparator;
+                tool.cid=cid;
+                boolean isAppend = !useStream && isMerge;
+                tool.isAppend = isAppend;
+                
+                // change tables to a tree 
+				Object[] treeObjs = getTree(rootTable, groupTable, loopTable, metadata.getListColumns());
+				
+				if(treeObjs == null || treeObjs.length == 0){
+					return "";
+				}
+				
+            	List<XMLNode> mainList = (ArrayList<XMLNode>)treeObjs[0];
+                List<XMLNode> groupList = (ArrayList<XMLNode>)treeObjs[1];
+                XMLNode root = mainList.get(0);                
+                XMLNode loop = (XMLNode)treeObjs[2];
+                
+                if(!"true".equals(allowEmpty) && !(groupTable.size()>0 && isAppend)){
+                	removeEmptyElement(root);
+                }
+                
+                List<List<XMLNode>> groupbyNodeList = new ArrayList<List<XMLNode>>();
+                for(XMLNode group:groupList){
+                	groupbyNodeList.add(getGroupByNodeList(group));
+                }
+          		if(metadata.getListColumns().size()> schemaOptNum){
+%>
+			class AdvancedXMLUtil_<%=cid%>{
+<%
+					int colNum = 0;
+					for(IMetadataColumn column :metadata.getListColumns()){
+						if(colNum%schemaOptNum==0){
+%>
+				public void putValue_<%=colNum/schemaOptNum%>(<%=tool.connName%>Struct <%=tool.connName%>,java.util.Map<String,String> valueMap_<%=cid%><%if(tool.isAppend){%>,org.dom4j.io.OutputFormat compactFormat_<%=cid%><%}%>){
+<%
+						}
+%>
+					valueMap_<%=cid%>.put("<%=column.getLabel()%>", <% tool.getValue(column); %>);
+<%
+						if((colNum+1)%schemaOptNum==0){
+%>
+				}
+<%
+						}
+					colNum++;
+					}
+						if(colNum>0&&(colNum%schemaOptNum)>0){
+%>
+				}
+<%
+						}
+						if((groupTable.size()>0 && "Dom4j".equals(mode)&&(useStream || !isMerge))||("Null".equals(mode))){
+							for(int groupNum=0;groupNum<groupList.size();groupNum++){
+								XMLNode groupRootNode = groupList.get(groupNum);
+								int nodeNum=0;
+								for(int j=0;j<groupbyNodeList.get(groupNum).size();j++){
+									XMLNode attr = groupbyNodeList.get(groupNum).get(j);
+									if(attr.relatedColumn!=null){
+										if(nodeNum%schemaOptNum==0){
+%>
+		public boolean getValue_<%=groupNum%>_<%=nodeNum/schemaOptNum%>(java.util.List<java.util.List<String>> groupbyList_<%=cid%>,java.util.Map<String,String> valueMap_<%=cid%>){
+			return false
+<%
+										}
+%>
+			|| ( groupbyList_<%=cid%>.get(<%=groupNum%>).get(<%=j%>)!=null 
+		? !groupbyList_<%=cid%>.get(<%=groupNum%>).get(<%=j%>).equals(<%tool.getValue(attr);%>) 
+		: <%tool.getValue(attr);%>!=null )
+<%
+										if((nodeNum+1)%schemaOptNum==0){
+%>
+		;
+		}
+<%
+										}
+										nodeNum++;
+									}
+											
+								}
+								if(nodeNum>0&&(nodeNum%schemaOptNum)>0){
+%>
+	   ;
+	   }
+<%
+								}
+							for(int j=0;j<groupbyNodeList.get(groupNum).size();j++){
+									XMLNode attr = groupbyNodeList.get(groupNum).get(j);
+									if(j%schemaOptNum==0){
+%>
+				public void setValue_<%=groupNum%>_<%=j/schemaOptNum%>(java.util.List<java.util.List<String>> groupbyList_<%=cid%>,java.util.Map<String,String> valueMap_<%=cid%>){
+<%
+									}
+%>
+					groupbyList_<%=cid%>.get(<%=groupNum%>).add(<%tool.getValue(attr);%>);
+<%
+										if((j+1)%schemaOptNum==0){
+%>
+				}
+<%
+										}
+							}
+								if(groupbyNodeList.get(groupNum).size()>0&&(groupbyNodeList.get(groupNum).size()%schemaOptNum)>0){
+%>
+	   			}
+<%
+								}
+							}
+						}
+						if(("Dom4j").equals(mode)){
+							//init the generate tool.
+							GenerateToolByDom4j generateToolByDom4j = new GenerateToolByDom4j();
+							if(!useStream && ("true").equals(outputAsXSD)){ // add a new prerequisite:useStream to ignore generating the xsd file
+								generateToolByDom4j.outputAsXSD = true;
+							}
+							if(("true").equals(allowEmpty)){
+								generateToolByDom4j.allowEmpty = true;
+							}
+							generateToolByDom4j.bAddEmptyAttr = bAddEmptyAttr;
+							generateToolByDom4j.bAddUnmappedAttr = bAddUnmappedAttr;
+							generateToolByDom4j.isSaveDocAsNode = isSaveDocAsNode;
+							generateToolByDom4j.cid = cid;
+							generateToolByDom4j.touchXMLNode.cid = cid;
+							generateToolByDom4j.bigMethodHelper.cid = cid;
+							generateToolByDom4j.tool = tool;
+							if( groupTable.size()>0){
+								if((!useStream && isMerge)){
+									generateToolByDom4j.isAppend= true;
+									for( int i=0; i<groupList.size();i++){
+										XMLNode groupNode= groupList.get(i);
+										GenerateExprCmpByDom4j generateExprCmpByDom4j = new GenerateExprCmpByDom4j();
+										generateExprCmpByDom4j.tool = tool;
+										generateExprCmpByDom4j.groupNode = groupNode;
+										generateExprCmpByDom4j.isSaveDocAsNode = isSaveDocAsNode;
+										generateExprCmpByDom4j.needEmptyNode = ("true").equals(allowEmpty);
+										generateExprCmpByDom4j.cid=cid;
+								
+%>
+				public boolean generateCodeDom4j_FindInsertNode<%=i%>(org.dom4j.Element tempElem,java.util.Map<String,String> valueMap_<%=cid%>){
+					return <%generateExprCmpByDom4j.generateCode(groupNode, "tempElem"); %>;
+				}
+				
+				public org.dom4j.Element generateCodeDom4j_UnFindInsertNode<%=i%>(final NestXMLTool_<%=cid%> nestXMLTool_<%=cid%>,final java.util.Map<String,String> valueMap_<%=cid%>,org.dom4j.Element subTreeRootParent_<%=cid%>,final int[] orders_<%=cid %>,final boolean bl_<%=cid %>) throws java.lang.Exception {
+<% 
+					generateToolByDom4j.generateCode(groupList.get(i),"group"+i+"_","subTreeRootParent");
+%>
+					return <%generateToolByDom4j.touchXMLNode.getXMLElement("group"+i+"_");%>;
+				}
+<%
+								
+									}
+								}else{
+									for(int i=0;i<groupList.size();i++){
+										XMLNode groupRootNode = groupList.get(i);
+%>
+				public org.dom4j.Element generateCodeDom4j_group<%=i%>(final NestXMLTool_<%=cid%> nestXMLTool_<%=cid%>,final java.util.Map<String,String> valueMap_<%=cid%>,org.dom4j.Element subTreeRootParent_<%=cid%>,final int[] orders_<%=cid %>) throws java.lang.Exception {
+<%
+				generateToolByDom4j.generateCode(groupList.get(i),"group"+i+"_","subTreeRootParent");
+%>
+					return <%generateToolByDom4j.touchXMLNode.getXMLElement("group"+i+"_");%>;
+				}
+<%
+									}
+								}
+							}
+							if(loopTable!=null && loopTable.size()>0){
+%>
+				public org.dom4j.Element generateCodeDom4j_Loop(final NestXMLTool_<%=cid%> nestXMLTool_<%=cid%>,final java.util.Map<String,String> valueMap_<%=cid%>,org.dom4j.Element subTreeRootParent_<%=cid%>,final int[] orders_<%=cid %><%if(!useStream && isMerge && groupTable.size()>0){%>,final boolean bl_<%=cid %><%}%>) throws java.lang.Exception {
+<%
+					generateToolByDom4j.generateCode(loop,"loop","subTreeRootParent");
+%>
+					return <%generateToolByDom4j.touchXMLNode.getXMLElement("loop");%>;
+				}
+<%
+							}
+						}
+						if("Null".equals(mode)){
+							GenerateToolByNull generateToolByNull = new GenerateToolByNull();
+						    if(!useStream && ("true").equals(outputAsXSD)){ // add a new prerequisite:useStream to ignore generating the xsd file
+						    	generateToolByNull.outputAsXSD = true;
+						    }
+						    if(("true").equals(allowEmpty)){
+						    	generateToolByNull.allowEmpty = true;
+						    }
+						    generateToolByNull.bAddEmptyAttr = bAddEmptyAttr;
+						    generateToolByNull.bAddUnmappedAttr = bAddUnmappedAttr;
+						    generateToolByNull.cid = cid;
+						    generateToolByNull.tool = tool;
+						    generateToolByNull.isCompact = isCompact;
+						    String rootEmptySpace = "";
+						    for(int i=0;i < mainList.size();i++){
+%>
+							public StringBuffer generateCodeNull_rootEmptySpace<%=i%>(StringBuffer buf_<%=cid%>,java.io.BufferedWriter out_<%=cid%>,String[] startTabs_<%=cid%>,String[] endTabs_<%=cid%>,java.util.Map<String, String> valueMap_<%=cid%>)throws IOException{		
+<%
+								generateToolByNull.generateCode(mainList.get(i),rootEmptySpace);
+%>
+								return buf_<%=cid%>;
+							}
+<%
+								if(isCompact==false){//generate pretty file
+									rootEmptySpace+="  ";
+								}
+								if(!generateToolByNull.outputAsXSD && !generateToolByNull.allowEmpty){
+									if(mainList.get(i).relatedColumn != null || mainList.get(i).childrenColumnList.size()>0){
+										int columnNum=0;
+										for(IMetadataColumn column : mainList.get(i).childrenColumnList){
+											if(columnNum%schemaOptNum==0){
+%>
+							public boolean generateCodeNull_conditMain<%=i%>_<%=columnNum/schemaOptNum%>(java.util.Map<String,String> valueMap_<%=cid%>){
+							 	return false
+<%
+											}
+%>
+										|| valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null
+<%
+											if((columnNum+1)%schemaOptNum==0){
+%>
+							;}
+<%
+											}
+											columnNum++;
+										}
+											if(columnNum>0&&(columnNum%schemaOptNum)>0){
+%>
+							;}
+<%
+											}
+									}
+								}
+							}
+							for(int i=0;i<groupList.size();i++){
+								String emptySpace = "";
+								if(isCompact==false){//generate pretty file
+									for(int len = groupList.get(i).path.split("/").length-1;len>1;len--){
+										emptySpace +="  ";
+									}
+								}
+%>
+							public StringBuffer generateCodeNull_emptySpace<%=i%>(StringBuffer buf_<%=cid%>,java.util.Map<String, String> valueMap_<%=cid%>,String[] groupBuffer_<%=cid%>){
+<%
+								generateToolByNull.generateCode(groupList.get(i),emptySpace);
+%>
+								return buf_<%=cid%>;
+							}
+<%
+								if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+									if((groupList.get(i).relatedColumn != null || groupList.get(i).childrenColumnList.size()>0)){
+										int columnNum=0;
+										for(IMetadataColumn column : groupList.get(i).childrenColumnList){
+											if(columnNum%schemaOptNum==0){
+%>
+							public boolean generateCodeNull_conditGroup<%=i%>_<%=columnNum/schemaOptNum%>(java.util.Map<String,String> valueMap_<%=cid%>){
+							 	return false
+<%
+											}
+%>
+										|| valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null
+<%
+											if((columnNum+1)%schemaOptNum==0){
+%>
+							;}
+<%
+											}
+											columnNum++;
+										}
+											if(columnNum>0&&(columnNum%schemaOptNum)>0){
+%>
+							;}
+<%
+											}
+									
+									}
+								}
+							}
+							if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+								int columnNum=0;
+									for(IMetadataColumn column : loop.childrenColumnList){
+										if(columnNum%schemaOptNum==0){
+%>
+							public boolean generateCodeNull_conditLoop_<%=columnNum/schemaOptNum%>(java.util.Map<String,String> valueMap_<%=cid%>){
+							 	return false
+<%
+										}
+%>
+										|| valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null
+<%
+										if((columnNum+1)%schemaOptNum==0){
+%>
+							;}
+<%
+										}
+										columnNum++;
+									}
+										if(columnNum>0&&(columnNum%schemaOptNum)>0){
+%>
+							;}
+<%
+										}
+									
+									
+							}
+							String emptySpace = "";
+							if(isCompact==false){//generate pretty file
+								for(int len =loop.path.split("/").length-1;len>1;len--){
+									emptySpace +="  ";
+								}
+							}
+%>
+							public void generateCodeNull_loopEmptySpace(StringBuffer buf_<%=cid%>,java.io.BufferedWriter out_<%=cid%>,String[] endTabs_<%=cid%>,java.util.Map<String, String> valueMap_<%=cid%>){	
+<%
+							 generateToolByNull.generateCode(loop,emptySpace);
+							 generateToolByNull.endElement(loop,emptySpace);
+%>
+							}
+<%
+						}
+%>
+
+			}
+			AdvancedXMLUtil_<%=cid%> advancedXMLUtil_<%=cid%>=new AdvancedXMLUtil_<%=cid%>();
+<%
+				}
+			}
+		}
+	}
+}
+%>

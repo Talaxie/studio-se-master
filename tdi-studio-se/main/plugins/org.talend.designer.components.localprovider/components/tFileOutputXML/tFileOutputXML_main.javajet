@@ -1,0 +1,492 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable    
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.Map    
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.process.IConnection
+    org.talend.core.utils.TalendQuoteUtils
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean inputIsDocument = "true".equals(ElementParameterParser.getValue(node, "__INPUT_IS_DOCUMENT__"));
+String colDoc = ElementParameterParser.getValue(node, "__DOCUMENT_COL__");
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+
+if(!inputIsDocument) {
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+    boolean flushOnRow = ("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__")); 
+    String flushMod = ElementParameterParser.getValue(node, "__FLUSHONROW_NUM__");       
+    String split = ElementParameterParser.getValue(node, "__SPLIT__");
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+	List rootTags = (List)ElementParameterParser.getObjectValue(node, "__ROOT_TAGS__");
+    int footers = rootTags.size();
+    List<Map<String, String>> columnMapping = 
+    		(List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__MAPPING__"
+            );
+    String useDynamicGrouping = ElementParameterParser.getValue(
+            node,
+            "__USE_DYNAMIC_GROUPING__"
+        );
+    List<Map<String, String>> groupBys =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__GROUP_BY__"
+            );
+            
+    String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+	boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+	String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+	String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+	
+    if (("false").equals(useDynamicGrouping)) {
+        groupBys.clear();
+    }
+    if (encoding!=null) {
+        if (("").equals(encoding)) {
+                encoding = "ISO-8859-15";
+        }
+    }
+    String groupby[][] = new String[groupBys.size()][3];
+    for(int i = 0; i < groupBys.size(); i++){
+    	groupby[i][0] = groupBys.get(i).get("COLUMN");
+    	groupby[i][1] = groupBys.get(i).get("LABEL");
+    }
+    int atts = 0;
+    int tags = 0;
+    outter1:
+    for(int i = 0; i < columnMapping.size(); i++){
+    	Map<String, String> map = columnMapping.get(i);
+    	String col = metadata.getListColumns().get(i).getLabel();
+    	for(int j = 0; j < groupby.length; j++){
+    		if(groupby[j][0].equals(col)){
+    			if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+    				groupby[j][2] = col;
+    				groupby[j][2] = TalendQuoteUtils.addQuotes(groupby[j][2]);
+    			}else{
+    				groupby[j][2] = map.get("LABEL");
+    			}
+    			continue outter1;
+    		}
+    	}
+    	if(("true").equals(map.get("AS_ATTRIBUTE"))){
+    		atts ++;
+    	}else{
+    		tags ++;
+    	}
+    }
+    String[][] attribute = new String[atts][2];
+    String[][] tag = new String[tags][2];
+    int ia=0;
+    int it=0;
+    outter2:
+    for(int i = 0; i < columnMapping.size(); i++){
+    	Map<String, String> map = columnMapping.get(i);
+    	String col = metadata.getListColumns().get(i).getLabel();
+    	for(int j = 0; j < groupby.length; j++){
+    		if(groupby[j][0].equals(col)){
+    			continue outter2;
+    		}
+    	}
+    	if(("true").equals(map.get("AS_ATTRIBUTE"))){
+    		if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+    			attribute[ia][1] = col;
+    			attribute[ia][1] = TalendQuoteUtils.addQuotes(attribute[ia][1]);
+    		}else{
+    			attribute[ia][1] = map.get("LABEL");
+    		}
+    		attribute[ia++][0] = col;
+    	}else{
+    		if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+    			tag[it][1] = col;
+    			tag[it][1] = TalendQuoteUtils.addQuotes(tag[it][1]);
+    		}else{
+    			tag[it][1] = map.get("LABEL");
+    		}
+    	    tag[it++][0] = col;
+    	}
+    }
+	if(groupby.length>0){
+%>
+String tempSt_<%=cid %> = null;
+
+boolean flag_<%=cid %> = true;
+ 
+groupby_new_<%=cid %> = 0;
+
+<%
+	}
+%><%
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns!=null && conns.size()>0){
+		IConnection conn = conns.get(0);
+		for(int i = 0; i < groupby.length; i++){
+			boolean needReplace = false;
+			boolean isDate = false;
+			boolean isByteArray = false;
+			String pattern = null;
+			boolean isPrimitive = false;
+			boolean isBigDecimal = false;
+			boolean isAdvancedSeparator = false;
+			Integer precision = null;
+			for(IMetadataColumn column:metadata.getListColumns()) {
+				if(column.getLabel().equals(groupby[i][0])){
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.STRING){
+						needReplace = true;
+					}
+					if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.DATE){
+						pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						if(pattern != null && (pattern.contains("&") || pattern.contains("<") || pattern.contains(">") || pattern.contains("'") || pattern.contains("\""))){
+							needReplace = true;
+						}
+						isDate = true;
+					}
+					if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BYTE_ARRAY){
+						isByteArray = true;
+					}else if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BIGDECIMAL){
+						isBigDecimal = true;
+					}
+					isPrimitive = JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable());
+					
+					isAdvancedSeparator = advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable());
+					
+					precision = column.getPrecision();
+					break;
+				}
+			}
+%>tempSt_<%=cid %> = "<"+<%=groupby[i][2] %>+" "+<%=groupby[i][1] %>+"=\""+<%
+							if(isAdvancedSeparator){
+								if(isBigDecimal){
+								%>FormatterUtils.format_Number(String.valueOf(<%=precision == null? conn.getName() + "." + groupby[i][0] : conn.getName() + "." + groupby[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}else {
+								%>FormatterUtils.format_Number(String.valueOf(<%=conn.getName() %>.<%=groupby[i][0] %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}
+							}else if(isPrimitive){
+								%><%=conn.getName() %>.<%=groupby[i][0] %><%
+							}else{
+								%>((<%=conn.getName() %>.<%=groupby[i][0] %> == null)?"":(<%
+									if(isDate && pattern != null){
+									%><%if(needReplace){%>TalendString.replaceSpecialCharForXML(<%}%>FormatterUtils.format_Date(<%=conn.getName() %>.<%=groupby[i][0] %>, <%=pattern %>)<%if(needReplace){%>)<%}%><%
+									}else if(isByteArray){
+									%>TalendString.replaceSpecialCharForXML(java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=groupby[i][0] %>)).toString())<%
+									}else if(isBigDecimal){
+									%>TalendString.replaceSpecialCharForXML(String.valueOf(<%=precision == null? conn.getName() + "." + tag[i][0] : conn.getName() + "." + tag[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>))<%
+									}else{
+									%><%if(needReplace){%>TalendString.replaceSpecialCharForXML(<%}%><%=conn.getName() %>.<%=groupby[i][0] %><%if(needReplace){%>)<%}%><%
+									}%>))<%
+							}%>+"\">";
+
+if(!groupby_<%=cid %>[<%=i %>][0].equals(tempSt_<%=cid %>)){
+	
+	if(flag_<%=cid %>){
+	
+		groupby_new_<%=cid %> = <%=i %>;
+
+		flag_<%=cid %> = false;
+		
+		for(int i_<%=cid %> = <%=groupby.length-1 %>; i_<%=cid %> >= groupby_new_<%=cid %> && start_<%=cid %>; i_<%=cid %>--){
+
+			out_<%=cid %>.write(groupby_<%=cid %>[i_<%=cid %>][1]);
+	
+			out_<%=cid %>.newLine();
+	
+		}	
+	}
+
+	groupby_<%=cid %>[<%=i %>][0] = tempSt_<%=cid %>;
+	
+	out_<%=cid %>.write(tempSt_<%=cid %>);
+
+	out_<%=cid %>.newLine();
+	
+	if(!start_<%=cid %>){
+			
+		start_<%=cid %> = true;
+			
+	}
+		
+}else if(!flag_<%=cid %>){
+	
+	out_<%=cid %>.write(tempSt_<%=cid %>);
+	
+	out_<%=cid %>.newLine();
+	
+	if(!start_<%=cid %>){
+			
+		start_<%=cid %> = true;
+			
+	}
+	
+}
+
+<%
+		}
+%>StringBuilder tempRes_<%=cid %> = new StringBuilder("<"+<%=ElementParameterParser.getValue(node, "__ROW_TAG__")%>);
+
+<%
+for(int i = 0; i < attribute.length; i++){
+	boolean needReplace = false;
+	boolean isDate = false;
+	boolean isByteArray = false;
+	String pattern = null;
+	boolean isPrimitive = false;
+	boolean isBigDecimal = false;
+	boolean isAdvancedSeparator = false;
+	Integer precision = null;
+	for(IMetadataColumn column:metadata.getListColumns()) {
+		if(column.getLabel().equals(attribute[i][0])){
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.STRING){
+				needReplace = true;
+			}
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.DATE){
+				pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+				if(pattern != null && (pattern.contains("&") || pattern.contains("<") || pattern.contains(">") || pattern.contains("'") || pattern.contains("\""))){
+					needReplace = true;
+				}
+				isDate = true;
+			}
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BYTE_ARRAY){
+				isByteArray = true;
+			}else if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BIGDECIMAL){
+				isBigDecimal = true;
+			}
+			isPrimitive = JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable());
+			
+			isAdvancedSeparator = advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable());
+			
+			precision = column.getPrecision();
+			break;
+		}
+	}
+%>tempRes_<%=cid %>.append(" "+<%=attribute[i][1] %>+"=\""+<%
+							if(isAdvancedSeparator){
+								if(isBigDecimal){
+								%>FormatterUtils.format_Number(String.valueOf(<%=precision == null? conn.getName() + "." + attribute[i][0] : conn.getName() + "." + attribute[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}else {
+								%>FormatterUtils.format_Number(String.valueOf(<%=conn.getName() %>.<%=attribute[i][0] %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}
+							}else if(isPrimitive){
+								%><%=conn.getName() %>.<%=attribute[i][0] %><%
+							}else{
+								%>((<%=conn.getName() %>.<%=attribute[i][0] %> == null)?"":(<%
+									if(isDate && pattern != null){
+									%><%if(needReplace){%>TalendString.replaceSpecialCharForXML(<%}%>FormatterUtils.format_Date(<%=conn.getName() %>.<%=attribute[i][0] %>, <%=pattern %>)<%if(needReplace){%>)<%}%><%
+									}else if(isByteArray){
+									%>TalendString.replaceSpecialCharForXML(java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=attribute[i][0] %>)).toString())<%
+									}else if(isBigDecimal){
+									%>TalendString.replaceSpecialCharForXML(String.valueOf(<%=precision == null? conn.getName() + "." + tag[i][0] : conn.getName() + "." + tag[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>))<%
+									}else{
+									%><%if(needReplace){%>TalendString.replaceSpecialCharForXML(<%}%><%=conn.getName() %>.<%=attribute[i][0] %><%if(needReplace){%>)<%}%><%
+									}%>))<%
+							}%>+"\"");
+
+<%
+}
+%><%
+if(tags > 0){
+%>tempRes_<%=cid %>.append(">");
+
+<%
+}else{
+%>tempRes_<%=cid %>.append("/>");
+
+<%
+}
+%>out_<%=cid %>.write(tempRes_<%=cid %>.toString());
+
+out_<%=cid %>.newLine();
+
+<%
+for(int i = 0; i < tag.length; i++){
+	boolean needReplace = false;
+	boolean isDate = false;
+	boolean isByteArray = false;
+	String pattern = null;
+	boolean isPrimitive = false;
+	boolean isBigDecimal = false;
+	boolean isAdvancedSeparator = false;
+	boolean isDocument = false;
+	Integer precision = null;
+	for(IMetadataColumn column:metadata.getListColumns()) {
+		if(column.getLabel().equals(tag[i][0])){
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.STRING){
+				needReplace = true;
+			}
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.DATE){
+				pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+				if(pattern != null && (pattern.contains("&") || pattern.contains("<") || pattern.contains(">") || pattern.contains("'") || pattern.contains("\""))){
+					needReplace = true;
+				}
+				isDate = true;
+			}
+			if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BYTE_ARRAY){
+				isByteArray = true;
+			}else if(JavaTypesManager.getJavaTypeFromId(column.getTalendType()) == JavaTypesManager.BIGDECIMAL){
+				isBigDecimal = true;
+			}
+			isPrimitive = JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable());
+			isAdvancedSeparator = advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable());
+						
+			precision = column.getPrecision();
+
+			isDocument = "id_Document".equals(column.getTalendType());
+			break;
+		}
+	}
+%>out_<%=cid %>.write("<"+<%=tag[i][1]%>+">"+<%
+							if(isAdvancedSeparator){
+								if(isBigDecimal){
+								%>FormatterUtils.format_Number(String.valueOf(<%=precision == null? conn.getName() + "." + tag[i][0] : conn.getName() + "." + tag[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}else {
+								%>FormatterUtils.format_Number(String.valueOf(<%=conn.getName() %>.<%=tag[i][0] %>), <%= thousandsSeparator %>, <%= decimalSeparator %>)<%
+								}
+							}else if(isPrimitive){
+								%><%=conn.getName() %>.<%=tag[i][0] %><%
+							}else{
+								%>((<%=conn.getName() %>.<%=tag[i][0] %> == null)?"":(<%
+									if(isDate && pattern != null){
+									%><%if(needReplace){%>TalendString.checkCDATAForXML(<%}%>FormatterUtils.format_Date(<%=conn.getName() %>.<%=tag[i][0] %>, <%=pattern %>)<%if(needReplace){%>)<%}%><%
+									}else if(isByteArray){
+									%>TalendString.checkCDATAForXML(java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=tag[i][0] %>)).toString())<%
+									}else if(isBigDecimal){
+									%>TalendString.checkCDATAForXML(String.valueOf(<%=precision == null? conn.getName() + "." + tag[i][0] : conn.getName() + "." + tag[i][0] + ".setScale(" + precision + ", java.math.RoundingMode.HALF_UP)" %>))<%
+									}else if(isDocument){
+									%><%if(needReplace){%>TalendString.checkCDATAForXML(<%}%><%=conn.getName() %>.<%=tag[i][0] %><%if(needReplace){%>)<%}%>.getDocument().getRootElement().asXML()<%
+									}else{
+									%><%if(needReplace){%>TalendString.checkCDATAForXML(<%}%><%=conn.getName() %>.<%=tag[i][0] %><%if(needReplace){%>)<%}%><%
+									}%>))<%
+							}%>+"</"+<%=tag[i][1]%>+">");
+
+out_<%=cid %>.newLine();
+
+<%
+	if(i == tag.length -1){
+%>out_<%=cid %>.write("</"+<%=ElementParameterParser.getValue(node, "__ROW_TAG__")%>+">");
+
+out_<%=cid %>.newLine();
+
+<%
+	}
+}
+%>
+
+<% if(flushOnRow) { %>
+    if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+    out_<%=cid %>.flush();
+    }
+<%
+	}
+%>
+nb_line_<%=cid %>++;
+
+<%if(isDeleteEmptyFile) {%>
+resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+<%}%>
+
+<%log4jFileUtil.debugWriteData(node);%>
+<%
+    if(("true").equals(split)){
+%>
+currentRowCount_<%=cid %>++;
+if(currentRowCount_<%=cid %> == <%=ElementParameterParser.getValue(node, "__SPLIT_EVERY__") %>){
+<%
+		for(int i = groupby.length - 1; i >=0; i--){
+%>
+out_<%=cid%>.write(groupby_<%=cid %>[<%=i %>][1]);
+out_<%=cid%>.newLine();		
+<%
+		}
+		for(int i = footers - 1; i >= 0 ;i--){
+%>
+out_<%=cid%>.write(footers_<%=cid %>[<%=i %>]);
+out_<%=cid%>.newLine();
+<%
+		}
+%>	
+	out_<%=cid %>.close();
+	currentFileCount_<%=cid %>++;	
+
+    sb_<%=cid %> = new StringBuffer(canonicalPath_<%=cid %>);
+    lastIndexOf_<%=cid %> = canonicalPath_<%=cid %>.lastIndexOf('.');
+    position_<%=cid %> = lastIndexOf_<%=cid %> > -1 ? lastIndexOf_<%=cid %> : canonicalPath_<%=cid %>.length();
+    sb_<%=cid %>.insert(position_<%=cid %>, currentFileCount_<%=cid %>);
+    
+    fileName_<%=cid %> = sb_<%=cid %>.toString();
+    file_<%=cid %> = new java.io.File(fileName_<%=cid %>);
+    
+	out_<%=cid%> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(file_<%=cid %>), <%=encoding%>));
+	<%if(isDeleteEmptyFile) {%>
+	resourceMap.put("stream_<%=cid%>", out_<%=cid%>);
+	<%}%>
+
+<%
+	if(groupby.length > 0){
+%>
+	start_<%=cid %> = false;  
+<%
+	}
+	for(int i = 0; i <= footers;i++){
+%>	
+	out_<%=cid%>.write(headers_<%=cid %>[<%=i %>]);
+	out_<%=cid%>.newLine();
+<%
+	}
+	for(int i = 0; i < groupby.length; i++){
+%>	
+	groupby_<%=cid %>[<%=i %>][0] = "";
+<%
+	}
+%>	
+    currentRowCount_<%=cid %> = 0;
+}
+<%
+	}
+		}
+	}
+}
+} else {
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			List< ? extends IConnection> conns = node.getIncomingConnections();
+			if(conns!=null && conns.size()>0){
+				IConnection conn = conns.get(0);
+%>
+					nb_line_<%=cid %>++;
+					org.dom4j.Document doc_<%=cid%> = <%=conn.getName()%>.<%=colDoc%>.getDocument();
+					<%if(isDeleteEmptyFile) {%>
+					resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+					if((doc_<%=cid%> != null) && (doc_<%=cid%>.getRootElement() != null)) {
+						isEmpty_<%=cid%> = false;
+					}
+					<%}%>
+					writer_<%=cid%>.write(doc_<%=cid%>);
+					<%log4jFileUtil.debugWriteData(node);%>
+<%
+			}
+		}
+	}
+}
+%>

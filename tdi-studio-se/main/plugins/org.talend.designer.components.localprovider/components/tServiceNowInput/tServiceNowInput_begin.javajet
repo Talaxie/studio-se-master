@@ -1,0 +1,284 @@
+<%@ jet
+imports="
+java.util.List
+java.util.ArrayList
+java.util.Map
+org.talend.core.model.metadata.IMetadataColumn
+org.talend.core.model.metadata.IMetadataTable
+org.talend.core.model.metadata.types.JavaType
+org.talend.core.model.metadata.types.JavaTypesManager
+org.talend.core.model.process.ElementParameterParser
+org.talend.core.model.process.IConnection
+org.talend.core.model.process.IConnectionCategory
+org.talend.core.model.process.INode
+org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+%>
+int nb_line_<%=cid%> = 0;
+<%
+String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+String connectionURL = "\"httpHost_conn_" + connection + "\"";
+String connectionUsername = "\"username_conn_" + connection + "\"";
+String connectionPassword = "\"password_conn_" + connection + "\"";
+
+String tablename = ElementParameterParser.getValue(node, "__TABLENAME__").trim().toLowerCase();
+String customTablename = ElementParameterParser.getValue(node, "__CUSTOM_TABLE__").trim().toLowerCase();
+tablename = "custom_table".equals(tablename) ? customTablename : "\""+tablename+"\"";
+
+String limit = ElementParameterParser.getValue(node, "__LIMIT__").trim(); //result limit
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String valueFilter = "?sysparm_limit="; //An encoded query string used to filter the results
+//Connection method def
+String httpHost = ElementParameterParser.getValue(node,"__SERVICENOWURL__").trim();
+String username = ElementParameterParser.getValue(node,"__USERNAME__").trim();
+%>
+String <%=cid%>_domain = null;
+String <%=cid%>_URL = null;
+<%
+if(!"true".equals(useExistingConn)) {
+  String passwordFieldName = "__PASSWORD__";
+  %>
+    
+  <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+  <%=cid%>_URL = StringHandling.EREPLACE(<%=httpHost%>, "(/$)", "");
+  <%=cid%>_domain = <%=cid%>_URL.replaceAll("https?://", "");
+  org.apache.http.auth.UsernamePasswordCredentials <%=cid%>_usernamePasswordCredentials = new org.apache.http.auth.UsernamePasswordCredentials(<%=username%>, decryptedPassword_<%=cid%>);
+  <%
+} else {
+  %>
+  <%=cid%>_URL = ((String)globalMap.get(<%=connectionURL%>));
+  <%=cid%>_domain = <%=cid%>_URL.replaceAll("https?://", "");
+  org.apache.http.auth.UsernamePasswordCredentials <%=cid%>_usernamePasswordCredentials = new org.apache.http.auth.UsernamePasswordCredentials((String)globalMap.get(<%=connectionUsername%>), (String)globalMap.get(<%=connectionPassword%>));
+  <%
+}
+%>
+//Credential def
+org.apache.http.client.CredentialsProvider <%=cid%>_credsProvider = new org.apache.http.impl.client.BasicCredentialsProvider();
+<%=cid%>_credsProvider.setCredentials(
+  new org.apache.http.auth.AuthScope(new org.apache.http.HttpHost(<%=cid%>_domain)), new org.apache.http.auth.UsernamePasswordCredentials(
+    <%=cid%>_usernamePasswordCredentials.getUserName(), <%=cid%>_usernamePasswordCredentials.getPassword()
+    )
+  );
+org.apache.http.impl.client.CloseableHttpClient <%=cid%>_httpclient = org.apache.http.impl.client.HttpClients.custom()
+.setDefaultCredentialsProvider(<%=cid%>_credsProvider)
+.useSystemProperties() 
+.build();
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas == null) || metadatas.isEmpty()) {
+	return stringBuffer.toString();
+}
+
+IMetadataTable metadata = metadatas.get(0);
+if (metadata == null) {
+	return stringBuffer.toString();
+}
+
+List<IMetadataColumn> columnList = metadata.getListColumns();
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+if(columnList==null || columnList.isEmpty() || outgoingConns == null || outgoingConns.isEmpty()){
+	return stringBuffer.toString();
+}
+
+IConnection outgoingConn = outgoingConns.get(0);
+
+boolean hasDynamic = false;
+String dynamicColName = "";
+StringBuilder unDynamicCols = new StringBuilder();
+for(IMetadataColumn column : columnList) {
+    if(column.getTalendType().equals("id_Dynamic")){
+        hasDynamic = true;
+        dynamicColName = column.getLabel();
+    } else {
+    	unDynamicCols.append(column.getLabel());
+    	unDynamicCols.append(",");
+    }
+}
+
+if(unDynamicCols.lastIndexOf(",")>-1){
+	unDynamicCols.deleteCharAt(unDynamicCols.lastIndexOf(","));
+}
+
+if(hasDynamic) {
+%>
+	routines.system.Dynamic dynamic_<%=cid%> = new routines.system.Dynamic();
+	
+	org.talend.servicenow.Util util_<%=cid%> = new org.talend.servicenow.Util(<%=cid%>_httpclient, <%=cid%>_URL);
+	java.util.Map<String, org.talend.servicenow.Util.ColumnMetadata> metadata_<%=cid%> = util_<%=cid%>.getMetadata(<%=tablename%>);
+	
+	java.util.List<String> unDynamicCols_<%=cid%> = java.util.Arrays.asList("<%=unDynamicCols%>".split(","));
+	
+	for (java.util.Map.Entry<String, org.talend.servicenow.Util.ColumnMetadata> entry_<%=cid%> : metadata_<%=cid%>.entrySet()) {
+		String columnname_<%=cid%> = entry_<%=cid%>.getKey();
+		
+		if(unDynamicCols_<%=cid%>.contains(columnname_<%=cid%>)) {
+			continue;
+		}
+		
+    	routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = new routines.system.DynamicMetadata();
+    	dynamicMetadata_<%=cid%>.setName(columnname_<%=cid%>);
+    	dynamicMetadata_<%=cid%>.setDbName(columnname_<%=cid%>);
+    	
+    	dynamicMetadata_<%=cid%>.setType(entry_<%=cid%>.getValue().getType());
+    	int maxlength_<%=cid%> = entry_<%=cid%>.getValue().getMaxLength();
+    	dynamicMetadata_<%=cid%>.setLength(maxlength_<%=cid%>>256 ? 256 : maxlength_<%=cid%>);
+    	dynamicMetadata_<%=cid%>.setFormat(entry_<%=cid%>.getValue().getPattern());
+    	
+    	dynamicMetadata_<%=cid%>.setDbType("VARCHAR");
+    	dynamicMetadata_<%=cid%>.setPrecision(0);
+    	dynamicMetadata_<%=cid%>.setNullable(true);
+    	dynamicMetadata_<%=cid%>.setKey(false);
+    	dynamicMetadata_<%=cid%>.setSourceType(routines.system.DynamicMetadata.sourceTypes.servicenow);
+    	dynamic_<%=cid%>.metadatas.add(dynamicMetadata_<%=cid%>);
+    }
+<%
+}
+%>
+
+//Query parameter builder
+String <%=cid%>_conditions = "";
+String <%=cid%>_conditionValues = "";
+int <%=cid%>_obj_line = 0;
+
+<%
+  String advCondition = ElementParameterParser.getValue(node, "__ENABLE_ADVANCED_CONDITIONS__");
+    if ("true".equals(advCondition)){
+%>
+
+        <%=cid%>_conditions += "&sysparm_query=" + java.net.URLEncoder.encode(<%= ElementParameterParser.getValue(node, "__ADVANCED_CONDITIONS__") %>, "utf-8" ) ;
+<%
+    } else {
+        List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONDITIONS__");
+        if(keyColumns.size() > 0 ) {
+          for(Map<String, String> keyColumn:keyColumns) {
+            %>
+            <%
+            if(!("").equals(keyColumn.get("RVALUE"))) {
+              %>
+              <%=cid%>_obj_line ++;
+              if(<%=cid%>_obj_line == 1) {
+                <%=cid%>_conditions += "&sysparm_query=";
+              }
+              if(<%=cid%>_obj_line > 1) {
+                <%=cid%>_conditions += java.net.URLEncoder.encode("^","utf-8");
+              }
+              <%=cid%>_conditions += "<%=keyColumn.get("INPUT_COLUMN")%>";
+              if (!"=".equals("<%=keyColumn.get("OPERATOR")%>")) {
+                <%=cid%>_conditions += java.net.URLEncoder.encode("<%=keyColumn.get("OPERATOR")%>","utf-8");
+              } else {
+                <%=cid%>_conditions += "<%=keyColumn.get("OPERATOR")%>";
+              }
+              <%=cid%>_conditionValues = "\"" + <%=keyColumn.get("RVALUE")%> + "\"";
+              <%=cid%>_conditionValues = <%=cid%>_conditionValues.replaceAll("\"", "");
+              if (!<%=cid%>_conditionValues.contains(" ")) {
+                <%=cid%>_conditionValues = <%=cid%>_conditionValues.replaceAll(" ", "+");
+              }
+              <%=cid%>_conditions += java.net.URLEncoder.encode(<%=cid%>_conditionValues,"utf-8");
+              <%
+            }
+          }
+        }
+    }
+%>
+
+<%
+//Return Field builder
+if(!hasDynamic) {
+%>
+	String <%=cid%>_fields = "";
+<%
+    for (int i = 0; i < columnList.size(); i++) {
+    	IMetadataColumn column = columnList.get(i);
+      	%>
+    	<%=cid%>_fields += <%=cid%>_fields.isEmpty() ? "&sysparm_fields=" + "<%=column.getLabel()%>" : "," + "<%=column.getLabel()%>";
+      	<%
+    }
+}
+%>
+//Set limit
+<%
+if(limit!=null && !("").equals(limit) && !("\"\"").equals(limit)) {
+%>
+  final int LIMIT_<%=cid%> = <%=limit%>;
+<%
+} else {
+%>
+  final int LIMIT_<%=cid%> = 0;
+<%
+} 
+%>
+
+int offset_<%=cid%> = 0;
+int limit_<%=cid%> = LIMIT_<%=cid%> > 0 ? LIMIT_<%=cid%> : 1000;
+int total_<%=cid%> = 0;
+
+try {
+while(true) {
+    //URL builder
+    StringBuilder strb_<%=cid%> = new StringBuilder();
+    strb_<%=cid%>.append(<%=cid%>_URL).append("/api/now/table/").append(<%=tablename%>).append("?sysparm_exclude_reference_link=true")
+        .append("&sysparm_offset=").append(offset_<%=cid%>).append("&sysparm_limit=").append(limit_<%=cid%>).append(<%=cid%>_conditions);
+        
+    offset_<%=cid%> += limit_<%=cid%>;
+    
+    <%
+    if(!hasDynamic) {
+    %>
+    strb_<%=cid%>.append(<%=cid%>_fields);
+    <%
+    }
+    %>
+    
+    org.apache.http.client.methods.HttpGet <%=cid%>_httpget = new org.apache.http.client.methods.HttpGet(strb_<%=cid%>.toString());
+    
+    //Header builder
+    <%=cid%>_httpget.setHeader("Accept", "application/json");
+    //activate Cookie header only if unreliable connection
+    //<%=cid%>_httpget.setHeader("Cookie", "BIGipServerpool_sandbox=440453642.33598.0000; JSESSIONID=4100538B6BBF00B5568DF143FF815AF7; _ga=GA1.2.1976595674.1437483024; __CJ_tabs2_list_sys_user=%220%22; __CJ_g_startTime=%221437483102682%22; glide_user_route=glide.a1e7d977b734181b528e29363f053207");
+    <%
+    if(isLog4jEnabled){
+      %>
+      log.info("<%=cid%> - Executing method '" + <%=cid%>_httpget.getRequestLine().getMethod() + "'");
+      <%
+    }
+    %>
+    //Get
+    org.apache.http.client.methods.CloseableHttpResponse <%=cid%>_response = <%=cid%>_httpclient.execute(<%=cid%>_httpget);
+    <%
+    if(isLog4jEnabled){
+      %>
+      log.info("<%=cid%> - Execution code '" + <%=cid%>_response.getStatusLine().getStatusCode() + "'");
+      <%
+    }
+    %>
+    
+    org.apache.http.Header header_<%=cid%> = <%=cid%>_response.getFirstHeader("Link");
+    
+      String <%=cid%>_responseBody;
+      org.json.JSONObject <%=cid%>_json;
+      org.json.JSONArray <%=cid%>_resultArray;
+      int <%=cid%>_responseLength, <%=cid%>_i;
+      org.json.JSONObject <%=cid%>_result = null;
+      try {
+        <%=cid%>_responseBody = org.apache.http.util.EntityUtils.toString(<%=cid%>_response.getEntity());
+        <%=cid%>_json = new org.json.JSONObject(<%=cid%>_responseBody);
+    
+        if (<%=cid%>_response.getStatusLine().getStatusCode() == 200) {
+    //Store result as JSON
+          <%=cid%>_resultArray = (org.json.JSONArray) <%=cid%>_json.get("result");
+          <%=cid%>_responseLength = <%=cid%>_resultArray.length();
+          total_<%=cid%> += <%=cid%>_responseLength;
+          if(<%=cid%>_responseLength == 0) {//already read limit number records, so quit
+              break;
+          }
+    //Pass values to output
+          for (<%=cid%>_i = 0; <%=cid%>_i < <%=cid%>_responseLength; <%=cid%>_i++) {

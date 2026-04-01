@@ -1,0 +1,120 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+		java.util.List
+		java.util.ArrayList
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IHashableInputConnections
+		org.talend.core.model.process.IHashConfiguration
+		org.talend.core.model.process.IHashableColumn
+		org.talend.core.model.process.IMatchingMode
+		org.talend.core.model.process.IDataConnection
+	"
+%>
+
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    
+	if (connections != null && connections.size() > 0) { // T_AH_100
+        for (IConnection connection : connections) { // T_AH_101
+        	String connectionName = connection.getName();
+   
+			INode validTarget = ((IDataConnection) connection).getLinkNodeForHash();
+
+			if(validTarget != null) { // T_AH_102
+					String matchingModeStr = null;
+					List<IHashableColumn> hashableColumns = null;
+					IMatchingMode matchingMode = null;
+					IHashConfiguration hashConfiguration = null;
+					boolean bSortOnDisk = "true".equals(ElementParameterParser.getValue(node, "__SORT_ON_DISK__"));
+					
+					if (validTarget instanceof IHashableInputConnections){
+					
+					  IHashableInputConnections target = (IHashableInputConnections) validTarget;
+					  hashConfiguration = target.getHashConfiguration(connection.getName());
+					} else{
+				  	  matchingModeStr = "ALL_MATCHES";
+				    }
+					if(hashConfiguration == null) {
+						hashableColumns = new ArrayList(0);
+					} else {
+						hashableColumns = hashConfiguration.getHashableColumns();
+						matchingMode = hashConfiguration.getMatchingMode();
+					}
+					
+					
+					if (matchingModeStr == null){
+					  if(matchingMode == null) {
+						if(hashableColumns.size() > 0) {
+							matchingModeStr = "UNIQUE_MATCH";
+						} else {
+							matchingModeStr = "ALL_ROWS";
+						}
+					  } else {
+						matchingModeStr = matchingMode.toString();
+					  }
+			        }
+			   %>
+			   
+			   <%
+				if(hashConfiguration != null && hashConfiguration.isPersistent() || bSortOnDisk) {
+				%>
+
+					<%=connectionName%>Struct <%=connectionName%>_HashRow = tHash_Lookup_<%=connectionName%>.getNextFreeRow();
+
+	   			<%	
+	   			} else {
+	   			%>
+
+					<%=connectionName%>Struct <%=connectionName%>_HashRow = new <%=connectionName%>Struct();
+		   	   	   
+				<%
+				}
+			} // T_AH_103 
+            else { // T_AH_104
+				%> 
+				/*
+				 * Valid target not found for connection "<%= connectionName%>"
+				 */ 
+				<%
+            } // T_AH_104
+			
+			IMetadataTable metadataTable = connection.getMetadataTable();
+			
+			List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+            for (IMetadataColumn column : listColumns) {
+                String columnName = column.getLabel();
+				if("id_Dynamic".equals(column.getTalendType())) {
+				%>
+				<%=connectionName%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>.clone();
+				<%
+				} else {
+				%>
+				<%=connectionName%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>;
+				<%	
+				}
+            } 
+
+
+			%>
+			tHash_Lookup_<%=connectionName%>.put(<%=connectionName%>_HashRow);
+			<%
+			
+			
+		} // T_AH_101
+	} // T_AH_100
+
+%>
+            
+
+
+

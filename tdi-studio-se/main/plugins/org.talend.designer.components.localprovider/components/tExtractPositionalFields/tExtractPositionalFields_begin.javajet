@@ -1,0 +1,68 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String pattern = ElementParameterParser.getValue(node, "__PATTERN__");
+boolean advanced = ("true").equals(ElementParameterParser.getValue(node, "__ADVANCED_OPTION__"));
+List<Map<String, String>> formats =
+	(List<Map<String,String>>)ElementParameterParser.getObjectValue( node, "__FORMATS__");
+%>
+int nb_line_<%=cid%>=0;
+<%
+if(advanced){
+%>
+int[] sizes_<%=cid%> =new int[]{
+<%
+	for(int i=0;i<formats.size();i++){
+		Map<String,String> tmp = formats.get(i);
+		if(("*").equals(tmp.get("SIZE"))){
+%>
+	<%=-1%>
+<%
+		}else{
+%>
+	<%=Integer.valueOf(tmp.get("SIZE"))%>,
+<%
+		}
+	}
+%>
+	};
+<%
+}else{
+%>
+	String pattern_<%=cid%> = <%=pattern%>;
+	String[] ptnSplit_<%=cid%> = pattern_<%=cid%>.split(",");
+	int[] sizes_<%=cid%> = new int[ptnSplit_<%=cid%>.length];
+	for(int i_<%=cid%>=0;i_<%=cid%><ptnSplit_<%=cid%>.length;i_<%=cid%>++){
+		if(("*").equals(ptnSplit_<%=cid%>[i_<%=cid%>])){
+			 sizes_<%=cid%>[i_<%=cid%>]=-1;
+	 	}else{
+	 		 sizes_<%=cid%>[i_<%=cid%>]=Integer.valueOf(ptnSplit_<%=cid%>[i_<%=cid%>]);
+	 	}
+	}
+<%
+}
+%>
+int[] indexs_<%=cid%> = new int[sizes_<%=cid%>.length];
+for(int i_<%=cid%>=0;i_<%=cid%><indexs_<%=cid%>.length;i_<%=cid%>++){
+	if(sizes_<%=cid%>[i_<%=cid%>]==-1){
+		indexs_<%=cid%>[i_<%=cid%>]=-1;
+	}else{
+		if(i_<%=cid%>-1>=0){
+			indexs_<%=cid%>[i_<%=cid%>]= indexs_<%=cid%>[i_<%=cid%>-1]+sizes_<%=cid%>[i_<%=cid%>];
+		}else{
+			indexs_<%=cid%>[i_<%=cid%>]= sizes_<%=cid%>[i_<%=cid%>];
+		}
+	}
+}

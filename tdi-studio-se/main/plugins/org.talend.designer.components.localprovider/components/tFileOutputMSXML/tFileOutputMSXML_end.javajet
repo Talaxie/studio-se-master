@@ -1,0 +1,124 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+    java.util.HashMap
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.process.IConnectionCategory
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.EConnectionType
+"
+skeleton="tFileOutputMSXML_java.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+
+// ------------------- *** Common code start *** ------------------- //
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+String allowEmpty = ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__");
+
+String cid = node.getUniqueName();
+
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+boolean escapeText = ("true").equals(ElementParameterParser.getValue(node, "__ESCAPE_TEXT__"));
+
+List<IMetadataTable> metadatas = NodeUtil.getIncomingMetadataTable(node, IConnectionCategory.FLOW);
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	final List< ? extends IConnection> incomingConns = node.getIncomingConnections(); 
+%>
+<%@ include file="tFileOutputMSXML_begin.inc.javajet"%>
+
+<%
+	int schemaOptNum=100;
+	String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+	if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+		schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+	}
+	OptimizeCodeGenerator optimizeGen = new OptimizeCodeGenerator(cid,schemaOptNum);
+%>
+	java.io.FileOutputStream stream_<%=cid%> = new java.io.FileOutputStream(fileName_<%=cid%>);
+ 	
+	org.dom4j.io.XMLWriter output_<%=cid%> = null;
+<%if (optimizeGen.isOptimizeCode()) {%>
+	if(talendWrapTool_<%=cid %>.isXML10Char_<%=cid%>) {
+<%} else {%>
+	if(isXML10Char_<%=cid%>) {
+<%}%>
+		output_<%=cid%> = new org.dom4j.io.XMLWriter(stream_<%=cid%>, format_<%=cid%>);
+	} else {
+		output_<%=cid%> = new org.dom4j.io.XMLWriter(
+							stream_<%=cid%>, format_<%=cid%>) {
+						
+			private org.dom4j.io.OutputFormat format = null;
+			
+			{
+				format = format_<%=cid%>;
+			}
+			
+			public void writeDeclaration() throws IOException {
+		        String encoding = format.getEncoding();
+
+		        // Only print of declaration is not suppressed
+		        if (!format.isSuppressDeclaration()) {
+		            // Assume 1.0 version
+		            if (encoding.equals("UTF8")) {
+		                writer.write("<?xml version=\"1.1\"");
+
+		                if (!format.isOmitEncoding()) {
+		                    writer.write(" encoding=\"UTF-8\"");
+		                }
+
+		                writer.write("?>");
+		            } else {
+		                writer.write("<?xml version=\"1.1\"");
+
+		                if (!format.isOmitEncoding()) {
+		                    writer.write(" encoding=\"" + encoding + "\"");
+		                }
+
+		                writer.write("?>");
+		            }
+
+		            if (format.isNewLineAfterDeclaration()) {
+		                println();
+		            }
+		        }
+		    }
+		};
+	}
+	
+    nestXMLTool_<%=cid%>.replaceDefaultNameSpace(doc_<%=cid%>.getRootElement());
+<%
+	if(!("true").equals(allowEmpty)){
+%>
+    nestXMLTool_<%=cid%>.removeEmptyElement(doc_<%=cid%>.getRootElement());
+<%
+	}
+%>
+	output_<%=cid%>.setEscapeText(<%=escapeText%>);
+    output_<%=cid%>.write(doc_<%=cid%>);
+    output_<%=cid%>.close();
+    
+	nameToElement_<%=cid%>.clear();
+	
+    globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+
+<%	if(isDeleteEmptyFile){%>
+	if(nb_line_<%=cid %> == 0){
+		createFile<%=cid%>.delete();
+	}
+<%
+	}
+	log4jFileUtil.writeDataFinishInfo(node);
+}
+%>

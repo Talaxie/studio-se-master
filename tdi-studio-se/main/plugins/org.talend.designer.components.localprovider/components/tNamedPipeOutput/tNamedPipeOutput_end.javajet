@@ -1,0 +1,77 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean useExistingPipe = ElementParameterParser.getValue(node, "__USE_EXISTING_PIPE__").equals("true");
+String existingPipe = ElementParameterParser.getValue(node, "__PIPE__");
+String namedPipeName = ElementParameterParser.getValue(node, "__NAMEDPIPE_NAME__");
+String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+boolean csv = ElementParameterParser.getValue(node, "__CSV__").equals("true");
+String escapeChar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+String quoteChar = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+boolean quoteAllFields = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE_OPTION__").equals("ALL");
+boolean deleteIfExists = ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__").equals("true");
+String nullText = ElementParameterParser.getValue(node, "__NULL_TEXT__");
+String boolType = ElementParameterParser.getValue(node, "__BOOLEAN_TYPE__");
+
+if (nullText == null || "".equals(nullText)) {
+	nullText = "\"\"";
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+List<IMetadataColumn> columnList = null;
+if(metadatas != null && metadatas.size() > 0) {
+    IMetadataTable metadata = metadatas.get(0);
+    if(metadata != null) {
+        columnList = metadata.getListColumns();
+    }
+}
+List< ? extends IConnection> inputConns = node.getIncomingConnections();
+List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+boolean hasInputRow = false;
+boolean hasOutputRow = false;
+if (inputConns != null || inputConns.size() > 0) {
+	for(IConnection conn : inputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasInputRow)
+				hasInputRow = true;
+	}
+}
+if (outputConns != null || outputConns.size() > 0) {
+	for(IConnection conn : outputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasOutputRow)
+				hasOutputRow = true;
+	}
+}
+
+String inputRowName = (hasInputRow) ? inputConns.get(0).getName() : null;
+String outputRowName = (hasOutputRow) ? outputConns.get(0).getName() : null;
+%>
+
+<%
+if (hasInputRow && columnList != null) {
+%>
+	outputStream_<%=cid%>.flush();
+	outputStream_<%=cid%>.close();
+	outputStream_<%=cid%> = null;
+<%
+}
+%>
+
+	

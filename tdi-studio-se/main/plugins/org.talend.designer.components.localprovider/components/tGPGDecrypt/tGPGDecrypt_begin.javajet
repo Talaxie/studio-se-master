@@ -1,0 +1,96 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String gpgBin = ElementParameterParser.getValue(node, "__GPGBIN__");		
+	String inputFile  = ElementParameterParser.getValue(node, "__INPUT_FILE__");
+	String outputFile  = ElementParameterParser.getValue(node, "__OUTPUT_FILE__");
+	boolean useExtraParameters = "true".equals(ElementParameterParser.getValue(node, "__USE_EXTRA_PARAMETERS__"));
+	String extraParameters  = ElementParameterParser.getValue(node, "__EXTRA_PARAMETERS__"); 
+
+	boolean noTTY  = "true".equals(ElementParameterParser.getValue(node, "__NOTTY__"));
+	
+	//"cmd /c " + gpgBin + " --yes -q  -d --passphrase " + password + " -o " + outputFile + " " + inputFile;
+	
+	// To launch an internal command to cmd.exe (XP), you have to call :
+	// cmd.exe /c dir (for example)
+%>
+
+   <%
+   String passwordFieldName = "__PASSPHRASE__";
+   %>
+    
+   <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+   
+   StringBuilder cmdBuilder_<%=cid %> = new StringBuilder();
+   cmdBuilder_<%=cid %>.append(<%=gpgBin %>)
+   <%if(noTTY){%>.append(" --no-tty")<%}%>
+   .append(" --yes").append(" --batch")
+   <%if(useExtraParameters){%>.append(' ').append(<%=extraParameters%>.trim())<%}%>
+   
+   .append(" -q").append(" -d").append(" --passphrase").append(' ').append(decryptedPassword_<%=cid%>).append(" -o")
+   .append(' ').append(<%=outputFile %>).append(' ')
+   .append(<%=inputFile %>);
+   
+            Runtime runtime_<%=cid %> = Runtime.getRuntime();
+            final Process ps_<%=cid %> = runtime_<%=cid %>.exec(cmdBuilder_<%=cid %>.toString().split(" "));
+            Thread normal_<%=cid %> = new Thread() {
+
+                public void run() {
+                    try {
+                        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>
+                                .getInputStream()));
+                        String line = "";
+                        try {
+                            while ((line = reader.readLine()) != null) {
+                                System.out.println(line);
+                            }
+                        } finally {
+                            reader.close();
+                        }
+                    } catch (java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+                        ioe.printStackTrace();
+                    }
+                }
+            };
+            normal_<%=cid %>.start();
+
+            Thread error_<%=cid %> = new Thread() {
+
+                public void run() {
+                    try {
+                        java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>
+                                .getErrorStream()));
+                        String line = "";
+                        try {
+                            while ((line = reader.readLine()) != null) {
+                                System.err.println(line);
+                            }
+                        } finally {
+                            reader.close();
+                        }
+                    } catch (java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+                        ioe.printStackTrace();
+                    }
+                }
+            };
+            error_<%=cid %>.start();
+
+            ps_<%=cid %>.waitFor();
+            normal_<%=cid %>.join();
+            error_<%=cid %>.join();
+            
+            java.io.File file_<%=cid %> = new java.io.File(<%=outputFile %>);
+            globalMap.put("<%=cid %>_FILE", file_<%=cid %>.getName());
+            globalMap.put("<%=cid %>_FILEPATH", file_<%=cid %>.getPath());

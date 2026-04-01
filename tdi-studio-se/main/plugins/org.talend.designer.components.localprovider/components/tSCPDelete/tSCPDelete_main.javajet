@@ -1,0 +1,137 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    org.talend.core.model.utils.NodeUtil
+"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    String authMethod = ElementParameterParser.getValue(node,"__AUTH_METHOD__");
+    String cid = node.getUniqueName();
+    List<Map<String, String>> filelist = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FILELIST__");
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+    String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+    if(("true").equals(useExistingConn)){
+     	    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+     	    INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+     		authMethod = ElementParameterParser.getValue(connectionNode,"__AUTH_METHOD__");
+    }
+
+    if(dieOnError){
+    	%>
+	       boolean isCmdFailed_<%= cid %> = false;
+    	<%
+	}
+%>
+    StringBuilder command_<%=cid %> = new StringBuilder("rm -f");
+
+
+<%
+		   for(Map<String,String> map : filelist){
+		   	%>
+				command_<%=cid %>.append(" ");
+				command_<%=cid %>.append("\"");
+				command_<%=cid %>.append(<%= map.get("SOURCE") %>);
+				command_<%=cid %>.append("\"");
+	            nb_file_<%=cid %> ++;
+		   	<%
+			}
+%>
+
+        String rmCmd_<%= cid %> = command_<%=cid %>.toString();
+        if(!"rm -f".equals(rmCmd_<%= cid %>)){
+                                    		<%if(isLog4jEnabled){%>
+                                    			log.debug("Execute command: "+ rmCmd_<%= cid %>);
+                                    		<%}%>
+				    		org.apache.sshd.client.channel.ClientChannel channel_<%=cid %> = session_<%=cid %>.createExecChannel((command_<%=cid %>).toString());
+                                    
+
+                            		channel_<%=cid%>.open();
+                            		java.util.Set<org.apache.sshd.client.channel.ClientChannelEvent> clientChannelEvents_<%=cid %> =
+                            		channel_<%=cid%>.waitFor(java.util.EnumSet.of(
+                            		org.apache.sshd.client.channel.ClientChannelEvent.CLOSED,org.apache.sshd.client.channel.ClientChannelEvent.EXIT_STATUS), 0L);
+                            		exit_code_<%=cid%> = channel_<%=cid%>.getExitStatus();
+                            		
+
+                            		<%if(isLog4jEnabled){%>
+                            			log.debug("Channel Events: "+ java.util.Arrays.toString(clientChannelEvents_<%=cid %>.toArray()));
+                            		<%}%>
+                            		
+                                    final java.io.InputStream invertedOut_<%=cid%> = channel_<%=cid%>.getInvertedOut();
+                                    final List<String> outLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedOut_<%=cid%>);
+                            		
+                                    final java.io.InputStream invertedErr_<%=cid%> = channel_<%=cid%>.getInvertedErr();
+                                    final List<String> errorLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedErr_<%=cid%>);
+                                    
+                            		
+                            		stringStdout_<%=cid%>.append(outLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+                            		stringStderr_<%=cid%>.append(errorLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+                            		channel_<%=cid%>.close();
+
+                            		if(stringStdout_<%=cid%>.length() >0 && stringStdout_<%=cid%>.charAt(stringStdout_<%=cid%>.length()-1) == '\n'){
+                            		    stringStdout_<%=cid%>.deleteCharAt(stringStdout_<%=cid%>.length()-1);
+                            		}
+
+                            		<%if(isLog4jEnabled){%>
+                            			log.debug("<%=cid%> - Command line standard result: " + stringStdout_<%=cid%>.toString());
+                            			log.debug("<%=cid%> - Command line error result: " + stringStderr_<%=cid%>.toString());
+                            		<%}%>
+
+				<% if(dieOnError){ %>
+					StringBuilder errMsg_<%= cid %> = new StringBuilder("File(s) deleting failed.");
+					
+				    if(clientChannelEvents_<%=cid %>.contains(org.apache.sshd.client.channel.ClientChannelEvent.EXIT_STATUS)){
+						  if (exit_code_<%= cid %> != 0) {
+							  isCmdFailed_<%= cid %> = true;
+							  errMsg_<%= cid %>.append("Exit code: ");
+							  errMsg_<%= cid %>.append(exit_code_<%= cid %>);
+  						  }
+					}else if(clientChannelEvents_<%=cid %>.contains(org.apache.sshd.client.channel.ClientChannelEvent.TIMEOUT)){
+						  isCmdFailed_<%= cid %> = true;
+						  errMsg_<%= cid %>.append("The request timeout.");
+					}else if(clientChannelEvents_<%=cid %>.contains(org.apache.sshd.client.channel.ClientChannelEvent.CLOSED)){
+						  isCmdFailed_<%= cid %> = true;
+						  errMsg_<%= cid %>.append("Unexpected closed session.");
+					}else{
+						 System.err.println("Unexpected error.");
+						 isCmdFailed_<%= cid %> = true;
+					}
+				<% } %>
+
+               String stderrString_<%=cid %> = stringStderr_<%=cid%>.toString();
+               System.err.println(stderrString_<%=cid %>);
+
+				<% if(dieOnError){
+					%>
+						if(stderrString_<%=cid %> != null && stderrString_<%=cid %>.length() > 0){
+							isCmdFailed_<%= cid %> = true;
+						}
+						if(isCmdFailed_<%= cid %>){
+							throw new RuntimeException(errMsg_<%= cid %>.toString());
+						}
+					<%
+				}
+				%>
+
+				<%for (int i = 0;i<filelist.size();i++) {%>
+					if(stderrString_<%=cid %>.contains(<%=filelist.get(i).get("SOURCE")%>)){
+				    	nb_file_<%=cid %> --;
+				    }
+				<%}%>
+
+			if("".equals(stderrString_<%=cid %>) || (stderrString_<%=cid %> == null)){
+				globalMap.put("<%=cid %>_STATUS","File(s) deleted OK");
+			}else{
+				globalMap.put("<%=cid %>_STATUS",stringStderr_<%=cid %>.toString());
+			}
+			
+        }else{
+        	globalMap.put("<%=cid %>_STATUS","No file to be deleted.");
+        }

@@ -1,0 +1,66 @@
+<%@ jet 
+	imports="
+			org.talend.core.model.process.INode
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.core.model.process.IConnection
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.eclipse.emf.common.util.EList
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			java.util.Map
+			java.util.HashMap
+			java.util.List
+"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String uniqueNameComponent = cid.replaceAll("_TXMLMAP_OUT", "");
+	
+	XmlMapData xmlMapData =(XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	
+	String uniqueNameComponentIn = cid.replace("_TXMLMAP_OUT", "_TXMLMAP_IN");
+	
+	INode generatingNodeIn = null;
+	for(INode loopNode : node.getProcess().getGeneratingNodes()) {
+		if(loopNode.getUniqueName().equals(uniqueNameComponentIn)) {
+			generatingNodeIn = loopNode;
+			break;
+		}
+	}
+	
+	if(generatingNodeIn == null) {
+		return "";
+	}
+	
+	List<IConnection> outputConnections = (List<IConnection>) generatingNodeIn.getOutgoingConnections();
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+		nameToOutputConnection.put(connection.getName(), connection);
+	}
+
+    for (OutputXmlTree table : outputTables) {
+        EList<OutputTreeNode> tableEntries = table.getNodes();
+        if (tableEntries == null || nameToOutputConnection.get(table.getName()) == null) {
+            continue;
+        }
+        String outputTableName = table.getName();
+        
+		if(isLog4jEnabled) {
+%>
+		log.debug("<%=uniqueNameComponent%> - Written records count in the table '<%=outputTableName%>': " + count_<%=outputTableName%>_<%=cid%> + ".");
+<%
+		}
+    }
+%>
+
+

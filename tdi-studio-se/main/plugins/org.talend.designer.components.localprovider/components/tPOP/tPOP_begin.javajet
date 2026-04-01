@@ -1,0 +1,258 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String username = ElementParameterParser.getValue(node, "__USERNAME__");
+String authMode = ElementParameterParser.getValue(node, "__AUTH_MODE__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String outputDirectory = ElementParameterParser.getValue(node, "__OUTPUT_DIRECTORY__");
+String filenamePattern = ElementParameterParser.getValue(node, "__FILENAME_PATTERN__");
+String allEmails = ElementParameterParser.getValue(node, "__ALL_EMAILS__");
+String maxEmails = ElementParameterParser.getValue(node, "__MAX_EMAILS__");
+boolean bDeleteFromServer = "true".equals(ElementParameterParser.getValue(node, "__DELETE_FROM_SERVER__"));
+String protocol = ElementParameterParser.getValue(node, "__PROTOCOL__");
+List<Map<String, String>> filterList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_FILTER__");
+String condition = ElementParameterParser.getValue(node, "__FILTER_RELATION__");
+boolean useSSL = "true".equals(ElementParameterParser.getValue(node, "__USE_SSL__"));
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+boolean isNewerEmailFirst = ("true").equals(ElementParameterParser.getValue(node, "__NEWER_EMAILS__"));
+List<Map<String, String>> configs = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONFIGS__");
+boolean use2LineToken = "true".equals(ElementParameterParser.getValue(node, "__USE_TWO_LINE_TOKEN__"));
+String clientId = ElementParameterParser.getValue(node, "__CLIENT_ID__");
+String tenant = ElementParameterParser.getValue(node, "__TENANT__");
+%>  
+	String server_<%=cid %> = <%=host %>;
+	String mbox_<%=cid%> = "INBOX";
+	String user_<%=cid %> = <%=username %>;
+	
+    <%
+    String passwordFieldName = "BASIC".equals(authMode)?"__PASSWORD__":("MSEXCHANGE".equals(authMode)?"__CLIENT_SECRET__":"__TOKEN__");
+    %>
+    
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+	String password_<%=cid %> = decryptedPassword_<%=cid%>;
+	int port_<%=cid %> = <%=port %>;
+	int nb_email_<%=cid %> = 0;
+	javax.mail.Folder folder_<%=cid %>;
+	javax.mail.Session session_<%=cid %>;
+	javax.mail.Store store_<%=cid %>;
+	javax.mail.URLName url_<%=cid %>;
+	java.util.Properties props_<%=cid %>;
+
+	try {
+  		props_<%=cid %> = System.getProperties();
+	} catch (SecurityException sex) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",sex.getMessage());
+		<%if(isLog4jEnabled){%>
+			log.warn("<%=cid%> - " + sex.getMessage());
+		<%}%>
+  		props_<%=cid %> = new java.util.Properties();
+	}
+<%
+	if (useSSL) {
+  %>
+		    props_<%=cid %>.setProperty("mail.<%=protocol%>.socketFactory.class", "javax.net.ssl.SSLSocketFactory");      
+		    props_<%=cid %>.setProperty("mail.<%=protocol%>.socketFactory.fallback", "false");
+		    props_<%=cid %>.setProperty("mail.<%=protocol%>.socketFactory.port", port_<%=cid %> + "");
+  <%
+    }
+
+if("OAUTH2".equals(authMode) || "MSEXCHANGE".equals(authMode) ) {
+	%>
+	props_<%=cid %>.put("mail.<%=protocol%>.auth.mechanisms", "XOAUTH2");
+	<%
+}
+if(use2LineToken || "MSEXCHANGE".equals(authMode) ) {
+	%>
+	props_<%=cid %>.put("mail.<%=protocol%>.auth.xoauth2.two.line.authentication.format", "true");
+	<%
+	
+}
+if("MSEXCHANGE".equals(authMode) ) {
+  %>
+		java.util.Set<String> SCOPE_<%=cid %> = new java.util.HashSet();
+		SCOPE_<%=cid %>.add("https://outlook.office365.com/.default");
+		com.microsoft.aad.msal4j.ConfidentialClientApplication app_<%=cid %> = 
+			com.microsoft.aad.msal4j.ConfidentialClientApplication
+				.builder(<%=clientId %>, com.microsoft.aad.msal4j.ClientCredentialFactory.createFromSecret(password_<%=cid %>) )
+				.authority("https://login.microsoftonline.com/"+<%=tenant%>+"/oauth2/v2.0/token")
+				.build();
+		com.microsoft.aad.msal4j.ClientCredentialParameters parameters_<%=cid %> =
+			com.microsoft.aad.msal4j.ClientCredentialParameters
+				.builder(SCOPE_<%=cid %>)
+				.tenant(<%=tenant %>)
+				.build();
+		com.microsoft.aad.msal4j.IAuthenticationResult result_<%=cid %> = app_<%=cid %>.acquireToken(parameters_<%=cid %>).join();
+		password_<%=cid %> = result_<%=cid %>.accessToken();
+		<%
+}
+
+for (int i = 0; i < configs.size(); i++) {
+    Map<String, String> line = configs.get(i);
+%>
+props_<%=cid %>.put(<%=line.get("KEY")%>, <%=line.get("VALUE")%>);
+<%
+}
+	if ("pop3".equals(protocol)){
+%>
+  		session_<%=cid %> = javax.mail.Session.getInstance(props_<%=cid %>, null);
+  		store_<%=cid %> = session_<%=cid %>.getStore("<%=protocol%>");
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection attempt to '" + server_<%=cid %> + "' as '" + user_<%=cid %> + "'.");
+		<%}%>
+  		store_<%=cid %>.connect(server_<%=cid %>, port_<%=cid %>, user_<%=cid %>, password_<%=cid %>);
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to '" + server_<%=cid %> + "' has succeeded.");
+		<%}%>
+  		folder_<%=cid %> = store_<%=cid %>.getDefaultFolder();
+
+  		if (folder_<%=cid %> == null) {
+    		throw new RuntimeException("No default folder");
+  		}
+		// its INBOX
+		folder_<%=cid %> = folder_<%=cid %>.getFolder(mbox_<%=cid%>);
+
+  		if (folder_<%=cid %> == null){
+		    throw new RuntimeException("No POP3 INBOX");
+		}
+<%
+	} else {
+		if ("true".equals(ElementParameterParser.getValue(node, "__SPECIFY_MAIL_FOLDER__"))){
+  %>
+			mbox_<%=cid%> = <%=ElementParameterParser.getValue(node, "__MAIL_FOLDER__")%>;
+  <%
+		}
+  %>
+		url_<%=cid %> = new javax.mail.URLName("<%=protocol%>", server_<%=cid %>, -1, mbox_<%=cid%>, user_<%=cid %>, password_<%=cid %>);
+		session_<%=cid %> = javax.mail.Session.getInstance(props_<%=cid %>, null);
+		store_<%=cid %> = new com.sun.mail.imap.IMAPStore(session_<%=cid %>, url_<%=cid %>);
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection attempt to '" + server_<%=cid %> + "' as '" + user_<%=cid %> + "'.");
+		<%}%>
+  		store_<%=cid %>.connect();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to '" + server_<%=cid %> + "' has succeeded.");
+		<%}%>
+		folder_<%=cid %> = store_<%=cid %>.getFolder(mbox_<%=cid%>);
+<%
+	}
+%> 
+
+	try {
+		folder_<%=cid %>.open(javax.mail.Folder.READ_WRITE);
+	} catch (java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+		<%if(isLog4jEnabled){%>
+			log.warn("<%=cid%> - " + e.getMessage());
+		<%}%>
+		folder_<%=cid %>.open(javax.mail.Folder.READ_ONLY);
+	}
+	<%if("false".equals(allEmails)&&(isNewerEmailFirst)){%>
+		int folderSize_<%=cid %> = folder_<%=cid %>.getMessageCount();
+		javax.mail.Message[] msgs_<%=cid %> = folder_<%=cid %>.getMessages(Math.max(0,folderSize_<%=cid %>-<%=maxEmails%>)+1,folderSize_<%=cid %>);
+	<%} else {%>
+		javax.mail.Message[] msgs_<%=cid %> = folder_<%=cid %>.getMessages();
+	<%}%>
+	
+	
+
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Retrieving mails from server.");
+	<%}%>
+	for (int counter_<%=cid %> = 0; counter_<%=cid %> < msgs_<%=cid %>.length; counter_<%=cid %>++) {
+		<%if ("false".equals(allEmails)) {%>
+			if(nb_email_<%=cid%> >= <%=maxEmails%>) break; 
+		<%}%>
+		javax.mail.Message message_<%=cid %> = msgs_<%=cid %>[counter_<%=cid %>];
+  
+		try {
+			boolean isMatch_<%=cid%> = <%=("&&").equals(condition) ? "true" : "false"%>;
+  
+    <%
+			for (int i = 0;i < filterList.size(); i++) {
+				String filterItem = filterList.get(i).get("FILTER_TIEM");
+				String filterptn = filterList.get(i).get("PATTERN");
+  
+				if ("Subject".equals(filterItem)) {
+      %>
+			        java.util.regex.Pattern pattern_<%=i%>_<%=cid %> = java.util.regex.Pattern.compile(<%=filterptn%>);
+			        java.util.regex.Matcher matcher_<%=i%>_<%=cid %> = pattern_<%=i%>_<%=cid %>.matcher(message_<%=cid %>.getSubject()==null?"":message_<%=cid %>.getSubject());
+			        isMatch_<%=cid%> = isMatch_<%=cid%> <%=condition%> matcher_<%=i%>_<%=cid %>.find();
+      <%
+  				} else if ("From".equals(filterItem)) {
+      %>
+			        java.util.regex.Pattern pattern_<%=i%>_<%=cid %> = java.util.regex.Pattern.compile(<%=filterptn%>);
+			        java.util.regex.Matcher matcher_<%=i%>_<%=cid %> = pattern_<%=i%>_<%=cid %>.matcher(message_<%=cid %>.getFrom()[0]==null?"":message_<%=cid %>.getFrom()[0].toString());
+			        isMatch_<%=cid%> = isMatch_<%=cid%> <%=condition%> matcher_<%=i%>_<%=cid %>.find();
+      <%
+				} else if ("To".equals(filterItem)) {
+      %>
+			        java.util.regex.Pattern pattern_<%=i%>_<%=cid %> = java.util.regex.Pattern.compile(<%=filterptn%>);
+			        java.util.regex.Matcher matcher_<%=i%>_<%=cid %> = null;
+					javax.mail.Address[] addr_<%=i%>_<%=cid%> = message_<%=cid %>.getAllRecipients();
+					boolean matcherFind_<%=i%>_<%=cid%> = false;
+					for(int matcher_<%=cid%> = 0;matcher_<%=cid%> < addr_<%=i%>_<%=cid%>.length;matcher_<%=cid%>++){
+						matcher_<%=i%>_<%=cid %> = pattern_<%=i%>_<%=cid %>.matcher(addr_<%=i%>_<%=cid%>[matcher_<%=cid%>]==null?"":addr_<%=i%>_<%=cid%>[matcher_<%=cid%>].toString());
+						matcherFind_<%=i%>_<%=cid%> = matcher_<%=i%>_<%=cid %>.find()||matcherFind_<%=i%>_<%=cid%>;
+						if(matcherFind_<%=i%>_<%=cid%>){
+							break;
+						}
+					}
+			        isMatch_<%=cid%> = isMatch_<%=cid%> <%=condition%> matcherFind_<%=i%>_<%=cid%>;
+      <%
+  				} else {
+      %>
+    				java.util.Date date_<%=i%>_<%=cid%> = null;
+  
+			        try {
+			          date_<%=i%>_<%=cid%> = ParserUtils.parseTo_Date(<%=filterptn%>, "dd-MM-yyyy HH:mm:ss");
+			        } catch (java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			          date_<%=i%>_<%=cid%> = ParserUtils.parseTo_Date(<%=filterptn%>, "dd-MM-yyyy");
+			        }
+			  
+			        if (date_<%=i%>_<%=cid%> != null) {
+			          isMatch_<%=cid%> = isMatch_<%=cid%> <%=condition%> (message_<%=cid %>.getSentDate()!=null && message_<%=cid %>.getSentDate().<%if ("BeforeDate".equals(filterItem)){%>before<%}else if("AfterDate".equals(filterItem)){%>after<%}%>(date_<%=i%>_<%=cid%>));
+			        }
+      <%
+				}
+			}
+          
+    		if (filterList.size()>0){
+    %>
+				if (isMatch_<%=cid%>) {
+    <%
+    		}
+    %>
+			    String filename_<%=cid %> = <%=filenamePattern %>;
+			    java.io.File file_<%=cid %> = new java.io.File(<%=outputDirectory %>, filename_<%=cid %>);
+				try (java.io.OutputStream os_<%=cid %> = new java.io.BufferedOutputStream(new java.io.FileOutputStream(file_<%=cid %>))) {
+<%
+   				 //for bug TDI-21323
+%> 
+			    message_<%=cid %>.writeTo(os_<%=cid %>);
+				}
+	<%
+    		if (bDeleteFromServer){
+    %> 
+     			message_<%=cid %>.setFlag(javax.mail.Flags.Flag.DELETED, true);
+    <%
+    		}
+    %>
+
+
+			    nb_email_<%=cid %>++;
+			    globalMap.put("<%=cid %>_CURRENT_FILE", filename_<%=cid %>);
+			    globalMap.put("<%=cid %>_CURRENT_FILEPATH", file_<%=cid %>.getAbsolutePath());

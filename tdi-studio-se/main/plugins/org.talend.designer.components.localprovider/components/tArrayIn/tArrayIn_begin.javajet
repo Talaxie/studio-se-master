@@ -1,0 +1,91 @@
+<%@ jet 
+imports="org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+
+        //get the input connection
+        IConnection inputConn = null;
+        String inComingName = "";  
+        List< ? extends IConnection> connsIn = node.getIncomingConnections();     
+        for (IConnection conn : connsIn) {//3
+			inputConn = conn;
+			break; //only get the first connection
+        }//3 
+        
+        if(inputConn != null){
+        	inComingName = inputConn.getName();
+        }
+            
+        String origin = ElementParameterParser.getValue(node, "__ORIGIN__");
+        if (origin != null && origin.startsWith("tIterateToFlow")) {
+        	inComingName = "OnSubjobOk";
+        }
+        %>
+        
+        int nb_line_<%= cid %> = 0;
+        java.util.List<<%=inComingName %>Struct<%=origin %>> list_<%=cid%> = (java.util.List<<%=inComingName %>Struct<%=origin %>>)globalMap.get("<%=origin %>");
+        if(list_<%=cid%> == null) {
+            list_<%=cid%> = new java.util.ArrayList<<%=inComingName %>Struct<%=origin %>>();
+        }        
+        for(<%=inComingName %>Struct<%=origin %> row_<%=cid %> : list_<%=cid%>){
+        
+            <%
+            //begin
+            //
+    		List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+    		String firstConnName = "";
+    		if (conns!=null) {
+    			if (conns.size()>0) {
+    				IConnection conn = conns.get(0);
+    				firstConnName = conn.getName();
+    				List<IMetadataColumn> listColumns = metadata.getListColumns();
+    				int size = listColumns.size();
+    				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    					for (int i=0; i<size; i++) {
+    						IMetadataColumn column = listColumns.get(i);
+    						//
+    						//end
+    						%>					
+    						<%=conn.getName() %>.<%=column.getLabel() %> = row_<%=cid %>.<%=column.getLabel() %>;
+    						<%
+    						//start
+    						//
+    					}
+    				}
+    			}
+    			if (conns.size()>1) {
+    				for (int i=1;i<conns.size();i++) {
+    					IConnection connection = conns.get(i);
+    					if ((connection.getName().compareTo(firstConnName)!=0)&&(connection.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+    			    		for (IMetadataColumn column: metadata.getListColumns()) {
+    			    		    //
+    			    		    //end
+    			    		    %>
+    			    		    <%=connection.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;
+    			    		    <%
+    			    		    //start
+    			    		    //
+    						}
+    					}
+    				}
+    			}
+    		}
+    }
+}
+%>

@@ -1,0 +1,76 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.EConnectionType
+	java.util.Set
+	java.util.HashSet
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String inputConnName = null;
+	Set<String> inputCols = new HashSet<String>();
+	if (node.getIncomingConnections()!=null) {
+		for (IConnection incomingConn : node.getIncomingConnections()) {
+			if (incomingConn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+				inputConnName = incomingConn.getName();
+				IMetadataTable inputMetadataTable = incomingConn.getMetadataTable();
+				for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+					inputCols.add(inputCol.getLabel());
+				}
+				break;
+			}
+		}
+	}
+	
+
+	for (IConnection conn : node.getOutgoingConnections()) {
+		if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+			IMetadataTable outputMetadataTable = conn.getMetadataTable();
+			if (outputMetadataTable!=null) {
+				for (IMetadataColumn outputCol : outputMetadataTable.getListColumns()) { 
+					if (inputCols.contains(outputCol.getLabel())) {
+%>
+	<%=conn.getName() %>.<%=outputCol.getLabel() %> = <%=inputConnName %>.<%=outputCol.getLabel() %>;
+<%
+					}
+				}
+%>
+java.sql.ResultSet rs_<%=cid %> = pstmt_<%=cid %>.executeQuery();
+if(rs_<%=cid %>.next()){
+<%
+	for (IMetadataColumn outputCol : outputMetadataTable.getListColumns()) {
+		if(outputCol.getLabel().equals("last_insert_id")){
+			String type = outputCol.getTalendType();
+			if(type.equals("id_Long")){
+%>
+				<%=conn.getName() %>.last_insert_id = rs_<%=cid %>.getLong(1);
+<%
+			}else if(type.equals("id_Integer")){
+%>
+				<%=conn.getName() %>.last_insert_id = rs_<%=cid %>.getInt(1);
+<%
+			}else{
+%>
+				throw new RuntimeException("Data type of \"last_insert_id\": <%=type.substring(3)%> is not supported,please choose Integer or Long!");
+<%
+			}
+			break;
+		}
+	}
+%>
+}
+nb_line_<%=cid%>++;
+<%
+			}
+		}
+	}
+%>

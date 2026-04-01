@@ -1,0 +1,337 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    java.util.List
+    java.util.Map
+    java.util.ArrayList
+    java.util.HashMap
+"
+%>
+
+<%CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    List< ? extends IConnection> conns = node.getIncomingConnections();
+    IMetadataTable inMetadata = null;
+    String connName = "";
+    if(conns != null){
+    	for (IConnection conn : conns) { 
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+				connName = conn.getName();
+				inMetadata = conn.getMetadataTable();
+    			break;
+			}
+		}
+    if (metadata != null && inMetadata != null) { 
+		List<IMetadataColumn> columns = inMetadata.getListColumns();
+    	Map<String, String> typesMap = new HashMap<String, String>();
+    	Map<String, String> patternsMap = new HashMap<String, String>();
+    	for(IMetadataColumn column : columns){
+    		String type = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+    		typesMap.put(column.getLabel(), type);
+    		String pattern = ((column.getPattern() == null) || (column.getPattern().trim().length() == 0)) ? "" : column.getPattern();
+    		patternsMap.put(column.getLabel(), pattern);
+    	}
+		String rowCount = ElementParameterParser.getValue(node,"__ROW_COUNT__");//?? i think we need it
+		
+		List<Map<String, String>> denormalizes = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DENORMALIZE_COLUMNS__");
+        List<String> denormalizeColumns = new ArrayList<String>();
+        List<String> denormalizeColumnsType = new ArrayList<String>();
+        List<String> denormalizeDelimiters = new ArrayList<String>();
+        List<Boolean> denormalizeMergeFlags = new ArrayList<Boolean>();
+        List<IMetadataColumn> groupColumns = new ArrayList<IMetadataColumn>();
+        for(Map<String, String> denormalize : denormalizes){
+        	String columnName = denormalize.get("INPUT_COLUMN");
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	denormalizeColumns.add(columnName);
+        	denormalizeColumnsType.add(typesMap.get(columnName));
+        	denormalizeDelimiters.add(denormalize.get("DELIMITER"));
+        	denormalizeMergeFlags.add(("true").equals(denormalize.get("MERGE")));
+        }
+        for(IMetadataColumn column : columns){
+        	String columnName = column.getLabel();
+        	if(denormalizeColumns.contains(columnName)){
+        		continue;
+        	}
+        	groupColumns.add(column);
+        }
+        
+%>currentRowIndex_<%=cid%>++;
+<%
+if(groupColumns.size() > 0){
+%>
+boolean sameGroup_<%=cid %> = true;
+<%
+}
+%>if(flag_<%=cid%>){
+	flag_<%=cid%> = false;
+<%
+	for(IMetadataColumn column : groupColumns){
+%>
+	group_<%=column.getLabel() %>_<%=cid %> = <%=connName %>.<%=column.getLabel() %>;
+<%	}
+	for(int i = 0; i < denormalizeColumns.size(); i++){
+		String columnName = denormalizeColumns.get(i);
+		String columnType = denormalizeColumnsType.get(i);
+		if(denormalizeMergeFlags.get(i)){
+%>
+		denormalize_<%=columnName %>_<%=cid %>.add(<%=connName %>.<%=columnName %>);
+<%
+		}else{
+			if((("java.util.Date").equals(columnType)) && (patternsMap.get(columnName).length() != 0)){
+%>
+		denormalize_<%=columnName %>_<%=cid %>.append(FormatterUtils.format_Date(<%=connName %>.<%=columnName %>, <%=patternsMap.get(columnName) %>));
+<%
+			}else{
+%>
+		denormalize_<%=columnName %>_<%=cid %>.append(<%=connName %>.<%=columnName %>);
+<%
+			}
+		}
+	}
+%>
+}else{
+<%
+if(groupColumns.size() > 0){//while loop
+%>
+while(true){
+<%	for(int i = 0; i < groupColumns.size(); i++){
+		String columnName = groupColumns.get(i).getLabel();
+		if(!JavaTypesManager.isJavaPrimitiveType(groupColumns.get(i).getTalendType(),groupColumns.get(i).isNullable())){
+%>if(group_<%=columnName %>_<%=cid %> == null){
+	if(<%=connName %>.<%=columnName %> != null){
+		sameGroup_<%=cid %> = false;
+		break;
+	}
+}else{
+	if(group_<%=columnName %>_<%=cid %> == null || !group_<%=columnName %>_<%=cid %>.equals(<%=connName %>.<%=columnName%>)){
+		sameGroup_<%=cid %> = false;
+		break;
+	}
+}
+<%		}else{
+%>if(group_<%=columnName %>_<%=cid %> != <%=connName %>.<%=columnName %>){
+	sameGroup_<%=cid %> = false;
+	break;
+}
+<%		}
+		if(i+1 == groupColumns.size()){
+%>break;
+<%		}
+	}
+%>}
+if(sameGroup_<%=cid %>){
+<%
+}//while loop end
+%><%
+	for(int i = 0; i < denormalizeColumns.size(); i++){
+		String columnName = denormalizeColumns.get(i);
+		String columnType = denormalizeColumnsType.get(i);
+		if(denormalizeMergeFlags.get(i)){
+%>
+	if(!denormalize_<%=columnName %>_<%=cid %>.contains(<%=connName %>.<%=columnName %>)){
+		denormalize_<%=columnName %>_<%=cid %>.add(<%=connName %>.<%=columnName %>);
+	}
+<%
+		}else{
+%>
+	denormalize_<%=columnName %>_<%=cid %>.append(<%=denormalizeDelimiters.get(i) %>);
+<%
+			if((("java.util.Date").equals(columnType)) && (patternsMap.get(columnName).length() != 0)){
+%>
+		denormalize_<%=columnName %>_<%=cid %>.append(FormatterUtils.format_Date(<%=connName %>.<%=columnName %>, <%=patternsMap.get(columnName) %>));
+<%
+			}else{
+%>
+		denormalize_<%=columnName %>_<%=cid %>.append(<%=connName %>.<%=columnName %>);
+<%
+			}
+		}
+	}
+
+if(groupColumns.size() > 0){
+%>}
+<%
+}
+%>
+}
+
+int tempCount_<%=cid %> = -1;
+<%
+
+if(groupColumns.size() > 0){
+	//??
+%>
+if( !sameGroup_<%=cid %> ){
+	tempCount_<%=cid %>++;
+<%
+	//do out start ...
+	conns = null;
+	conns = node.getOutgoingSortedConnections();
+	if (conns!=null) {
+		if (conns.size()>0) {
+			IConnection conn = conns.get(0);
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+				for(IMetadataColumn column : groupColumns){
+%>
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=column.getLabel() %> = group_<%=column.getLabel() %>_<%=cid %>;
+<%
+				}
+				
+				for(int i = 0; i < denormalizeColumns.size(); i++){
+					String columnName = denormalizeColumns.get(i);
+					String columnType = denormalizeColumnsType.get(i);
+					if(denormalizeMergeFlags.get(i)){
+%>
+	tempSB_<%=cid %>.delete(0, tempSB_<%=cid %>.length());
+	
+	for(<%=typesMap.get(columnName) %> tmp_<%=cid %> : denormalize_<%=columnName %>_<%=cid %>){
+		if(tempSB_<%=cid %>.length() > 0){
+			tempSB_<%=cid %>.append(<%=denormalizeDelimiters.get(i) %>);
+		}
+<%
+						if((("java.util.Date").equals(columnType)) && (patternsMap.get(columnName).length() != 0)){
+%>
+		tempSB_<%=cid %>.append(FormatterUtils.format_Date(tmp_<%=cid %>, <%=patternsMap.get(columnName) %>));
+<%
+						}else{
+%>
+		tempSB_<%=cid %>.append(tmp_<%=cid %>);
+<%
+						}
+%>
+	}
+	
+	denormalize_<%=columnName %>_<%=cid %>.clear();
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=columnName %> = tempSB_<%=cid %>.toString();
+<%
+					}else{
+%>
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=columnName %> = denormalize_<%=columnName %>_<%=cid %>.toString();
+	denormalize_<%=columnName %>_<%=cid %>.delete(0, denormalize_<%=columnName %>_<%=cid %>.length());
+<%
+					}
+				}
+			}
+		}
+	}
+	//do out end ...
+	
+	
+	//do first
+	for(IMetadataColumn column : groupColumns){
+%>
+	group_<%=column.getLabel() %>_<%=cid %> = <%=connName %>.<%=column.getLabel() %>;
+<%	}
+	for(int i = 0; i < denormalizeColumns.size(); i++){
+		String columnName = denormalizeColumns.get(i);
+		String columnType = denormalizeColumnsType.get(i);
+		if(denormalizeMergeFlags.get(i)){
+%>
+		denormalize_<%=columnName %>_<%=cid %>.add(<%=connName %>.<%=columnName %>);
+<%
+		}else{
+			if((("java.util.Date").equals(columnType)) && (patternsMap.get(columnName).length() != 0)){
+%>
+	denormalize_<%=columnName %>_<%=cid %>.append(FormatterUtils.format_Date(<%=connName %>.<%=columnName %>, <%=patternsMap.get(columnName) %>));
+<%
+			}else{
+%>
+	denormalize_<%=columnName %>_<%=cid %>.append(<%=connName %>.<%=columnName %>);
+<%
+			}
+		}
+	}
+%>
+}
+<%
+}
+/////////////////////////////////////////////////
+%>
+if( currentRowIndex_<%=cid%>  == <%=rowCount %> ){
+	tempCount_<%=cid %>++;
+<%
+	//do out start ...
+	conns = null;
+	conns = node.getOutgoingSortedConnections();
+	if (conns!=null) {
+		if (conns.size()>0) {
+			IConnection conn = conns.get(0);
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+				for(IMetadataColumn column : groupColumns){
+%>
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=column.getLabel() %> = group_<%=column.getLabel() %>_<%=cid %>;
+<%
+				}
+				
+				for(int i = 0; i < denormalizeColumns.size(); i++){
+					String columnName = denormalizeColumns.get(i);
+					String columnType = denormalizeColumnsType.get(i);
+					if(denormalizeMergeFlags.get(i)){
+%>
+	tempSB_<%=cid %>.delete(0, tempSB_<%=cid %>.length());
+	for(<%=typesMap.get(columnName) %> tmp_<%=cid %> : denormalize_<%=columnName %>_<%=cid %>){
+		if(tempSB_<%=cid %>.length() > 0){
+			tempSB_<%=cid %>.append(<%=denormalizeDelimiters.get(i) %>);
+		}
+<%
+						if((("java.util.Date").equals(columnType)) && (patternsMap.get(columnName).length() != 0)){
+%>
+		tempSB_<%=cid %>.append(FormatterUtils.format_Date(tmp_<%=cid %>, <%=patternsMap.get(columnName) %>));
+<%
+						}else{
+%>
+		tempSB_<%=cid %>.append(tmp_<%=cid %>);
+<%
+						}
+%>
+	}
+	denormalize_<%=columnName %>_<%=cid %>.clear();
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=columnName %> = tempSB_<%=cid %>.toString();
+<%
+					}else{
+%>
+	emmitArray_<%=cid %>[tempCount_<%=cid %>].<%=columnName %> = denormalize_<%=columnName %>_<%=cid %>.toString();
+	denormalize_<%=columnName %>_<%=cid %>.delete(0, denormalize_<%=columnName %>_<%=cid %>.length());
+<%
+					}
+				}
+			}
+		}
+	}
+	//do out end ...
+
+%>
+}
+for(int i_<%=cid %>=0; i_<%=cid %> <= tempCount_<%=cid %>; i_<%=cid %>++){
+<%
+conns = null;
+conns = node.getOutgoingSortedConnections();
+if (conns!=null) {
+	for (int i=0;i<conns.size();i++) {
+		IConnection conn = conns.get(i);
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+%><%=conn.getName() %>.<%=column.getLabel() %> = emmitArray_<%=cid %>[i_<%=cid %>].<%=column.getLabel() %>;    				
+<%			}
+		}
+	}
+}
+%>nb_line_<%=cid%>++;
+<%
+	}
+	}
+}
+%>

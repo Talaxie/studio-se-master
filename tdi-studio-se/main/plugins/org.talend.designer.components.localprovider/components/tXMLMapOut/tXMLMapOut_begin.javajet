@@ -1,0 +1,1707 @@
+<%@ jet 
+	imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.core.model.metadata.IMetadataTable
+			org.talend.core.model.metadata.IMetadataColumn
+			org.talend.core.model.metadata.types.JavaType
+			
+			org.talend.designer.xmlmap.generation.GenerationManagerFactory
+			org.talend.designer.xmlmap.generation.GenerationManager
+
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.eclipse.emf.common.util.EList
+			org.talend.core.model.utils.NodeUtil
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.AbstractNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.NodeType
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputLoopNodesTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.LookupConnection
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.EConnectionType
+            java.util.Map
+            java.util.HashMap
+            java.util.List
+            java.util.ArrayList
+	" 
+	skeleton="../tXMLMap/tXMLMap_java.skeleton"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	GenerationManager gm = (GenerationManager) GenerationManagerFactory.getInstance().getGenerationManager();
+	String cid = node.getUniqueName();
+	
+	String uniqueNameComponent = cid.replace("_TXMLMAP_OUT", "");
+	String uniqueNameComponentIn = cid.replace("_TXMLMAP_OUT", "_TXMLMAP_IN");
+	
+	INode generatingNodeIn = null;
+	for(INode loopNode : node.getProcess().getGeneratingNodes()) {
+		if(loopNode.getUniqueName().equals(uniqueNameComponentIn)) {
+			generatingNodeIn = loopNode;
+			break;
+		}
+	}
+
+	XmlMapData xmlMapData =(XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	final boolean keepOrder4Document = "true".equals(ElementParameterParser.getValue(node, "__KEEP_ORDER_FOR_DOCUMENT__"));
+	
+	EList<InputXmlTree> inputTables = xmlMapData.getInputTrees();
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	EList<VarTable> varTables = xmlMapData.getVarTables();
+	boolean hasConcurrencyContext = false;
+	List<IConnection> inputConnections = (List<IConnection>)node.getIncomingConnections();
+	HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+	for(IConnection connection : inputConnections){
+		hNameToConnection.put(connection.getName(), connection);
+	}
+	
+	List<InputXmlTree> inputTableTrees = new ArrayList<InputXmlTree>();
+	for(int i=0; i<inputTables.size(); i++){
+		InputXmlTree  currentTree = inputTables.get(i);
+		if(hNameToConnection.get(currentTree.getName()) != null){
+			inputTableTrees.add(currentTree);
+		}
+	}
+	
+	boolean hasDocumentInAnyLookupTable = false;
+	List<TreeNode> lookupDocumentTreeNodes = new ArrayList<TreeNode>();
+	
+	int lstSizeInputs = inputTableTrees.size();
+	for(int i = 1; i<lstSizeInputs; i++){//TA8080
+		InputXmlTree inputTable = (InputXmlTree)inputTableTrees.get(i);
+		String tableName = inputTable.getName();
+		
+		EList<TreeNode> treeNodes = inputTable.getNodes();
+		if(treeNodes!=null) {
+			for(TreeNode treeNode : treeNodes) {
+				if("id_Document".equals(treeNode.getType())) {
+					hasDocumentInAnyLookupTable = true;
+					lookupDocumentTreeNodes.add(treeNode);
+				}
+			}
+		}		
+		
+		List<IMetadataTable> treeNodeEntries = node.getMetadataList();
+		if(treeNodeEntries == null){
+		      continue;
+	    }
+		
+		boolean isAllRows = "ALL_ROWS".equals(inputTable.getMatchingMode());
+		String className = tableName + "Struct";
+		String lookupMode = inputTable.getLookupMode();
+		boolean isReloadLookupMode = org.talend.designer.xmlmap.model.tree.LOOKUP_MODE.RELOAD.name().equals(lookupMode);
+		boolean isCacheOrReloadLookupMode = org.talend.designer.xmlmap.model.tree.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(lookupMode);
+		boolean isOneOfReloadLookupMode = isReloadLookupMode || isCacheOrReloadLookupMode;
+		if(inputTable.isPersistent()){
+%>
+
+	org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct> tHash_Lookup_<%=tableName%> = 
+		(org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+			((org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+				 globalMap.get( "tHash_Lookup_<%=tableName%>" ))
+				<%
+				if(hasConcurrencyContext) {
+				%>
+				.clone()
+				<%}%>;
+	<%
+		} else {
+	%>
+	org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct> tHash_Lookup_<%=tableName%> = <%
+	
+	if(isOneOfReloadLookupMode) {
+		 %>null;<%
+	} else {
+		%>(org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+			((org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+				globalMap.get( "tHash_Lookup_<%=tableName%>" ))
+				<%
+				if(hasConcurrencyContext) {
+				%>
+				.clone()
+				<%}%>;
+	<%
+	}
+	%>
+	<%
+	}
+	String matchingModeStr = inputTable.getMatchingMode();
+	if(isCacheOrReloadLookupMode) {
+	%>
+	
+	routines.system.DocumentLookupCache tHash_Lookup_Cache_<%=tableName%> = new routines.system.DocumentLookupCache("<%=matchingModeStr%>");
+	<%}
+	if(isAllRows && !isOneOfReloadLookupMode) {
+	%>
+		tHash_Lookup_<%=tableName%>.initGet();
+	<%}%>
+	<%=className%> <%=tableName%>HashKey = new <%=className%>();
+	<%=className%> <%=tableName%>Default = new <%=className%>();
+	<%=className%> <%=tableName%> = new <%=className%>();
+	<%
+	}//TA8080
+	%>
+	
+	<%
+	class RepalceTableXpath {
+		
+		public void replaceTableXpath(TreeNode root){
+			String xpath = root.getXpath();
+			int index_p = xpath.indexOf(".");
+			if(index_p<0){
+    			xpath = xpath.replaceFirst("/", ".");
+    			xpath = xpath.replaceFirst("/", ":/");
+    			root.setXpath(xpath);
+			}
+    		for(TreeNode tmpNode : root.getChildren()) {
+    			replaceTableXpath(tmpNode);
+    		}
+		}
+	}
+	RepalceTableXpath replaceXpath = new RepalceTableXpath();
+	
+	if(inputTables.size() > 0 && !inputTables.get(0).isLookup()) {
+		InputXmlTree inputMainTable = inputTables.get(0);
+		for(TreeNode tmpnode : inputMainTable.getNodes()) {
+			if("id_Document".equals(tmpnode.getType())) {
+				replaceXpath.replaceTableXpath(tmpnode);
+				break;
+			}
+		}
+	}
+	for(OutputXmlTree outputMainTable : outputTables) {
+		for(OutputTreeNode tmpnode : outputMainTable.getNodes()) {
+			if("id_Document".equals(tmpnode.getType())) {
+				replaceXpath.replaceTableXpath(tmpnode);
+				break;
+			}
+		}
+	}
+	%>
+//===============================input xml init part===============================
+class XML_API_<%=cid%>{
+	public boolean isDefNull(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null && node instanceof org.dom4j.Element) {
+        	org.dom4j.Attribute attri = ((org.dom4j.Element)node).attribute("nil");
+        	if(attri != null && ("true").equals(attri.getText())){
+            	return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isMissing(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        return node == null ? true : false;
+    }
+
+    public boolean isEmpty(org.dom4j.Node node) throws javax.xml.transform.TransformerException {
+        if (node != null) {
+            return node.getText().length() == 0;
+        }
+        return false;
+    }
+}
+<%
+
+class GenerateMethodUtil {
+	String cid = null;
+	java.util.Map<String, String> typeMap = new java.util.HashMap<String, String>(); // Map<typeToGenerate, typeToGenerate>
+	java.util.Map<String, String> pathTypeMap = new java.util.HashMap<String, String>(); // Map<input table xpath, typeToGenerate>
+	java.util.Map<String, String> pathPatternMap = new java.util.HashMap<String, String>(); // Map<input table xpath, Pattern>
+	java.util.Map<String, String> pathTypeToGenMap = new java.util.HashMap<String, String>(); // Map<"/root/name","String">
+	
+	void generateExprCode(String expression){
+			StringBuilder strBuilder = new StringBuilder();
+			if(expression==null || ("").equals(expression)) {
+				return;
+			}
+	
+			String currentExpression = expression;
+			String tmpXpath = "";
+			java.util.regex.Pattern expressionFromDoc = java.util.regex.Pattern.compile("\\[.*\\..*:.*\\]");
+			java.util.regex.Matcher matcherFromDoc;
+			
+			boolean end = false;
+			
+			if(expression.indexOf("[")>-1) {
+				strBuilder.append(expression.substring(0, expression.indexOf("[")));
+				currentExpression = currentExpression.substring(currentExpression.indexOf("["), currentExpression.length());
+				
+				while(currentExpression.length()>0 && !end) {
+					expression = this.getXPathExpression(currentExpression);
+					currentExpression = currentExpression.substring(expression.length(), currentExpression.length());
+					matcherFromDoc = expressionFromDoc.matcher(expression);
+					if(matcherFromDoc.matches()) {
+						tmpXpath = expression.substring(1, expression.length()-1);
+						if("id_String".equals(pathTypeMap.get(tmpXpath)) || "id_Object".equals(pathTypeMap.get(tmpXpath))){
+							strBuilder.append("treeNodeAPI.get_String(\""+ tmpXpath + "\")");
+						} else if("id_Date".equals(pathTypeMap.get(tmpXpath))) {
+							strBuilder.append("treeNodeAPI.get_Date(\""+ tmpXpath + "\" , " + pathPatternMap.get(tmpXpath) + ")");
+						} else if("id_byte[]".equals(pathTypeMap.get(tmpXpath))) {
+							strBuilder.append("treeNodeAPI.get_Bytes(\""+ tmpXpath + "\")");
+						} else {
+							String type = pathTypeToGenMap.get(tmpXpath);
+							if(type != null) {
+								strBuilder.append("treeNodeAPI.get_" + pathTypeToGenMap.get(tmpXpath) + "(\""+ tmpXpath + "\")");
+							} else {
+								strBuilder.append("treeNodeAPI.get_String(\""+ tmpXpath + "\")");
+							}
+						}				
+					} else {
+						strBuilder.append(expression);
+					}
+					if(currentExpression.indexOf("[")>-1) {
+						strBuilder.append(currentExpression.substring(0, currentExpression.indexOf("[")));
+						currentExpression = currentExpression.substring(currentExpression.indexOf("["), currentExpression.length());
+					} else {
+						strBuilder.append(currentExpression);
+						end=true;
+					}
+				
+				}
+			} else {
+				strBuilder.append(expression);
+			}
+			%><%=strBuilder.toString()%><%
+		}
+		
+		private String getXPathExpression(String currentExpression) {
+			int count = 0;
+			int i = 0;
+			for(;i<currentExpression.length();i++) {
+				char c = currentExpression.charAt(i);
+				if('[' == c) {
+					count++;
+				}
+				if(']' == c) {
+					if(count==1) {
+						break;
+					}
+					count--;
+				}
+			}
+			return currentExpression.substring(0,i+1);
+		}
+		
+		public List<TreeNode> getGroupByNodeList(TreeNode group) {
+			List<TreeNode> list = new ArrayList<TreeNode>();
+			for (TreeNode attri : group.getChildren()) {
+				if(NodeType.ATTRIBUT.equals(attri.getNodeType())) {
+					String expression = attri.getExpression();
+					if(expression!=null && !"".equals(expression)) {
+						list.add(attri);
+					}
+				}
+			}
+			if (NodeType.ELEMENT.equals(group.getNodeType()) && group.getChildren().size()==0) {
+				String expression = group.getExpression();
+				if(expression!=null && !"".equals(expression)) {
+					list.add(group);
+				}
+			} else {
+				if(NodeType.ELEMENT.equals(group.getNodeType()))
+				for (TreeNode element : group.getChildren()) {
+					boolean isVirtualNode = element.isSubstitution() || element.isChoice();
+					if ((!element.isMain() && !element.isLoop()) || isVirtualNode) {
+						list.addAll(getGroupByNodeList(element));
+					}
+				}
+			}
+			return list;
+		}
+
+	
+	void generateCode(List<TreeNode> nodes, String cid){
+%>
+class TreeNode_API_<%=cid %> {
+	java.util.Map<String, String> xpath_value_map = new java.util.HashMap<String, String>();
+	
+	void clear(){
+		xpath_value_map.clear();
+	}
+	
+	void put(String xpath, String value){
+		xpath_value_map.put(xpath, value);
+	}
+	String get_null(String xpath) {
+		return null;
+	}
+<%
+		generateMethodCodeForAll(nodes, cid);
+%>
+}
+<%
+	}
+	
+	void generateMethodCodeForAll(List<TreeNode> nodes, String cid) {
+		for(TreeNode node : nodes) {
+			generateMethodCodeForOne(node,cid);
+		}
+	}
+	
+	boolean methodExist = false;
+	
+	void generateMethodCodeForOne(TreeNode node, String cid) {
+		
+		if(!(node.getChildren().size()>0) || node.getOutgoingConnections().size()>0 || node.getLookupOutgoingConnections().size()>0 || node.getFilterOutGoingConnections().size()>0){
+			String talendType = node.getType();
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(talendType);
+			String typeToGenerate = JavaTypesManager.getTypeToGenerate(talendType, node.isNullable());
+			String patternValue = node.getPattern() == null || node.getPattern().trim().length() == 0 ? null : node.getPattern();
+			
+			pathTypeMap.put(node.getXpath(), talendType);
+			pathPatternMap.put(node.getXpath(), patternValue);
+			pathTypeToGenMap.put(node.getXpath(), typeToGenerate);
+			if(typeMap.get(typeToGenerate)==null){
+				typeMap.put(typeToGenerate,typeToGenerate);
+				if ("id_String".equals(talendType) || "id_Object".equals(talendType)) {
+					if(!methodExist) {
+%>
+	String get_String(String xpath){
+		return xpath_value_map.get(xpath);
+	}
+<%
+						methodExist = true;
+					}
+				} else if ("id_Date".equals(talendType)) {
+%>
+	java.util.Date get_Date(String xpath, String pattern){
+		String content = xpath_value_map.get(xpath);
+		if(content==null || content.length()==0) return null;
+		return ParserUtils.parseTo_Date(content, pattern);
+	}
+<%
+				} else if("id_byte[]".equals(talendType)){ 
+%>
+	byte[] get_Bytes(String xpath){
+		String content = xpath_value_map.get(xpath);
+		if(content==null || content.length()==0) return null;
+		return content.getBytes();
+	}
+<%
+				} else {
+					String returnValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate);
+%>
+	<%=typeToGenerate %> get_<%=typeToGenerate %>(String xpath){
+		String content = xpath_value_map.get(xpath);
+		if(content==null || content.length()==0) return <%=returnValue%>;
+		return ParserUtils.parseTo_<%= typeToGenerate %>(content);
+	}
+<%
+				}
+			}
+		}
+		
+		for(TreeNode tmpNode : node.getChildren()) {
+			generateMethodCodeForOne(tmpNode,cid);
+		}
+	}
+}
+
+	// define the var row
+	for (VarTable var : xmlMapData.getVarTables()) {
+		String tableName = var.getName();
+        String instanceVarName = tableName + "__" + node.getUniqueName();
+        String className = instanceVarName + "__Struct";
+%>
+	class <%=className %> {
+<%
+            for(VarNode varNode : var.getNodes()){
+                String javaType = varNode.getType();
+%>	<%= JavaTypesManager.getTypeToGenerate(javaType, varNode.isNullable()) %> <%=varNode.getName() %>;
+<%
+            }
+%>
+	}
+	<%= className %> <%= instanceVarName %> = new <%= className %>();
+<%
+	}
+%>
+// ###############################
+// # Outputs initialization
+<%
+
+		List<IConnection> outputConnections = (List<IConnection>) generatingNodeIn.getOutgoingConnections();
+		Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+        for (IConnection connection : outputConnections) {
+		  		nameToOutputConnection.put(connection.getName(), connection);
+		}
+
+        for (OutputXmlTree table : outputTables) {
+        
+            EList<OutputTreeNode> tableEntries = table.getNodes();
+            if (tableEntries == null || nameToOutputConnection.get(table.getName()) == null) {
+                continue;
+            }
+            String tableName1 = table.getName();
+            
+            String instanceVarName = tableName1 + "__" + node.getUniqueName();
+            String className = tableName1 + "Struct";
+            
+%>
+<%= className %> <%= tableName1 %>_tmp = new <%= className %>();
+<%= className %> <%= tableName1 %>_save = null;
+//the aggregate variable
+<%= className %> <%= tableName1 %>_aggregate = null;
+<%
+			if(isLog4jEnabled) {
+%>
+int count_<%=tableName1%>_<%=cid%> = 0;
+<%
+			}
+        }
+%>
+//init the resultset for aggregate
+java.util.List<Object> allOutsForAggregate_<%=uniqueNameComponent %> = new java.util.ArrayList<Object>();
+globalMap.put("allOutsForAggregate_<%=uniqueNameComponent %>",allOutsForAggregate_<%=uniqueNameComponent %>);
+// ###############################
+<%
+	
+	InputXmlTree mainInputTable = null;  // the main input table
+	if(inputConnections==null || inputConnections.size() < 1) {
+		return "";
+	}
+
+	if(inputTables==null || inputTables.size()==0) return "";
+	for(IConnection conn : inputConnections) { // find the input main table
+		InputXmlTree inputTable = inputTables.get(0);
+		EConnectionType connectionType = conn.getLineStyle();
+		if (connectionType == EConnectionType.FLOW_MAIN) {
+			if(!inputTable.isLookup()) { // lookup is used to sign it is lookup table
+    			mainInputTable = inputTable;
+    			break;
+			}
+		}
+	}
+	
+	boolean hasDocumentInMainInputTable = false;
+	//we should consider all document node instead of only main document node
+	TreeNode mainDocumentTreeNode = null;
+	if(mainInputTable != null) {
+		for(TreeNode tmpNode : mainInputTable.getNodes()){
+			if("id_Document".equals(tmpNode.getType())) {
+				hasDocumentInMainInputTable = true;
+				mainDocumentTreeNode = tmpNode;
+				//This boolean when there is a document in the main input table schema.
+				break;
+			}
+		}
+	}
+	
+	GenerateMethodUtil generateMethodUtil = new GenerateMethodUtil();
+	generateMethodUtil.cid = cid;
+	if(mainInputTable != null) {
+		String mainInputName = mainInputTable.getName();
+		
+		boolean hasDocumentInAnyTable = hasDocumentInAnyLookupTable || hasDocumentInMainInputTable;
+		List<TreeNode> AllDocumentTreeNodes = new ArrayList<TreeNode>();
+		if(lookupDocumentTreeNodes.size()!=0) {
+			AllDocumentTreeNodes.addAll(lookupDocumentTreeNodes);
+		}
+		if(mainDocumentTreeNode!=null) {
+			AllDocumentTreeNodes.add(mainDocumentTreeNode);
+		}
+		
+		if(hasDocumentInAnyTable) {
+			generateMethodUtil.generateCode(AllDocumentTreeNodes, cid); // begin part keep this part
+%>
+			TreeNode_API_<%=cid %> treeNodeAPI_<%=cid %> = new TreeNode_API_<%=cid %>();
+			NameSpaceTool nsTool_<%=cid%> = new NameSpaceTool();
+<%	
+		}
+%>
+		int nb_line_<%=cid%> = 0; 
+<%		
+    }
+
+%>
+	
+    XML_API_<%=cid%> xml_api_<%=cid%> = new XML_API_<%=cid%>();
+
+<%
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//=====================================================output xml init part=======================================================================
+class GenerateToolByDom4j{
+	String cid = null;
+	boolean allowEmpty = false;
+	GenerateMethodUtil generateMethodUtil = null;
+	java.util.List<java.util.List<TreeNode>> groupList = new java.util.ArrayList<java.util.List<TreeNode>>();
+	java.util.List<java.util.List<java.util.List<TreeNode>>> groupbyNodeList = new java.util.ArrayList(new java.util.ArrayList<java.util.List<TreeNode>>());
+	
+	java.util.List<TreeNode> loopNodes;
+	java.util.Map<TreeNode,String> loopNodeToParentRef;
+	java.util.Map<TreeNode,String> currentLoopNodeRef;
+	
+	void setAllMainNodes(TreeNode root) {
+		loopNodes = new java.util.ArrayList<TreeNode>();
+		loopNodeToParentRef = new java.util.HashMap<TreeNode,String>();
+		currentLoopNodeRef = new java.util.HashMap<TreeNode,String>();
+		
+		getLoopNodes(root);
+		int i = 0;
+		for(;i<loopNodes.size();i++) {
+			TreeNode loop = loopNodes.get(i);
+			loop.setMain(true);
+			loopNodeToParentRef.put(loop,"subTreeLoopParent"+i);
+			currentLoopNodeRef.put(loop,"subTreeLoop"+i);
+			TreeNode parent = (TreeNode)loop.eContainer();
+			while((parent != null) && (!("id_Document").equals(parent.getType())) ) {
+				parent.setMain(true);
+				parent = (TreeNode)parent.eContainer();
+			}
+		}
+		
+	}
+	
+	private boolean isRoot(TreeNode node) {
+		if(node == null) return false;
+		TreeNode parent = (TreeNode)node.eContainer();
+		if(parent == null) return false;
+		return "id_Document".equals(parent.getType());
+	}
+	
+	public void getLoopNodes(TreeNode root) {
+		if(root == null) {
+			return;
+		}
+		if(root.isLoop()){
+			loopNodes.add(root);
+			return;
+		}
+		
+		for(TreeNode node : root.getChildren()){
+			getLoopNodes(node);
+		}
+	}
+	
+	private int index = 0;
+	
+	public void generateCode(OutputTreeNode node, String currEleName, String parentName){
+		if(node.getNodeType()==NodeType.ELEMENT){
+			boolean isVirtualNode = node.isSubstitution() || node.isChoice();
+			if(!isVirtualNode) {
+				createElement(currEleName,node,parentName);
+				setText(currEleName,node);
+			
+	    		// add namespace support here in the future
+	    		for(TreeNode child: node.getChildren()) {
+	    			if(child.getNodeType()==NodeType.NAME_SPACE) { // namespaces
+	    				addNameSpace(currEleName, (OutputTreeNode)child);
+	    			}
+	    		}
+	    		
+	    		addAttribute(currEleName, node);
+    		} else {
+    			currEleName = parentName;
+    		}
+			
+			for(TreeNode child:node.getChildren()){
+				if(!child.isGroup() && !child.isLoop()) {
+					if(isVirtualNode && noUseSubTree(child)) {
+						continue;
+					}
+					generateCode((OutputTreeNode)child,currEleName+"_"+index++,currEleName);
+				} else if(child.isLoop()) {
+%>
+					<%=loopNodeToParentRef.get(child)%> = <%=currEleName%>;
+<%
+					
+				}
+			}
+			
+		}
+	}
+	
+	private boolean noUseSubTree(TreeNode node) {
+		if(node.getExpression()!=null && !("").equals(node.getExpression())) {
+			return false;
+		}
+		for(TreeNode child:node.getChildren()){
+			if(!noUseSubTree(child)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	
+	private void addNameSpace(String currEleName, OutputTreeNode node) {
+		if(node.getDefaultValue()==null || ("").equals(node.getDefaultValue())) {
+%>
+valueMap.put("<%=currEleName%>",<%generateMethodUtil.generateExprCode(node.getExpression() ); %>);
+if(valueMap.get("<%=currEleName%>")!=null) {//open if 8080
+<%=currEleName%>.addNamespace("<%=node.getName() %>", TalendString.replaceSpecialCharForXML(FormatterUtils.fm(valueMap.get("<%=currEleName%>"),<%=node.getPattern()%>)));
+<%
+		} else {
+%>
+<%=currEleName%>.addNamespace("<%="(default)".equals(node.getName())?"":node.getName() %>", TalendString.replaceSpecialCharForXML("<%generateMethodUtil.generateExprCode(((OutputTreeNode)node).getDefaultValue()); %>"));
+<%
+		}
+		OutputTreeNode parent = (OutputTreeNode)node.eContainer();
+		if(parent.getName().indexOf(":") < 0) { // element without prefix
+			if(node.getName()==null || ("").equals(node.getName().trim()) || "(default)".equals(node.getName().trim())) { // it is the default namespace
+				if(node.getDefaultValue()==null || ("").equals(node.getDefaultValue())) { // get the expression
+%>
+        	routines.system.DocumentHelper.applyNamespace1(<%=currEleName %>,"",FormatterUtils.fm(valueMap.get("<%=currEleName%>"),<%=node.getPattern()%>));
+}//close if 8080
+<%
+				} else { // get the static value as the url
+%>
+        	routines.system.DocumentHelper.applyNamespace1(<%=currEleName %>,"","<%generateMethodUtil.generateExprCode(((OutputTreeNode)node).getDefaultValue()); %>");
+<%
+				}
+			}
+		} else {
+			int index = parent.getName().indexOf(":");
+			if(node.getName().equals(parent.getName().substring(0, index))) { // the prefix of element is the same with the namespace
+				if(node.getDefaultValue()==null || ("").equals(node.getDefaultValue())) { // get the expression
+%>
+        	routines.system.DocumentHelper.applyNamespace2(<%=currEleName %>,"<%=parent.getName().substring(index+1 ) %>","<%=node.getName() %>",FormatterUtils.fm(valueMap.get("<%=currEleName%>"),<%=node.getPattern()%>));
+}//close if 8080
+<%
+				} else {
+%>
+        	routines.system.DocumentHelper.applyNamespace2(<%=currEleName %>,"<%=parent.getName().substring(index+1 ) %>","<%=node.getName() %>","<%generateMethodUtil.generateExprCode(((OutputTreeNode)node).getDefaultValue()); %>");
+<%
+				}
+			}
+		}
+	}
+	
+	private void findElementFromParent(OutputTreeNode node, String parentName, String resultVar) {
+		String elementName = node.getName();
+		int index = elementName.indexOf(":");
+		
+		if(index < 1) {
+%>
+			<%=resultVar%>_<%=cid%> = <%=parentName%>.elements("<%=elementName%>");
+<%
+			return;
+		}
+		
+		String namespacePrefixOfCurrentElement = elementName.substring(0,index);
+		String localName = elementName.substring(index+1);
+		TreeNode matchedNamespaceNode = null;
+		
+		for(TreeNode child: node.getChildren()) {
+			if(child.getNodeType()!=NodeType.NAME_SPACE) {
+				continue;
+			}
+			
+			if(namespacePrefixOfCurrentElement.equals(child.getName())) {
+				matchedNamespaceNode = child;
+				break;
+			}
+		}
+		
+		if(matchedNamespaceNode!=null) {
+%>
+			<%=resultVar%>_<%=cid%> = <%=parentName%>.elements(
+				org.dom4j.DocumentHelper.createQName(
+					"<%=localName%>",
+	        		org.dom4j.DocumentHelper.createNamespace(
+	        			"<%=matchedNamespaceNode.getName() %>",TalendString.replaceSpecialCharForXML("<%generateMethodUtil.generateExprCode(((OutputTreeNode)matchedNamespaceNode).getDefaultValue());%>")
+	        		)
+	        	)
+        	);
+<%
+			return;
+		}
+		
+		if(hasParent(node)){
+%>
+			namespace_<%=cid%> = <%=parentName%>.getNamespaceForPrefix("<%=namespacePrefixOfCurrentElement%>");
+			<%=resultVar%>_<%=cid%> = namespace_<%=cid%>!=null ? <%=parentName%>.elements(org.dom4j.DocumentHelper.createQName("<%=localName%>",namespace_<%=cid%>)) : <%=parentName%>.elements("<%=localName%>"); 
+<%
+		}
+	}
+	
+	private void createElement(String currEleName, OutputTreeNode node, String parentName){
+%>
+		org.dom4j.Element <%=currEleName%> = null;
+<%
+		int index = node.getName().indexOf(":");
+		if(node.isMain() && (node.isGroup() || node.isLoop())) {
+			if(index>0 && hasParent(node)){
+%>
+		        <%=currEleName%> = org.dom4j.DocumentHelper.createElement("<%=node.getName().substring(index+1)%>");
+				if (<%=parentName%>.getNamespaceForPrefix("<%=node.getName().substring(0,index)%>") != null) {
+		        	<%=currEleName %>.setQName(org.dom4j.DocumentHelper.createQName("<%=node.getName().substring(index+1)%>", <%=parentName%>.getNamespaceForPrefix("<%=node.getName().substring(0,index)%>")));
+		        }
+<%
+			} else {
+%>
+				<%=currEleName%> = org.dom4j.DocumentHelper.createElement("<%=node.getName()%>");
+<%
+			}
+			
+			if(isRoot(node)) {
+%>
+				<%=parentName%>.add(<%=currEleName%>);
+<%
+			} else if(loopNodes.size() > 1) {
+				if(!keepOrder4Document) {
+%>
+					<%=parentName%>.elements().add(<%=currEleName%>);
+<%
+				} else {
+%>
+					List allElements_<%=cid %> = <%=parentName%>.elements();
+					if(allElements_<%=cid %>.isEmpty()) {//when the group or loop element appear first time
+						allElements_<%=cid %>.add(<%=currEleName%>);
+					} else {
+						org.dom4j.Namespace namespace_<%=cid%> = null;
+						<%findElementFromParent(node,parentName,"List currentElementList");%>
+						int size_<%=cid %> = currentElementList_<%=cid %>.size();
+						if(size_<%=cid %> > 0){
+							allElements_<%=cid %>.add(allElements_<%=cid %>.indexOf(currentElementList_<%=cid %>.get(size_<%=cid %>-1)) + 1, <%=currEleName%>);
+						} else {//when the group or loop element appear first time
+							int location_<%=cid%> = allElements_<%=cid%>.size();
+<%
+							List<OutputTreeNode> nextSiblings = XMLOrderUtil.getNextSiblings(node);
+							if(nextSiblings.size() > 0) {
+%>
+								boolean findInsertPosition_<%=cid%> = false;
+								List siblingList_<%=cid %> = null;
+<%
+							}
+							
+							for(OutputTreeNode sibling : nextSiblings) {
+%>
+								if(!findInsertPosition_<%=cid%>) {
+									<%findElementFromParent(sibling,parentName,"siblingList");%>
+									if(siblingList_<%=cid %>.size() > 0) {
+										findInsertPosition_<%=cid%> = true;
+										location_<%=cid%> = allElements_<%=cid %>.indexOf(siblingList_<%=cid %>.get(0));
+									}
+								}
+<%
+							}
+%>
+							allElements_<%=cid %>.add(location_<%=cid%>,<%=currEleName%>);
+						}
+					}	
+<%
+				}
+			} else {
+%>
+				<%=parentName%>.elements().add(orderHelper.getInsertLocation(<%=XMLOrderUtil.getCurrPos(node) %>,<%=XMLOrderUtil.getCurrOrder(node) %>),<%=currEleName%>);
+<%
+			}
+		} else {
+			if(index>0 && hasParent(node)){
+%>
+				if (<%=parentName%>.getNamespaceForPrefix("<%=node.getName().substring(0,index)%>") == null) {
+		            <%=currEleName%> = <%=parentName%>.addElement("<%=node.getName().substring(index+1)%>");
+		        } else {
+		        	<%=currEleName%> = <%=parentName%>.addElement("<%=node.getName()%>");
+		        }
+<%
+			} else {
+%>
+				<%=currEleName%> = <%=parentName%>.addElement("<%=node.getName()%>");
+<%
+			}
+		}
+		
+		if(node.isGroup() || node.isMain()){
+%>
+		subTreeRootParent = <%=currEleName%>;
+<%
+		}
+	}
+	
+	private void addAttribute(String currEleName, OutputTreeNode node){
+		for(TreeNode tmpNode : node.getChildren()) {
+			if(tmpNode.getNodeType()==NodeType.ATTRIBUT) {
+%>
+				currentValue = null;
+<%
+				if(tmpNode.getExpression()!=null && !("").equals(tmpNode.getExpression())){
+%>
+    			valueMap.put("<%=currEleName%>",<%generateMethodUtil.generateExprCode(tmpNode.getExpression()); %>);
+    			if(valueMap.get("<%=currEleName%>")!=null) {
+    				currentValue = FormatterUtils.fm(valueMap.get("<%=currEleName%>"),<%=tmpNode.getPattern()%>);
+    			}<% if(allowEmpty) { %> else {
+    				currentValue = "";
+    			}
+				<% } %>
+<%
+				} else if(allowEmpty) {
+%>
+				currentValue = "";
+<%
+				}
+				
+				String name = tmpNode.getName();
+				
+        		String prefix = null;
+        		String localname = name;
+        		
+        		int index = name.indexOf(":");
+        		if(index > 0) {
+        			prefix = name.substring(0,index);
+        			localname = name.substring(index+1);
+        		}
+%>
+    			routines.system.DocumentHelper.applyNamespace2Attribute(<%=currEleName%>, <%if(prefix != null) {%> "<%=prefix%>" <%} else {%> null <%}%>, "<%=localname%>", currentValue);
+<%
+			}
+		}
+	}
+	
+	private void setText(String currEleName, OutputTreeNode node){
+		if(node.getExpression()!=null && !("").equals(node.getExpression()) ){
+%>
+		valueMap.put("<%=currEleName%>",<%generateMethodUtil.generateExprCode(node.getExpression()); %>);
+		if(valueMap.get("<%=currEleName%>")!=null) {
+			routines.system.NestXMLTool.setText(<%=currEleName%>, FormatterUtils.fm(valueMap.get("<%=currEleName%>"),<%=node.getPattern()%>));
+		}
+<%
+		}
+	}
+	private boolean hasParent(OutputTreeNode node){
+		if(node.eContainer()!=null){
+			OutputTreeNode parent = (OutputTreeNode)node.eContainer();
+			if(!("id_Document").equals(parent.getType()) && parent.isMain()){
+				return true;
+			}
+		}
+		return false;
+	}
+	// judge if the current main element has a group or loop element as his child node
+	private boolean isRootEndMainNode(OutputTreeNode node){
+		if(!node.isMain() || node.isLoop() || node.isGroup()){
+			return false;
+		}
+		for(TreeNode tmpNode: node.getChildren()){
+			if(tmpNode.isMain() && (tmpNode.isLoop() || tmpNode.isGroup())){
+				return true;
+			}
+		}
+		return false;
+	}
+	// the root node which a group child or loop child
+	private boolean isMediaMainNode(OutputTreeNode node) {
+		if(node.isMain()) {
+			for(TreeNode tmpNode : node.getChildren()) {
+				if(tmpNode.isMain() && (tmpNode.isLoop() || tmpNode.isGroup())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
+	private void generateGroupCode(int index) {
+		if(groupList.get(index).size()>0){
+%>
+			isNewElement = false;
+<%
+			for(int i=0;i<groupList.get(index).size();i++){
+				TreeNode groupRootNode = groupList.get(index).get(i);
+%>
+					if(isNewElement || groupbyList.size()<=<%=i%> || groupbyList.get(<%=i%>)==null
+<%
+						for(int j=0;j<groupbyNodeList.get(index).get(i).size();j++){
+							TreeNode attr = groupbyNodeList.get(index).get(i).get(j);
+							if(attr.getExpression()!=null && !("").equals(attr.getExpression()) ){
+%>
+					|| ( groupbyList.get(<%=i%>).get(<%=j%>)!=null ? !groupbyList.get(<%=i%>).get(<%=j%>).equals(FormatterUtils.format(<%generateMethodUtil.generateExprCode(attr.getExpression()); %>,<%=attr.getPattern()%>)) : FormatterUtils.format(<%generateMethodUtil.generateExprCode(attr.getExpression()); %>,<%=attr.getPattern()%>)!=null )
+<% 
+							}
+						}
+			
+%>
+					){
+
+<%
+					generateCode((OutputTreeNode)groupList.get(index).get(i),"group"+i+"_","subTreeRootParent");						
+%>	
+					if(groupbyList.size()<=<%=i%>){
+						groupbyList.add(new java.util.ArrayList<String>());
+					}else{
+						groupbyList.get(<%=i%>).clear();
+					}
+<% 
+					for(int j=0;j<groupbyNodeList.get(index).get(i).size();j++){
+						TreeNode attr = groupbyNodeList.get(index).get(i).get(j);
+						if(attr.getExpression()!=null && !("").equals(attr.getExpression()) ){
+%>
+						groupbyList.get(<%=i%>).add(FormatterUtils.format(<%generateMethodUtil.generateExprCode(attr.getExpression()); %>,<%=attr.getPattern()%>));
+<% 
+						}
+					}
+%>
+					isNewElement=true;
+					if(groupElementList.size()<=<%=i%>){
+						groupElementList.add(group<%=i%>_);
+					}else{
+						groupElementList.set(<%=i%>,group<%=i%>_);
+					}
+			
+				}else{
+					subTreeRootParent=groupElementList.get(<%=i%>);
+				}
+
+			
+<% 
+		}
+	}
+}
+	
+	
+	private void generateGroupCmpCode(OutputTreeNode node, int index) {
+		for(TreeNode tmpNode : node.getChildren()) {
+			if(tmpNode.isLoop()) {
+				return;
+			}
+			
+			if(tmpNode.isGroup()) {
+				boolean isVirtualNode = tmpNode.isSubstitution() || tmpNode.isChoice();
+				if(!isVirtualNode) {
+					groupbyNodeList.get(index).add(generateMethodUtil.getGroupByNodeList(tmpNode));
+					groupList.get(index).add(tmpNode);
+				}
+			}
+			
+			generateGroupCmpCode((OutputTreeNode)tmpNode, index);
+		}
+	}
+}
+
+	//init the generate tool.
+	GenerateToolByDom4j generateToolByDom4j = new GenerateToolByDom4j();
+	generateToolByDom4j.cid = cid;
+	generateToolByDom4j.generateMethodUtil = generateMethodUtil;
+// define the generate the output document class
+int index = -1;
+%>
+	//the map store the previous value of aggregate columns
+	java.util.Map<String,Object> aggregateCacheMap_<%=cid%> = new java.util.HashMap<String,Object>();
+<%
+for(OutputXmlTree outputTable : outputTables) {
+	boolean allowEmptyElement = outputTable.isEnableEmptyElement();
+	generateToolByDom4j.allowEmpty = allowEmptyElement;
+	
+	String tableName = outputTable.getName();
+	for(OutputTreeNode outputNode: outputTable.getNodes()) {
+		if(("id_Document").equals(outputNode.getType())){
+			
+			TreeUtil treeUtil = new TreeUtil();
+			//check whether root is loop
+			boolean isRootLoop = treeUtil.isRootLoop(outputNode);
+			//get the document aggregation columns
+			List<TreeNode> allLeaf = new ArrayList<TreeNode>();
+			treeUtil.getAllLeaf(outputNode,allLeaf);
+			for(TreeNode leaf : allLeaf) {
+				OutputTreeNode outputLeaf = (OutputTreeNode)leaf;
+				if(outputLeaf.isAggregate()) {
+					String xpath = outputLeaf.getXpath();
+%>
+					//init the map,the keys is aggregate columns xpath,the values is all null.
+					aggregateCacheMap_<%=cid%>.put("<%=xpath%>",null);
+<%					
+				}
+			}
+			
+			index+=1;
+			
+			//get the group and loop node count(TDI-18000)
+			XMLOrderUtil xmlOrderUtil = new XMLOrderUtil();
+			int groupCount = xmlOrderUtil.getGroupCount(outputNode);
+			
+%>
+
+class GenerateDocument_<%=tableName %> {
+
+<%
+	if(hasDocumentInMainInputTable || hasDocumentInAnyLookupTable) {
+		//We generate the TreeNode_API object only if there is a document in the schema.
+%>
+		TreeNode_API_<%=cid %> treeNodeAPI = null;
+<%
+	}
+%>
+	java.util.Map<String,Object> valueMap = null;
+	
+	routines.system.DocumentGenerateOrderHelper orderHelper = new routines.system.DocumentGenerateOrderHelper(<%=groupCount + 1%>);
+	
+	org.dom4j.Document doc = null;
+	
+	org.dom4j.Element root4Group = null;
+	
+	org.dom4j.io.OutputFormat format = null;
+	
+	java.util.List<java.util.List<String>> groupbyList = null;
+	java.util.List<org.dom4j.Element> groupElementList = null;
+	int order = 0;
+	
+	boolean isFirst = true;
+	
+	boolean	needRoot = true;
+	
+	String currentValue = null;
+<%
+//Integer groupSize = new Integer(0);
+//getGroupSize(outputNode, groupSize);
+
+XMLMapUtil xmu = new XMLMapUtil();
+
+%>
+
+<%
+	OutputTreeNode root = (OutputTreeNode)outputNode.getChildren().get(0); // get the root tree node
+	generateToolByDom4j.setAllMainNodes(root);
+	for(TreeNode loopNode : generateToolByDom4j.loopNodes) {
+		String parentRef = generateToolByDom4j.loopNodeToParentRef.get(loopNode);
+		String isCurrentLoopRef = generateToolByDom4j.currentLoopNodeRef.get(loopNode);
+%>
+		org.dom4j.Element <%=parentRef%> = null;
+		public boolean  <%=isCurrentLoopRef%> = false;
+<%
+	}
+%>
+	
+    public GenerateDocument_<%=tableName %>() {
+//    	this.treeNodeAPI = treeNodeAPI;
+    	
+    	valueMap = new java.util.HashMap<String,Object>();
+    	
+    	groupbyList =  new java.util.ArrayList<java.util.List<String>>();
+		groupElementList = new java.util.ArrayList<org.dom4j.Element>();
+    	
+    	doc = org.dom4j.DocumentHelper.createDocument();
+    	format = org.dom4j.io.OutputFormat.createPrettyPrint();
+    	format.setTrimText(false);
+    }
+    
+    public org.dom4j.Document getDocument(){
+    	return this.doc;
+    }
+    
+	//We generate the TreeNode_API object only if there is a document in the main input table.
+    void generateElements(<%if(hasDocumentInMainInputTable || hasDocumentInAnyLookupTable){%>TreeNode_API_<%=cid %> treeNodeAPI,<%}%>boolean isInnerJoin<%
+		%><%=xmu.createSignature(node, false) %><%
+	
+		for (VarTable var : varTables) {
+			String tableName1 = var.getName();
+	        String instanceVarName = tableName1 + "__" + cid;
+	        String className = instanceVarName + "__Struct";
+	%>, <%=className %> <%=var.getName()%>
+	<%
+	}
+	%>) {
+	
+	
+	/*if(this.treeNodeAPI==null) {
+		this.treeNodeAPI = treeNodeAPI;
+	}*/
+	
+	org.dom4j.Element subTreeRootParent = null;
+// build root xml tree 
+if (needRoot) {
+	needRoot=false;
+<%
+	generateToolByDom4j.generateCode(root,"root","doc");
+%>
+		root4Group = subTreeRootParent;
+	}else{
+		subTreeRootParent=root4Group;
+	}
+	/* build group xml tree */
+	boolean isNewElement = false;
+<%
+generateToolByDom4j.groupList.add(new java.util.ArrayList<TreeNode>());
+generateToolByDom4j.groupbyNodeList.add(new java.util.ArrayList<java.util.List<TreeNode>>());
+generateToolByDom4j.generateGroupCmpCode(root, index);
+generateToolByDom4j.generateGroupCode(index);
+%>
+		isNewElement = false;
+<%
+			if(!isRootLoop){
+				if(generateToolByDom4j.loopNodes.size() == 1) {
+					OutputTreeNode loop = (OutputTreeNode)generateToolByDom4j.loopNodes.get(0);
+					generateToolByDom4j.generateCode(loop,"loop","subTreeRootParent");
+				} else {
+					for(TreeNode loopNode : generateToolByDom4j.loopNodes) {
+						OutputTreeNode loop = (OutputTreeNode)loopNode;
+						String parentRef = generateToolByDom4j.loopNodeToParentRef.get(loopNode);
+						String isCurrentLoopRef = generateToolByDom4j.currentLoopNodeRef.get(loopNode); 
+%>
+						if(<%=isCurrentLoopRef%>) {
+<%
+						generateToolByDom4j.generateCode(loop,"loop",parentRef);
+%>
+						}
+<%
+					}
+				}
+			}
+%>
+		}
+    }
+
+	GenerateDocument_<%=tableName %> gen_Doc_<%=tableName %>_<%=cid %> = new GenerateDocument_<%=tableName %>();
+	boolean docAlreadyInstanciate_<%=tableName %> = false;
+<%
+		} // if(docuemnt)
+	}// for(outputNode)
+} // for (outputXMLTree)
+%>
+
+<%
+	//==========================================the next code for Persistent Lookup==============================================
+	HashMap<String, AbstractNode> hExternalInputTableEntries = new HashMap<String, AbstractNode>();
+	
+	String currentJoinedTableNames = "";
+	
+	int sizeInputTables = inputTables.size();
+	        
+	List<IConnection> cumulatedInputConnections = new ArrayList<IConnection>();
+	
+	String comma;
+	for (int iInputTable = 0; iInputTable < sizeInputTables - 1; iInputTable++) { 
+	        
+			InputXmlTree currentInputTable = inputTables.get(iInputTable);
+			InputXmlTree nextInputTable = null; 
+			
+			if(sizeInputTables > 1) {
+				nextInputTable = inputTables.get(iInputTable + 1);
+			}
+			if(currentJoinedTableNames.length() > 0) {
+				currentJoinedTableNames += "__";
+			}
+			currentJoinedTableNames += currentInputTable.getName();
+		
+			String currentTableName = currentInputTable.getName();
+		    IConnection currentConection = hNameToConnection.get(currentTableName);
+		    if (currentConection == null) {
+		        continue;
+		    }
+		    cumulatedInputConnections.add(currentConection);
+    
+		if(nextInputTable != null && nextInputTable.isPersistent()) {
+			
+			List<IMetadataColumn> nextColumnsKeys = new ArrayList<IMetadataColumn>();
+	
+		        String nextTableName = nextInputTable.getName();
+	            IConnection nextConection = hNameToConnection.get(nextTableName);
+	            if (nextConection == null) {
+	                continue;
+	            }
+	  %>
+	            class SortableRow_<%= currentJoinedTableNames %> implements Comparable<SortableRow_<%= currentJoinedTableNames %>>, routines.system.IPersistableRow<SortableRow_<%= currentJoinedTableNames %>> { // G_TM_B_001 
+	
+					boolean is__rejectedInnerJoin;
+					<%
+			        IMetadataTable nextMetadataTable = nextConection.getMetadataTable();
+			        if (nextInputTable != null) {
+			            hExternalInputTableEntries.clear();
+			            List<TreeNode> trees = nextInputTable.getNodes();
+			            if (trees == null) {
+			                continue;
+			            }
+
+			            
+			            List<IMetadataColumn> listColumns = nextMetadataTable.getListColumns();
+			            //for (IMetadataColumn column : listColumns) {
+			            for(int i=0; i<listColumns.size(); i++){
+			            	IMetadataColumn column = listColumns.get(i);
+			                TreeNode currentNode = (TreeNode)trees.get(i);
+			            	if (currentNode != null) {
+			            		String expressionKey = currentNode.getExpression();
+			                    if (expressionKey != null && !"".equals(expressionKey.trim())) {
+			                    
+			                    	nextColumnsKeys.add(column);
+			                    
+			                    	%><%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>;
+			                    	<%
+				                           
+			                    }
+			                }
+			            }
+					}
+				// properties declarations 
+				%>
+				//<%= currentInputTable.getName() %>
+				<%
+			        IMetadataTable currentMetadataTable = currentConection.getMetadataTable();
+			        if (currentInputTable != null) {
+			
+						for(IConnection connection : cumulatedInputConnections) {
+			            	IMetadataTable joinedTable = connection.getMetadataTable();
+			                List<IMetadataColumn> listColumns = joinedTable.getListColumns();
+			            	for (IMetadataColumn column : listColumns) {
+			                    String columnName = column.getLabel();
+			                    
+			                    %><%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> <%= connection.getName() %>__<%=column.getLabel() %>;
+			                    <%
+							}
+			            }
+			            hExternalInputTableEntries.clear();
+
+			            List<TreeNode> trees = currentInputTable.getNodes();
+			            if (trees == null) {
+			                continue;
+			            }
+					}
+			        %>
+			        public void fillFrom(<%
+				        comma = "";
+			         	for(IConnection connection : cumulatedInputConnections) {
+			         	
+			         		IConnection realConnection = org.talend.core.model.utils.NodeUtil.getRealConnectionTypeBased(connection);
+			         	
+				        	%><%=comma%> <%= realConnection.getName() %>Struct <%= connection.getName() %><%
+			         		comma = ", ";
+			         	}
+			            int sizeNextColumns = nextColumnsKeys.size();
+			            for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { 
+			            	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+			
+			         		%><%=comma%> <%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %><%
+			            
+			            } 
+			            
+			         %>) {
+			
+						<%
+			        	for(IConnection connection : cumulatedInputConnections) {
+			        	
+			        		IMetadataTable table = connection.getMetadataTable();
+							List<IMetadataColumn> listColumns = table.getListColumns();
+			            	for (IMetadataColumn column : listColumns) {
+								%>this.<%= connection.getName() %>__<%= column.getLabel() %> = <%= connection.getName() %>.<%= column.getLabel() %>;
+			            		<%
+			        		}
+			        	}
+			        	%>
+			            <%
+			            sizeNextColumns = nextColumnsKeys.size();
+			            for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { 
+			            	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+			
+							%>this.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %> = exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>;
+							<%
+			            
+			            } 
+			            %>
+			        }
+			
+			        public void copyDataTo(<%
+			         
+				         comma = "";
+				         for(IConnection connection : cumulatedInputConnections) {
+				
+				            IConnection realConnection = org.talend.core.model.utils.NodeUtil.getRealConnectionTypeBased(connection);
+				
+					         %><%=comma%><%= realConnection.getName() %>Struct <%= connection.getName() %><%
+				         	comma = ", ";
+				         }
+				         %>) {
+				
+							<%
+				        	for(IConnection connection : cumulatedInputConnections) {
+				        	
+				        		IMetadataTable table = connection.getMetadataTable();
+								List<IMetadataColumn> listColumns = table.getListColumns();
+				            	for (IMetadataColumn column : listColumns) {
+								%><%= connection.getName() %>.<%= column.getLabel() %> = this.<%= connection.getName() %>__<%= column.getLabel() %>;
+				            	<%
+				        		}
+				        	}
+				        	%>
+			        }
+					public String toString() {
+					
+						StringBuilder sb = new StringBuilder();
+						sb.append(super.toString());
+						sb.append("[");
+						<%	
+						comma = "";
+							for(IConnection connection : cumulatedInputConnections) {
+						        	
+								IMetadataTable metadata = connection.getMetadataTable();
+							if (metadata !=null) {
+								for (IMetadataColumn column: metadata.getListColumns()) {
+										if(comma.length() > 0) {
+										%>
+											sb.append("<%= comma %>");
+										<%
+										}
+										%>
+										sb.append("<%= connection.getName() %>__<%= column.getLabel() %>");
+										sb.append("=");
+										sb.append(String.valueOf(this.<%= connection.getName() %>__<%= column.getLabel() %>));
+									<%
+									comma = ", ";
+								}
+							}
+						}
+						%>
+						sb.append("]");
+						
+						return sb.toString();
+					}
+			
+			        public int compareTo(SortableRow_<%= currentJoinedTableNames %> other) {
+			            int returnValue = 0;
+			            <%
+			            sizeNextColumns = nextColumnsKeys.size();
+			            for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { 
+			            	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+			            %>
+			            	returnValue = checkNullsAndCompare(this.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>, other.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>);
+			            	if (returnValue != 0) {
+			                    return returnValue;
+			            	}
+			            <%
+			            } 
+			            %>
+			            return returnValue;
+			        }
+			
+			        private int checkNullsAndCompare(Object object1, Object object2) {
+			            int returnValue = 0;
+			            if (object1 instanceof Comparable && object2 instanceof Comparable) {
+			                returnValue = ((Comparable) object1).compareTo(object2);
+			            } else if (object1 != null && object2 != null) {
+			                returnValue = compareStrings(object1.toString(), object2
+			                        .toString());
+			            } else if (object1 == null && object2 != null) {
+			                returnValue = 1;
+			            } else if (object1 != null && object2 == null) {
+			                returnValue = -1;
+			            } else {
+			                returnValue = 0;
+			            }
+			            return returnValue;
+			        }
+			
+			        private int compareStrings(String string1, String string2) {
+			            return string1.compareTo(string2);
+			        }
+			
+					public void readData(ObjectInputStream dis) {
+						synchronized(<%= currentTableName %>Struct.commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>) {
+						    try {
+								int length = 0;
+								this.is__rejectedInnerJoin = dis.readBoolean();
+						<%	
+						boolean hasAtLeastOneRead = false;
+						boolean hasAtLeastOneObjectType = false;
+						if (currentMetadataTable !=null) {
+						        for(IConnection connection : cumulatedInputConnections) {
+				        		IMetadataTable table = connection.getMetadataTable();
+								List<IMetadataColumn> listColumns = table.getListColumns();
+				            	for (IMetadataColumn column : listColumns) {
+							  	hasAtLeastOneRead = true;
+								JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+							 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+							 	
+						if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+							typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					    %>
+				            this.<%= connection.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+						<%
+						} else if(("String").equals(typeToGenerate)) {
+						%>
+				            length = dis.readInt();
+			   				if (length == -1) {
+			   	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			   					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+			   						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+			           					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+			   						} else {
+			           					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+			           				}
+			   					}
+			       				dis.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+			       				this.<%= connection.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+			   				}
+						<%
+						} else if(("java.util.Date").equals(typeToGenerate)) {
+						%>
+				            length = dis.readByte();
+			   				if (length == -1) {
+			   	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			   			    	this.<%= connection.getName() %>__<%= column.getLabel() %> = new Date(dis.readLong());
+			   				}
+						<%
+						} else if(("byte[]").equals(typeToGenerate)) {
+						%>
+				            length = dis.readInt();
+			   				if (length == -1) {
+			   	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			       				byte[] byteArray = new byte[length];
+			       				dis.readFully(byteArray);
+			       				this.<%= connection.getName() %>__<%= column.getLabel() %> = byteArray;
+			   				}
+						<%
+						} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+							hasAtLeastOneObjectType = true;
+						%>
+							this.<%= connection.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+						
+						<%
+						} else {
+							typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+							typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+				            length = dis.readByte();
+			   				if (length == -1) {
+			   	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			   					this.<%= connection.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+			   				}
+						<%
+							}
+			        	  }
+			        	}
+			        	%>
+			            <%
+			            sizeNextColumns = nextColumnsKeys.size();
+			            for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { 
+			            	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+			
+						  	hasAtLeastOneRead = true;
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+			
+						 	if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+						 		typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+				            this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+						<%
+						 	} else if(("java.util.Date").equals(typeToGenerate)) {
+						%>
+				            length = dis.readByte();
+			   				if (length == -1) {
+			   	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			   			    	this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new Date(dis.readLong());
+			   				}
+						<%
+						 	} else if(("String").equals(typeToGenerate)) {
+						%>
+					            length = dis.readInt();
+				   				if (length == -1) {
+				   	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+				   				} else {
+				   					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+				   						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+				           					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+				   						} else {
+				           					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+				           				}
+				   					}
+				       				dis.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+				       				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+				   				}
+						<%
+						 	} else if(("byte[]").equals(typeToGenerate)) {
+						%>
+				            length = dis.readInt();
+			   				if (length == -1) {
+			   	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			       				byte[] byteArray = new byte[length];
+			       				dis.readFully(byteArray);
+			       				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = byteArray;
+			   				}
+						<%
+						 	} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+				 		hasAtLeastOneObjectType = true;
+						%>
+			   				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+						
+						<%
+						 	} else {
+						typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+						typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+				            length = dis.readByte();
+			   				if (length == -1) {
+			   	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+			   				} else {
+			   					this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+			   				}
+						<%
+						 	}
+			            } 
+					}
+					if(hasAtLeastOneRead) {
+						%>
+					} catch (IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			        throw new RuntimeException(e);
+				<%
+				}
+				%>
+				<%
+					if(hasAtLeastOneObjectType) {
+				%>
+					} catch(ClassNotFoundException eCNFE) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",eCNFE.getMessage());
+							 throw new RuntimeException(eCNFE);
+				<%
+				}
+				%>
+					    	}
+						} 
+					}
+				public void writeData(ObjectOutputStream dos) {
+					try {
+						   	dos.writeBoolean(this.is__rejectedInnerJoin);
+					<%	
+					boolean hasAtLeastOneWrite = false;
+					if (currentMetadataTable !=null) {
+			        	for(IConnection connection : cumulatedInputConnections) {
+			        	
+			        		IMetadataTable table = connection.getMetadataTable();
+							List<IMetadataColumn> listColumns = table.getListColumns();
+			            	for (IMetadataColumn column : listColumns) {
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+							hasAtLeastOneWrite = true;
+						 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+							if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+								typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+							%>
+			            	dos.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+						<%
+							} else if(("String").equals(typeToGenerate)) {
+						%>
+							if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeInt(-1);
+							} else {
+				                byte[] byteArray = this.<%= connection.getName() %>__<%= column.getLabel() %>.getBytes();
+			   			    	dos.writeInt(byteArray.length);
+			       				dos.write(byteArray);
+			            	}
+						<%
+							} else if(("java.util.Date").equals(typeToGenerate)) {
+						%>
+							if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeByte(-1);
+							} else {
+			       				dos.writeByte(0);
+			   			    	dos.writeLong(this.<%= connection.getName() %>__<%= column.getLabel() %>.getTime());
+			            	}
+						<%
+							} else if(("byte[]").equals(typeToGenerate)) {
+						%>
+							if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeInt(-1);
+							} else {
+			   			    	dos.writeInt(this.<%= connection.getName() %>__<%= column.getLabel() %>.length);
+			       				dos.write(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+			            	}
+						<%
+							} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+						%>
+						    	dos.writeObject(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+						<%
+							} else {
+								typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+								typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+							if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeByte(-1);
+							} else {
+			       				dos.writeByte(0);
+			   			    	dos.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+			            	}
+						<%
+								}
+			        		}
+			        	}
+			        	%>
+			            <%
+			            sizeNextColumns = nextColumnsKeys.size();
+			            for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { 
+			            	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+			
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+							hasAtLeastOneWrite = true;
+						 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+							if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+								typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+				            dos.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+						<%
+						} else if(("String").equals(typeToGenerate)) {
+						%>
+							if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeInt(-1);
+							} else {
+				                byte[] byteArray = this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getBytes();
+			   			    	dos.writeInt(byteArray.length);
+			       				dos.write(byteArray);
+			            	}
+						<%
+						} else if(("java.util.Date").equals(typeToGenerate)) {
+						%>
+							if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeByte(-1);
+							} else {
+			       				dos.writeByte(0);
+			   			    	dos.writeLong(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getTime());
+			            	}
+						<%
+						} else if(("byte[]").equals(typeToGenerate)) {
+						%>
+							if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeInt(-1);
+							} else {
+			   			    	dos.writeInt(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.length);
+			       				dos.write(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+			            	}
+						<%
+						} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+						%>
+						    	dos.writeObject(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+						<%
+						} else {
+								typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+								typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+						%>
+							if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+				                dos.writeByte(-1);
+							} else {
+			       				dos.writeByte(0);
+			   			    	dos.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+			            	}
+						<%
+							}
+			            } 
+					}
+					if(hasAtLeastOneWrite) {
+					%>
+						} catch (IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+					        throw new RuntimeException(e);
+					<%
+					}
+					%>
+			    }
+			}
+	     }
+	   <%}
+	}
+	%>
+	            

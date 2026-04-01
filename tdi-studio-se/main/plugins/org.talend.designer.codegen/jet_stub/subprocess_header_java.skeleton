@@ -1,0 +1,118 @@
+public class CLASS
+{
+    // add the list of the connection names to avoid to declare two times the same name.
+    public String createPrivateClassInstance(INode node, String parentLastRoot, boolean force) {
+    	return createPrivateClassInstance(node, parentLastRoot, force, new HashSet<String>());
+    }
+
+    public String createPrivateClassInstance(INode n, String parentLastRoot, boolean force, Set<String> names) {
+        String toReturn = "";
+        // declare root structs (all main outgoing connections)
+        for (IConnection conn : n.getOutgoingConnections()) {
+            if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN) || conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)) {
+                if ((force)||(n.isSubProcessStart() || !(NodeUtil.isDataAutoPropagated(n)))) {
+                    // new Instance
+                    if (!names.contains(conn.getName())) {
+	                    toReturn += conn.getName() + "Struct " + conn.getName() + " = new " + conn.getName()
+	                            + "Struct();\n";
+	                    names.add(conn.getName());
+	                    parentLastRoot = conn.getName();
+                    }
+	            } else {
+                    // copy
+                    if (!names.contains(conn.getName())) {
+	                    toReturn += parentLastRoot + "Struct " + conn.getName() + " = " + parentLastRoot + ";\n";
+	                    names.add(conn.getName());
+                    }
+                }
+                if(!conn.getTarget().getComponent().useMerge()) {
+                   toReturn += createPrivateClassInstance(conn.getTarget(), parentLastRoot, false, names);
+                }
+            } else if (conn.getLineStyle().equals(EConnectionType.ITERATE)||conn.getLineStyle().equals(EConnectionType.ON_ROWS_END)) {
+            	toReturn += createPrivateClassInstance(conn.getTarget(), parentLastRoot, true, names);
+            }
+        }
+        return toReturn;
+    }
+    
+    public String createPriveClassMethodDeclaration(INode n, String parentLastRoot, boolean force, Set<String> names) {
+    	String toReturn = "";
+        // declare root structs (all main outgoing connections)
+        for (IConnection conn : n.getOutgoingConnections()) {
+            if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN) || conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)) {
+                if ((force)||(n.isSubProcessStart() || !(NodeUtil.isDataAutoPropagated(n)))) {
+                    // new Instance
+                    if (!names.contains(conn.getName())) {
+	                    toReturn += conn.getName() + "Struct " + conn.getName() + ",";
+	                    names.add(conn.getName());
+	                    parentLastRoot = conn.getName();
+                    }
+	            } else {
+                    // copy
+                    if (!names.contains(conn.getName())) {
+	                    toReturn += parentLastRoot + "Struct " + conn.getName() + ",";
+	                    names.add(conn.getName());
+                    }
+                }
+                if(!conn.getTarget().getComponent().useMerge()) {
+                   toReturn += createPriveClassMethodDeclaration(conn.getTarget(), parentLastRoot, false, names);
+                }
+            } else if (conn.getLineStyle().equals(EConnectionType.ITERATE)||conn.getLineStyle().equals(EConnectionType.ON_ROWS_END)) {
+            	toReturn += createPriveClassMethodDeclaration(conn.getTarget(), parentLastRoot, true, names);
+            }
+        }
+        return toReturn;
+    }
+    
+    public String createPrivateClassMethodInstance(INode n, String parentLastRoot, boolean force, Set<String> names) {
+        String toReturn = "";
+        // declare root structs (all main outgoing connections)
+        for (IConnection conn : n.getOutgoingConnections()) {
+            if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN) || conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)) {
+                if ((force) || (n.isSubProcessStart() || !(NodeUtil.isDataAutoPropagated(n)))) {
+                    // new Instance
+                    if (!names.contains(conn.getName())) {
+                        toReturn += conn.getName() + ",";
+                        names.add(conn.getName());
+                        parentLastRoot = conn.getName();
+                    }
+                } else {
+                    // copy
+                    if (!names.contains(conn.getName())) {
+                        toReturn += conn.getName() + ",";
+                        names.add(conn.getName());
+                    }
+                }
+                if (!conn.getTarget().getComponent().useMerge()) {
+                    toReturn += createPrivateClassMethodInstance(conn.getTarget(), parentLastRoot, false, names);
+                }
+            } else if (conn.getLineStyle().equals(EConnectionType.ITERATE)
+                    || conn.getLineStyle().equals(EConnectionType.ON_ROWS_END)) {
+                toReturn += createPrivateClassMethodInstance(conn.getTarget(), parentLastRoot, true, names);
+            }
+        }
+        return toReturn;
+    }
+
+    // copy from routine TalendString
+    private static String getAsciiRandomString(int length) {
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        int cnt = 0;
+        StringBuilder builder = new StringBuilder();
+        char ch;
+        int end = 'z' + 1;
+        int start = ' ';
+        while (cnt < length) {
+            ch = (char) (random.nextInt(end - start) + start);
+            if (Character.isLetterOrDigit(ch)) {
+                builder.append(ch);
+                cnt++;
+            }
+        }
+        return builder.toString();
+    }
+
+    public String generate(Object argument) {
+        return "";
+    }
+}

@@ -1,0 +1,68 @@
+<%@ jet
+imports="    
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.INode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser 
+    java.util.List
+    java.util.Map
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+log = new LogUtil(node);
+String cid = node.getUniqueName();
+
+boolean useDefault = ("true").equals(ElementParameterParser.getValue(node, "__DEFAULT_MAP__"));
+List<Map<String, String>> map = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__MAP__");
+
+String inputRowName = null;
+IConnection inMainConn = null;
+
+List< ? extends IConnection> inMainConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+if (inMainConns != null && !inMainConns.isEmpty()) {
+    inMainConn = inMainConns.get(0);
+    inputRowName = inMainConn.getName();
+}else{
+	return "";
+ }       
+
+%>
+
+<% if(useDefault){  %>
+    	<%      
+        IMetadataTable metadata = inMainConn.getMetadataTable();
+        List<IMetadataColumn> listColumns = metadata.getListColumns();
+        
+        for (int i = 0; i < listColumns.size(); i++) {
+            IMetadataColumn column = listColumns.get(i);
+            String columnLabel = column.getLabel();
+        	log.trace(log.str("Set global var, key=" + inputRowName + "." + columnLabel + ", value="), inputRowName + "." + columnLabel, log.str("."));    
+        	%>            
+            globalMap.put("<%=inputRowName %>.<%=columnLabel %>", <%=inputRowName %>.<%=columnLabel %>);
+    	<%  
+      	}
+    	%>
+
+<%  } else { %>	
+    	<%
+        for (int i = 0; i < map.size(); i++) {
+              Map<String, String> line = map.get(i);
+              log.trace(log.str("Set global var, key="), line.get("KEY"), log.str(", value="), inputRowName + "." + line.get("VALUE"), log.str("."));    
+        %>
+              globalMap.put(<%= line.get("KEY") %>, <%=inputRowName %>.<%= line.get("VALUE") %>);
+        <%
+            }
+        %>
+ <%
+	}            
+%> 
+	   nb_line_<%=cid %>++;  
+       counter_<%=cid %>++;
+       <%log.debug(log.str("Current iteration is: "), log.var("counter"), log.str("."));%>
+       globalMap.put("<%=cid %>_CURRENT_ITERATION", counter_<%=cid %>);

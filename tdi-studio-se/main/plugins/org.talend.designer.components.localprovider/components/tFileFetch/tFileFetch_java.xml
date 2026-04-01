@@ -1,0 +1,446 @@
+<COMPONENT>
+    <HEADER
+            PLATEFORM="ALL"
+            SERIAL=""
+            VERSION="0.101"
+            STATUS="ALPHA"
+            COMPATIBILITY="ALL"
+            AUTHOR="Talaxie"
+            RELEASE_DATE="20050320A"
+            STARTABLE="true"
+            PARTITIONING="AUTO"
+            LOG4J_ENABLED="true"
+    >
+        <SIGNATURE></SIGNATURE>
+    </HEADER>
+
+    <FAMILIES>
+        <FAMILY>Internet</FAMILY>
+    </FAMILIES>
+
+    <DOCUMENTATION>
+        <URL/>
+    </DOCUMENTATION>
+
+    <CONNECTORS>
+        <CONNECTOR CTYPE="FLOW" MAX_INPUT="1" MAX_OUTPUT="1"/>
+        <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="1"/>
+        <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+        <CONNECTOR CTYPE="COMPONENT_OK"/>
+        <CONNECTOR CTYPE="COMPONENT_ERROR"/>
+        <CONNECTOR CTYPE="RUN_IF"/>
+    </CONNECTORS>
+
+    <PARAMETERS>
+
+        <PARAMETER
+                NAME="PROTO"
+                FIELD="CLOSED_LIST"
+                NUM_ROW="10"
+        >
+            <ITEMS DEFAULT="HTTP_PROTO">
+                <ITEM NAME="HTTP_PROTO"   VALUE="http" />
+                <ITEM NAME="HTTPS_PROTO"   VALUE="https" />
+                <ITEM NAME="FTP_PROTO"   VALUE="ftp" />
+                <ITEM NAME="SAMBA_PROTO" VALUE="smb" />
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="POST"
+                FIELD="CHECK"
+                NUM_ROW="50"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+        >
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="URI"
+                FIELD="TEXT"
+                REQUIRED="true"
+                NUM_ROW="20"
+                SHOW_IF="PROTO!='SAMBA_PROTO'"
+        >
+            <DEFAULT>"http://talendforge.org/file_fetch.txt"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="USE_CACHE"
+                FIELD="CHECK"
+                NUM_ROW="21"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SMB_URI"
+                FIELD="TEXT"
+                REQUIRED="true"
+                NUM_ROW="20"
+                SHOW_IF="PROTO=='SAMBA_PROTO'"
+        >
+            <DEFAULT>"smb://host/dir/remoteFileName.txt"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="DIRECTORY"
+                FIELD="DIRECTORY"
+                NUM_ROW="30"
+                REQUIRED="true"
+                SHOW_IF=" USE_CACHE == 'false'"
+        >
+            <DEFAULT>"C:"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="MAKEDIRS"
+                FIELD="CHECK"
+                NUM_ROW="35"
+                SHOW_IF="(PROTO != 'SAMBA_PROTO') AND (USE_CACHE == 'false')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="FILENAME"
+                FIELD="TEXT"
+                REQUIRED="true"
+                NUM_ROW="40"
+                SHOW_IF=" USE_CACHE == 'false'"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="ADD_HEADER"
+                FIELD="CHECK"
+                NUM_ROW="45"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="HEADERS"
+                FIELD="TABLE" NUM_ROW="46"
+                NB_LINES="5"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (ADD_HEADER == 'true')"
+        >
+            <ITEMS>
+                <ITEM NAME="HEADER_NAME" />
+                <ITEM NAME="HEADER_VALUE"/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SMB_DOMAIN"
+                FIELD="TEXT"
+                REQUIRED="true"
+                NUM_ROW="25"
+                SHOW_IF="PROTO=='SAMBA_PROTO'"
+        >
+            <DEFAULT>"domain"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SMB_USERNAME"
+                FIELD="TEXT"
+                REQUIRED="true"
+                NUM_ROW="25"
+                SHOW_IF="PROTO=='SAMBA_PROTO'"
+        >
+            <DEFAULT>"username"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SMB_PASSWORD"
+                FIELD="PASSWORD"
+                REQUIRED="true"
+                NUM_ROW="25"
+                SHOW_IF="PROTO=='SAMBA_PROTO'"
+        >
+            <DEFAULT>"password"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="DIE_ON_ERROR"
+                FIELD="CHECK"
+                NUM_ROW="50"
+                SHOW_IF="PROTO!='SAMBA_PROTO'"
+        >
+            <DEFAULT>true</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="COMMON_PARAMS"
+                FIELD="TABLE" NUM_ROW="60"
+                NB_LINES="5"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (POST == 'true')"
+        >
+            <ITEMS>
+                <ITEM NAME="COMMON_PARAMS_NAME" />
+                <ITEM NAME="COMMON_PARAMS_VALUE"/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="READ_COOKIE"
+                FIELD="CHECK"
+                NUM_ROW="70"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO'))"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SAVE_COOKIE"
+                FIELD="CHECK"
+                NUM_ROW="70"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO'))"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="COOKIE_DIR"
+                FIELD="FILE"
+                NUM_ROW="71"
+                REQUIRED="true"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND ((SAVE_COOKIE == 'true') OR (READ_COOKIE == 'true'))"
+        >
+            <DEFAULT>"C:/cookie"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="COOKIE_POLICY"
+                FIELD="CLOSED_LIST"
+                NUM_ROW="72"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND ((SAVE_COOKIE == 'true') OR (READ_COOKIE == 'true'))"
+        >
+            <ITEMS DEFAULT="DEFAULT">
+                <ITEM NAME="DEFAULT"   VALUE="DEFAULT" />
+                <ITEM NAME="BROWSER_COMPATIBILITY"   VALUE="BROWSER_COMPATIBILITY" />
+                <ITEM NAME="NETSCAPE"   VALUE="NETSCAPE" />
+                <ITEM NAME="RFC_2109" VALUE="RFC_2109" />
+                <!-- RFC_2965 is not support in commons-httpclient-3.0.1.jar -->
+                <!-- <ITEM NAME="RFC_2965" VALUE="RFC_2965" />  -->
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="SINGLE_COOKIE"
+                FIELD="CHECK"
+                NUM_ROW="73"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND ((SAVE_COOKIE == 'true') OR (READ_COOKIE == 'true'))"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+    </PARAMETERS>
+
+    <ADVANCED_PARAMETERS>
+        <PARAMETER
+                NAME="ENCODE_URI"
+                FIELD="CHECK"
+                NUM_ROW="6"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+                NAME="COMMON_PARAMS_CHARSET"
+                FIELD="OPENED_LIST"
+                NUM_ROW="7"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (POST == 'true')"
+        >
+            <ITEMS DEFAULT="UTF8">
+                <ITEM NAME="USASCII" VALUE="&quot;US-ASCII&quot;" />
+                <ITEM NAME="UTF8"    VALUE="&quot;UTF-8&quot;" />
+                <ITEM NAME="WIN1252" VALUE="&quot;windows-1252&quot;" />
+            </ITEMS>
+        </PARAMETER>
+        <PARAMETER
+                NAME="PRINT"
+                FIELD="CHECK"
+                NUM_ROW="8"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+        >
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="TIMEOUT"
+                FIELD="TEXT"
+                REQUIRED="false"
+                NUM_ROW="5"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+        >
+            <DEFAULT>30000</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="UPLOAD"
+                FIELD="CHECK"
+                NUM_ROW="10"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (POST == 'true')"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="FILE_PARAMS"
+                FIELD="TABLE"
+                NUM_ROW="20"
+                NB_LINES="8"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (POST == 'true') AND (UPLOAD == 'true')"
+        >
+            <ITEMS>
+                <ITEM NAME="FILE_PARAMS_NAME" />
+                <ITEM NAME="FILE_PARAMS_VALUE"/>
+                <ITEM NAME="FILE_PARAMS_CONTENT_TYPE" VALUE="&quot;application/octet-stream&quot;"/>
+                <ITEM NAME="FILE_PARAMS_CHARSET" VALUE="&quot;ISO-8859-1&quot;"/>
+            </ITEMS>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="USE_PROXY"
+                FIELD="CHECK"
+                REQUIRED="true"
+                NUM_ROW="30"
+                SHOW_IF="PROTO!='SAMBA_PROTO'"
+                REPOSITORY_VALUE="UES_PROXY">
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_HOST"
+                FIELD="TEXT"
+                NUM_ROW="35"
+                SHOW_IF="USE_PROXY == 'true'"
+                REPOSITORY_VALUE="PROXY_HOST">
+            <DEFAULT>"127.0.0.1"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_PORT"
+                FIELD="TEXT"
+                NUM_ROW="36"
+                SHOW_IF="USE_PROXY == 'true'"
+                REPOSITORY_VALUE="PROXY_PORT">
+            <DEFAULT>"8080"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_USERNAME"
+                FIELD="TEXT"
+                NUM_ROW="37"
+                SHOW_IF="USE_PROXY == 'true'"
+                REPOSITORY_VALUE="PROXY_USERNAME">
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_PASSWORD"
+                FIELD="PASSWORD"
+                NUM_ROW="38"
+                SHOW_IF="USE_PROXY == 'true'"
+                REPOSITORY_VALUE="PROXY_PASSWORD">
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_NTLM"
+                FIELD="CHECK"
+                NUM_ROW="39"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO'))"
+                REPOSITORY_VALUE="PROXY_NTLM"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="PROXY_DOMAIN"
+                FIELD="TEXT"
+                NUM_ROW="39"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) and (PROXY_NTLM == 'true')"
+                REPOSITORY_VALUE="PROXY_DOMAIN"
+        >
+            <DEFAULT>""</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="NEED_AUTH"
+                FIELD="CHECK"
+                REQUIRED="true"
+                NUM_ROW="45"
+                SHOW_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')"
+
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="AUTH_USERNAME"
+                FIELD="TEXT"
+                REQUIRED="false"
+                NUM_ROW="50"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (NEED_AUTH == 'true')"
+        >
+            <DEFAULT>"username"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="AUTH_PASSWORD"
+                FIELD="PASSWORD"
+                REQUIRED="false"
+                NUM_ROW="50"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (NEED_AUTH == 'true')"
+        >
+            <DEFAULT>"password"</DEFAULT>
+        </PARAMETER>
+
+        <PARAMETER
+                NAME="REDIRECT"
+                FIELD="CHECK"
+                REQUIRED="true"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO'))"
+                NUM_ROW="60"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+                NAME="REDIRECT_302_AS_303"
+                FIELD="CHECK"
+                REQUIRED="true"
+                SHOW_IF="((PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')) AND (REDIRECT == 'true')"
+                NUM_ROW="60"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+        <PARAMETER
+                NAME="TRUST_ALL_SERVER"
+                FIELD="CHECK"
+                REQUIRED="true"
+                SHOW_IF="PROTO == 'HTTPS_PROTO'"
+                NUM_ROW="70"
+        >
+            <DEFAULT>false</DEFAULT>
+        </PARAMETER>
+    </ADVANCED_PARAMETERS>
+
+    <CODEGENERATION>
+        <IMPORTS>
+            <IMPORT NAME="httpclient-4.5.13" MODULE="httpclient-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13" REQUIRED_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')" />
+            <IMPORT NAME="httpcore-4.4.13" MODULE="httpcore-4.4.13.jar" MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13" REQUIRED_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')" />
+            <IMPORT NAME="httpmime-4.5.13" MODULE="httpmime-4.5.13.jar" MVN="mvn:org.apache.httpcomponents/httpmime/4.5.13" REQUIRED_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')" />
+            <IMPORT NAME="COMMONS-Logging" MODULE="commons-logging-1.1.jar" MVN="mvn:commons-logging/commons-logging/1.1"  UrlPath="platform:/plugin/org.talend.libraries.apache.common/lib/commons-logging-1.1.jar" REQUIRED_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')" />
+            <IMPORT NAME="commons-codec-1.14" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14" REQUIRED_IF="(PROTO == 'HTTP_PROTO') or (PROTO == 'HTTPS_PROTO')" />
+            <IMPORT NAME="jcifs-samba" MODULE="jcifs-1.3.0.jar" MVN="mvn:org.talend.libraries/jcifs-1.3.0/6.0.0"  REQUIRED_IF="(PROTO == 'SAMBA_PROTO')" />
+        </IMPORTS>
+    </CODEGENERATION>
+
+    <RETURNS>
+        <RETURN NAME="INPUT_STREAM" TYPE="java.io.InputStream" AVAILABILITY="FLOW"/>
+    </RETURNS>
+
+</COMPONENT>

@@ -1,0 +1,88 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String cid = node.getUniqueName();
+
+	String passwordFieldName = "__HDINSIGHT_PASSWORD__";
+	if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%> 
+		final String hdInsightPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+	} else {
+%>
+		final String hdInsightPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+	}
+			
+	passwordFieldName = "__WASB_PASSWORD__";
+	if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%> 
+		final String wasbPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%
+	} else {
+%>
+		final String wasbPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%
+	}
+%>
+	
+	java.lang.StringBuilder libjars_<%=cid%> = new StringBuilder();
+	
+	org.talend.bigdata.launcher.fs.FileSystem azureFs_<%=cid%> = new org.talend.bigdata.launcher.fs.AzureFileSystem("DefaultEndpointsProtocol=https;"
+		+ "AccountName="
+		+ <%=ElementParameterParser.getValue(node, "__WASB_USERNAME__")%>
+		+ ";"
+		+ "AccountKey=" + wasbPassword_<%=cid%>, <%=ElementParameterParser.getValue(node, "__WASB_CONTAINER__")%>);
+			
+	org.talend.bigdata.launcher.webhcat.WebHCatJob instance_<%=cid%> = new org.talend.bigdata.launcher.webhcat.QueryJob(azureFs_<%=cid%>, org.talend.bigdata.launcher.utils.JobType.HIVE);
+					
+	instance_<%=cid%>.setCredentials(new org.talend.bigdata.launcher.security.HDInsightCredentials(<%=ElementParameterParser.getValue(node, "__HDINSIGHT_USERNAME__")%>, hdInsightPassword_<%=cid%>));
+	instance_<%=cid%>.setUsername(<%=ElementParameterParser.getValue(node, "__WEBHCAT_USERNAME__")%>);
+	instance_<%=cid%>.setWebhcatEndpoint("https", <%=ElementParameterParser.getValue(node, "__WEBHCAT_HOST__")%> + ":" + <%=ElementParameterParser.getValue(node, "__WEBHCAT_PORT__")%>);
+	instance_<%=cid%>.setStatusFolder(org.talend.bigdata.launcher.utils.Utils.removeFirstSlash(<%=ElementParameterParser.getValue(node, "__STATUSDIR__")%>));
+	instance_<%=cid%>.setRemoteFolder(org.talend.bigdata.launcher.utils.Utils.removeFirstSlash(<%=ElementParameterParser.getValue(node, "__REMOTE_FOLDER__")%>));
+	
+	java.util.List<String> connectionCommandList_<%=cid%> = new java.util.ArrayList<String>();
+	
+<%
+	boolean setMemory = "true".equals(ElementParameterParser.getValue(node, "__SET_MEMORY__"));
+	if(setMemory) {
+		String mapMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_MAP_MEMORY_MB__");
+		String reduceMemory = ElementParameterParser.getValue(node,"__MAPREDUCE_REDUCE_MEMORY_MB__");
+		String amMemory = ElementParameterParser.getValue(node,"__YARN_APP_MAPREDUCE_AM_RESOURCE_MB__");
+%>
+		connectionCommandList_<%=cid%>.add("SET mapreduce.map.memory.mb=" + <%=mapMemory%> + ";");
+		connectionCommandList_<%=cid%>.add("SET mapreduce.reduce.memory.mb=" + <%=reduceMemory%> + ";");
+		connectionCommandList_<%=cid%>.add("SET yarn.app.mapreduce.am.resource.mb=" + <%=amMemory%> + ";");
+<%
+	}
+	
+	List<Map<String, String>> advProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_PROPERTIES__");
+	if(advProps!=null) {
+		for(Map<String, String> item : advProps){
+%>
+			connectionCommandList_<%=cid%>.add("SET "+<%=item.get("PROPERTY")%>+"="+<%=item.get("VALUE")%> + ";");
+<%
+		}
+	}
+%>
+
+	String dbname_<%=cid%> = <%=dbname%>;
+	if(dbname_<%=cid%>!=null && !"".equals(dbname_<%=cid%>.trim()) && !"default".equals(dbname_<%=cid%>.trim())) {
+		connectionCommandList_<%=cid%>.add("use " + dbname_<%=cid%> + ";");
+	}
+
+	globalMap.put("conn_<%=cid%>", instance_<%=cid%>);
+	globalMap.put("commandList_<%=cid%>", connectionCommandList_<%=cid%>);

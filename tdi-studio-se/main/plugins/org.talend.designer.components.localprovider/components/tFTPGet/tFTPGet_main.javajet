@@ -1,0 +1,62 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+  "
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String overwrite=ElementParameterParser.getValue(node, "__OVERWRITE__");
+String sftpoverwrite=ElementParameterParser.getValue(node, "__SFTPOVERWRITE__");
+String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+String remotedir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+
+boolean usePerl5 = ("true").equals(ElementParameterParser.getValue(node, "__PERL5_REGEX__"));
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+
+	try {
+		globalMap.put("<%=cid %>_CURRENT_STATUS", "No file transfered.");
+		String dir_<%=cid %> = root_<%=cid %>;
+		<%if(!usePerl5) {//perl5 mode not support windows(\) path separator at the mask string%>
+			String mask_<%=cid %> = maskStr_<%=cid%>.replaceAll("\\\\", "/") ;
+		<%} else {%>
+			String mask_<%=cid %> = maskStr_<%=cid%>;
+		<%}%>
+		int i_<%=cid %> = mask_<%=cid %>.lastIndexOf('/'); 
+
+		if (i_<%=cid %> != -1){
+			dir_<%=cid %> = mask_<%=cid %>.substring(0, i_<%=cid %>); 
+			mask_<%=cid %> = mask_<%=cid %>.substring(i_<%=cid %>+1);  
+		}
+  
+		<%if(!usePerl5) {%>
+			mask_<%=cid %> = org.apache.oro.text.GlobCompiler.globToPerl5(mask_<%=cid %>.toCharArray(), org.apache.oro.text.GlobCompiler.DEFAULT_MASK);
+		<%}%>
+  
+		if (dir_<%=cid %>!=null && !"".equals(dir_<%=cid %>)){
+			if ((".*").equals(mask_<%=cid %>)) {
+				getter_<%=cid %>.getAllFiles(dir_<%=cid %>, localdir_<%=cid %>);
+			} else {
+				getter_<%=cid %>.getFiles(dir_<%=cid %>, localdir_<%=cid %> ,mask_<%=cid %>);
+			}
+		}
+		getter_<%=cid %>.chdir(root_<%=cid %>);
+	} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+		<%if ("true".equals(dieOnError)){%>
+    		throw(e);
+  		<%}else{%>
+			<%if(isLog4jEnabled){%>
+				log.error("<%=cid%> - " + e.getMessage());
+			<%}%>
+    		System.err.print(e.getMessage());
+  		<%}%>
+	}

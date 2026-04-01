@@ -1,0 +1,112 @@
+<%@ jet 
+	imports="
+        java.util.List
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+	" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+String outConnName = null;
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+List< ? extends IConnection> outConns = node.getOutgoingConnections();
+boolean isGenerateCode=false;
+for(IConnection conn : outConns){
+	if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.USE_ITERATE)){
+		isGenerateCode=true;
+	}
+	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		outConnName = conn.getName();
+		isGenerateCode=true;
+	}
+}
+if(!isGenerateCode){
+	return "";//output conn only onsubjob_ok
+}
+%>
+	java.io.File file_<%=cid%> = new java.io.File(<%=filename%>);
+	int nb_line_<%=cid%> = 0;
+<%
+log4jFileUtil.startRetriveDataInfo();
+
+if(("PROPERTIES_FORMAT").equals(fileFormat)){
+%>
+	java.util.Properties properties_<%=cid%> = new java.util.Properties();
+	java.io.FileInputStream fis_<%=cid%>=new java.io.FileInputStream(file_<%=cid%>);
+   	try{
+		properties_<%=cid%>.load(fis_<%=cid%>);
+		java.util.Enumeration enumeration_<%=cid%> = properties_<%=cid%>.propertyNames();
+		while (enumeration_<%=cid%>.hasMoreElements()) {
+			nb_line_<%=cid%>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+		
+		if(outConnName!=null){
+%>
+			<%=outConnName %>.key = (String)enumeration_<%=cid%>.nextElement();
+			<%=outConnName %>.value = (String)properties_<%=cid%>.getProperty(<%=outConnName %>.key);
+<%
+		}else{
+%>
+			enumeration_<%=cid%>.nextElement();
+<%
+		}
+}else if(("INI_FORMAT").equals(fileFormat)){
+	String sectionName = ElementParameterParser.getValue(node,"__SECTION_NAME__");
+	String retriveMode = ElementParameterParser.getValue(node,"__RETRIVE_MODE__");
+%>
+    org.ini4j.Wini ini_<%=cid%> = new org.ini4j.Wini(new java.io.InputStreamReader(new java.io.FileInputStream(<%=filename%>),<%=encoding%>));
+<%
+	if(("RETRIVE_ALL").equals(retriveMode)){
+%>
+		for(org.ini4j.Profile.Section section_<%=cid%> : ini_<%=cid%>.values()){
+	    	for(String key_<%=cid%> : section_<%=cid%>.keySet()){
+	    		nb_line_<%=cid%>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+		
+		if(outConnName!=null){
+%>
+				<%=outConnName %>.key = key_<%=cid%>;
+				<%=outConnName %>.value = section_<%=cid%>.get(key_<%=cid%>);
+				<%=outConnName %>.section = section_<%=cid%>.getName();
+<%
+		}
+	}else if(("RETRIVE_SECTIONS").equals(retriveMode)){
+%>
+		for(String names_<%=cid%> : ini_<%=cid%>.keySet()){
+			nb_line_<%=cid%>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+		
+		if(outConnName!=null){
+%>
+		    <%=outConnName %>.section = names_<%=cid%>;
+<%
+		}
+	}else if(("RETRIVE_BY_SECTION").equals(retriveMode)){
+%>
+	    org.ini4j.Profile.Section section_<%=cid%> = ini_<%=cid%>.get(<%=sectionName%>);
+	    if(section_<%=cid%>!=null){
+	    for(String key_<%=cid%> : section_<%=cid%>.keySet()){
+	    	nb_line_<%=cid%>++;
+<%
+		log4jFileUtil.debugRetriveData(node);
+		
+		if(outConnName!=null){
+%>
+			<%=outConnName %>.key = key_<%=cid%>;
+			<%=outConnName %>.value = section_<%=cid%>.get(key_<%=cid%>);
+<%
+		}
+	}
+}
+%>

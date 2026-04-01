@@ -1,0 +1,497 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Map
+		java.util.HashMap
+		java.util.List
+		java.util.ArrayList
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	class ParameterUtil {
+		boolean isValid(String parameterValue) {
+			return parameterValue!=null && !parameterValue.isEmpty() && !"\"\"".equals(parameterValue);
+		}
+	}
+	
+	ParameterUtil parameterUtil = new ParameterUtil();
+	
+	List<Map<String, String>> bootstrap_actions = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__BOOTSTRAP_ACTIONS__");
+	if(!bootstrap_actions.isEmpty()) {
+%>
+	java.util.List<com.amazonaws.services.elasticmapreduce.model.BootstrapActionConfig> actions_<%=cid %> = new java.util.ArrayList<com.amazonaws.services.elasticmapreduce.model.BootstrapActionConfig>();
+	
+	com.amazonaws.services.elasticmapreduce.model.BootstrapActionConfig action_<%=cid%> = null;
+	<%
+	}
+	
+	for (int i=0; i<bootstrap_actions.size(); i++) {
+	Map<String, String> bootstrap_action = bootstrap_actions.get(i);
+%>
+	action_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.BootstrapActionConfig(
+		<%=bootstrap_action.get("NAME") %>,
+		
+		new com.amazonaws.services.elasticmapreduce.model.ScriptBootstrapActionConfig()
+    		.withPath(<%=bootstrap_action.get("SCRIPT_PATH") %>)
+    		
+    		<%if(parameterUtil.isValid(bootstrap_action.get("ARGS"))){%>
+    		.withArgs(<%=bootstrap_action.get("ARGS") %>)
+    		<%}%>
+	);
+	
+	actions_<%=cid %>.add(action_<%=cid%>);
+<%
+	}
+	
+	List<Map<String, String>> lines = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__STEP_TABLE__");
+%>
+	int count_<%=cid%> = 0;
+	com.amazonaws.services.elasticmapreduce.model.HadoopJarStepConfig hadoopConfig1_<%=cid%> = null;
+	com.amazonaws.services.elasticmapreduce.model.StepConfig customStep_<%=cid%> = null;
+<%
+	boolean enable_debug = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_DEBUG__"));
+	boolean haveSteps = enable_debug || !lines.isEmpty();
+	
+	if(haveSteps) {
+%>
+	java.util.List<com.amazonaws.services.elasticmapreduce.model.StepConfig> steps_<%=cid %> = new java.util.ArrayList<com.amazonaws.services.elasticmapreduce.model.StepConfig>();
+<%
+	}
+	
+	for (int i=0; i<lines.size(); i++) {
+	Map<String, String> line = lines.get(i);
+%>
+
+	count_<%=cid%>++;
+
+	hadoopConfig1_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.HadoopJarStepConfig()
+			  <%if(parameterUtil.isValid(line.get("MAIN_CLASS"))){%>
+		      .withMainClass(<%= line.get("MAIN_CLASS") %>)
+		      <%}%>
+		      
+		      .withJar(<%= line.get("JAR") %>)
+			  
+			  <%if(parameterUtil.isValid(line.get("ARGS"))){%>		      
+		      .withArgs(<%= line.get("ARGS") %>)
+		      <%}%>
+		      
+		      ;
+    
+	customStep_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.StepConfig("Step_" + count_<%=cid%>, hadoopConfig1_<%=cid%>)
+		   .withActionOnFailure(<%= line.get("ACTION_ON_FAILURE") %>)
+		   .withName(<%= line.get("NAME") %>);
+
+	steps_<%=cid %>.add(customStep_<%=cid%>);    
+
+<%
+	}
+%>
+
+<%
+	String action = ElementParameterParser.getValue(node, "__ACTION__");
+	String region = ElementParameterParser.getValue(node, "__REGION__");
+	String cluster_name = ElementParameterParser.getValue(node, "__CLUSTER_NAME__");
+
+	
+	String service_role = ElementParameterParser.getValue(node, "__SERVICE_ROLE__");
+	String jobflow_role = ElementParameterParser.getValue(node, "__JOBFLOW_ROLE__");
+	
+	boolean enable_log = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_LOG__"));
+	String log_url = ElementParameterParser.getValue(node, "__LOG_URL__");
+	
+	boolean enable_key_pair = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_KEY_PAIR__"));
+	String key_pair = ElementParameterParser.getValue(node, "__KEY_PAIR__");
+	
+	String instance_count = ElementParameterParser.getValue(node, "__INSTANCE_COUNT__");
+	String slave_instance_count = ElementParameterParser.getValue(node, "__SLAVE_INSTANCE_COUNT__");
+	
+	String master_instance_type = ElementParameterParser.getValue(node, "__MASTER_INSTANCE_TYPE__");
+	String slave_instance_type = ElementParameterParser.getValue(node, "__SLAVE_INSTANCE_TYPE__");
+	
+	boolean visible_to_all_users = "true".equals(ElementParameterParser.getValue(node, "__VISIBLE_TO_ALL_USERS__"));
+	
+	boolean termination_protected = "true".equals(ElementParameterParser.getValue(node, "__TERMINATION_PROTECTED__"));
+	
+	String master_security_group = ElementParameterParser.getValue(node, "__MASTER_SECURITY_GROUP__");
+	String additional_master_security_groups = ElementParameterParser.getValue(node, "__ADDITIONAL_MASTER_SECURITY_GROUPS__");
+	String slave_security_group = ElementParameterParser.getValue(node, "__SLAVE_SECURITY_GROUP__");
+	String additional_slave_security_groups = ElementParameterParser.getValue(node, "__ADDITIONAL_SLAVE_SECURITY_GROUPS__");
+	String service_Access_Security_Group = ElementParameterParser.getValue(node, "__SERVICE_ACCESS_SECURITY_GROUP__");
+	
+	boolean wait_for_cluster_ready = "true".equals(ElementParameterParser.getValue(node, "__WAIT_FOR_CLUSTER_READY__"));
+	boolean wait_for_steps_complete = "true".equals(ElementParameterParser.getValue(node, "__WAIT_FOR_STEPS_COMPLETE__"));
+	
+	
+	String availability_zone = ElementParameterParser.getValue(node, "__AVAILABILITY_ZONE__");
+	
+	String subnet_id = ElementParameterParser.getValue(node, "__SUBNET_ID__");
+	
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	boolean keep_alive = "true".equals(ElementParameterParser.getValue(node, "__KEEP_ALIVE__"));
+	
+	boolean use_customize_version = "true".equals(ElementParameterParser.getValue(node, "__USE_CUSTOMIZE_VERSION__"));
+	String cluster_version = use_customize_version?ElementParameterParser.getValue(node, "__CUSTOMIZE_VERSION__").trim().replace(' ', '-'):ElementParameterParser.getValue(node, "__CLUSTER_VERSION__");
+	cluster_version = cluster_version.toLowerCase();
+	
+	boolean use_multiple_master = "true".equals(ElementParameterParser.getValue(node, "__USE_MULTIPLE_MASTER_NODES__"));
+%>
+	        
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Amazon/EMRClient.javajet"%>
+	
+	<%
+	if("STOP".equals(action)) {
+	%>
+		com.amazonaws.services.elasticmapreduce.model.ListClustersRequest request_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.ListClustersRequest()
+			.withClusterStates(
+				com.amazonaws.services.elasticmapreduce.model.ClusterState.BOOTSTRAPPING,
+				com.amazonaws.services.elasticmapreduce.model.ClusterState.STARTING,
+				com.amazonaws.services.elasticmapreduce.model.ClusterState.RUNNING,
+				com.amazonaws.services.elasticmapreduce.model.ClusterState.WAITING
+			)
+		;
+    	com.amazonaws.services.elasticmapreduce.model.ListClustersResult result_<%=cid%> = emr_<%=cid%>.listClusters(request_<%=cid%>);
+    	java.util.List<com.amazonaws.services.elasticmapreduce.model.ClusterSummary> clusters_<%=cid%> = result_<%=cid%>.getClusters();
+    	
+    	java.util.List<String> ids_<%=cid%> = new java.util.ArrayList<String>();
+    	
+    	<%
+    	String predicates = ElementParameterParser.getValue(node, "__PREDICATES__");
+    	String name = ElementParameterParser.getValue(node, "__NAME_OF_CLUSTER__");
+    	String id = ElementParameterParser.getValue(node, "__ID_OF_CLUSTER__");
+    	%>
+    	for(com.amazonaws.services.elasticmapreduce.model.ClusterSummary summary_<%=cid%> : clusters_<%=cid%>) {
+			<%
+			if("RUNNING".equals(predicates)) {
+			%>
+				ids_<%=cid%>.add(summary_<%=cid%>.getId());
+			<%
+			} else if("RUNNING_WITH_NAME".equals(predicates)) {
+			%>
+				if(<%=name%>.equals(summary_<%=cid%>.getName())) {
+					ids_<%=cid%>.add(summary_<%=cid%>.getId());
+				}
+			<%
+			} else if("RUNNING_WITH_ID".equals(predicates)) {
+			%>
+				if(<%=id%>.equals(summary_<%=cid%>.getId())) {
+					ids_<%=cid%>.add(summary_<%=cid%>.getId());
+				}
+			<%
+			}
+			%>
+    	}
+    	
+    	com.amazonaws.services.elasticmapreduce.model.TerminateJobFlowsRequest request2_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.TerminateJobFlowsRequest();
+    	if(!ids_<%=cid%>.isEmpty()) {
+    		request2_<%=cid%>.withJobFlowIds(ids_<%=cid%>);
+    		emr_<%=cid%>.terminateJobFlows(request2_<%=cid%>);	
+    	} else {
+    		<%
+    		if("RUNNING".equals(predicates)) {
+    		%>
+    			throw new RuntimeException("can't find any running cluster");
+    		<%
+    		} else if("RUNNING_WITH_NAME".equals(predicates)) {
+    		%>
+    			throw new RuntimeException("can't find any running cluster with name : " + <%=name%>);
+    		<%
+    		} else if("RUNNING_WITH_ID".equals(predicates)) {
+    		%>
+    			throw new RuntimeException("can't find any running cluster with id : " + <%=id%>);
+    		<%
+    		}
+    		%>
+    	}
+    	
+	<%
+		return stringBuffer.toString();
+	}
+	
+	if(enable_debug) {
+%>
+	com.amazonaws.services.elasticmapreduce.util.StepFactory stepFactory_<%=cid%> = new com.amazonaws.services.elasticmapreduce.util.StepFactory(<%=region%>+".elasticmapreduce");
+
+	com.amazonaws.services.elasticmapreduce.model.StepConfig enabledebugging_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.StepConfig()
+    	.withName("Enable debugging")
+    	.withActionOnFailure(
+    		com.amazonaws.services.elasticmapreduce.model.ActionOnFailure.TERMINATE_JOB_FLOW
+    	)
+    	.withHadoopJarStep(stepFactory_<%=cid%>.newEnableDebuggingStep());
+
+	steps_<%=cid %>.add(0, enabledebugging_<%=cid%>);
+
+	<%
+	}
+
+    java.util.regex.Pattern pattern_EMR = java.util.regex.Pattern.compile("\"\\bemr-\\d+\\.\\d+\\.\\d+\"");
+    java.util.regex.Pattern pattern_AMI = java.util.regex.Pattern.compile("\"\\d+\\.\\d+\\.\\d+\"");
+
+	if(!pattern_EMR.matcher(cluster_version).find()&&!pattern_AMI.matcher(cluster_version).find()){
+	%>
+		if(true) {
+		throw new java.lang.RuntimeException("Cluster version should follow the pattern emr-x.x.x or x.x.x(AMI)");
+	}
+	<%
+	}
+	final boolean newApi = cluster_version!=null && cluster_version.contains("emr") && cluster_version.charAt(5) > '3';
+
+
+	
+	boolean setApps = newApi;
+	if(setApps) {
+	%>
+	<%@ include file="./app_mapping.javajet"%>
+	<%}%>
+	
+	java.util.List<com.amazonaws.services.elasticmapreduce.model.Configuration> configs_<%=cid%> = new java.util.ArrayList<com.amazonaws.services.elasticmapreduce.model.Configuration>();
+	<%
+	Map<String, List<Map<String,String>>> classification2Properties = new HashMap<String, List<Map<String,String>>>();
+	String property_json = ElementParameterParser.getValue(node, "__PROPERTY_JSON__");
+	boolean property_json_validated = property_json != null && !property_json.equals("\"\"") && property_json.length() > 0;
+	%>
+	boolean property_json_validated_<%=cid%> = <%=property_json_validated %>;
+	<%
+	if(!use_multiple_master) {
+		if(newApi) {
+			List<Map<String, String>> property_table = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__PROPERTY_TABLE__");
+			if(property_table!=null) {
+				for (int i=0; i<property_table.size(); i++) {
+					Map<String, String> property = property_table.get(i);
+					String classification = property.get("CLASSIFICATION");
+					
+					List<Map<String,String>> properties = classification2Properties.get(classification);
+					if(properties == null) {
+						properties = new ArrayList<Map<String,String>>();
+						classification2Properties.put(classification, properties);
+					}
+					
+					properties.add(property);
+				}
+				
+				if(!classification2Properties.isEmpty()) {
+				%>
+					java.util.Map<String,String> properties_<%=cid%> = null;
+					com.amazonaws.services.elasticmapreduce.model.Configuration config_<%=cid%> = null;
+				<%
+				}
+				
+				for(java.util.Map.Entry<String, List<Map<String,String>>> entry : classification2Properties.entrySet()) {
+					String classification = entry.getKey();
+					List<Map<String,String>> properties = entry.getValue();
+					%>
+	    			properties_<%=cid%> = new java.util.HashMap<String,String>();
+	    			
+	    			<%
+	    			for(Map<String,String> property : properties) {
+	    			%>
+	    				properties_<%=cid%>.put(<%=property.get("KEY")%>, <%=property.get("VALUE")%>);
+	    			<%
+	    			}
+	    			%>
+	    			
+	            	config_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.Configuration()
+	                    .withClassification(<%=classification%>)
+	                    .withProperties(properties_<%=cid%>);
+	                    
+	                configs_<%=cid%>.add(config_<%=cid%>);
+				<%
+				}
+			}
+		}
+	}else{
+		boolean isHasSubnetId = subnet_id != null && !subnet_id.equals("\"\"") && subnet_id.length() > 0;
+	%>
+		boolean isHasSubnetId_<%=cid%> = <%=isHasSubnetId %>;
+		if(!isHasSubnetId_<%=cid%>) {
+			throw new RuntimeException("The subnet ID must be specified while using multiple master nodes.");
+		}
+		
+		if(property_json_validated_<%=cid%>) {
+			com.fasterxml.jackson.databind.ObjectMapper mapper_<%=cid%> = new com.fasterxml.jackson.databind.ObjectMapper();
+			mapper_<%=cid%>.configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_PROPERTIES, true);
+			try {
+				configs_<%=cid%> = java.util.Arrays.asList(mapper_<%=cid%>.readValue(<%=property_json%>, com.amazonaws.services.elasticmapreduce.model.Configuration[].class));
+			} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+				e.printStackTrace();
+			}
+		}
+	<%}%>
+	com.amazonaws.services.elasticmapreduce.model.RunJobFlowRequest request_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.RunJobFlowRequest()
+    	.withName(<%=cluster_name%>)
+    	<%if(enable_log){%>
+    	.withLogUri(<%=log_url%>)
+    	<%}%>
+    	
+    	<%
+    	if(cluster_version!=null && cluster_version.length()>1){
+    		if(!cluster_version.contains("emr")) {//AMI version
+    	%>
+    		.withAmiVersion(<%=cluster_version%>)
+    	<%
+    		} else {//EMR version
+    	%>
+    		.withReleaseLabel(<%=cluster_version%>)
+    	<%
+    		}
+    	}
+    	%>
+    	
+    	<%
+    	if(setApps) {
+    	%>
+    		.withApplications(apps_<%=cid%>)
+    	<%
+    	}
+    	%>
+    	
+    	<%if(haveSteps){%>
+    	.withSteps(steps_<%=cid%>)
+    	<%}%>
+    	
+    	.withServiceRole(<%=service_role%>)
+    	.withJobFlowRole(<%=jobflow_role%>)
+    	
+    	<%if(visible_to_all_users){%>
+    	.withVisibleToAllUsers(true)
+    	<%}%>
+    	
+    	<%if(!bootstrap_actions.isEmpty()){%>
+    	.withBootstrapActions(actions_<%=cid %>)
+    	<%}%>
+    	
+		<%if(!classification2Properties.isEmpty() || (use_multiple_master && property_json_validated)){%>
+			.withConfigurations(configs_<%=cid%>)
+		<%}%>
+    	
+    	.withInstances(
+    		new com.amazonaws.services.elasticmapreduce.model.JobFlowInstancesConfig()
+    			<%if(enable_key_pair){%>
+    			.withEc2KeyName(<%=key_pair%>)
+    			<%}%>
+    			
+    			<%if(use_multiple_master){%>
+				.withInstanceGroups(
+					new com.amazonaws.services.elasticmapreduce.model.InstanceGroupConfig()
+					.withInstanceRole(com.amazonaws.services.elasticmapreduce.model.InstanceRoleType.MASTER)
+					.withInstanceCount(3)
+					.withInstanceType(<%=master_instance_type%>),
+					new com.amazonaws.services.elasticmapreduce.model.InstanceGroupConfig()
+					.withInstanceRole(com.amazonaws.services.elasticmapreduce.model.InstanceRoleType.CORE)
+					.withInstanceCount(<%=slave_instance_count%>)
+					.withInstanceType(<%=slave_instance_type%>)
+				)    			
+    			<%}else{%>
+    			.withInstanceCount(<%=instance_count%>)
+    			.withMasterInstanceType(<%=master_instance_type%>)
+    			.withSlaveInstanceType(<%=slave_instance_type%>)
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(subnet_id)){%>
+    			.withEc2SubnetId(<%=subnet_id%>)
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(availability_zone)){%>
+    			.withPlacement(new com.amazonaws.services.elasticmapreduce.model.PlacementType().withAvailabilityZone(<%=availability_zone%>))
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(master_security_group)){%>
+    			.withEmrManagedMasterSecurityGroup(<%=master_security_group%>)
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(additional_master_security_groups)){%>
+    			.withAdditionalMasterSecurityGroups(<%=additional_master_security_groups%>.split(","))
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(slave_security_group)){%>
+    			.withEmrManagedSlaveSecurityGroup(<%=slave_security_group%>)
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(additional_slave_security_groups)){%>
+    			.withAdditionalSlaveSecurityGroups(<%=additional_slave_security_groups%>.split(","))
+    			<%}%>
+    			
+    			<%if(parameterUtil.isValid(service_Access_Security_Group)){%>
+    			.withServiceAccessSecurityGroup(<%=service_Access_Security_Group%>)
+    			<%}%>
+    			
+    			<%if(termination_protected) {%>
+    			.withTerminationProtected(true)
+    			<%}%>
+    			
+    			.withKeepJobFlowAliveWhenNoSteps(<%=keep_alive%>)
+    	);
+
+	com.amazonaws.services.elasticmapreduce.model.RunJobFlowResult result_<%=cid%> = emr_<%=cid%>.runJobFlow(request_<%=cid%>);
+	
+	<%if(isLog4jEnabled) {%>
+	log.info("<%=cid%> - cluster status : " + result_<%=cid%>);
+	<%}%>
+	
+	globalMap.put("<%=cid %>_CLUSTER_FINAL_ID", result_<%=cid%>.getJobFlowId());
+	globalMap.put("<%=cid %>_CLUSTER_FINAL_NAME", <%=cluster_name%>);
+	
+	<%
+	if(wait_for_cluster_ready) {
+	%>
+		boolean clusterIsAlive_<%=cid%> = false;
+        System.out.println("Waiting for cluster to become available.");
+        while (true) {
+            com.amazonaws.services.elasticmapreduce.model.DescribeClusterResult result2_<%=cid%> = emr_<%=cid%>.describeCluster(
+            	new com.amazonaws.services.elasticmapreduce.model.DescribeClusterRequest()
+               		.withClusterId(result_<%=cid%>.getJobFlowId())
+            );
+            String status_<%=cid%> = result2_<%=cid%>.getCluster().getStatus().getState();
+            if ("WAITING".equalsIgnoreCase(status_<%=cid%>) || "RUNNING".equalsIgnoreCase(status_<%=cid%>)) {
+            	clusterIsAlive_<%=cid%> = true;
+                break;
+            } else if("TERMINATED".equalsIgnoreCase(status_<%=cid%>)) {
+                break;
+            } else if("TERMINATED_WITH_ERRORS".equalsIgnoreCase(status_<%=cid%>)) {
+            	System.err.println("Fail to start the cluster.");
+            	break;
+            } else {
+                System.out.print(".");
+                Thread.sleep(2000);
+            }
+        }
+	<%
+	}
+	%>
+
+	<%
+	if(haveSteps && wait_for_steps_complete && wait_for_cluster_ready) {
+	%>
+		boolean waitForStep_<%=cid%> = clusterIsAlive_<%=cid%> && (steps_<%=cid %>.size() > 1);
+		
+		if(waitForStep_<%=cid%>) {
+        	System.out.println("Waiting for steps to complete.");
+        }
+        
+        while (waitForStep_<%=cid%>) {
+            com.amazonaws.services.elasticmapreduce.model.DescribeClusterResult result2_<%=cid%> = emr_<%=cid%>.describeCluster(
+            	new com.amazonaws.services.elasticmapreduce.model.DescribeClusterRequest()
+               		.withClusterId(result_<%=cid%>.getJobFlowId())
+            );
+            String status_<%=cid%> = result2_<%=cid%>.getCluster().getStatus().getState();
+            if ("WAITING".equalsIgnoreCase(status_<%=cid%>) || "TERMINATED".equalsIgnoreCase(status_<%=cid%>)) {
+            	break;
+            } else if("TERMINATED_WITH_ERRORS".equalsIgnoreCase(status_<%=cid%>)) {
+            	System.err.println("Fail to complete steps.");
+            	break;
+            } else {
+                System.out.print(".");
+                Thread.sleep(2000);
+            }
+        }
+	<%
+	}
+	%>

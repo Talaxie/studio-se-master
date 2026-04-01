@@ -1,0 +1,324 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+	" 
+%>
+
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+	
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+
+	
+	String filename = ElementParameterParser.getValueWithUIFieldKey(node,"__FILENAME__", "FILENAME");
+    String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+    String myHeader = ElementParameterParser.getValue(node, "__HEADER__");
+    String myLimit = ElementParameterParser.getValue(node, "__LIMIT__");
+    String row_separator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+    String regex = ElementParameterParser.getValue(node, "__REGEX__");
+    boolean ignoreUnmatchedError = ("true").equals(ElementParameterParser.getValue(node, "__IGNORE_ERROR_MESSAGE__"));
+	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;  
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	log4jFileUtil.componentStartInfo(node);
+%>
+		int nb_line_<%=cid%> = 0;
+        
+        int footer_<%=cid %>  = <% String myFooter = ElementParameterParser.getValue(node, "__FOOTER__"); if (("").equals(myFooter)) myFooter = "0"; %><%=myFooter%>;
+        boolean removeEmptyRow<%=cid %> = <%= ElementParameterParser.getValue(node, "__REMOVE_EMPTY_ROW__") %>;
+        Object source_<%=cid %> = <%=filename %>;
+        
+        org.talend.fileprocess.TOSDelimitedReader in<%=cid%>=null;
+        if(source_<%=cid %> instanceof String || source_<%=cid %> instanceof java.io.InputStream){
+        	in<%=cid %> = new org.talend.fileprocess.TOSDelimitedReader(<%=filename %>, <%= encoding%>, "", <%=row_separator%>, removeEmptyRow<%=cid %>);
+        }else{
+        	throw new java.lang.Exception("The source data should be specified as File Path or InputStream or java.io.Reader!");
+        }
+        String str<%=cid %>;
+        int totalLine<%=cid %>=0,currentLine<%=cid %>=0,beginLine<%=cid %>=0,lastLine<%=cid %>=-1,validRowCount<%=cid %>=0;
+        int limit<%=cid %>=<%if (("").equals(myLimit)) {myLimit = "-1";}%><%=myLimit %>;
+        
+        <% 
+         	if (("").equals(myHeader)) myHeader = "0"; 
+        %>
+		int header<%=cid %> = <%=myHeader %>;
+		if(header<%=cid %> > 0){
+			beginLine<%=cid %>=header<%=cid %>+1;
+		}
+    	
+        if(footer_<%=cid %> > 0){
+			while (in<%=cid %>.readRecord()) {
+                str<%=cid %> =in<%=cid %>.getRowRecord();        
+				totalLine<%=cid %>++;
+			}
+			int lastLineTemp<%=cid %> = totalLine<%=cid %> - footer_<%=cid %>   < 0? 0 : totalLine<%=cid %> - footer_<%=cid %> ;
+			if(lastLine<%=cid %> > 0){
+				lastLine<%=cid %> = lastLine<%=cid %> < lastLineTemp<%=cid %> ? lastLine<%=cid %> : lastLineTemp<%=cid %>; 
+			}else {
+				lastLine<%=cid %> = lastLineTemp<%=cid %>;
+			}
+		  	in<%=cid %>.close();
+        	in<%=cid %> = new org.talend.fileprocess.TOSDelimitedReader(<%=filename %>, <%= encoding%>, "", <%=row_separator%>, removeEmptyRow<%=cid %>);
+		}
+        java.util.StringTokenizer strToken<%=cid %>;
+        java.util.regex.Pattern pattern<%= cid %> = java.util.regex.Pattern.compile(<%= regex %>);
+        java.util.regex.Matcher matcher<%= cid %> = null;
+        
+        <%log4jFileUtil.startRetriveDataInfo();%>
+        
+        while (in<%=cid %>.readRecord()) {
+            str<%=cid %> =in<%=cid %>.getRowRecord(); 
+        	
+       		currentLine<%=cid %>++;
+        	if(currentLine<%=cid %> < beginLine<%=cid %>) {
+        		continue;
+        	}
+        	if(lastLine<%=cid %> > -1 && currentLine<%=cid %> > lastLine<%=cid %>) {
+        		break;
+        	}
+        	if(removeEmptyRow<%=cid %> && ("").equals(str<%=cid %>)){
+        		continue;
+        	}
+        	if(limit<%=cid %>!=-1&& validRowCount<%=cid %> >= limit<%=cid %>){
+        		break;
+        	}
+        	
+        	matcher<%= cid %> = pattern<%= cid %>.matcher(str<%=cid %>);
+        	int groupCount<%=cid %> = 0;
+        	boolean isMatch<%=cid %> = matcher<%= cid %>.find(); 
+        	if(isMatch<%=cid %>){
+        	groupCount<%=cid %>=matcher<%= cid %>.groupCount();
+			}
+<%
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+
+    String rejectConnName = "";
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+    List<IMetadataColumn> rejectColumnList = null;
+    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    if(metadataTable != null) {
+        rejectColumnList = metadataTable.getListColumns();      
+    }
+
+    	if (conns!=null) {
+    		if (conns.size()>0) {
+    			for (int i=0;i<conns.size();i++) {
+    				IConnection connTemp = conns.get(i);
+    				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+    		<%=connTemp.getName() %> = null;			
+<%
+    				}
+    			}
+    		}
+    	}
+    	
+	String firstConnName = "";
+	if (conns!=null) {
+		if (conns.size()>0) {
+			IConnection conn = conns.get(0);
+			firstConnName = conn.getName();
+			
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {%>			
+			
+			boolean lineIsEmpty<%= cid %> = str<%=cid %>.length() == 0;
+			
+			String[] value<%=cid %> = new String[<%=metadata.getListColumns().size()%>];
+			String frontChar<%=cid %>,behindChar<%=cid %>;
+			for(int i=0;i<<%=metadata.getListColumns().size()%>;i++){
+				value<%=cid %>[i] = "";
+				if(lineIsEmpty<%= cid %>){
+					continue;
+				}
+				if(i < groupCount<%=cid%>){
+					value<%=cid %>[i] = matcher<%= cid %>.group(i+1);
+				}
+			}
+			validRowCount<%=cid %>++;
+			
+			boolean whetherReject_<%=cid %> = false;
+			<%=firstConnName %> = new <%=conn.getName() %>Struct();
+			try {			
+			if(!isMatch<%=cid %>){//line data not matched with given regex parameter
+        		throw new java.lang.Exception("Line doesn't match: " + str<%=cid %>);
+        	}
+			<%	
+				List<IMetadataColumn> listColumns = metadata.getListColumns();
+				int sizeListColumns = listColumns.size();
+				for (int valueN=0; valueN<sizeListColumns; valueN++) {
+					IMetadataColumn column = listColumns.get(valueN);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+
+					%>					
+						if(value<%=cid %>[<%=valueN%>]!=null && value<%=cid %>[<%=valueN%>].length() > 0) {
+							<%
+							if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+								/** end **/
+								%><%=firstConnName %>.<%=column.getLabel() %> = value<%=cid %>[<%=valueN%>];<%
+								/** begin **/
+							} else if(javaType == JavaTypesManager.DATE) { 
+								/** end **/
+								%><%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(value<%=cid %>[<%=valueN%>], <%= patternValue %>);<%
+								/** begin **/
+							} else if(javaType == JavaTypesManager.BYTE_ARRAY) { 
+								/** end **/
+								%><%=firstConnName %>.<%=column.getLabel() %> = value<%=cid %>[<%=valueN%>].getBytes(<%=encoding%>);<%
+								/** begin **/
+							} else {
+								/** end **/
+								%><%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(value<%=cid %>[<%=valueN%>]);<%
+								/** begin **/
+							}
+								/** end **/
+						%>					
+						} else {
+						<%
+							/** begin **/
+							String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+							if(defaultValue == null) {
+							/** end **/
+								%>throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=firstConnName %>' connection, value is invalid or this column should be nullable or have a default value.");<%
+							/** begin **/
+							} else {
+							/** end **/
+								%><%=firstConnName %>.<%=column.getLabel() %> = <%=defaultValue%>;<%
+							/** begin **/
+							}
+							/** end **/
+						
+						%>}
+	<%					
+	/** begin **/
+					}
+					
+					log4jFileUtil.debugRetriveData(node,false);
+	%>
+					
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>					
+					
+    } catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        whetherReject_<%=cid%> = true;
+        <%
+        if (dieOnError) {
+            %>
+            if(isMatch<%=cid %>){
+            	throw(e);
+            }else{
+	    		<%
+	    		if(!ignoreUnmatchedError && isLog4jEnabled){
+	    		%>
+					log.error("<%=cid%> - " +e.getMessage());
+				<%
+				}
+				if(!ignoreUnmatchedError && !isLog4jEnabled){
+				%>
+					System.err.println(e.getMessage());
+				<%
+				}
+				%>
+          		continue;
+            }
+            <%
+        } else {
+            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+
+                %>
+                    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+                <%
+                for(IMetadataColumn column : metadata.getListColumns()) {
+                    %>
+                    <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+                    <%
+                }
+                %>
+                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                <%=firstConnName %> = null;
+                <%
+            } else if(("").equals(rejectConnName)){
+	        	if(isLog4jEnabled && !ignoreUnmatchedError){
+	        	%>
+        		log.error("<%=cid%> - " +e.getMessage());
+	        	<%
+	        	}
+	        	if(!isLog4jEnabled){
+    	        	if(ignoreUnmatchedError){
+                    %>
+                    	if(isMatch<%=cid %>){
+                    		System.err.println(e.getMessage());
+                    	}
+                    <%
+                    }else{
+                    %>
+                    	System.err.println(e.getMessage());
+                    <%
+                    }
+                }
+                %>
+                <%=firstConnName %> = null;
+                <%
+            } else if(rejectConnName.equals(firstConnName)){%>
+            	<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+            <%}
+        } 
+        %>
+    }					
+					
+					<%
+				}
+			}
+		}
+		
+		if (conns.size()>0) {	
+			boolean isFirstEnter = true;
+			for (int i=0;i<conns.size();i++) {
+				IConnection conn = conns.get(i);
+				if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>      
+             if(<%=conn.getName() %> == null){ 
+            	 <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+             }				
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+	    	 <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;    				
+<%
+				 	}
+				}
+			}
+%>
+		<% if(!isFirstEnter) {%> } <% } %>	
+<%
+		}
+	/** end **/
+		
+%>
+			nb_line_<%=cid %>++;
+ <%
+		}
+	}
+%>

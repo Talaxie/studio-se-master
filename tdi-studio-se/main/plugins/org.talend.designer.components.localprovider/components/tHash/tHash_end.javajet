@@ -1,0 +1,50 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.IDataConnection
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    boolean includeParallelComps = false;
+	if (connections != null && connections.size() > 0) {
+        for (IConnection connection : connections) {
+        	String connectionName = connection.getName();
+
+            IMetadataTable metadataTable = connection.getMetadataTable();
+            INode validTarget = ((IDataConnection) connection).getLinkNodeForHash();
+            if(validTarget != null) {
+            	INode partitionNode = validTarget.getDesignSubjobStartNode();
+	   			if ("tCollector".equals(partitionNode.getComponent().getName())) {
+					includeParallelComps = true;
+					partitionNode = partitionNode.getIncomingConnections(EConnectionType.STARTS).get(0).getSource();
+				}
+				if (includeParallelComps) {
+%>
+		if (isMultiThreaded_<%=cid%>) {
+			java.util.List<java.util.Map<String,Object>> mapsList_<%=cid%> = 
+				(java.util.List<java.util.Map<String,Object>>)globalMap.get("THREAD_MAPS_<%=partitionNode.getUniqueName()%>_"+jobName);
+			if (mapsList_<%=cid%> != null) {
+				for (java.util.Map<String,Object> map : mapsList_<%=cid%>) {
+					if (globalMap != map) {		
+						map.put("tHash_<%=connectionName%>",tHash_<%=connectionName%>);
+					} //gm
+				}//for
+			}//null
+		}//is threaded
+	}
+}
+ <%  			}
+ 			}
+  		}
+  	}
+%>

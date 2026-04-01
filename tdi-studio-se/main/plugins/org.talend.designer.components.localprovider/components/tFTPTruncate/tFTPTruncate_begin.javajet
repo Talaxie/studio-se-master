@@ -1,0 +1,212 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+  "
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();  
+String cid = node.getUniqueName();
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String ftpsPort = ElementParameterParser.getValue(node, "__FTPS_PORT__");
+String user = ElementParameterParser.getValue(node, "__USERNAME__");
+
+boolean use_encoding = "true".equals(ElementParameterParser.getValue(node, "__USE_ENCODING__"));
+
+String remotedir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String authMethod = ElementParameterParser.getValue(node,"__AUTH_METHOD__");
+String privateKey = ElementParameterParser.getValue(node,"__PRIVATEKEY__");
+
+List<Map<String, String>> files = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__FILES__");  
+boolean useProxy = ("true").equals(ElementParameterParser.getValue(node,"__USE_PROXY__"));
+String proxyHost = ElementParameterParser.getValue(node,"__PROXY_HOST__");
+String proxyPort = ElementParameterParser.getValue(node,"__PROXY_PORT__");
+String proxyUser = ElementParameterParser.getValue(node,"__PROXY_USERNAME__");
+
+String connectMode = ElementParameterParser.getValue(node,"__CONNECT_MODE__");
+String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+String conn= "conn_" + connection;
+String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+boolean moveToCurrentDir = ("true").equals(ElementParameterParser.getValue(node, "__MOVE_TO_THE_CURRENT_DIRECTORY__"));
+boolean sftp = false;
+boolean ftps = false;
+String protectionLevel = ElementParameterParser.getValue(node, "__FTPS_PROT__");
+String protectionBufferSize = ElementParameterParser.getValue(node, "__FTPS_PROTECTION_BUFF_SIZE__");
+String timeoutValue = ElementParameterParser.getValue(node, "__CONNECTION_TIMEOUT__");
+boolean useRemoteVerification = ("true").equals(ElementParameterParser.getValue(node, "__REMOTE_VERIFICATION__"));
+boolean useStrictReplyParsing = ("true").equals(ElementParameterParser.getValue(node, "__USE_STRICT_REPLY_PARSING__"));
+
+boolean isConfigClient = "true".equals(ElementParameterParser.getValue(node, "__CONFIG_CLIENT__"));
+List<Map<String, String>> clientParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CLIENT_PARAMETERS__");
+
+if (("true").equals(useExistingConn)) {
+  List<? extends INode> nodeList = node.getProcess().getGeneratingNodes();
+
+  for (INode n : nodeList) {
+    if (n.getUniqueName().equals(connection)) {
+      sftp = ("true").equals(ElementParameterParser.getValue(n, "__SFTP__"));
+      ftps = ("true").equals(ElementParameterParser.getValue(n, "__FTPS__"));
+    }
+  }
+} else {
+  sftp = ("true").equals(ElementParameterParser.getValue(node, "__SFTP__"));
+  ftps = ("true").equals(ElementParameterParser.getValue(node, "__FTPS__"));
+%>
+  int connectionTimeout_<%=cid %> = Integer.valueOf(<%=timeoutValue %>);
+<%
+}
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+String passwordFieldName = "";
+
+//The following part support the socks proxy for FTP and SFTP (Socks V4 or V5, they are all OK). 
+//And it can not work with the FTP proxy directly, only support the socks proxy.
+if (useProxy && !("true").equals(useExistingConn)) {
+%>
+	java.util.Properties props_<%=cid%> = System.getProperties();
+	props_<%=cid%>.put("socksProxyPort", <%=proxyPort %>);
+	props_<%=cid%>.put("socksProxyHost", <%=proxyHost %>);
+	props_<%=cid%>.put("java.net.socks.username", <%=proxyUser %>);
+	
+<%
+passwordFieldName = "__PROXY_PASSWORD__";
+if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%> 
+  String decryptedProxyPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%} else {%>
+  String decryptedProxyPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%}%>
+	
+	props_<%=cid%>.put("java.net.socks.password", decryptedProxyPassword_<%=cid%>);
+	java.net.Authenticator.setDefault(new java.net.Authenticator() {
+		public java.net.PasswordAuthentication getPasswordAuthentication() {
+			return new java.net.PasswordAuthentication(<%=proxyUser %>, decryptedProxyPassword_<%=cid%>.toCharArray());
+		}
+	});
+<%}%>
+	int nb_file_<%=cid%> = 0;
+
+<%  
+if (sftp) {// *** sftp *** //
+
+	if (("false").equals(useExistingConn)) {
+		final String passwordFieldKey = "__PASSWORD__";
+	%>
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/sftp_connect.javajet"%>
+	    
+    <%if(use_encoding) {%>
+    	c_<%=cid%>.setFilenameEncoding(<%=encoding%>);
+    <%}%>
+	<%
+	} else {
+	%>    
+	    com.jcraft.jsch.ChannelSftp c_<%=cid%> = (com.jcraft.jsch.ChannelSftp)globalMap.get("<%=conn %>");
+		<%if(isLog4jEnabled){%>
+			if(c_<%=cid%>!=null && c_<%=cid%>.getSession()!=null) {
+				log.info("<%=cid%> - Use an existing connection.Connection username: " + c_<%=cid%>.getSession().getUserName() + ", Connection hostname: " + c_<%=cid%>.getSession().getHost() + ", Connection port: " + c_<%=cid%>.getSession().getPort() + "."); 
+			}
+		<%}%>
+	    if(c_<%=cid%>.getHome()!=null && !c_<%=cid%>.getHome().equals(c_<%=cid%>.pwd())){
+	  		c_<%=cid%>.cd(c_<%=cid%>.getHome());
+	  	}
+	<%
+	}
+	%> 
+	java.util.List<java.util.Map<String,String>> list<%=cid %> = new java.util.ArrayList<java.util.Map<String,String>>();
+
+	<%for (int i = 0; i < files.size(); i++) {
+    	Map<String, String> line = files.get(i);
+    %>    
+	    java.util.Map<String,String> map<%=cid %><%=i %> = new java.util.HashMap<String,String>();
+	    map<%=cid %><%=i %>.put(<%= line.get("FILEMASK") %>,"");
+	    list<%=cid %>.add(map<%=cid %><%=i %>);
+	<%}%>
+
+    <%if(isLog4jEnabled){%>
+    	log.info("<%=cid%> - Truncating file from the server.");
+    <%}%>
+	for (java.util.Map<String, String> map<%=cid %> : list<%=cid %>) {
+
+<%
+} else {
+    if (ftps) { // *** ftps *** //
+%>
+        org.apache.commons.net.ftp.FTPSClient ftp_<%=cid %> = null;
+<%
+        /* creating connection */ 
+        if (("false").equals(useExistingConn)) {
+            String keystoreFile = ElementParameterParser.getValue(node, "__KEYSTORE_FILE__");
+            String securityMode = ElementParameterParser.getValue(node, "__SECURITY_MODE__");
+%>
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftps_connect.javajet"%>
+<%
+        } else {
+%>
+            ftp_<%=cid %> = (org.apache.commons.net.ftp.FTPSClient) globalMap.get("<%=conn %>");
+<%
+            if (moveToCurrentDir) {
+%>
+                boolean cwdSuccess_<%=cid %> = ftp_<%=cid %>.changeWorkingDirectory(<%=remotedir %>);
+
+                if (!cwdSuccess_<%=cid %>) {
+                    throw new RuntimeException("Failed to change remote directory. " + ftp_<%=cid %>.getReplyString());
+                }
+<%
+            }
+        }
+    } else { // *** ftp *** //
+%>
+        org.apache.commons.net.ftp.FTPClient ftp_<%=cid %> = null;
+<%
+        if (("true").equals(useExistingConn)) {
+%>
+            ftp_<%=cid %> = (org.apache.commons.net.ftp.FTPClient) globalMap.get("<%=conn %>");
+            <%if(isLog4jEnabled){%>
+                if(ftp_<%=cid %>!=null) {
+                    log.info("<%=cid%> - Use an existing connection. Connection hostname: " +  ftp_<%=cid %>.getRemoteAddress().toString() + ", Connection port: " + ftp_<%=cid %>.getRemotePort() + ".");
+                }
+            <%}%>
+<%
+            if (moveToCurrentDir) {
+%>
+                boolean cwdSuccess_<%=cid %> = ftp_<%=cid %>.changeWorkingDirectory(<%=remotedir %>);
+
+                if (!cwdSuccess_<%=cid %>) {
+                    throw new RuntimeException("Failed to change remote directory. " + ftp_<%=cid %>.getReplyString());
+                }
+<%
+            }
+        } else {
+            passwordFieldName = "__PASSWORD__";
+%>
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftp_connect.javajet"%>
+<%
+        }
+    } //common code for ftp and ftps:
+%>
+    <% /*store real pwd*/ %>
+    String rootWorkDir_<%=cid %> = ftp_<%=cid %>.printWorkingDirectory();	
+    java.util.List<java.util.Map<String,String>> list<%=cid %> = new java.util.ArrayList<java.util.Map<String,String>>();
+<%
+    for (int i = 0; i < files.size(); i++) {
+        Map<String, String> line = files.get(i);
+%>
+        java.util.Map<String,String> map<%=cid %><%=i %> = new java.util.HashMap<String,String>();
+        map<%=cid %><%=i %>.put(<%= line.get("FILEMASK") %>,"");
+        list<%=cid %>.add(map<%=cid %><%=i %>);
+<%
+    }
+%>
+    for (java.util.Map<String, String> map<%=cid %> : list<%=cid %>) { <% /* start main loop */ %>
+<%
+}
+%>

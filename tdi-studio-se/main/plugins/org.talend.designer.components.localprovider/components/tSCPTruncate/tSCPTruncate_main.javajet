@@ -1,0 +1,61 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    org.talend.core.model.utils.NodeUtil
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String remotedir = ElementParameterParser.getValue(node, "__REMOTEDIR__");
+    List<Map<String, String>> filelist =(List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__FILELIST__");
+    String authMethod = ElementParameterParser.getValue(node,"__AUTH_METHOD__");
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+    if(("true").equals(useExistingConn)){
+        String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+        INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+        authMethod = ElementParameterParser.getValue(connectionNode,"__AUTH_METHOD__");
+    }
+%>
+
+            org.apache.sshd.scp.client.ScpClientCreator instance_<%=cid%> = org.talend.components.talendscp.TalendScpClientCreator.INSTANCE;
+            org.apache.sshd.scp.client.ScpClient scp_<%=cid%> = instance_<%=cid%>.createScpClient(session_<%=cid%>);
+
+    String[] destFileNames_<%=cid%> = new String[]{
+     <%
+        for (Map<String, String> file : filelist) {
+     %>
+            <%=file.get("DESTINATION")%>,
+     <%
+        }
+     %>
+   };
+			<%if(isLog4jEnabled){%>
+        log.info("<%=cid%> - Truncating file from the server.");
+			<%}%>
+   for(String destFile_<%=cid %> : destFileNames_<%=cid%>){
+    try{
+           if(destFile_<%=cid %>!=null && destFile_<%=cid %>.length()!=0){
+               java.util.List<java.nio.file.attribute.PosixFilePermission> posixFilePermissions = java.util.Arrays.asList(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+               java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+               java.nio.file.attribute.PosixFilePermission.GROUP_READ,
+               java.nio.file.attribute.PosixFilePermission.OTHERS_READ);
+               scp_<%=cid%>.upload(new byte[0],<%=remotedir%>+"/"+destFile_<%=cid %>,posixFilePermissions,new org.apache.sshd.scp.common.helpers.ScpTimestampCommandDetails(java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()),java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis())));
+               nb_file_<%=cid%> ++;
+            globalMap.put("<%=cid %>_STATUS", "File truncate OK.");
+        }
+    }catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		<%if(isLog4jEnabled){%>
+			log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+		<%}%>
+		globalMap.put("<%=cid %>_STATUS", "File truncate fail.");
+    }
+   }

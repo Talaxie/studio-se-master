@@ -1,0 +1,127 @@
+<%/*
+  Copyright (C) 2006-2021 Talaxie Inc. - www.deilink.fr
+   Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/%>
+<%@ jet
+    imports="
+        org.talend.core.model.process.INode
+        org.talend.core.runtime.IAdditionalInfo
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IElementParameter
+        org.talend.core.model.process.EParameterFieldType
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.EConnectionType
+        java.util.List
+        java.util.Locale
+    "
+%>
+
+<%
+final java.util.Map<String, String> configurationToChange = new java.util.HashMap<String, String>();
+final List<ElementParameter> params = List.class.cast(node.getElementParametersWithChildrens());
+
+final boolean isJDBC = node.getComponent().getName().contains("JDBC");
+
+if (params != null && !params.isEmpty()) {
+    for (final ElementParameter p : params) {
+        Object pluginValue = p.getTaggedValue("org.talend.sdk.component.source");
+        if(pluginValue == null || !String.class.cast(pluginValue).equalsIgnoreCase("tacokit")) {
+            continue;
+        }
+        try {
+            if (!(Boolean) org.talend.core.runtime.IAdditionalInfo.class.cast(p).func("isPersisted")) {
+                continue;
+            }
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+        
+        if (p.getFieldType() == EParameterFieldType.TABLE || p.getFieldType() == EParameterFieldType.TACOKIT_SUGGESTABLE_TABLE) {
+            if (!p.isShow(params)) {
+                continue;
+            }
+            
+            java.util.List<java.util.Map<String, String>> tableValues = ElementParameterParser.createTableValues((java.util.List<java.util.Map<String, Object>>) p.getValue(), p);
+            String[] items = p.getListItemsDisplayCodeName();
+            String tableName = p.getName().replace('$', '.');
+            boolean primitiveTable = items.length == 1 && items[0].equals(tableName + "[]");
+            String tableNamePrefix = tableName + "[]";
+            
+            java.util.List<String> changable = java.util.List.class.cast(p.getTaggedValue("org.talend.sdk.component.field.changable"));
+                
+            for (int i = 0; i < tableValues.size(); i++) {
+                java.util.Map<String, String> lineValues = tableValues.get(i);
+                for (int j = 0; j < items.length; j++) {
+                    boolean canChange = false;
+                    
+                    String key = tableName + "[" + i + "]";
+                    if (!primitiveTable) {
+                        final String columnName = items[j].substring(tableNamePrefix.length(), items[j].length());
+                        key = key + columnName;
+                        
+                        if(changable!=null && changable.contains(items[j])) {
+                            canChange = true;
+                        }
+                    }
+                    String value = lineValues.get(items[j]);
+                    
+                    if(canChange) {
+                        configurationToChange.put(key, value);
+                    }
+                }
+            }
+        } else if(isJDBC && p.getFieldType() == EParameterFieldType.MEMO_SQL) {
+            if (!p.isShow(params)) {
+                continue;
+            }
+            
+            final String key = p.getName();
+            
+            String value = ElementParameterParser.getStringElementParameterValue(p);
+            
+            if (value.contains("+") || org.talend.core.model.utils.TalendTextUtils.isEnclosed(value)) {
+                value = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(value).trim();
+                value = value.endsWith(";") ? value.substring(0, value.length() -1) : value;
+            } else {
+                value = value.replace("\n", " ").replace("\r", " ");
+                if (org.talend.core.model.utils.ContextParameterUtils.isDynamic(value)) {
+                    value = "String.valueOf(" + value + ")";
+                } else {
+                    if (org.talend.core.model.utils.TalendTextUtils.isEnclosed(value)) {
+                        value = org.talend.core.model.utils.TalendTextUtils.removeQuotes(value);
+                    }
+                    value = org.talend.core.model.utils.TalendTextUtils.addQuotes(value);
+                }
+            }
+            
+            if(value != null) {
+                configurationToChange.put(key, value);
+            }
+        }
+    }
+}
+
+for(java.util.Map.Entry<String, String> entry : configurationToChange.entrySet()) {
+%>
+    changer_<%=cid%>.change("<%=entry.getKey()%>", (<%=entry.getValue()%>));
+<%
+}
+%>
+
+processor_<%=cid%>.onElement(inputs_<%=cid%>, outputs_<%=cid%>);
+nbLineInput_<%=cid%>++;
+globalMap.put("<%=cid %>_NB_LINE", nbLineInput_<%=cid%>);

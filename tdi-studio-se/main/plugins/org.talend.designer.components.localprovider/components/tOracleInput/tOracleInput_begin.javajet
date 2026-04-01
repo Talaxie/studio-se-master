@@ -1,0 +1,421 @@
+<%@ jet
+imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.Map
+		java.util.List
+"
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+
+		private INode node = null;
+
+		public void beforeComponentProcess(INode node){
+			super.beforeComponentProcess(node);
+			this.node = node;
+		}
+
+		public void setURL(INode node) {
+
+			String localServiceName = ElementParameterParser.getValue(node, "__LOCAL_SERVICE_NAME__");
+			String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+			String jdbcURL = ElementParameterParser.getValue(node, "__JDBC_URL__");
+			String rac_url = ElementParameterParser.getValue(node, "__RAC_URL__");
+%>
+			String url_<%=cid%> = null;
+<%
+			if("ORACLE_RAC".equals(connectionType)) {
+%>
+				url_<%=cid %> = <%=rac_url%>;
+<%
+			} else if(("ORACLE_SID").equals(connectionType)) {
+%>
+				url_<%=cid %> = "jdbc:oracle:thin:@" + <%=dbhost%> + ":" + <%=dbport%> + ":" + <%=dbname%>;
+<%
+			} else if(("ORACLE_SERVICE_NAME").equals(connectionType)) {
+%>
+				url_<%=cid %> = "jdbc:oracle:thin:@(description=(address=(protocol=tcp)(host=" + <%=dbhost%> + ")(port=" + <%=dbport%> + "))(connect_data=(service_name=" + <%=dbname%> + ")))";
+<%
+			} else if(("ORACLE_OCI").equals(connectionType)) {
+%>
+				url_<%=cid %> = "jdbc:oracle:oci8:@" + <%=localServiceName%>;
+<%
+			}else if(("ORACLE_WALLET").equals(connectionType)) {
+%>
+	    			url_<%=cid%> = <%=jdbcURL%>;
+<%
+			}
+%>
+
+<%
+		}
+
+		public String getDirverClassName(INode node){
+			String dbVersion =  ElementParameterParser.getValue(node, "__DB_VERSION__");
+			if ("ORACLE_11".equals(dbVersion) || "ORACLE_12".equals(dbVersion) || "ORACLE_18".equals(dbVersion) ){
+			    return "oracle.jdbc.OracleDriver";
+			}else {
+				return "oracle.jdbc.driver.OracleDriver";
+			}
+		}
+
+		public void createConnection(INode node) {
+			cid = node.getUniqueName();
+			dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			dbhost = ElementParameterParser.getValue(node, "__HOST__");
+			dbport = ElementParameterParser.getValue(node, "__PORT__");
+			dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+			dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+			String connectionType = ElementParameterParser.getValue(node, "__CONNECTION_TYPE__");
+			String dbVersion =  ElementParameterParser.getValue(node, "__DB_VERSION__");
+			boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+			if(specify_alias){
+				String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+%>
+				java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+				if (null != dataSources_<%=cid%>) {
+        			String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+            		if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+               			throw new RuntimeException("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+                  	}
+            		conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+        		} else {
+<%
+			}
+%>
+				String driverClass_<%=cid%> = "<%=this.getDirverClassName(node) %>";
+				java.lang.Class.forName(driverClass_<%=cid%>);
+				<%this.setURL(node);%>
+				String dbUser_<%=cid %> = <%=dbuser%>;
+
+				<%
+				String passwordFieldName = "__PASS__";
+				%>
+
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+				String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+				<%
+					log4jCodeGenerateUtil.debugConnectionParams(node);
+					log4jCodeGenerateUtil.connect_begin();
+				if(("ORACLE_WALLET").equals(connectionType)) {
+%>
+					conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>);
+<%
+				}else if (dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+					conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+				} else {
+%>
+					java.util.Properties atnParamsPrope_<%=cid%> = new java.util.Properties();
+					atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid%>);
+					atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid%>);
+                    if(<%= dbproperties %> != null && !"\"\"".equals(<%= dbproperties %>) && !"".equals(<%= dbproperties %>)){
+                        atnParamsPrope_<%=cid%>.load(new java.io.ByteArrayInputStream(<%=dbproperties%>.replace("&", "\n").getBytes()));
+                    }
+					conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, atnParamsPrope_<%=cid%>);
+<%
+				}
+				log4jCodeGenerateUtil.connect_end();
+			if(specify_alias){
+%>
+				}
+<%
+			}
+			
+%>
+				java.sql.Statement stmtGetTZ_<%=cid%> = conn_<%=cid%>.createStatement();
+				java.sql.ResultSet rsGetTZ_<%=cid%> = stmtGetTZ_<%=cid%>.executeQuery("select sessiontimezone from dual");
+				String sessionTimezone_<%=cid%> = java.util.TimeZone.getDefault().getID();
+				while (rsGetTZ_<%=cid%>.next()) {
+					sessionTimezone_<%=cid%> = rsGetTZ_<%=cid%>.getString(1);
+				}
+                                if (!(conn_<%=cid%> instanceof oracle.jdbc.OracleConnection) &&
+                                        conn_<%=cid%>.isWrapperFor(oracle.jdbc.OracleConnection.class)) {
+                                    if (conn_<%=cid%>.unwrap(oracle.jdbc.OracleConnection.class) != null) {
+                                        ((oracle.jdbc.OracleConnection)conn_<%=cid%>.unwrap(oracle.jdbc.OracleConnection.class)).setSessionTimeZone(sessionTimezone_<%=cid%>);
+                                    }
+                                } else {
+                                    ((oracle.jdbc.OracleConnection)conn_<%=cid%>).setSessionTimeZone(sessionTimezone_<%=cid%>);
+                                }
+<%
+			
+		}
+
+		public void afterUseExistConnection(INode node) {
+			
+			%>
+                boolean isTimeZoneNull_<%=cid%> = false;
+				boolean isConnectionWrapped_<%=cid%> = !(conn_<%=cid%> instanceof oracle.jdbc.OracleConnection) && conn_<%=cid%>.isWrapperFor(oracle.jdbc.OracleConnection.class);
+				oracle.jdbc.OracleConnection unwrappedOraConn_<%=cid%> = null;
+                if (isConnectionWrapped_<%=cid%>) {
+					unwrappedOraConn_<%=cid%> = conn_<%=cid%>.unwrap(oracle.jdbc.OracleConnection.class);
+                    if (unwrappedOraConn_<%=cid%> != null) {
+                        isTimeZoneNull_<%=cid%> = (unwrappedOraConn_<%=cid%>.getSessionTimeZone() == null);
+                    }
+                } else {
+                    isTimeZoneNull_<%=cid%> = (((oracle.jdbc.OracleConnection)conn_<%=cid%>).getSessionTimeZone() == null);
+                }
+
+				if(isTimeZoneNull_<%=cid%>) {
+					java.sql.Statement stmtGetTZ_<%=cid%> = conn_<%=cid%>.createStatement();
+					java.sql.ResultSet rsGetTZ_<%=cid%> = stmtGetTZ_<%=cid%>.executeQuery("select sessiontimezone from dual");
+					String sessionTimezone_<%=cid%> = java.util.TimeZone.getDefault().getID();
+					while (rsGetTZ_<%=cid%>.next()) {
+						sessionTimezone_<%=cid%> = rsGetTZ_<%=cid%>.getString(1);
+					}
+					if (isConnectionWrapped_<%=cid%> && unwrappedOraConn_<%=cid%> != null) {
+                        unwrappedOraConn_<%=cid%>.setSessionTimeZone(sessionTimezone_<%=cid%>);
+                    } else {
+                        ((oracle.jdbc.OracleConnection)conn_<%=cid%>).setSessionTimeZone(sessionTimezone_<%=cid%>);
+                    }
+				}
+			<%
+			
+	    }
+
+		public void createStatement(INode node) {
+
+			String useCursor= ElementParameterParser.getValue(node, "__USE_CURSOR__");
+			String cursorSize= ElementParameterParser.getValue(node, "__CURSOR_SIZE__");
+			if(!("true").equals(useCursor)) {
+				 super.createStatement(node);
+			}else {
+            	super.createMinValueStatement(node);
+%>
+                stmt_<%=cid %>.setFetchSize(<%=cursorSize %>);
+
+<%
+            }
+		}
+		//-----------according schema type to generate ResultSet
+		public void generateStringResultSet(String firstConnName, IMetadataColumn column, int currentColNo, String trimMethod) {
+			String columnType = column.getType();
+			if(columnType != null && ("CLOB").equals(columnType)) {
+%>
+				java.io.Reader reader_<%=cid%> = rs_<%=cid %>.getCharacterStream(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+				java.io.BufferedReader br_<%=cid%> = null;
+				if(reader_<%=cid%> != null) {
+					br_<%=cid%> = new java.io.BufferedReader(reader_<%=cid%>);
+ 	                StringBuffer content_<%=cid%> = new StringBuffer();
+ 	                int c_<%=cid%> =0;
+ 	                while( (c_<%=cid%> = br_<%=cid%>.read()) != -1) {
+ 	                	content_<%=cid%>.append((char)c_<%=cid%>);
+					}
+ 	                br_<%=cid%>.close();
+					<%=firstConnName%>.<%=column.getLabel()%> = content_<%=cid%>.toString();
+				} else {
+					<%=firstConnName%>.<%=column.getLabel()%> = null;
+				}
+<%
+			} else {
+				super.generateStringResultSet(firstConnName, column, currentColNo, trimMethod);
+			}
+	    }
+
+	   	public void generateBytesResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+%>
+			byte [] tmpBytes_<%=cid%> = rs_<%=cid %>.getBytes(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+			if(tmpBytes_<%=cid%> != null) {
+				<%=firstConnName%>.<%=column.getLabel()%> = tmpBytes_<%=cid%>;
+			} else {
+				<%=firstConnName%>.<%=column.getLabel()%> = null;
+			}
+<%
+	    }
+
+	    public void generateTimestampResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+	    	boolean noNullValues = ("true").equals(ElementParameterParser.getValue(node, "__NO_NULL_VALUES__"));
+
+	    	String dbType = column.getType();
+	    	if(dbType==null){
+                super.generateTimestampResultSet(firstConnName,column,currentColNo);
+                return;
+            }
+	    	boolean isTSWithTZ = dbType.matches("TIMESTAMP WITH TIME ZONE");
+
+	    	String dbVersion = "";
+			String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+		    if(("true").equals(useExistingConn)) {
+				String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+			    List<? extends INode> nodes = node.getProcess().getGeneratingNodes();
+			    for(INode targetNode : nodes){
+			    	if (targetNode.getUniqueName().equals(connection)) {
+				      dbVersion = ElementParameterParser.getValue(targetNode, "__DB_VERSION__");
+				    }
+			    }
+			}else{
+				dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			}
+	    	boolean supportTSTZ = false;
+	    	if("ORACLE_11".equals(dbVersion) || "ORACLE_12".equals(dbVersion) || "ORACLE_18".equals(dbVersion) ){
+	    		supportTSTZ = true;
+	    	}
+	    	if(isTSWithTZ && supportTSTZ){
+	    	%>
+    			TalendTimestampWithTZ talendTimestampWithTZ = null;
+    			if(((oracle.jdbc.OracleResultSet) rs_<%=cid%>).getTIMESTAMPTZ(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) != null){
+    				talendTimestampWithTZ = org.talend.oracle.OracleTSTZUtil.toTalendTSTZ(((oracle.jdbc.OracleResultSet) rs_<%=cid%>).getTIMESTAMPTZ(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>).toBytes());
+                }
+                if(talendTimestampWithTZ != null){
+                	<%=firstConnName%>.<%=column.getLabel()%> = talendTimestampWithTZ;
+                }else{
+                	<%=firstConnName%>.<%=column.getLabel()%> = null;
+                }
+    		<%
+    		}else{
+	    		if(noNullValues){//FIXME any difference when the value of the parameter is true and false?
+				%>
+					java.sql.Timestamp timestamp = rs_<%=cid %>.getTimestamp(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+					if(timestamp != null) {
+					    <%=firstConnName%>.<%=column.getLabel()%> = new java.util.Date(timestamp.getTime());
+					} else {
+					    <%=firstConnName%>.<%=column.getLabel()%> = null;
+					}
+				<%
+				}else{
+					super.generateTimestampResultSet(firstConnName,column,currentColNo);
+				}
+			}
+	    }
+
+		public void generateDoubleResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+			boolean noNullValues = ("true").equals(ElementParameterParser.getValue(node, "__NO_NULL_VALUES__"));
+	    	if(noNullValues){
+	    		if(column.isNullable()) {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDoubleObject2(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+				} else {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDouble2(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+				}
+	    	} else {
+	    		if(column.isNullable()) {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDoubleObject(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+				} else {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDouble(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+				}
+	    	}
+	    }
+	    
+	   	public void generateOthersResultSet(String firstConnName, IMetadataColumn column, int currentColNo, String typeToGenerate) {
+		   	boolean noNullValues = ("true").equals(ElementParameterParser.getValue(node, "__NO_NULL_VALUES__"));
+	   		boolean isConvert = ("true").equals(ElementParameterParser.getValue(node, "__IS_CONVERT_XMLTYPE__"));
+			List<Map<String, String>> convertColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONVERT_XMLTYPE__");
+
+			if(("Object").equals(typeToGenerate)){
+
+				boolean needConvert = false;
+	   			String convertToJavaType = "";
+				if (isConvert && convertColumns.size() > 0) {
+					for(java.util.Map<String, String> convertcolumn : convertColumns) {
+						if (convertcolumn.get("REFCOL").equals(column.getLabel()) ) {
+							needConvert = true;
+							convertToJavaType = convertcolumn.get("CONVETTYPE");
+						}
+					}
+				}
+
+%>
+				Object tmpObj_<%=currentColNo%>_<%=cid %> = rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+				if(tmpObj_<%=currentColNo%>_<%=cid %> != null) {
+<%
+				if (needConvert && "String".equals(convertToJavaType)) {
+%>
+					<%=firstConnName%>.<%=column.getLabel()%> = oracle.xdb.XMLType.createXML((oracle.sql.OPAQUE) tmpObj_<%=currentColNo%>_<%=cid %>).getStringVal();
+<%
+				} else {
+%>
+					<%=firstConnName%>.<%=column.getLabel()%> = tmpObj_<%=currentColNo%>_<%=cid %>;
+<%
+				}
+%>
+				} else {
+<%
+					if(column.isNullable()) {
+%>
+						<%=firstConnName%>.<%=column.getLabel()%> = null;
+<%
+					} else {
+%>
+						throw new RuntimeException("Null value in non-Nullable column");
+<%
+					}
+%>
+				}
+<%
+			} else {
+				if(noNullValues){
+%>
+					<%=firstConnName%>.<%=column.getLabel()%> = rs_<%=cid %>.get<%=typeToGenerate%>(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+					<%
+					if(("Boolean").equals(typeToGenerate)){
+					%>
+						if(!<%=firstConnName%>.<%=column.getLabel()%> && rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) == null){
+					<%
+					}else if(("Bytes").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate)){
+					%>
+						if(<%=firstConnName%>.<%=column.getLabel()%> == null){
+					<%
+					}else if(("Byte").equals(typeToGenerate) || ("Float").equals(typeToGenerate) || ("Int").equals(typeToGenerate) || ("Long").equals(typeToGenerate) || ("Short").equals(typeToGenerate)){
+					%>
+						if(<%=firstConnName%>.<%=column.getLabel()%> == 0 && rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) == null){
+					<%
+					}else{
+					%>
+						if(rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) == null){
+					<%
+					}
+					%>
+				<%
+				}else{
+				%>
+					if(rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) != null) {
+						<%=firstConnName%>.<%=column.getLabel()%> = rs_<%=cid %>.get<%=typeToGenerate%>(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+					} else {
+				<%
+				}
+				%>
+<%
+				if(column.isNullable()) {
+%>
+						<%=firstConnName%>.<%=column.getLabel()%> = null;
+<%
+				} else {
+%>
+ 	                	throw new RuntimeException("Null value in non-Nullable column");
+<%
+				}
+%>
+					}
+<%
+			}
+	    }
+	    //---------end according schema type to generate ResultSet
+	}//end class
+
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+
+
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+
+
+

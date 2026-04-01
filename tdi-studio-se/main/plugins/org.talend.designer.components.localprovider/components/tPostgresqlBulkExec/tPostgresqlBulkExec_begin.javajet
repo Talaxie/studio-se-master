@@ -1,0 +1,355 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever    
+    java.util.List
+    java.util.ArrayList    
+    java.util.Map
+    java.util.HashMap
+" 
+skeleton="../templates/db_output_bulk.skeleton" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String dbSchema = ElementParameterParser.getValue(node, "__SCHEMA_DB__");
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+String driverIfGreenplum = ElementParameterParser.getValue(node,"__DRIVER_IF_GREENPLUM__");
+boolean standardConformingString= ("true").equals(ElementParameterParser.getValue(node,"__STANDARD_CONFORMING_STRING__"));
+boolean convertToUppercase = false; // not active this function
+boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+boolean isLocalFile = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__LOCAL_FILE__"));
+%>
+int deletedCount_<%=cid%>=0;
+String tableName_<%=cid%> = null;
+String dbschema_<%=cid%> = null;
+<%
+if(useExistingConnection) {
+	%>
+	dbschema_<%=cid%> = (String)globalMap.get("schema_" + "<%=ElementParameterParser.getValue(node,"__CONNECTION__")%>");
+	<%
+} else {
+	%>
+	dbschema_<%=cid%> = <%=dbSchema%>;
+	<%
+}
+%>
+if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+	tableName_<%=cid%> = <%=table%>;
+} else {
+	tableName_<%=cid%> = dbschema_<%=cid%> + "\".\"" + <%=table%>;
+}
+<%
+if(("UPDATE").equals(dataAction)) {
+%>
+     String tmpTableName_<%=cid%> = "tmp_<%=cid %>_" + pid + Thread.currentThread().getId(); //tableName not end. will add pid + Thread.currentThread().getId() when create a temp table for update.
+<%
+}
+String file = ElementParameterParser.getValue(node, "__FILENAME__");
+List<IMetadataColumn> columnList = getColumnList(node);
+StringBuilder copyColumns = new StringBuilder("");
+if(columnList != null && columnList.size() > 0) {
+    copyColumns.append(" (");
+    int count = 0;
+    for(IMetadataColumn column : columnList) {
+        copyColumns.append("\\\"" + column.getOriginalDbColumnName() + "\\\"");
+        if(count != columnList.size() - 1) {
+            copyColumns.append(",");
+        }
+        count++;
+    }
+    copyColumns.append(") ");
+}
+StringBuilder notNullColumns = new StringBuilder(" ");
+List<Map<String, String>> notNullCols =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,"__FORCENOTNULL__" );
+if(notNullCols != null && notNullCols.size() > 0) {
+    notNullColumns.append("FORCE NOT NULL ");
+    int notNullCount = 0;
+    for(Map<String, String> notNullCol : notNullCols) {
+        if(("true").equals(notNullCol.get("FORCENOTNULL"))) {
+            notNullColumns.append("\\\"" + notNullCol.get("SCHEMA_COLUMN") + "\\\",");
+            notNullCount++;
+        }
+    }
+    if(notNullCount == 0) {
+        notNullColumns = new StringBuilder(" ");
+    }
+}
+
+
+%>
+String bulkSQL_<%=cid%> = "COPY \"" + <%if(("UPDATE").equals(dataAction)) {%>tmpTableName_<%=cid%><% } else {%>tableName_<%=cid%> <%}%>
++ "\"<%=copyColumns.toString()%>FROM " + 
+		<%if(!isLocalFile){%> "'" + <%=file%>.replaceAll("\"","") +"'" <%} else {%> "STDIN" <%}%>
+		+ " WITH ";
+<%
+String fileType = ElementParameterParser.getValue(node, "__FILETYPE__");
+String oids = (("true").equals(ElementParameterParser.getValue(node, "__OIDS__")) ? "OIDS" : "");
+if(("BINARYFILE").equals(fileType)) {
+    %>
+    bulkSQL_<%=cid%> += "BINARY <%=oids%>";
+    <%
+} else {
+    String nullString = ElementParameterParser.getValue(node, "__NULLSTRING__");        
+    %>
+    Character field_separator_<%=cid %> = (<%=ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__")%>).charAt(0);
+    bulkSQL_<%=cid%> += "<%=oids%> " + "DELIMITER AS '" + field_separator_<%=cid %> + "' ";
+	<%if(("TXTFILE").equals(fileType) || (("CSVFILE").equals(fileType) && standardConformingString)) {%>
+		bulkSQL_<%=cid%> += "NULL AS '" + <%=nullString%> + "' ";
+	<%}else{%>
+		bulkSQL_<%=cid%> += "NULL AS '" + <%=nullString%>.replaceAll("\\\\","\\\\\\\\") + "' ";
+	<%}
+    if(("CSVFILE").equals(fileType)) {
+        String header = (("true").equals(ElementParameterParser.getValue(node, "__HEADER__")) ? "HEADER" : "");
+        String escapeChar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");        
+        String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");        
+        %>
+        Character text_enclosure_<%=cid%> = (<%=textEnclosure %>).charAt(0);
+        <%if(standardConformingString) {
+        	if("\"\\\\\"".equals(textEnclosure)){
+        %>
+            	bulkSQL_<%=cid%> += "CSV <%=header%> QUOTE AS '" + <%=textEnclosure %>+ "' ";
+		<%
+	        }else{
+		%>
+		        bulkSQL_<%=cid%> += "CSV <%=header%> QUOTE AS " + ("'".equals(text_enclosure_<%=cid%>.toString())?"E":"") + "'" +("'".equals(text_enclosure_<%=cid%>)?"\\":"") + text_enclosure_<%=cid%> + "' ";
+		<%
+			}
+			if("\"\\\\\"".equals(escapeChar)){
+		%>
+				bulkSQL_<%=cid%> += "ESCAPE AS '" + <%=escapeChar %> + "' ";
+		<%
+			}else{
+		%>
+	        	bulkSQL_<%=cid%> += "ESCAPE AS " + ("'".equals(<%=escapeChar %>)?"E":"")  + "'" +("'".equals(<%=escapeChar %>)?"\\":"") + <%=escapeChar %> + "' "; 
+        <%
+			}
+        }else {
+       		if("\"\\\\\"".equals(textEnclosure)){
+        %>
+
+       			bulkSQL_<%=cid%> += "CSV <%=header%> QUOTE AS '" +  <%=textEnclosure %>.replace("\\", "\\\\") + "' ";
+		<%
+	        }else{
+		%>
+		        bulkSQL_<%=cid%> += "CSV <%=header%> QUOTE AS '" + ("'".equals(text_enclosure_<%=cid%>.toString())?"\\":"") + text_enclosure_<%=cid%>.toString().replaceAll("\\\\", "\\\\\\\\") + "' ";
+		<%
+       		}
+			if("\"\\\\\"".equals(escapeChar )){
+		%>
+		        bulkSQL_<%=cid%> += "ESCAPE AS '"+ <%=escapeChar %>.replace("\\", "\\\\") + "' ";
+		<%
+	        }else{
+		%>
+		        bulkSQL_<%=cid%> += "ESCAPE AS '"+ ("'".equals(<%=escapeChar %>)?"\\":"") + <%=escapeChar %>.replaceAll("\\\\", "\\\\\\\\") + "' ";
+		<%
+			}
+        }%>        
+        bulkSQL_<%=cid%> += "<%=notNullColumns.toString().substring(0, notNullColumns.toString().length() - 1)%>";
+        <%
+    }
+}
+
+
+
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String dbName = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String userName = ElementParameterParser.getValue(node, "__USER__");
+
+%> 
+java.sql.Connection conn_<%=cid%> = null;
+	<%
+	if(useExistingConnection) {
+    		String conn = "conn_" + ElementParameterParser.getValue(node,"__CONNECTION__");
+	%>
+	 	conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+	 <%
+	 	log4jCodeGenerateUtil.useExistConnection(node);
+	 } else {
+	 %>
+
+		<%if(driverIfGreenplum.equals("GREENPLUM")){%>
+			String driverClass_<%=cid%> = "com.pivotal.jdbc.GreenplumDriver";
+			<%
+	        if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+	            %>
+	            String url_<%=cid %> = "jdbc:pivotal:greenplum://"+<%=host%>+":"+<%=port%>+";DatabaseName="+<%=dbName%>;
+	            <%
+	        } else {
+	            %>
+	            String url_<%=cid %> = "jdbc:pivotal:greenplum://"+<%=host%>+":"+<%=port%>+";DatabaseName="+<%=dbName%> + "?" + <%=dbproperties%>;
+	            <%
+	        }       
+	        %>
+		<%} else {%>
+			String driverClass_<%=cid%> = "org.postgresql.Driver";
+			<%
+	        if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+	            %>
+	            String url_<%=cid%> = "jdbc:postgresql://" + <%=host%> + ":" + <%=port%> + "/" + <%=dbName%>;
+	            <%
+	        } else {
+	            %>
+	            String url_<%=cid%> = "jdbc:postgresql://" + <%=host%> + ":" + <%=port%> + "/" + <%=dbName%> + "?" + <%=dbproperties%>;
+	            <%
+	        }       
+	        %>
+		<%}%>
+		
+		String dbUser_<%=cid%> = <%=userName%>;
+		java.lang.Class.forName(driverClass_<%=cid%>).newInstance();
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	   	
+		String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+	<%
+		log4jCodeGenerateUtil.debugConnectionParams(node);
+		log4jCodeGenerateUtil.connect(node);
+	}
+	%>
+
+<%
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+List<Column> stmtStructure = null;
+Manager manager = null;
+if(columnList != null && columnList.size() > 0) {
+	stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+
+%>
+	<%@ include file="../templates/_tableActionForBulk.javajet"%>	
+<%    
+}else{//TDI-29007
+     manager = getManager(dbmsId, cid);
+     manager.setNode(node);
+}
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(("UPDATE").equals(dataAction)) {
+
+    if(columnList != null && columnList.size() > 0) {    
+        int keyCount = 0;
+        for(IMetadataColumn column : columnList) {
+            if(column.isKey()) {
+                keyCount++;
+            }
+        }
+        %>
+        int keyCount_<%=cid%> = <%=keyCount%>;
+        if(keyCount_<%=cid%> == 0) {
+            throw new RuntimeException("For bulk update, Schema must have a key at least."); 
+        }
+        
+        tmpTableName_<%=cid%> = tableName_<%=cid%>;
+        tableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();        
+        java.sql.Statement stmtCreateTmp_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Creating temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+		<%}%>
+
+        stmtCreateTmp_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+        stmtCreateTmp_<%=cid%>.close();
+        <%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Create temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has succeeded.");
+		<%}%>
+        
+        <%if(standardConformingString) {
+   		%>
+   		java.sql.CallableStatement cs_<%=cid%> =conn_<%=cid %>.prepareCall("set standard_conforming_strings=on");
+   		cs_<%=cid%>.execute();
+   		cs_<%=cid%>.close();
+   		<%}%>        
+        
+		<%if(!isLocalFile){%>
+			java.sql.Statement stmtBulk_<%=cid%> = conn_<%=cid%>.createStatement();
+			//stmt.execute("SET client_encoding to 'UNICODE'");
+			stmtBulk_<%=cid %>.execute(bulkSQL_<%=cid%>);
+			stmtBulk_<%=cid %>.close(); 
+		<%}else{%>
+			try (java.io.FileReader fileReader = new java.io.FileReader(<%=file%>)){
+				org.postgresql.copy.CopyManager copyManager = new org.postgresql.copy.CopyManager((org.postgresql.core.BaseConnection) conn_<%=cid %>);
+				copyManager.copyIn(bulkSQL_<%=cid%>, fileReader );
+			} 			
+		<%}%>
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Bulk SQL:"+bulkSQL_<%=cid%>+".");
+			log.info("<%=cid%> - Bulk inserting data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+		<%}%>
+		
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Bulk insert data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has finished.");
+		<%}%>
+        tableName_<%=cid%> = tmpTableName_<%=cid%>;
+        tmpTableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+        
+        java.sql.Statement stmtUpdateBulk_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Updating <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> from <%=manager.getLProtectedChar()%>"+tmpTableName_<%=cid%>+"<%=manager.getRProtectedChar()%>.");
+		<%}%>
+        stmtUpdateBulk_<%=cid%>.executeUpdate("<%=manager.getUpdateBulkSQL(columnList)%>");
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Update has finished.");%>
+        stmtUpdateBulk_<%=cid%>.close();
+        tableName_<%=cid%> = tmpTableName_<%=cid%>;
+        
+        java.sql.Statement stmtTmpDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Droping temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>.");
+		<%}%>
+        stmtTmpDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+        stmtTmpDrop_<%=cid%>.close();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Drop temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%>+ "<%=manager.getRProtectedChar()%> has succeeded.");
+		<%}%>
+        <%
+    }
+} else if(("INSERT").equals(dataAction)) {
+    %>
+   <%if(standardConformingString) {
+   %>
+   	java.sql.CallableStatement cs_<%=cid%> =conn_<%=cid %>.prepareCall("set standard_conforming_strings=on");
+   	cs_<%=cid%>.execute();
+   	cs_<%=cid%>.close();
+   <%}%>
+    
+	<%if(!isLocalFile){%>
+		java.sql.Statement stmtBulk_<%=cid %> = conn_<%=cid %>.createStatement();
+		//stmt.execute("SET client_encoding to 'UNICODE'");
+		stmtBulk_<%=cid %>.execute(bulkSQL_<%=cid%>);
+		stmtBulk_<%=cid %>.close(); 
+	<%}else{%>
+		try (java.io.FileReader fileReader = new java.io.FileReader(<%=file%>)){
+			org.postgresql.copy.CopyManager copyManager = new org.postgresql.copy.CopyManager((org.postgresql.core.BaseConnection) conn_<%=cid %>);
+			copyManager.copyIn(bulkSQL_<%=cid%>, fileReader );
+		}
+	<%}%>
+	<%if(isLog4jEnabled){%>
+		log.debug("<%=cid%> - Bulk SQL:"+bulkSQL_<%=cid%>+".");
+		log.info("<%=cid%> - Inserting records in table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>.");
+	<%}%>
+	
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Insert records in table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has finished.");
+	<%
+	}
+}
+	if(!useExistingConnection) {
+		log4jCodeGenerateUtil.close(node);
+	}
+%>
+

@@ -1,0 +1,90 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Map
+		java.util.List
+	" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	
+	String cid = node.getUniqueName();
+	List<Map<String, String>> tableValues = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__VALUES__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+
+int nb_line_<%=cid%> = 0;
+int nb_max_row_<%=cid%> = <%=(("").equals(ElementParameterParser.getValue(node, "__NB_ROWS__"))? 100: ElementParameterParser.getValue(node, "__NB_ROWS__"))%>;
+
+<%
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+%>
+
+class <%=cid %>Randomizer {
+<%
+		List<IMetadataColumn> listColumns = metadata.getListColumns(); 
+		for (int i=0; i<tableValues.size(); i++) {
+			Map<String, String> lineValue = tableValues.get(i);
+			//lineValue.get("ARRAY")
+%>
+	public <%=JavaTypesManager.getTypeToGenerate(listColumns.get(i).getTalendType(), listColumns.get(i).isNullable()) %> getRandom<%=listColumns.get(i).getLabel() %>() {
+		<%
+			/* if column parameter looks like abcd(efgh,...) )  */
+			if (lineValue.get("ARRAY").indexOf("(") >0) {
+		%>
+		return <%=lineValue.get("ARRAY") %>;
+		<% 
+			/* else if parameter is  separated by , */
+			} else if (lineValue.get("ARRAY").indexOf(",") >0) {
+		%>
+		<%=JavaTypesManager.getTypeToGenerate(listColumns.get(i).getTalendType(), listColumns.get(i).isNullable()) %>[] <%=listColumns.get(i).getLabel() %>Table = new <%=JavaTypesManager.getTypeToGenerate(listColumns.get(i).getTalendType(), listColumns.get(i).isNullable()) %>[] { <%=lineValue.get("ARRAY") %> };
+		java.util.Random random<%=cid %> = new java.util.Random();
+		return <%=listColumns.get(i).getLabel() %>Table[random<%=cid %>.nextInt(<%=listColumns.get(i).getLabel() %>Table.length)];
+		<% } else { %> 
+		return <%=lineValue.get("ARRAY") %>;
+		<% } %>
+	}
+<%
+		}
+%>
+}
+	<%=cid %>Randomizer rand<%=cid%> = new <%=cid %>Randomizer();
+	
+    <%if(isLog4jEnabled){%>
+    	log.info("<%=cid%> - Generating records.");
+    <%}%>
+	for (int i<%=cid %>=0; i<%=cid %><nb_max_row_<%=cid%> ;i<%=cid %>++) {
+<%
+		List< ? extends IConnection> conns = node.getOutgoingConnections();
+		for (int i=0;i<conns.size();i++) {
+			IConnection conn = conns.get(i);
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA) 
+			   && (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.USE_HASH))) {
+			    int currentColNo = 0;
+				for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+		<%=conn.getName() %>.<%=column.getLabel() %> = rand<%=cid%>.getRandom<%=column.getLabel() %>();
+<%
+                currentColNo++;
+				}
+			}
+		}
+%>
+		nb_line_<%=cid %>++;
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Retrieving the record " + nb_line_<%=cid %> + ".");
+		<%}%>
+<%
+	}
+%>

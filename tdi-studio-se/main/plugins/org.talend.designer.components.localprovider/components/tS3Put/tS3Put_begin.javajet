@@ -1,0 +1,347 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.ArrayList
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+	
+    String cid = node.getUniqueName();
+    String bucket = ElementParameterParser.getValue(node,"__BUCKET__");
+    String key = ElementParameterParser.getValue(node,"__KEY__");
+    String file = ElementParameterParser.getValue(node,"__FILE__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	String partSizeMb = ElementParameterParser.getValue(node, "__PART_SIZE__");
+    String kmsid = ElementParameterParser.getValue(node, "__KMSID__");
+	
+	boolean enableKMS = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_KMS__"));
+	
+	if(partSizeMb == null) {
+		partSizeMb = "5";
+	}
+
+	String multipart_threshold_mb = ElementParameterParser.getValue(node, "__MULTIPART_THRESHOLD__");
+	if((multipart_threshold_mb == null) || "".equals(multipart_threshold_mb) || "\"\"".equals(multipart_threshold_mb)) {
+        multipart_threshold_mb = "5";
+    }
+	
+	boolean enableServerSideEncryption = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_SERVER_SIDE_ENCRYPTION__"));
+
+	boolean enableACL = "true".equals(ElementParameterParser.getValue(node, "__ACCESS_CONTROL_LIST__"));
+	List<Map<String, String>> paramsACL = ElementParameterParser.getTableValue(node,"__ACL__");
+	final String cannedACL = ElementParameterParser.getValue(node, "__CANNED_ACCESS_CONTROL_LIST__");
+	final boolean enableCannedACL = (cannedACL != null) && (!cannedACL.isEmpty()) && !("\"NONE\"".equals(cannedACL));
+	boolean enableObjectLock = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_OBJECT_LOCK__"));
+	String retentionMode = ElementParameterParser.getValue(node, "__RETENTION_MODE__");
+	String retentionPeriod = ElementParameterParser.getValue(node, "__RETENTION_PERIOD__");
+	String retentionPeriodType = ElementParameterParser.getValue(node, "__RETENTION_PERIOD_TYPE__");
+	%>
+	String millisecTime_<%=cid %> = null;
+	<%
+	if(enableObjectLock) {
+	%>
+		java.util.Date date_<%=cid %> = new java.util.Date();
+		java.util.GregorianCalendar calendar_<%=cid %> = new java.util.GregorianCalendar();
+		calendar_<%=cid %>.setTime(date_<%=cid %>);
+	<%
+		if("DAYS".equals(retentionPeriodType)) {
+	%>
+			calendar_<%=cid %>.add(calendar_<%=cid %>.DATE, <%=retentionPeriod %>);
+	<%
+		} else if("YEARS".equals(retentionPeriodType)) {
+	%>
+			calendar_<%=cid %>.add(calendar_<%=cid %>.YEAR, <%=retentionPeriod %>);
+	<%
+		}
+	%>
+		date_<%=cid %> = calendar_<%=cid %>.getTime();
+		millisecTime_<%=cid %> = String.valueOf(date_<%=cid %>.getTime());
+	<%
+	}
+	%>
+	<%@ include file="../tS3Connection/S3Client.javajet" %>
+	String key_<%=cid%> = <%=key%>;
+	
+	int partSizeInBytes_<%=cid%> = <%=partSizeMb%> * 1024 * 1024;
+	if(partSizeInBytes_<%=cid%> < 5 << 20 ) {
+		<%if(isLog4jEnabled) {%>
+		log.info("Set part size as 5MB, as it is the recommended minimun value.");
+		<%}%>
+		partSizeInBytes_<%=cid%> = 5 << 20;
+	}
+	
+	
+	Object fileOrStream_<%=cid%> = <%=file%>;
+	
+	boolean useStream_<%=cid%> = false;
+	java.io.InputStream uploadStream_<%=cid%> = null;
+	
+	com.amazonaws.services.s3.transfer.TransferManager tm_<%=cid%> = null;
+	
+	try{
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Uploading an object with key:" + key_<%=cid%>);
+		<%
+		}
+		%>
+		
+		if(fileOrStream_<%=cid%> instanceof String){
+		    useStream_<%=cid%> = false;
+		}else if(fileOrStream_<%=cid%> instanceof java.io.InputStream){
+		    useStream_<%=cid%> = true;
+		}
+		
+    com.amazonaws.services.s3.model.ObjectMetadata objectMetadata_<%=cid%> = new com.amazonaws.services.s3.model.ObjectMetadata();
+		
+		<%
+		if(!enableKMS && enableServerSideEncryption){
+		%>
+				<%
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - No KMS - Normal SSE");
+				<%
+				}
+				%>
+			objectMetadata_<%=cid%>.setSSEAlgorithm(com.amazonaws.services.s3.model.ObjectMetadata.AES_256_SERVER_SIDE_ENCRYPTION);
+		<%
+		}
+		%>
+  		<%
+		if (enableACL) {
+		%>
+			com.amazonaws.services.s3.model.AccessControlList accessCtrlList = new com.amazonaws.services.s3.model.AccessControlList();
+			accessCtrlList.setOwner(conn_<%=cid%>.getS3AccountOwner());
+			accessCtrlList.setRequesterCharged(true); 
+        <%
+                        int grantee_id = 1;
+			for (Map<String, String> paramACL : paramsACL) {
+				List<String> logAcl = new ArrayList<String>();
+				String aclAccountId = paramACL.get("ID");
+        %> 
+                    com.amazonaws.services.s3.model.Grantee grantee_<%=cid%>_<%=grantee_id%> = (<%=aclAccountId%>.indexOf('@') > -1) ? new com.amazonaws.services.s3.model.EmailAddressGrantee(<%=aclAccountId%>) : new com.amazonaws.services.s3.model.CanonicalGrantee(<%=aclAccountId%>);
+        <%
+				if ("true".equalsIgnoreCase(paramACL.get("READ"))) {
+					logAcl.add("Read");
+        %> 
+                    accessCtrlList.grantPermission(grantee_<%=cid%>_<%=grantee_id%>, com.amazonaws.services.s3.model.Permission.Read);
+        <%
+				}
+				if ("true".equalsIgnoreCase(paramACL.get("READ_ACL"))) {
+					logAcl.add("ReadAcp");
+        %> 
+accessCtrlList.grantPermission(grantee_<%=cid%>_<%=grantee_id%>, com.amazonaws.services.s3.model.Permission.ReadAcp);
+        <%
+				}
+				if ("true".equalsIgnoreCase(paramACL.get("WRITE_ACL"))) {
+					logAcl.add("Write");
+        %> 
+accessCtrlList.grantPermission(grantee_<%=cid%>_<%=grantee_id%>, com.amazonaws.services.s3.model.Permission.WriteAcp);
+        <%
+				}
+                                grantee_id++;
+
+				if(isLog4jEnabled){
+				%>	
+					log.debug("<%=cid%> - Set ACL on object '"+<%=key%>+"' in bucket '"+<%=bucket%>+"' for '"+<%=aclAccountId%>+"' : <%=String.join(", ", logAcl)%>");
+				<%
+				}
+			}
+		}
+  		%>
+		
+		if(!useStream_<%=cid%>) {
+				java.io.File inputFile_<%=cid%> = new java.io.File((String)fileOrStream_<%=cid%>);
+				
+				long multipart_upload_threshold_<%=cid%> = <%=multipart_threshold_mb%> * 1024 * 1024;
+				
+    		tm_<%=cid%> = com.amazonaws.services.s3.transfer.TransferManagerBuilder
+    			.standard()
+    			.withMinimumUploadPartSize((long)partSizeInBytes_<%=cid%>)
+    			.withMultipartUploadThreshold(multipart_upload_threshold_<%=cid%>)
+    			.withS3Client(conn_<%=cid%>)
+    			.build();
+
+  			com.amazonaws.services.s3.model.PutObjectRequest putRequest_<%=cid%> = new com.amazonaws.services.s3.model.PutObjectRequest(<%=bucket%>, key_<%=cid%>, inputFile_<%=cid%>).withMetadata(objectMetadata_<%=cid%>);
+			<%if (enableACL) {%>
+				putRequest_<%=cid%>.withAccessControlList(accessCtrlList);
+			<%}%>
+		    <%if (enableCannedACL) {%>
+				{
+				   final String cannedACLChoice = <%= cannedACL %>;
+				   if (cannedACLChoice != null && (!cannedACLChoice.isEmpty()) && !("NONE".equals(cannedACLChoice))) {
+				       putRequest_<%=cid%>.withCannedAcl(com.amazonaws.services.s3.model.CannedAccessControlList.valueOf(cannedACLChoice));
+				   }
+				}
+			<%}%>
+			
+  			<%@ include file="./set_kms_objectlock.javajet"%>
+  			
+  			com.amazonaws.services.s3.transfer.Upload upload_<%=cid%> = tm_<%=cid%>.upload(putRequest_<%=cid%>);
+  		
+  			upload_<%=cid%>.waitForCompletion();
+  			
+		} else {
+				java.io.InputStream sourceStream_<%=cid%> = ((java.io.InputStream)fileOrStream_<%=cid%>);
+				
+  			class S3StreamUtil {
+	    		//read content to buffer as many as possible
+	    		public int readFully(final java.io.InputStream input, final byte[] buffer) throws java.io.IOException {
+	    			return readFully(input, buffer, 0, buffer.length);
+	    		}
+	    		
+	    		public int readFully(final java.io.InputStream input, final byte[] buffer, final int offset, final int length) throws java.io.IOException {
+	    			if (length < 0) {
+	    				throw new java.lang.IllegalArgumentException("Length must not be negative: " + length);
+	    			}
+	    		
+	    			int remaining = length;
+	    			while (remaining > 0) {
+	    				final int location = length - remaining;
+	    				final int count = input.read(buffer, offset + location, remaining);
+	    				if (count == -1) {
+	    					break;
+	    				}
+	    				remaining -= count;
+	    			}
+	    			return length - remaining;
+	    		}
+	      	}
+      	
+      	S3StreamUtil streamUtil_<%=cid%> = new S3StreamUtil();
+    		byte[] buffer_<%=cid%> = new byte[partSizeInBytes_<%=cid%>];
+    		long curPartSize_<%=cid%> = streamUtil_<%=cid%>.readFully(sourceStream_<%=cid%>, buffer_<%=cid%>);
+    		<%//if stream size is bigger than buffer size, or 100% the same with buffer size, we treat as multiupload both%>
+    		boolean multiUpload_<%=cid%> = curPartSize_<%=cid%> == partSizeInBytes_<%=cid%>;
+    		
+    		if(!multiUpload_<%=cid%>) {
+    				objectMetadata_<%=cid%>.setContentLength(curPartSize_<%=cid%>);
+    				uploadStream_<%=cid%> = new java.io.ByteArrayInputStream(buffer_<%=cid%>,0,Long.valueOf(curPartSize_<%=cid%>).intValue());
+    				com.amazonaws.services.s3.model.PutObjectRequest putRequest_<%=cid%> = new com.amazonaws.services.s3.model.PutObjectRequest(<%=bucket%>, key_<%=cid%>, uploadStream_<%=cid%>, objectMetadata_<%=cid%>);
+			
+                    <%if (enableACL) {%>
+				          putRequest_<%=cid%>.withAccessControlList(accessCtrlList);
+			        <%}%>
+    				<%if (enableCannedACL) {%>
+				         {
+				             final String cannedACLChoice = <%= cannedACL %>;
+				             if (cannedACLChoice != null && (!cannedACLChoice.isEmpty()) && !("NONE".equals(cannedACLChoice))) {
+				                 putRequest_<%=cid%>.withCannedAcl(com.amazonaws.services.s3.model.CannedAccessControlList.valueOf(cannedACLChoice));
+				             }
+				         }
+			        <%}%>
+    				<%@ include file="./set_kms_objectlock.javajet"%>
+    				
+    				conn_<%=cid%>.putObject(putRequest_<%=cid%>);
+    		} else {
+    				uploadStream_<%=cid%> = new java.io.ByteArrayInputStream(buffer_<%=cid%>);
+      			java.util.List<com.amazonaws.services.s3.model.PartETag> partTags_<%=cid%> = new java.util.ArrayList<com.amazonaws.services.s3.model.PartETag>();
+      			com.amazonaws.services.s3.model.InitiateMultipartUploadRequest putRequest_<%=cid%> = new com.amazonaws.services.s3.model.InitiateMultipartUploadRequest(<%=bucket%>, key_<%=cid%>, objectMetadata_<%=cid%>);
+                <%if (enableACL) {%>
+				putRequest_<%=cid%>.withAccessControlList(accessCtrlList);
+			    <%}%>
+      			<%if (enableCannedACL) {%>
+				{
+				    final String cannedACLChoice = <%= cannedACL %>;
+				    if (cannedACLChoice != null && (!cannedACLChoice.isEmpty()) && !("NONE".equals(cannedACLChoice))) {
+				        putRequest_<%=cid%>.withCannedACL(com.amazonaws.services.s3.model.CannedAccessControlList.valueOf(cannedACLChoice));
+				    }
+				}
+			    <%}%>
+      			<%@ include file="./set_kms_objectlock.javajet"%>
+      			
+      			com.amazonaws.services.s3.model.InitiateMultipartUploadResult initResponse_<%=cid%> = conn_<%=cid%>.initiateMultipartUpload(putRequest_<%=cid%>);
+      			String uploadId_<%=cid%> = initResponse_<%=cid%>.getUploadId();
+      			int partNumber_<%=cid%> = 1;
+      			boolean streamHasNext_<%=cid%> = true;
+      			byte[] probeAvailability_<%=cid%> = new byte[1];
+				try {
+					while (streamHasNext_<%=cid%>) {
+        						com.amazonaws.services.s3.model.UploadPartRequest uploadRequest_<%=cid%> = new com.amazonaws.services.s3.model.UploadPartRequest()
+                    	.withBucketName(<%=bucket%>)
+                    	.withKey(key_<%=cid%>)
+						.withUploadId(uploadId_<%=cid%>)
+                    	.withPartNumber(partNumber_<%=cid%>)
+						.withPartSize(curPartSize_<%=cid%>);
+            		    uploadRequest_<%=cid%>.setInputStream(uploadStream_<%=cid%>);
+            		    streamHasNext_<%=cid%> = (1 == streamUtil_<%=cid%>.readFully(sourceStream_<%=cid%>, probeAvailability_<%=cid%>));
+            		    if(!streamHasNext_<%=cid%>){
+                    	    uploadRequest_<%=cid%>.setLastPart(true);
+                    	}
+
+                		partTags_<%=cid%>.add(conn_<%=cid%>.uploadPart(uploadRequest_<%=cid%>).getPartETag());
+                  	    partNumber_<%=cid%>++;
+
+          		     	if(uploadStream_<%=cid%>!=null){
+      		         			uploadStream_<%=cid%>.close();
+          		     	}
+          		     	buffer_<%=cid%> = new byte[partSizeInBytes_<%=cid%>];
+          		     	curPartSize_<%=cid%> = 1 + streamUtil_<%=cid%>.readFully(sourceStream_<%=cid%>, buffer_<%=cid%>, 1, partSizeInBytes_<%=cid%>-1);
+          		     	buffer_<%=cid%>[0] = probeAvailability_<%=cid%>[0];
+          		     	probeAvailability_<%=cid%> = new byte[1];
+          		     	uploadStream_<%=cid%> = new java.io.ByteArrayInputStream(buffer_<%=cid%>);
+        				}
+        				
+            		com.amazonaws.services.s3.model.CompleteMultipartUploadRequest compRequest_<%=cid%> = new com.amazonaws.services.s3.model.CompleteMultipartUploadRequest(<%=bucket%>, key_<%=cid%>,
+                        uploadId_<%=cid%>, partTags_<%=cid%>);
+            		conn_<%=cid%>.completeMultipartUpload(compRequest_<%=cid%>);
+            } catch (java.lang.Exception uploadException_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",uploadException_<%=cid%>.getMessage());
+  							conn_<%=cid%>.abortMultipartUpload(new com.amazonaws.services.s3.model.AbortMultipartUploadRequest(<%=bucket%>, key_<%=cid%>, uploadId_<%=cid%>));
+    						throw uploadException_<%=cid%>;
+            }
+    		}
+		}
+		
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Upload the object successfully.");
+		<%
+		}
+		%>
+	}catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		<%
+		if (("true").equals(dieOnError)) {
+		%>
+			throw(e_<%=cid%>);
+		<%
+		} else {
+			if(isLog4jEnabled){
+			%>
+				log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+			System.err.println(e_<%=cid%>.getMessage());
+		<%
+		}
+		%>
+	}finally{
+		if(useStream_<%=cid%> && uploadStream_<%=cid%>!=null){
+    	uploadStream_<%=cid%>.close();
+    }
+    
+    if(tm_<%=cid%> != null){
+        tm_<%=cid%>.shutdownNow(false);
+    }
+	    
+		<%
+		if(!("true").equals(useExistingConn)) {
+		%>
+		if(conn_<%=cid%> !=null){
+			conn_<%=cid%>.shutdown();
+		}
+		<%
+		}
+		%>
+	}     

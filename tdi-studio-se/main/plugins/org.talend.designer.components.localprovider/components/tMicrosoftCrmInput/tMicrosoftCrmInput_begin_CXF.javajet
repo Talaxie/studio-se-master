@@ -1,0 +1,264 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.ArrayList
+        java.util.Arrays
+        java.util.Map
+        java.util.HashMap
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        "
+%>
+class CrmClass2JavaClassHelper{
+    public Object extractValue(Object obj){
+        Object value = null;
+        if(obj instanceof com.microsoft.schemas.xrm._2011.contracts.OptionSetValue){
+            //Integer
+            value = ((com.microsoft.schemas.xrm._2011.contracts.OptionSetValue)obj).getValue();
+        }else if(obj instanceof com.microsoft.schemas._2003._10.serialization.Guid){
+            //String
+            value = ((com.microsoft.schemas._2003._10.serialization.Guid)obj).getValue();
+        }else if(obj instanceof com.microsoft.schemas.xrm._2011.contracts.Money){
+            //BigDecimal
+            value = ((com.microsoft.schemas.xrm._2011.contracts.Money)obj).getValue();
+        }else if(obj instanceof com.microsoft.schemas.xrm._2011.contracts.EntityReference){
+            //JOSN String
+            com.microsoft.schemas.xrm._2011.contracts.EntityReference entityRef = (com.microsoft.schemas.xrm._2011.contracts.EntityReference)obj;
+            StringBuilder strBuilder = new StringBuilder("{\"guid\":\"");
+                          strBuilder.append(entityRef.getId().getValue());
+                          strBuilder.append("\",\"logical_name\":\"");
+                          strBuilder.append(entityRef.getLogicalName());
+                          strBuilder.append("\",\"name\":\"");
+                          strBuilder.append(entityRef.getName());
+                          strBuilder.append("\"}");
+           value = strBuilder.toString();
+        }else if(obj instanceof com.sun.org.apache.xerces.internal.jaxp.datatype.XMLGregorianCalendarImpl){
+            //java.util.Date
+            value = ((com.sun.org.apache.xerces.internal.jaxp.datatype.XMLGregorianCalendarImpl)obj).toGregorianCalendar().getTime();
+        }else{
+           //Object (EntityCollection)
+           value = obj;
+        }
+        return value;
+    }
+}
+
+CrmClass2JavaClassHelper crmClazzHelper_<%= cid %> = new CrmClass2JavaClassHelper();
+
+<%
+   List<IMetadataTable> metadataTableList = node.getMetadataList();
+   if((metadataTableList != null) && (metadataTableList.size() > 0)){
+        IMetadataTable metadata = metadataTableList.get(0);
+        if(metadata != null){
+            List<IMetadataColumn> columnList = metadata.getListColumns();
+            int columnSize = columnList.size();
+            //Concatenate schemas as string
+            String schemasAsString = null;
+            StringBuilder strBuilder4Schema = new StringBuilder();
+            for(int i = 0; i < columnSize; i++){
+                if(i > 0){
+                    strBuilder4Schema.append(", ");
+                }
+                   strBuilder4Schema.append("\"");
+                   strBuilder4Schema.append(columnList.get(i).getLabel());
+                   strBuilder4Schema.append("\"");
+            }
+            schemasAsString = strBuilder4Schema.toString();
+
+            List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+            if(columnSize > 0 && outgoingConns != null && outgoingConns.size() > 0){
+                 String domainUserName =  ElementParameterParser.getValue(node, "__USERNAME__");
+                 String passwordFieldName = "__PASSWORD__";
+                 %>
+                    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+                 <%
+                 String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+                 int timeoutInSeconds = Integer.valueOf((timeout != null && !"".equals(timeout)) ? timeout : "1").intValue() * 1000;
+
+                 String organizationWsdl = ElementParameterParser.getValue(node, "__ORGANIZATION_WSDL__");
+                 String securityServiceWsdl = ElementParameterParser.getValue(node, "__SECURITY_SERVICE_URL__");
+                 String certificatePath = ElementParameterParser.getValue(node, "__CERTIFICATE_PATH__");
+                 if(certificatePath != null && !"".equals(certificatePath) && !"\"\"".equals(certificatePath)){
+                 %>
+                    System.setProperty("javax.net.ssl.trustStore", <%= certificatePath %>);
+                 <%
+                 }
+                 %>
+                    com.talend.microsoft.crm._2015_.utils.MsCrmWsdl
+                                         msCrmWsdl_<%= cid %> = new com.talend.microsoft.crm._2015_.utils.MsCrmWsdl(
+                                         <%= organizationWsdl %>, <%= securityServiceWsdl %>
+                                         );
+                    com.talend.microsoft.crm._2015_.utils.DynamicsCRMConnector
+                                        crmConnector_<%= cid %> = new com.talend.microsoft.crm._2015_.utils.DynamicsCRMConnector(
+                                        <%= domainUserName %>, decryptedPassword_<%=cid%>, msCrmWsdl_<%= cid %>
+                                        );
+                   com.microsoft.schemas.xrm._2011.contracts.services.IOrganizationService
+                                                   iorgService_<%= cid %> = crmConnector_<%= cid %>.getOrganizationService();
+
+                <%
+                   String entityname = ElementParameterParser.getValue(node, "__ENTITYNAME__").trim();
+                   String customEntityname = ElementParameterParser.getValue(node, "__CUSTOM_ENTITY_NAME__");
+                   if("CustomEntity".equals(entityname)){
+                       entityname = customEntityname.replaceAll("\"","");
+                   }
+                       entityname = entityname.toLowerCase();
+                   //Logical Operator for FilterExpression
+                   String logicalOperator = ElementParameterParser.getValue(node,"__LOGICAL_OP__");
+                   //Logical Operator for ConditionExpression
+                   List<Map<String, String>> keyColumns = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__CONDITIONS__");
+                 %>
+                    com.microsoft.schemas.xrm._2011.contracts.QueryExpression
+                                                    queryExp_<%= cid %> = new com.microsoft.schemas.xrm._2011.contracts.QueryExpression();
+                    com.microsoft.schemas.xrm._2011.contracts.ColumnSet
+                                                    columnSet_<%= cid %> = new com.microsoft.schemas.xrm._2011.contracts.ColumnSet();
+                    com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfstring
+                                                    arrOfStr_<%= cid %> = new com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfstring();
+
+                <%
+                //Use Query Criteria
+                if(keyColumns.size()>0){
+                    %>
+                       com.microsoft.schemas.xrm._2011.contracts.FilterExpression
+                                     filterExp_<%= cid %> = new com.microsoft.schemas.xrm._2011.contracts.FilterExpression();
+                       com.microsoft.schemas.xrm._2011.contracts.ArrayOfConditionExpression
+                                     arrOfAnyConditionExp_<%= cid %> = new com.microsoft.schemas.xrm._2011.contracts.ArrayOfConditionExpression();
+
+                    <%
+                    StringBuilder strBuilder = new StringBuilder("");
+                    int conditionIndex = 0;
+                    for(Map<String, String> keyColumn: keyColumns){
+                        String conditionId = cid + "_" + String.valueOf(conditionIndex);
+                        %>
+                        com.microsoft.schemas.xrm._2011.contracts.ConditionExpression
+                                      conditionExp_<%= conditionId %> = new com.microsoft.schemas.xrm._2011.contracts.ConditionExpression();
+                                      conditionExp_<%= conditionId %>.setAttributeName("<%= keyColumn.get("INPUT_COLUMN") %>");
+                                      conditionExp_<%= conditionId %>.setOperator(
+                                            com.microsoft.schemas.xrm._2011.contracts.ConditionOperator.fromValue(
+                                            "<%=keyColumn.get("OPERATOR")%>"));
+                        com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfanyType
+                                      arrOfAnyType_<%= conditionId %> = new com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfanyType();
+                                      arrOfAnyType_<%= conditionId %>.getAnyTypes().add(<%=keyColumn.get("RVALUE")%>);
+                                      conditionExp_<%= conditionId %>.setValues(arrOfAnyType_<%= conditionId %>);
+                                      arrOfAnyConditionExp_<%= cid %>.getConditionExpressions().add(conditionExp_<%= conditionId %>);
+
+                        <%
+                        conditionIndex ++;
+                    }
+                        %>
+                                      filterExp_<%= cid %>.setConditions(arrOfAnyConditionExp_<%= cid %>);
+                                      filterExp_<%= cid %>.setFilterOperator(
+                                                    com.microsoft.schemas.xrm._2011.contracts.LogicalOperator.fromValue("<%= logicalOperator %>")
+                                                    );
+                                      queryExp_<%= cid %>.setCriteria(filterExp_<%= cid %>);
+                        <%
+                }
+                %>
+                                                    arrOfStr_<%= cid %>.getStrings().addAll(
+                                                            java.util.Arrays.asList(<%= schemasAsString %>)
+                                                    );
+                                      columnSet_<%= cid %>.setColumns(arrOfStr_<%= cid %>);
+                                      queryExp_<%= cid %>.setColumnSet(columnSet_<%= cid %>);
+                                      queryExp_<%= cid %>.setEntityName("<%= entityname %>");
+
+                <%
+                //Begin to Transfer Data
+                IConnection outgoingConn = outgoingConns.get(0);
+                if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+                %>
+                	com.microsoft.schemas.xrm._2011.contracts.PagingInfo pagingInfo_<%=cid%> = new com.microsoft.schemas.xrm._2011.contracts.PagingInfo();
+                	int pageNumber_<%=cid%> = 1;
+                	pagingInfo_<%=cid%>.setPageNumber(pageNumber_<%=cid%>);
+
+                	queryExp_<%=cid%>.setPageInfo(pagingInfo_<%=cid%>);
+                	
+                	boolean fetchMore_<%=cid%> = true;
+                	while (fetchMore_<%=cid%>) {
+                	
+                    com.microsoft.schemas.xrm._2011.contracts.EntityCollection
+                                  entityCollection_<%= cid %> = iorgService_<%= cid %>.retrieveMultiple(queryExp_<%= cid %>);
+                                  
+                    String pagingCookie_<%=cid%> = entityCollection_<%=cid%>.getPagingCookie();
+                    fetchMore_<%=cid%> = entityCollection_<%=cid%>.isMoreRecords() != null
+                            ? entityCollection_<%=cid%>.isMoreRecords() : false;
+                    List<com.microsoft.schemas.xrm._2011.contracts.Entity>
+                                  entityList_<%= cid %> = entityCollection_<%= cid %>.getEntities().getEntities();
+                    java.util.Map<String,Object> map_<%= cid %> = new java.util.HashMap<String,Object>();
+                    //Entity For Loop Begin
+                    for(com.microsoft.schemas.xrm._2011.contracts.Entity entity: entityList_<%= cid %>){
+                            nb_line_<%= cid %> ++;
+                            map_<%= cid %>.clear();
+                            List<org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType>
+                                     props = entity.getAttributes().getKeyValuePairOfstringanyTypes();
+                            for(org.datacontract.schemas._2004._07.system_collections.KeyValuePairOfstringanyType prop: props){
+                                String key = prop.getKey(); Object value = prop.getValue();
+                                map_<%= cid %>.put(key,value);
+                            }
+                            <%
+                                for(int i = 0; i < columnList.size(); i++){
+                                    IMetadataColumn column = columnList.get(i);
+                                    String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                                    JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                                    String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                                    %>
+                                    if(map_<%= cid %>.get("<%=column.getLabel()%>") != null){
+                                        Object obj_<%= cid %> = crmClazzHelper_<%= cid %>.extractValue(map_<%= cid %>.get("<%=column.getLabel()%>"));
+                                        <%
+                                        if(javaType == JavaTypesManager.STRING){
+                                        %>
+                                            <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = obj_<%= cid %>.toString();
+                                        <%
+                                        }else if(javaType == JavaTypesManager.OBJECT){
+                                        %>
+                                           <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = map_<%= cid %>.get("<%=column.getLabel()%>");
+                                        <%
+                                        }
+                                        else if(javaType == JavaTypesManager.DATE){
+                                        %>
+                                            if(obj_<%= cid %> instanceof java.util.Date){
+                                                 <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = (java.util.Date)obj_<%= cid %>;
+                                            }else{
+                                                 <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Date(obj_<%= cid %>.toString(), <%= patternValue %>);
+                                            }
+                                        <%
+                                        }else if(javaType == JavaTypesManager.INTEGER){
+                                         %>
+                                            if(obj_<%= cid %> instanceof java.lang.Integer){
+                                                <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = (java.lang.Integer)obj_<%= cid %>;
+                                            }else{
+                                                <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Integer(obj_<%= cid %>.toString());
+                                            }
+                                         <%
+                                        }else if(javaType == JavaTypesManager.BIGDECIMAL){
+                                        %>
+                                           if(obj_<%= cid %> instanceof java.math.BigDecimal){
+                                             <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = (java.math.BigDecimal)obj_<%= cid %>;
+                                           }else{
+                                             <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_BigDecimal(obj_<%= cid %>.toString());
+                                           }
+                                        <%
+                                        }else{
+                                        %>
+                                            <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_<%=typeToGenerate%>(obj_<%= cid %>.toString());
+                                        <%
+                                        }
+                                        %>
+                                    }else{
+                                        <%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+                                    }
+                                    <%
+                                }
+                            %>
+                    <% //}// Entity For Loop end but moved to the end part %>
+                <%
+                }
+            }
+        }
+    }
+ %>

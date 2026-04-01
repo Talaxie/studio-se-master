@@ -1,0 +1,58 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+	" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String filePath = ElementParameterParser.getValue(node,"__GENERATED_IMAGE_PATH__");
+%>
+
+        for (org.jfree.data.xy.XYSeries serie: series<%=cid%>.values()){
+          dataset<%=cid%>.addSeries(serie);
+        }
+
+        // create the chart...
+        org.jfree.chart.JFreeChart chart<%=cid%> = org.jfree.chart.ChartFactory.createXYLineChart(<%=ElementParameterParser.getValue(node,"__CHART_TITLE__")%>,
+                <%=ElementParameterParser.getValue(node,"__DOMAIN_AXIS_LABEL__")%>,
+                <%=ElementParameterParser.getValue(node,"__RANGE_AXIS_LABEL__")%>,
+                dataset<%=cid%>,
+                <%=ElementParameterParser.getValue(node,"__PLOT_ORIENTATION__")%>,
+                <%="true".equals(ElementParameterParser.getValue(node,"__INCLUDE_LEGEND__"))%>,
+                true,
+                false
+                );
+
+        final org.jfree.chart.plot.XYPlot plot<%=cid%> = (org.jfree.chart.plot.XYPlot) chart<%=cid%>.getPlot();
+
+        <%if (!("").equals(ElementParameterParser.getValue(node,"__BACKGROUND_PLOT__"))){%>
+        plot<%=cid%>.setBackgroundPaint(<%=ElementParameterParser.getValue(node,"__BACKGROUND_PLOT__")%>);
+        <%}%>
+        <%if (!("").equals(ElementParameterParser.getValue(node,"__BACKGROUND_CHART__"))){%>
+        chart<%=cid%>.setBackgroundPaint(<%=ElementParameterParser.getValue(node,"__BACKGROUND_CHART__")%>);
+        <%}%>
+
+        <%if (!("").equals(ElementParameterParser.getValue(node,"__LOWER_BOUND__"))){%>
+            plot<%=cid%>.getRangeAxis().setLowerBound(<%=ElementParameterParser.getValue(node,"__LOWER_BOUND__")%>);
+        <%}%>
+        <%if (!("").equals(ElementParameterParser.getValue(node,"__UPPER_BOUND__"))) {%>
+            plot<%=cid%>.getRangeAxis().setUpperBound(<%=ElementParameterParser.getValue(node,"__UPPER_BOUND__")%>);
+        <%}%>
+
+        <%if (("true").equals(ElementParameterParser.getValue(node,"__MOVING_AVERAGE__"))){%>
+        org.jfree.data.xy.XYDataset movingAverage<%=cid%> = org.jfree.data.time.MovingAverage.createMovingAverage(dataset<%=cid%>, " (average)", <%=ElementParameterParser.getValue(node,"__MOVING_AVERAGE_PERIOD__")%>, 10);
+        plot<%=cid%>.setDataset(1, movingAverage<%=cid%>);
+        plot<%=cid%>.setRenderer(1, new org.jfree.chart.renderer.xy.StandardXYItemRenderer());
+        <%}%>
+
+        try {
+            org.jfree.chart.ChartUtilities.saveChartAsPNG(new java.io.File(<%=filePath%>), chart<%=cid%>, <%=ElementParameterParser.getValue(node,"__IMAGE_WIDTH__")%>, <%=ElementParameterParser.getValue(node,"__IMAGE_HEIGHT__")%>);
+        } catch (java.io.IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }

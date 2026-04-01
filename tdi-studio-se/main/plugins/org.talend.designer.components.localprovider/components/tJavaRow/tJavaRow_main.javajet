@@ -1,0 +1,63 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    java.util.List
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String code = ElementParameterParser.getValue(node, "__CODE__");
+        
+        // we give a default value to prevComponentName so that no error
+        // occur when the user tries to generated Java code while no input
+        // component was linked to our tJavaRow.
+        String inputRowName = new String("input_row");
+        String outputRowName = new String("output_row");
+
+        List< ? extends IConnection> inConns = node.getIncomingConnections();
+        if (inConns != null && !inConns.isEmpty()) {
+            IConnection inConn = inConns.get(0);
+            inputRowName = inConn.getName();
+        }
+        
+        List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+        if (outConns != null && !outConns.isEmpty()) {
+            IConnection outConn = outConns.get(0);
+            if(outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+            	outputRowName = outConn.getName();
+            }
+        }
+
+        // In case the user would make some tricky Java things, he can use
+        // the arrays as a whole.
+        code = code.replaceAll(
+            "input_row",
+            inputRowName
+        );
+
+        code = code.replaceAll(
+            "output_row",
+            outputRowName
+        );
+
+%>
+    <%=code%>
+    nb_line_<%=cid %>++;   
+<%
+    }
+}
+%>

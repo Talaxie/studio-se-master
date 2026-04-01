@@ -1,0 +1,1278 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+  	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.EConnectionType
+"
+skeleton="tWriteXMLFieldOut_java.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+//==========common part 1 begin===================================================================
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String jsonField = ElementParameterParser.getValue(node, "__JSONFIELD__");
+String destination4JSON = ElementParameterParser.getValue(node, "__DESTINATION__");
+boolean istWriteJSONField = destination4JSON == null ? false : destination4JSON.contains("tWriteJSONField_");
+boolean isQuoteAllValues = ("true").equals(ElementParameterParser.getValue(node, "__QUOTE_ALL_VALUES__"));
+boolean isCompactFormat = ("true").equals(ElementParameterParser.getValue(node, "__COMPACT_FORMAT__"));
+final boolean allowEmptyStrings = ("true").equals(ElementParameterParser.getValue(node, "__ALLOW_EMPTY_STRINGS__"));
+final String whiteSpace;
+final String rowSeparator;
+if(!isCompactFormat) { // pretty format
+	whiteSpace = "  ";
+	rowSeparator = "\\n";
+} else { // compact format
+	whiteSpace = "";
+	rowSeparator = "";
+}
+//===========common part 1 end=============================================================
+%>
+<%
+//XMLTool
+class XMLTool{
+	public boolean advancedSeparator = false;
+	public String thousandsSeparator = null;
+ 	public String decimalSeparator =null;
+	public String connName = null;
+	public String cid = null;
+	public boolean istWriteJSONField = false;
+	
+	public void getValue(XMLNode node){
+		getValue(node, false);
+	}
+	
+	public void getValue(XMLNode node, boolean parseAsArray) {
+		if(!parseAsArray){
+%>
+		valueMap_<%=cid%>.get("<%=node.relatedColumn.getLabel()%>")
+<%
+		}else{
+%>
+		arraysValueMap_<%=cid%>.get("<%=node.relatedColumn.getLabel()%>")
+<%
+		}
+	}
+
+	public void getValue(IMetadataColumn column){
+		getValue(column, false);
+	}
+	
+	public void getValue(IMetadataColumn column, boolean parseAsArray){
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+		String defaultValue=column.getDefault();
+		boolean isNotSetDefault = false;
+		if(defaultValue!=null){
+			isNotSetDefault = defaultValue.length()==0;
+		}else{
+			isNotSetDefault=true;
+		}
+%>
+	(
+<%
+		if(column.isNullable()){
+%>
+		<%=connName%>.<%=column.getLabel()%> != null?
+<%
+		}
+		
+        if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+        	if(javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+    		FormatterUtils.format_Number(<%=connName%>.<%=column.getLabel()%>.toPlainString(), <%= thousandsSeparator%>,<%=decimalSeparator %>)					
+<%
+    		} else {
+%>
+    		FormatterUtils.format_Number(String.valueOf(<%=connName%>.<%=column.getLabel()%>), <%= thousandsSeparator %>,<%=decimalSeparator %>)						
+<%
+	   		}
+        } else if(JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable())){
+%>
+            String.valueOf(<%=connName%>.<%=column.getLabel()%>)
+<%
+        }else if(javaType == JavaTypesManager.DATE){
+            if( column.getPattern() != null && column.getPattern().trim().length() != 0 ){
+%>
+            FormatterUtils.format_Date(<%=connName%>.<%=column.getLabel()%>,<%=column.getPattern()%>)
+<%
+            }else{
+%>
+			<%=connName%>.<%=column.getLabel()%>
+<%
+           }
+        }else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+			<%=connName%>.<%=column.getLabel()%>.toPlainString()
+<%
+        }else if (javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+            new String(<%=connName%>.<%=column.getLabel()%>)
+<%
+		}else if (istWriteJSONField && javaType == JavaTypesManager.OBJECT && parseAsArray) {
+%>
+			nestXMLTool_<%=cid%>.objectToString(<%=connName%>.<%=column.getLabel()%>)
+<%
+		}else{
+%>
+            <%=connName%>.<%=column.getLabel()%>.toString()
+<%
+		}
+		if(column.isNullable()){
+			%>:<% 
+			if(!isNotSetDefault){
+				%><%=column.getDefault()%><%
+			}else{
+				%>null<%
+			}
+		}
+%>
+		)
+<%
+	}
+}
+
+// ------------------- *** Dom4j generation mode start *** ------------------- //
+class GenerateToolByDom4j{
+	String cid = null;
+	boolean allowEmpty = false;
+	boolean outputAsXSD = false;
+    boolean istWriteJSONField = false;
+    boolean isQuoteAllValues = false;
+	XMLTool tool = null;
+	public void generateCode(XMLNode node, String currEleName, String parentName){
+		if(("ELEMENT").equals(node.type)){
+			createElement(currEleName,node,parentName);
+			setText(currEleName,node);
+			for(XMLNode ns:node.namespaces){
+				addNameSpace(currEleName,ns);
+			}
+			for(XMLNode attri:node.attributes){
+				addAttribute(currEleName,attri);
+			}
+			if(node.name.indexOf(":")>0){
+%>
+			<%=currEleName%>_<%=cid%>.setName("<%=node.name%>");
+<%
+			}
+			int index = 0;
+			for(XMLNode child:node.elements){
+				if(0==(child.special & 1)){
+					generateCode(child,currEleName+"_"+index++,currEleName);
+				}
+			}
+		}
+	}
+	private void createElement(String currEleName, XMLNode node, String parentName){
+		int index = node.name.indexOf(":");
+		if(5==(node.special & 5)){
+			int currPos = node.getCurrGroupPos();
+			if(index>0 && node.parent!=null){
+%>
+		org.dom4j.Element <%=currEleName%>_<%=cid%>;
+		if (<%=parentName%>_<%=cid%>.getNamespaceForPrefix("<%=node.name.substring(0,index)%>") == null) {
+            <%=currEleName%>_<%=cid%> = org.dom4j.DocumentHelper.createElement("<%=node.name.substring(index+1)%>");
+        } else {
+        	<%=currEleName%>_<%=cid%> = org.dom4j.DocumentHelper.createElement("<%=node.name%>");
+        }
+<%
+			}else{
+%>
+		org.dom4j.Element <%=currEleName%>_<%=cid%> = org.dom4j.DocumentHelper.createElement("<%=node.name%>");
+<%
+			}
+%>
+        if(orders_<%=cid %>[<%=currPos %>]==0){
+        	orders_<%=cid %>[<%=currPos %>] = <%=node.getNodeInsertIndex() %>;
+        }
+        if(<%=currPos +1 %> < orders_<%=cid %>.length){
+        		orders_<%=cid %>[<%=currPos +1 %>] = 0;
+        }
+        <%=parentName%>_<%=cid%>.elements().add(orders_<%=cid %>[<%=currPos %>]++,<%=currEleName%>_<%=cid%>);
+<%
+		}else{
+			if(index>0 && node.parent!=null){
+%>
+		org.dom4j.Element <%=currEleName%>_<%=cid%>;
+		if (<%=parentName%>_<%=cid%>.getNamespaceForPrefix("<%=node.name.substring(0,index)%>") == null) {
+            <%=currEleName%>_<%=cid%> = <%=parentName%>_<%=cid%>.addElement("<%=node.name.substring(index+1)%>");
+        } else {
+        	<%=currEleName%>_<%=cid%> = <%=parentName%>_<%=cid%>.addElement("<%=node.name%>");
+        }
+<%
+			}else{
+%>
+		org.dom4j.Element <%=currEleName%>_<%=cid%> = <%=parentName%>_<%=cid%>.addElement("<%=node.name%>");
+<%
+			}
+		}
+		if(0!=(node.special & 2)){
+%>
+		subTreeRootParent_<%=cid%> = <%=currEleName%>_<%=cid%>;
+<%
+		}
+	}
+	private void setText(String currEleName, XMLNode node){
+		if(node.relatedColumn!=null){
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(node.relatedColumn.getTalendType());
+			if(javaType == JavaTypesManager.OBJECT){
+%>
+		if(<%tool.getValue(node);%>!=null){
+<%
+            if(istWriteJSONField){
+                boolean parseAsArray = false;
+                for (XMLNode attribute : node.attributes) {
+                    if ("class".equals(attribute.name) && "array".equals(attribute.defaultValue)) {
+                        parseAsArray = true;
+                        break;
+                    }
+                }
+%>
+            nestXMLTool_<%=cid%> .parseAndAdd(<%=currEleName%>_<%=cid%>,<%tool.getValue(node, parseAsArray);%>);
+<%
+            }else{
+%>
+            nestXMLTool_<%=cid%> .parseAndAdd(<%=currEleName%>_<%=cid%>,<%tool.getValue(node);%>);
+<%
+            }
+%>
+        }
+<%
+				if(outputAsXSD){
+%>
+		else{
+			nestXMLTool_<%=cid%> .parseAndAdd(<%=currEleName%>_<%=cid%>,"");
+			<%=currEleName%>_<%=cid%>.addAttribute("xsi:nil","true");
+		}
+<%
+				}
+			}else{
+%>
+		if(<%tool.getValue(node);%>!=null){
+			nestXMLTool_<%=cid%> .setText(<%=currEleName%>_<%=cid%>,<%tool.getValue(node);%>);
+<%
+
+                boolean hasCustomAttrs = false;
+                for (XMLNode attribute : node.attributes) {
+                    if (!"type".equals(attribute.name) && !"class".equals(attribute.name)) {
+                    %>
+                    // Node <%= node.name %> has custom attribute <%= attribute.name %>
+                    <%
+                        hasCustomAttrs = true;
+                        break;
+                    }
+                }
+			if(istWriteJSONField && allowEmptyStrings) {
+				if (javaType == JavaTypesManager.STRING 
+                    && (!hasCustomAttrs)
+                    && (node.elements == null || node.elements.size() == 0)) {
+				%>
+			<%=currEleName%>_<%=cid%>.addAttribute("type", "string");
+			<%=currEleName%>_<%=cid%>.addAttribute("class", "string");
+				<%
+				}
+			}
+
+
+                if (istWriteJSONField && !isQuoteAllValues && !hasCustomAttrs) {
+                    if (javaType == JavaTypesManager.BOOLEAN) {
+%>
+            <%=currEleName%>_<%=cid%>.addAttribute("type", "boolean");
+<%
+                    } else if (JavaTypesManager.isNumberType(javaType)) {
+%>
+            <%=currEleName%>_<%=cid%>.addAttribute("type", "number");
+<%
+                    }
+                }
+%>
+		}
+<% 			if(istWriteJSONField && allowEmptyStrings) { %>
+		else {
+			nestXMLTool_<%=cid%> .setText(<%=currEleName%>_<%=cid%>,"null");
+			<%=currEleName%>_<%=cid%>.addAttribute("null", "true");
+		}
+<%
+			}
+				if(outputAsXSD){
+%>
+		else{
+			<%=currEleName%>_<%=cid%>.setText("");
+			<%=currEleName%>_<%=cid%>.addAttribute("xsi:nil","true");
+		}
+<%
+				}
+			}
+		}else if(node.defaultValue != null && !("").equals(node.defaultValue) ){
+%>
+		nestXMLTool_<%=cid %>.parseAndAdd(<%=currEleName %>_<%=cid %>,"<%=node.defaultValue %>");
+<%
+		}
+	}
+	private void addAttribute(String currEleName, XMLNode node){
+		if(node.relatedColumn!=null){
+%>
+		if(<%tool.getValue(node);%>!=null){
+			<%=currEleName%>_<%=cid%>.addAttribute("<%=node.path%>",<%tool.getValue(node);%>);
+		}
+<%
+		}else if(node.defaultValue != null && !("").equals(node.defaultValue) ){
+%>
+		<%=currEleName%>_<%=cid%>.addAttribute("<%=node.path%>", "<%=node.defaultValue %>");
+<%
+		}
+	}
+	private void addNameSpace(String currEleName, XMLNode node){
+		if(node.relatedColumn!=null){
+%>
+		if(<%tool.getValue(node);%>!=null){
+			<%=currEleName%>_<%=cid%>.addNamespace("<%=node.path%>",TalendString.replaceSpecialCharForXML(<%tool.getValue(node);%>));
+<%
+			if(node.path ==null || node.path.length()==0){
+%>
+        	<%=currEleName%>_<%=cid%>.setQName(org.dom4j.DocumentHelper.createQName(<%=currEleName%>_<%=cid%>.getName(),
+        	org.dom4j.DocumentHelper.createNamespace("",TalendString.replaceSpecialCharForXML(<%tool.getValue(node);%>))));
+<%
+			}
+%>
+		}
+<%
+		}else if(node.defaultValue != null && !("").equals(node.defaultValue) ){
+%>
+			<%=currEleName %>_<%=cid %>.addNamespace("<%=node.path %>",TalendString.replaceSpecialCharForXML("<%=node.defaultValue %>"));
+<%
+			if(node.path ==null || node.path.length()==0){
+%>
+        	<%=currEleName %>_<%=cid %>.setQName(org.dom4j.DocumentHelper.createQName(<%=currEleName %>_<%=cid %>.getName(),
+        	org.dom4j.DocumentHelper.createNamespace("",TalendString.replaceSpecialCharForXML("<%=node.defaultValue %>"))));
+<%
+			}
+		}
+	}
+}
+// ------------------- *** Dom4j generation mode end *** ------------------- //
+
+// ------------------- *** Null generation mode start *** ------------------- //
+class GenerateToolByNull{
+	String cid = null;
+	boolean allowEmpty = false;
+	boolean outputAsXSD = false;
+	String fileNameXSD = "";
+	XMLTool tool = null;
+	
+	public void generateCode(XMLNode node, String emptySpace){	
+		if(("ELEMENT").equals(node.type)){
+			startElement(node,emptySpace);
+			setText(node);
+			XMLNode mainChild = null;
+			for(XMLNode child:node.elements){
+				if(child.isMainNode()){ //loop dosen't have a main child node
+					mainChild = child;
+					break;
+				}
+			}
+			for(XMLNode child:node.elements){
+				if(mainChild!=null && mainChild.order<=child.order){ //loop dosen't have a main child node
+					if(1==(node.special & 1)){ // group
+%>
+    	// buffer the start tabs to group buffer
+    	groupBuffer_<%=cid%>[<%=node.getCurrGroupPos()%>] = buf_<%=cid%>.toString();
+        buf_<%=cid%> = new StringBuffer();
+<%
+					}else{// root
+    					int num = node.path.split("/").length-2;
+    					if(!outputAsXSD && !allowEmpty){
+%>
+		startTabs_<%=cid%>[<%=num%>] = buf_<%=cid%>.toString();
+        buf_<%=cid%> = new StringBuffer();
+<%
+						}else{
+%>
+		out_<%=cid%>.write(buf_<%=cid%>.toString());
+        buf_<%=cid%> = new StringBuffer();
+<%
+						}
+					}
+					mainChild = null;
+				}
+				if(!child.isMainNode()){ //make the main node output last
+					if(!outputAsXSD && !allowEmpty && (child.relatedColumn != null || child.childrenColumnList.size()>0 || child.hasDefaultValue == true)){
+%>
+		if( false
+<%
+                    	for(IMetadataColumn column : child.childrenColumnList){
+                    		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+                    	}
+                    	if(child.hasDefaultValue == true){%> || true 
+                    	<%}%>
+		){
+<%
+						generateCode(child,emptySpace+whiteSpace);
+%>
+		}
+<%
+            		}else{
+            			generateCode(child,emptySpace+whiteSpace);
+            		}
+				}
+			}
+
+			if(!node.isMainNode()){ // is not main node
+				endElement(node,emptySpace);
+			}
+		}
+	}
+	private void startElement(XMLNode node, String emptySpace){
+%>
+		buf_<%=cid%>.append("<%=rowSeparator%>");
+		buf_<%=cid%>.append("<%=emptySpace%><<%=node.name%>");
+<%
+		if(outputAsXSD && node.parent==null){
+%>
+		buf_<%=cid%>.append(" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+		buf_<%=cid%>.append(" xsi:noNamespaceSchemaLocation= \""+<%=fileNameXSD%>+"\"");
+<%
+		}
+		for(XMLNode ns:node.namespaces){
+			addNameSpace(ns);
+		}
+		for(XMLNode attri:node.attributes){
+			addAttribute(attri);
+		}
+		if(outputAsXSD && node.relatedColumn != null){
+%>
+		if(<%tool.getValue(node);%>==null){
+			buf_<%=cid%>.append(" xsi:nil=\"true\"");
+		}
+<%
+		}
+%>
+		buf_<%=cid%>.append(">");
+<%
+	}
+	
+	public void endElement(XMLNode node, String emptySpace){
+		if(node.elements.size()>0){
+%>
+		buf_<%=cid%>.append("<%=rowSeparator%>");
+		buf_<%=cid%>.append("<%=emptySpace%></<%=node.name%>>");
+<%
+		}else{
+%>
+		buf_<%=cid%>.append("</<%=node.name%>>");
+<%
+		}
+	}
+	private void setText(XMLNode node){
+		if(node.relatedColumn!=null){
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(node.relatedColumn.getTalendType());
+			if(javaType == JavaTypesManager.OBJECT){
+%>
+		if(<%tool.getValue(node);%>!=null){
+			buf_<%=cid%>.append(<%tool.getValue(node);%>);
+		}
+<%
+			}else{
+%>
+		if(<%tool.getValue(node);%>!=null){
+			buf_<%=cid%>.append(TalendString.checkCDATAForXML(<%tool.getValue(node);%>));
+		}
+<%
+			}
+		}else if(node.defaultValue !=null && !("").equals(node.defaultValue) ){
+%>
+		buf_<%=cid %>.append("<%=node.defaultValue %>");
+<%
+		}
+	}
+	private void addAttribute(XMLNode node){
+		if(node.relatedColumn!=null){
+%>
+		if(<%tool.getValue(node);%>!=null){
+			buf_<%=cid%>.append(" <%=node.path%>=\""+TalendString.replaceSpecialCharForXML(<%tool.getValue(node);%>)+"\"");
+		}
+<%
+		}else if(node.defaultValue !=null && !("").equals(node.defaultValue) ){
+%>
+		buf_<%=cid%>.append(" <%=node.path%>=\""+TalendString.replaceSpecialCharForXML("<%=node.defaultValue %>")+"\"");
+<%
+		}
+	}
+	private void addNameSpace(XMLNode node){
+		if(node.relatedColumn!=null){
+%>
+		if(<%tool.getValue(node);%>!=null){
+<%
+			if(node.path ==null || node.path.length()==0){
+%>
+        	buf_<%=cid%>.append(" xmlns=\""+TalendString.replaceSpecialCharForXML(<%tool.getValue(node);%>)+"\"");
+<%
+			}else{
+%>
+			buf_<%=cid%>.append(" xmlns:<%=node.path%>=\""+TalendString.replaceSpecialCharForXML(<%tool.getValue(node);%>)+"\"");
+<%
+			}
+%>
+		}
+<%
+		}else if(node.defaultValue !=null && !("").equals(node.defaultValue) ){
+			if(node.path ==null || node.path.length()==0){
+%>
+        	buf_<%=cid%>.append(" xmlns=\""+TalendString.replaceSpecialCharForXML("<%=node.defaultValue %>")+"\"");
+<%
+			}else{
+%>
+			buf_<%=cid%>.append(" xmlns:<%=node.path%>=\""+TalendString.replaceSpecialCharForXML("<%=node.defaultValue %>")+"\"");
+<%
+			}
+		}
+	}
+}
+// ------------------- *** Null generation mode end *** ------------------- //
+
+// ------------------- *** Common code start *** ------------------- //
+IMetadataTable metadata = null;
+IConnection inConn = null;
+for (IConnection conn : node.getIncomingConnections()) {
+	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.FLOW)) {
+		inConn = conn;
+		break;
+	}
+}
+if (inConn != null) {
+	metadata = inConn.getMetadataTable();
+    if (metadata!=null) {
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	List< ? extends IConnection> connsOut = NodeUtil.getOutgoingConnections(node,EConnectionType.ON_COMPONENT_OK);
+    	String rowStructNameOutput = null;
+    	if (connsOut != null && connsOut.size() > 0 && istWriteJSONField) {
+    		List< ? extends IConnection> connsTarget = connsOut.get(0).getTarget().getOutgoingConnections();
+			if(connsTarget != null && connsTarget.size()>0){
+				rowStructNameOutput = connsTarget.get(0).getName();
+	    		rowStructNameOutput += "Struct";
+			}
+    	}
+    	String rowNameInput = null;
+    	String rowStructNameInput = null;
+    	if(conns!=null && conns.size()>0){
+    		IConnection conn = conns.get(0);
+    		rowNameInput = conn.getName();
+    		rowStructNameInput = rowNameInput + "Struct";
+    		if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){ 
+    		
+            	List<Map<String, String>> rootTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+                List<Map<String, String>> groupTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+                List<Map<String, String>> loopTable = 
+                	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+                
+                IMetadataTable inputMetadataTable= conn.getMetadataTable();
+                List<IMetadataColumn> inputColumns= inputMetadataTable.getListColumns();
+                
+                List<Map<String,String>> groupbys = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUPBYS__");
+				
+				String removeHeader = ElementParameterParser.getValue(node, "__REMOVE_HEADER__"); // add for feature7788
+                String allowEmpty = ElementParameterParser.getValue(node, "__CREATE_EMPTY_ELEMENT__");
+                String outputAsXSD = ElementParameterParser.getValue(node, "__OUTPUT_AS_XSD__");
+                String fileNameXSD = ElementParameterParser.getValue(node, "__XSD_FILE__");
+                String encoding = ElementParameterParser.getValue(node, "__ENCODING__");                
+                
+	            String rowNumber = ElementParameterParser.getValue(node, "__ROW_NUMBER__");
+                
+                String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+        		boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+        		String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+        		String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER); 
+        		
+        		String mode = ElementParameterParser.getValue(node, "__GENERATION_MODE__");
+        		
+        		boolean storeFlow = ("true").equals(ElementParameterParser.getValue(node, "__STORE_FLOW__"));
+        		                
+                java.util.Map<String,IMetadataColumn> inputKeysColumns = new java.util.HashMap<String,IMetadataColumn>();
+                if(inputColumns!=null){
+                	for(IMetadataColumn column :inputColumns){
+                		for(int i=0;i<groupbys.size();i++){
+                			String columnName=groupbys.get(i).get("INPUT_COLUMN");
+                			if(column.getLabel().equals(columnName)){
+                				inputKeysColumns.put(columnName,column);
+                				break;
+                			}
+                		}
+                	}
+                }
+        		
+                String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+        		// init tool
+                XMLTool tool = new XMLTool();
+                tool.connName = conn.getName();
+                tool.advancedSeparator=advancedSeparator;
+                tool.thousandsSeparator=thousandsSeparator;
+                tool.decimalSeparator=decimalSeparator;
+                tool.cid=cid;
+                tool.istWriteJSONField = istWriteJSONField;
+                
+                // change tables to a tree 
+				Object[] treeObjs = getTree(rootTable, groupTable, loopTable, metadata.getListColumns());
+            	List<XMLNode> mainList = (ArrayList<XMLNode>)treeObjs[0];
+                List<XMLNode> groupList = (ArrayList<XMLNode>)treeObjs[1];
+                XMLNode root = mainList.get(0);
+            	XMLNode loop = (XMLNode)treeObjs[2];
+                
+                if(!("true").equals(allowEmpty)){
+                	removeEmptyElement(root);
+                }
+                
+                List<List<XMLNode>> groupbyNodeList = new ArrayList<List<XMLNode>>();
+                for(XMLNode group:groupList){
+                	groupbyNodeList.add(getGroupByNodeList(group));
+                }
+                IConnection nextMergeConn = NodeUtil.getNextMergeConnection(node);
+				if(nextMergeConn == null || nextMergeConn.getInputId()==1){
+%>
+	if(txf_<%=cid%>.getLastException()!=null) {
+		currentComponent = txf_<%=cid%>.getCurrentComponent();
+		throw txf_<%=cid%>.getLastException();
+	}
+	
+	if(txf_<%=cid%>.getLastError()!=null) {
+		throw txf_<%=cid%>.getLastError();
+	}
+<%
+				}
+%>
+	nb_line_<%=cid%>++;
+<%
+	log4jFileUtil.logCurrentRowNumberInfo();
+%>
+	class ToStringHelper_<%=cid%> {
+	    public String toString(final Object value) {
+	        return value != null ? value.toString() : null;
+	    }
+	}
+	final ToStringHelper_<%=cid%> helper_<%=cid%> = new ToStringHelper_<%=cid%>();
+
+	valueMap_<%=cid%>.clear();
+<%
+	if (istWriteJSONField) {
+%>
+	arraysValueMap_<%=cid%>.clear();
+<%
+	}
+				for(IMetadataColumn column :inputColumns){
+%>
+	valueMap_<%=cid%>.put("<%=column.getLabel()%>", helper_<%=cid%>.toString(<% tool.getValue(column); %>));
+<%
+	if (istWriteJSONField) {
+%>
+	arraysValueMap_<%=cid%>.put("<%=column.getLabel()%>", helper_<%=cid%>.toString(<% tool.getValue(column, true); %>));
+<%
+	}
+				}
+%>
+<%if(storeFlow){%>
+	flowValues_<%=cid%> = new java.util.HashMap<String,String>();
+	flowValues_<%=cid%>.putAll(valueMap_<%=cid%>);
+	flows_<%=cid%>.add(flowValues_<%=cid%>);
+<%}%>
+		String strTemp_<%=cid %> = "";
+<%
+	if(inputKeysColumns.size() !=0){
+		for (IMetadataColumn column : inputColumns) {
+			if(inputKeysColumns.containsKey(column.getLabel())) {
+%>		strTemp_<%=cid %> = strTemp_<%=cid %> + valueMap_<%=cid %>.get("<%=column.getLabel() %>")
+							+ valueMap_<%=cid %>.get("<%=column.getLabel() %>").length();
+<%			}
+		}
+	}
+%>
+	if(strCompCache_<%=cid %>==null){
+		strCompCache_<%=cid %>=strTemp_<%=cid %>;
+		<%
+		if(istWriteJSONField){
+            for(Map<String,String> map : groupbys){
+            	String groupByColumnName = map.get("INPUT_COLUMN");
+            	String outputColumnName = map.get("OUTPUT_COLUMN");
+            	if (!outputColumnName.equals(jsonField)) {
+            	%>
+            	rowStructOutput_<%= cid %>.<%= groupByColumnName %> = <%= rowNameInput %>.<%= groupByColumnName %>;
+            	<%
+            	}
+            }
+		}
+		%>
+	}else{
+<%
+// ------------------- *** Common code end *** ------------------- //
+
+// ------------------- *** Dom4j generation mode start *** ------------------- //
+if(("Dom4j").equals(mode)){
+		if(inputKeysColumns.size() !=0){
+%>
+		//the data read is different from the data read last time. 
+		if(!strCompCache_<%=cid %>.equals(strTemp_<%=cid %>)){	
+<%		}
+		if(("true").equals(outputAsXSD)){
+%>
+			doc_<%=cid%>.getRootElement().addAttribute("xsi:noNamespaceSchemaLocation", <%=fileNameXSD%>);
+		    doc_<%=cid%>.getRootElement().addNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+<%
+		}
+%>  
+    		nestXMLTool_<%=cid%>.replaceDefaultNameSpace(doc_<%=cid%>.getRootElement());
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+    		nestXMLTool_<%=cid%>.removeEmptyElement(doc_<%=cid%>.getRootElement());
+<%
+		}
+%>			
+			java.io.StringWriter strWriter_<%=cid %> = new java.io.StringWriter();	
+			org.dom4j.io.XMLWriter output_<%=cid%> = new org.dom4j.io.XMLWriter(strWriter_<%=cid%>, format_<%=cid%>);
+			output_<%=cid%>.write(doc_<%=cid%>);
+		    output_<%=cid%>.close();
+			
+<%
+		if(("true").equals(removeHeader)){
+%>
+			String removeHeader_<%=cid %> = strWriter_<%=cid %>.toString();
+			if(removeHeader_<%=cid %>.indexOf("<?xml") >=0 ){
+				removeHeader_<%=cid %> = removeHeader_<%=cid %>.substring(removeHeader_<%=cid %>.indexOf("?>")+3);
+			}
+			listGroupby_<%=cid %>.add(removeHeader_<%=cid %>);
+<%
+		}else{
+            if(destination!=null && (destination.indexOf("tCouchbaseOutput_")==0) || destination.indexOf("tCouchDBOutput_")==0){
+%>
+                map_<%=cid%>.put("json_<%=destination%>",strWriter_<%=cid %>.toString());
+                listGroupby_<%=cid %>.add(map_<%=cid%>);
+<%
+            }else{
+				if(istWriteJSONField){
+					%>
+				  		  <%= rowStructNameOutput %> row_<%= cid %> = new <%= rowStructNameOutput %>();
+						  <%
+					      for(Map<String,String> map : groupbys){
+								String groupByColumnName = map.get("INPUT_COLUMN");
+								String outputColumnName = map.get("OUTPUT_COLUMN");
+								if (!outputColumnName.equals(jsonField)) {
+								%>
+								row_<%= cid %>.<%= outputColumnName %> = rowStructOutput_<%= cid %>.<%= groupByColumnName %>;
+								<%
+								}
+					     }
+					%>
+					     		row_<%= cid %>.<%= jsonField %> = strWriter_<%=cid %>.toString();
+					     		listGroupby_<%=cid %>.add(row_<%= cid %>);
+					<%
+				}else{
+								%>
+										    listGroupby_<%=cid %>.add(strWriter_<%=cid %>.toString());
+								<%
+				}
+            }
+		}
+%>
+		    doc_<%=cid %>.clearContent();
+			needRoot_<%=cid %> = true;
+			for(int i_<%=cid %>=0;i_<%=cid %><orders_<%=cid %>.length;i_<%=cid %>++){
+				orders_<%=cid %>[i_<%=cid %>] = 0;
+			}
+			
+			if(groupbyList_<%=cid%> != null && groupbyList_<%=cid%>.size() >= 0){
+				groupbyList_<%=cid%>.clear();
+			}
+			strCompCache_<%=cid %>=strTemp_<%=cid %>;
+<%
+		if(istWriteJSONField){
+			for(Map<String,String> map : groupbys){
+            	String groupByColumnName = map.get("INPUT_COLUMN");
+            	String outputColumnName = map.get("OUTPUT_COLUMN");
+            	if (!outputColumnName.equals(jsonField)) {
+            	%>
+            	rowStructOutput_<%= cid %>.<%= groupByColumnName %> = <%= rowNameInput %>.<%= groupByColumnName %>;
+            	<%
+            	}
+            }
+		}
+		if(inputKeysColumns.size() !=0){
+%>
+		}
+<%
+		}
+%>
+	}
+
+<%
+	//init the generate tool.
+	GenerateToolByDom4j generateToolByDom4j = new GenerateToolByDom4j();
+    if(("true").equals(outputAsXSD)){
+    	generateToolByDom4j.outputAsXSD = true;
+    }
+    if(("true").equals(allowEmpty)){
+    	generateToolByDom4j.allowEmpty = true;
+    }
+    generateToolByDom4j.istWriteJSONField = istWriteJSONField;
+    generateToolByDom4j.isQuoteAllValues = isQuoteAllValues;
+    generateToolByDom4j.cid = cid;
+    generateToolByDom4j.tool = tool;
+    
+    //start generate code
+    if(destination!=null && (destination.indexOf("tCouchbaseOutput_")==0 || destination.indexOf("tCouchDBOutput_")==0)){
+        INode previousNode = conn.getSource();
+        List<IMetadataTable> previous_metadatas = previousNode.getMetadataList();
+        if ((previous_metadatas!=null)&&(previous_metadatas.size()>0)) {
+            IMetadataTable previous_metadata = previous_metadatas.get(0);
+            if (previous_metadata!=null) {
+                List<IMetadataColumn> columnList = previous_metadata.getListColumns();
+%>
+                map_<%=cid%>  = new java.util.HashMap();
+<%
+                for(IMetadataColumn colum: columnList){
+%>
+                    map_<%=cid%>.put("<%=colum.getLabel()%>",<%=conn.getName()%>.<%=colum.getLabel()%>);
+<%
+                }
+            }
+        }
+    }
+%>
+	org.dom4j.Element subTreeRootParent_<%=cid%> = null;
+	
+	// build root xml tree 
+	if (needRoot_<%=cid %>) {
+		needRoot_<%=cid %>=false;
+<%
+	generateToolByDom4j.generateCode(root,"root","doc");
+%>
+		root4Group_<%=cid%> = subTreeRootParent_<%=cid%>;
+	}else{
+		subTreeRootParent_<%=cid%>=root4Group_<%=cid%>;
+	}
+	// build group xml tree 
+<%
+	if(groupTable.size()>0){
+%>
+	boolean isNewElememt = false;
+<%
+	}
+	for(int i=0;i<groupList.size();i++){
+		XMLNode groupRootNode = groupList.get(i);
+%>
+	if(isNewElememt || groupbyList_<%=cid%>.size()<=<%=i%> || groupbyList_<%=cid%>.get(<%=i%>)==null
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+			if(attr.relatedColumn!=null){
+%>
+	|| ( groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>)!=null 
+		? !groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>).equals(<%tool.getValue(attr);%>) 
+		: <%tool.getValue(attr);%>!=null )
+<%
+			}
+		}
+%>
+	){
+<%
+		generateToolByDom4j.generateCode(groupList.get(i),"group"+i+"_","subTreeRootParent");
+%>
+		if(groupbyList_<%=cid%>.size()<=<%=i%>){
+        	groupbyList_<%=cid%>.add(new java.util.ArrayList<String>());
+        }else{
+        	groupbyList_<%=cid%>.get(<%=i%>).clear();
+        }
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+%>
+		groupbyList_<%=cid%>.get(<%=i%>).add(<%tool.getValue(attr);%>);
+<%
+		}
+%>
+        isNewElememt=true;
+        if(groupElementList_<%=cid%>.size()<=<%=i%>){
+			groupElementList_<%=cid%>.add(group<%=i%>__<%=cid%>);
+        }else{
+        	groupElementList_<%=cid%>.set(<%=i%>,group<%=i%>__<%=cid%>);
+        }
+        
+	}else{
+		subTreeRootParent_<%=cid%>=groupElementList_<%=cid%>.get(<%=i%>);
+	}
+<%
+	}
+%>
+	// build loop xml tree
+<%
+	generateToolByDom4j.generateCode(loop,"loop","subTreeRootParent");
+}
+// ------------------- *** Dom4j generation mode end *** ------------------- //
+
+// ------------------- *** Null generation mode start *** ------------------- //
+else if(("Null").equals(mode)){
+//	String fileNameXSD = ElementParameterParser.getValue(node, "__XSD_FILE__");
+	//init the generate tool.
+	GenerateToolByNull generateToolByNull = new GenerateToolByNull();
+    if(("true").equals(outputAsXSD)){
+    	generateToolByNull.outputAsXSD = true;
+    	generateToolByNull.fileNameXSD = fileNameXSD;
+    }
+    if(("true").equals(allowEmpty)){
+    	generateToolByNull.allowEmpty = true;
+    }
+    generateToolByNull.cid = cid;
+    generateToolByNull.tool = tool;
+
+	if(inputKeysColumns.size() !=0){
+	%>
+		//the data read is different from the data read last time. 
+		if(!strCompCache_<%=cid %>.equals(strTemp_<%=cid %>)){
+<%	}%>
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+
+		 // write the endtag to the StringWriter:strWriter_tWriteXMLField_1_Out
+		 // close the bufferWriter
+		 // add the data in strWriter_tWriteXMLField_1_Out to listGroupby							 
+
+		if (preUnNullMaxIndex_<%=cid %> >= 0) {
+	        // output all buffer
+	        for (int j_<%=cid %> = 0; j_<%=cid%> <= preUnNullMaxIndex_<%=cid %>; j_<%=cid%>++) {
+	            if (startTabs_<%=cid %>[j_<%=cid %>] != null)
+	                out_<%=cid %>.write(startTabs_<%=cid %>[j_<%=cid %>]);
+	        }
+	
+	        if (preUnNullMaxIndex_<%=cid%> < preNewTabIndex_<%=cid %> ) {
+				for (int i_<%=cid %> = preNewTabIndex_<%=cid%> - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+                	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+                		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+                	}                	
+	                out_<%=cid %>.write("<%=rowSeparator%>");
+	                out_<%=cid %>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+	            }
+	        } else {
+	            for (int i_<%=cid %> = preUnNullMaxIndex_<%=cid %>; i_<%=cid%> >= 0; i_<%=cid%>--) {
+                	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+                		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+                	}
+                	out_<%=cid %>.write("<%=rowSeparator%>");
+	                out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+	            }
+	        }
+	    }
+<%
+		}else{
+			if(loopTable.size()>0){
+%>
+		for (int i_<%=cid%> = endTabStrs_<%=cid%>.size() - 1; i_<%=cid%> >= 0; i_<%=cid%>--) {
+        	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+        		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+        	}
+	        out_<%=cid %>.write("<%=rowSeparator%>");
+	        out_<%=cid%>.write(endTabStrs_<%=cid%>.get(i_<%=cid%>));
+	    }
+<%
+			}
+		}
+%>
+		for (int i_<%=cid%> = 0; i_<%=cid%> < endTabs_<%=cid %>.length; i_<%=cid%>++) {
+			startTabs_<%=cid%>[i_<%=cid%>] = null;
+			endTabs_<%=cid %>[i_<%=cid%>] = null;
+		}
+//		endTabStrs_<%=cid%>.clear();
+		out_<%=cid %>.write("<%=rowSeparator%>");
+		out_<%=cid%>.close();
+		listGroupby_<%=cid %>.add(strWriter_<%=cid %>.toString());
+
+		//create a new StringWriter and BufferWriter
+		//write the head title to the StringWriter		
+		strWriter_<%=cid %> = new java.io.StringWriter();
+		out_<%=cid %> = new java.io.BufferedWriter(strWriter_<%=cid %>);
+<%
+	if(!("true").equals(removeHeader)){
+%>
+		out_<%=cid %>.write("<?xml version=\"1.0\" encoding=\""+<%=encoding %>+"\"?>");
+		out_<%=cid %>.write("<%=rowSeparator%>");
+<%
+	}
+%>
+
+		needRoot_<%=cid %> = true;
+		strCompCache_<%=cid %>=strTemp_<%=cid %>;
+		preNewTabIndex_<%=cid%> = -1;
+<%	if(inputKeysColumns.size() !=0){%>
+		}
+<%	}%>	
+	}	
+	
+	StringBuffer buf_<%=cid%> = new StringBuffer();
+	//init value is 0 not -1, because it will output the root tab when all the row value is null.
+	int unNullMaxIndex_<%=cid%> = 0;
+
+	// build root xml tree 
+	if (needRoot_<%=cid%>) {
+		needRoot_<%=cid%>=false;
+<%
+	String rootEmptySpace = "";
+	for(int i=0;i<mainList.size();i++){
+		generateToolByNull.generateCode(mainList.get(i),rootEmptySpace);
+		rootEmptySpace+=whiteSpace;
+		
+		if(!generateToolByNull.outputAsXSD && !generateToolByNull.allowEmpty){
+			if(mainList.get(i).relatedColumn != null || mainList.get(i).childrenColumnList.size()>0){
+%>
+		if( false
+<%
+                	for(IMetadataColumn column : mainList.get(i).childrenColumnList){
+                		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+                	}
+%>
+		){
+			unNullMaxIndex_<%=cid%> = <%=i%>;
+		}
+<%
+			}
+		}
+%>
+		endTabs_<%=cid %>[<%=i%>] = buf_<%=cid%>.toString();
+		buf_<%=cid%> = new StringBuffer();
+<%
+
+	}
+%>
+	}
+	
+	// build group xml tree 
+<%
+	if(groupTable.size()>0){
+%>
+	boolean isNewElememt = false;
+	//The index of group element which is the first new group in groups.
+	int newTabIndex_<%=cid%> = -1;
+	//Buffer all group tab XML, then set to startTabBuffer.
+    String[] groupBuffer_<%=cid%> = new String[<%=groupList.size()%>];
+    String[] groupEndBuffer_<%=cid%> = new String[<%=groupList.size()%>];
+<%
+	}
+	for(int i=0;i<groupList.size();i++){
+		XMLNode groupRootNode = groupList.get(i);
+%>
+
+	// need a new group element <%=groupRootNode.name%> or not
+	if(isNewElememt || groupbyList_<%=cid%>.size()<=<%=i%> || groupbyList_<%=cid%>.get(<%=i%>)==null
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+			if(attr.relatedColumn!=null){
+%>
+	|| ( groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>)!=null 
+		? !groupbyList_<%=cid%>.get(<%=i%>).get(<%=j%>).equals(<%tool.getValue(attr);%>) 
+		: <%tool.getValue(attr);%>!=null )
+<%
+			}
+		}
+%>
+	){
+		// Is the first new element in groups.
+		if(!isNewElememt && groupbyList_<%=cid%>.size()><%=i%>){
+			newTabIndex_<%=cid%> = <%=i%>;
+		}
+
+		// count the groupby element
+		if(groupbyList_<%=cid%>.size()<=<%=i%>){
+        	groupbyList_<%=cid%>.add(new java.util.ArrayList<String>());
+        }else{
+        	groupbyList_<%=cid%>.get(<%=i%>).clear();
+        }
+<%
+		for(int j=0;j<groupbyNodeList.get(i).size();j++){
+			XMLNode attr = groupbyNodeList.get(i).get(j);
+%>
+		groupbyList_<%=cid%>.get(<%=i%>).add(<%tool.getValue(attr);%>);
+<%
+		}
+%>
+        isNewElememt=true;
+	}
+	
+	// subtree XML string generate
+<%
+		String emptySpace = "";
+		for(int len = groupList.get(i).path.split("/").length-1;len>1;len--){
+			emptySpace +=whiteSpace;
+		}
+		generateToolByNull.generateCode(groupList.get(i),emptySpace);
+		
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+			if((groupList.get(i).relatedColumn != null || groupList.get(i).childrenColumnList.size()>0)){
+%>
+	if( false
+<%
+            	for(IMetadataColumn column : groupList.get(i).childrenColumnList){
+            		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+            	}
+%>
+	){
+		unNullMaxIndex_<%=cid%> = <%=i+mainList.size()%>;
+	}
+<%
+			}
+		}
+%>
+	// buffer the end tabs to group buffer
+	groupEndBuffer_<%=cid%>[<%=i%>] = buf_<%=cid%>.toString();
+    buf_<%=cid%> = new StringBuffer();
+<%
+	}//End of groupList loop
+	
+	if(groupTable.size()>0){
+%>
+	//output the previous groups as there's a new group
+    if (newTabIndex_<%=cid%> >= 0 && preNewTabIndex_<%=cid%>!=-1) {
+        //out_<%=cid%>.newLine();//Track code
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+		// output unNull tabs in start tabs buffer
+        if (preUnNullMaxIndex_<%=cid%> >= 0) {
+            for (int i_<%=cid%> = 0; i_<%=cid%> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+                if (i_<%=cid%> <= preUnNullMaxIndex_<%=cid%>) {
+                    if (startTabs_<%=cid%>[i_<%=cid%>] != null) {
+                        out_<%=cid%>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+                    }
+                    startTabs_<%=cid%>[i_<%=cid%>] = null;
+                }
+            }
+        }
+<%
+		}else{
+%>
+		//output all start tabs buffer
+		for (int i_<%=cid%> = 0; i_<%=cid%> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+            if (startTabs_<%=cid%>[i_<%=cid%>] != null) {
+                out_<%=cid%>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+            }
+            startTabs_<%=cid%>[i_<%=cid%>] = null;
+        }
+<%
+		}
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+        // output endtabs
+        if (preUnNullMaxIndex_<%=cid%> >= preNewTabIndex_<%=cid%>
+            && preUnNullMaxIndex_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>) {
+            for (int i_<%=cid%> = preUnNullMaxIndex_<%=cid%>; i_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	endTabs_<%=cid %>[i_<%=cid%>] = null;
+                out_<%=cid %>.write("<%=rowSeparator%>");
+                out_<%=cid%>.write(endTabStrs_<%=cid%>
+                        .get(i_<%=cid%>));
+            }
+        } else {
+<%
+		}
+%>
+            for (int i_<%=cid%> = preNewTabIndex_<%=cid%> - 1; i_<%=cid%> >= <%=mainList.size()%> + newTabIndex_<%=cid%>; i_<%=cid%>--) {
+            	if(endTabs_<%=cid %>[i_<%=cid%>]!=null){
+            		out_<%=cid%>.write(endTabs_<%=cid %>[i_<%=cid%>]);
+            	}
+            	endTabs_<%=cid %>[i_<%=cid%>] = null;
+                out_<%=cid %>.write("<%=rowSeparator%>");
+                out_<%=cid%>.write(endTabStrs_<%=cid%>
+                        .get(i_<%=cid%>));
+            }
+<%
+		if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+        }
+<%
+		}
+%>
+        preNewTabIndex_<%=cid%> = newTabIndex_<%=cid%> + <%=mainList.size()%>;
+    }
+
+    // set new element groupbuffer to startbuffer
+    for (int i_<%=cid%> = 0; i_<%=cid%> < groupBuffer_<%=cid%>.length; i_<%=cid%>++) {
+        // when newTabIndex is null, must use the perNewTabIndex
+        if (i_<%=cid%> >= preNewTabIndex_<%=cid%> - <%=mainList.size()%>) {
+            startTabs_<%=cid%>[i_<%=cid%> + <%=mainList.size()%>] = groupBuffer_<%=cid%>[i_<%=cid%>];
+            endTabs_<%=cid%>[i_<%=cid%> + <%=mainList.size()%>] = groupEndBuffer_<%=cid%>[i_<%=cid%>];
+        }
+    }
+<%
+	}
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+	//reset the preUnNullMaxIndex
+	if(unNullMaxIndex_<%=cid%>>=0){
+    	preUnNullMaxIndex_<%=cid%>=unNullMaxIndex_<%=cid%>;
+	}else{
+		if(preUnNullMaxIndex_<%=cid%>><%=mainList.size()-1%>){
+			preUnNullMaxIndex_<%=cid%>=<%=mainList.size()-1%>;
+		}
+	}
+<%
+	}
+%>
+	// build loop xml tree
+<%
+	String emptySpace = "";
+	for(int len =loop.path.split("/").length-1;len>1;len--){
+		emptySpace +=whiteSpace;
+	}
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+		if( false
+<%
+    	for(IMetadataColumn column : loop.childrenColumnList){
+    		%> || valueMap_<%=cid%>.get("<%=column.getLabel()%>") != null<%
+    	}
+    	if(loop.hasDefaultValue == true){%> || true 
+    	<%}%>
+		){
+<%
+	}
+	generateToolByNull.generateCode(loop,emptySpace);
+	generateToolByNull.endElement(loop,emptySpace);
+%>
+		// output all buffer
+		for (int i_<%=cid%> = 0; i_<%=cid%> < startTabs_<%=cid%>.length; i_<%=cid%>++) {
+            if (startTabs_<%=cid%>[i_<%=cid%>] != null && startTabs_<%=cid%>[i_<%=cid%>].length() > 0) {
+                out_<%=cid%>.write(startTabs_<%=cid%>[i_<%=cid%>]);
+                startTabs_<%=cid%>[i_<%=cid%>] = null;
+            }
+        }
+		out_<%=cid%>.write(buf_<%=cid%>.toString());
+		preNewTabIndex_<%=cid%> = <%=groupList.size()+mainList.size()%>;
+<%
+	if(!("true").equals(outputAsXSD) && !("true").equals(allowEmpty)){
+%>
+            preUnNullMaxIndex_<%=cid%> = <%=groupList.size()+mainList.size()-1%>;
+		}
+<%
+	}
+}
+// ------------------- *** Null generation mode end *** ------------------- //
+
+// ------------------- *** Common code start *** ------------------- //
+			}
+		}
+	}
+}
+// ------------------- *** Common code end *** ------------------- //
+%>

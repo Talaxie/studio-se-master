@@ -1,0 +1,85 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		java.util.Map
+		java.lang.StringBuilder
+	"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	log = new LogUtil(node);
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        Boolean useRowLabel = (Boolean)ElementParameterParser.getObjectValue(
+                node,"__USEROWLABEL__"); 
+        
+        String label = "";
+        if(useRowLabel.equals(Boolean.TRUE))
+        {
+        	List<IConnection> connList = (List<IConnection>)node.getIncomingConnections();
+        	if(connList.size()>0)
+        	{
+        		IConnection conn = (IConnection)connList.get(0);
+        		label = "\""+conn.getUniqueName()+"\"";
+        	}
+        	else
+        	{
+        		label = "\"No input Connection\"";
+        	}
+        }else{
+			label = (String)ElementParameterParser.getObjectValue(
+                node,"__METTERLABEL__");
+        } 
+               
+        String absolute = (String)ElementParameterParser.getObjectValue(
+                node,"__ABSOLUTE__");  
+           
+        String reference = null;     
+        if(("Relative").equals(absolute))
+        { 
+        	reference = (String)ElementParameterParser.getObjectValue(
+                      node,"__CONNECTIONS__");  
+        }
+
+        List<Map<String, String>> shreshlods =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,"__THRESHLODS__");  
+                
+        StringBuilder shreshlods_str = new StringBuilder();
+        if(shreshlods.size() > 0)
+        {
+            for(Map<String, String> map : shreshlods)  
+            {
+                if(shreshlods_str.length() > 0)
+                {
+                	shreshlods_str.append("#");
+                }
+       		      shreshlods_str.append(map.get("LABEL") + "|")
+       		                    .append(map.get("BOTTOM")+ "|")
+       		                    .append(map.get("TOP")+ "|")
+       		                    .append(map.get("COLOR").replace(";","|"));
+            } 
+        } 
+        
+	    if (node.getProcess().getNodesOfType("tFlowMeterCatcher").size() > 0) {
+			List<INode> meterCatchers = (List<INode>)node.getProcess().getNodesOfType("tFlowMeterCatcher");
+			for (INode meterCatcher : meterCatchers) {
+				log.debug(log.str("Sending message to " + meterCatcher.getUniqueName() + "."));
+%>
+	<%=meterCatcher.getUniqueName() %>.addMessage(<%=label%>, new Integer(count_<%=cid%>), "<%=reference%>", "<%=shreshlods_str%>", "<%=cid%>");
+<%      
+				}
+			}
+		}
+	}
+%>

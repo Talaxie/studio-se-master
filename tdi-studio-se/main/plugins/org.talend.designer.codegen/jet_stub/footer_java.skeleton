@@ -1,0 +1,75 @@
+import org.talend.core.model.process.INode;
+
+public class CLASS
+{
+    private static String end_multiThread = "if ( !\"failure\".equals(((java.util.Map)threadLocal.get()).get(\"status\")) ) {\n((java.util.Map) threadLocal.get()).put(\"status\", \"end\");\n}";
+    private static String end_singleThread = "if(!\"failure\".equals(status)) { status = \"end\"; }";
+    private static String failure_multiThread = "((java.util.Map) threadLocal.get()).put(\"status\", \"failure\");";
+    private static String failure_singleThread = "status = \"failure\";";
+    private static String errorCode_multiThread = "((java.util.Map) threadLocal.get()).put(\"errorCode\", null);";
+    private static String errorCode_singleThread = "errorCode = null;";
+    
+    // add the list of the connection names to avoid to declare two times the same name.
+    public String createCallProcess(INode rootNode, String className, boolean isMultiThread) {
+        String toReturn = "";
+        toReturn =  "try {\n";
+        if(isMultiThread) {
+            toReturn +=  errorCode_multiThread;
+        }else{
+            toReturn +=  errorCode_singleThread;
+        }        
+        
+        toReturn += rootNode.getUniqueName() + "Process(globalMap);\n";
+        
+        if(isMultiThread) {
+            toReturn +=  end_multiThread;
+        }else{
+            toReturn +=  end_singleThread;
+        }
+        
+        toReturn += "\n}catch (TalendException e_" + rootNode.getUniqueName() + ") {\n";
+        
+//        if(isMultiThread) {
+//            toReturn +=  failure_multiThread;
+//        }else{
+//            toReturn +=  failure_singleThread;
+//        }
+        
+        toReturn += "globalMap.put(\""+rootNode.getUniqueName()+ "_SUBPROCESS_STATE\", -1);\n";
+        
+        toReturn += "\ne_" + rootNode.getUniqueName() + ".printStackTrace();\n";
+        
+      
+       //List< ? extends IConnection> onSubJobErrorConns = rootNode.getOutgoingConnections(EConnectionType.ON_SUBJOB_ERROR);
+       //if(onSubJobErrorConns!=null){
+       //    for(IConnection conn : onSubJobErrorConns) {
+       //        toReturn += createCallProcess(conn.getTarget(),  className, isMultiThread);
+       //    }
+       //}
+        if(isMultiThread){
+            toReturn += "\n}catch (java.lang.Error e_" + rootNode.getUniqueName() + ") {\n";
+            toReturn += "globalMap.put(\""+rootNode.getUniqueName()+ "_SUBPROCESS_STATE\", -1);\n";
+            toReturn += failure_multiThread;
+            toReturn += "throw e_" + rootNode.getUniqueName() + ";\n";
+        }
+       toReturn += "\n}"; 
+       return toReturn;
+    }
+
+    public String statsErrorHandlingAfterMainCall(INode rootNode, List<? extends INode> statsNodes) {
+        String catchErrorReturn = "catch (Error error_" + rootNode.getUniqueName() + " ) {\n";
+        catchErrorReturn+="end = System.currentTimeMillis();\n";
+        for (INode statCatcherNode : statsNodes) {
+            catchErrorReturn += statCatcherNode.getUniqueName() + ".addMessage(\"failure\", (end-startTime));\n";
+            catchErrorReturn += "try {\n " + statCatcherNode.getDesignSubjobStartNode().getUniqueName() + "Process(globalMap);\n";
+            catchErrorReturn += "} catch (Exception e_" + statCatcherNode.getUniqueName() + ") {\n";
+            catchErrorReturn += "e_" + statCatcherNode.getUniqueName() + ".printStackTrace();\n}\n";
+        }
+        catchErrorReturn+= "throw error_" + rootNode.getUniqueName() + ";\n}\n";
+        return catchErrorReturn;
+    }
+
+    public String generate(Object argument) {
+        return "";
+    }
+}

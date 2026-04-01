@@ -1,0 +1,92 @@
+<%@ jet 
+	imports="
+		java.util.List
+
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.INode
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	/*in shema:*/
+	List<? extends IConnection> listInConns = node.getIncomingConnections();
+	String sInConnName = null;
+	List<IMetadataColumn> listInColumns = null;
+
+	if (listInConns != null && listInConns.size() > 0) {
+		IConnection inConn = listInConns.get(0);
+		sInConnName = inConn.getName();
+		if (inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+			listInColumns = inConn.getMetadataTable().getListColumns();
+		}
+	}
+
+	/*out shema(include reject and main):*/
+	List<? extends IConnection> listOutConns = node.getOutgoingSortedConnections();
+	String sRejectConnName = null;
+
+	if (sInConnName != null && listInColumns != null && listInColumns.size() > 0) { //CONDITION_00100 START
+		for (IConnection outConn : listOutConns) { //LOOP_00100 START
+			if (outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { //CONDITION_001001 START
+				if ("REJECT".equals(outConn.getConnectorName())){
+					sRejectConnName = outConn.getName();
+				}
+%>
+	<%=outConn.getName()%> = null;
+<%
+			} //CONDITION_001001 STOP
+		} //LOOP_00100 END
+		int inputColumnSize = listInColumns.size();
+		for (int i = 0; i < inputColumnSize; i++ ) { //LOOP_00101 START
+			if(i % 100 == 0){ //CONDITION_001002 START
+%>
+	rsvUtil_<%=cid %>.setRowValue_<%= (i/100) %>(<%=sInConnName %>);
+<%
+			} //CONDITION_001002 STOP
+		} //LOOP_00101 STOP
+		if (listOutConns != null && listOutConns.size() > 0) { //CONDITION_001003 START
+%>
+	if (rsvUtil_<%=cid %>.ifPassedThrough) {
+<%
+			for (IConnection conn : listOutConns) { //LOOP_00102 START
+				if (sRejectConnName == null || (sRejectConnName != null && !sRejectConnName.equals(conn.getName()))){ //CONDITION_0010031 START
+%>
+		<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+<%
+					for (IMetadataColumn inColumn : listInColumns) { //LOOP_001021 START
+%>
+		<%=conn.getName()%>.<%=inColumn.getLabel()%> = <%=sInConnName%>.<%=inColumn.getLabel()%>;
+<%
+					} //LOOP_001021 STOP
+				} //CONDITION_0010031 STOP
+			} //LOOP_00102 STOP
+%>
+	}
+<%
+		} //CONDITION_001003 STOP
+
+		if (sRejectConnName != null) { //CONDITION_001004 START
+%>
+	if (!rsvUtil_<%=cid %>.ifPassedThrough) {
+		<%=sRejectConnName %> = new <%=sRejectConnName %>Struct();
+<%
+			for (IMetadataColumn inColumn : listInColumns) { //LOOP_00103 START
+%>
+		<%=sRejectConnName%>.<%=inColumn.getLabel()%> = <%=sInConnName%>.<%=inColumn.getLabel()%>;
+<%
+			} //LOOP_00103 STOP
+%>
+		<%=sRejectConnName%>.errorCode = String.valueOf(rsvUtil_<%=cid %>.resultErrorCodeThrough);
+		<%=sRejectConnName%>.errorMessage = rsvUtil_<%=cid %>.resultErrorMessageThrough;
+	}
+<%
+		} //CONDITION_001004 STOP
+	} //CONDITION_00100 STOP
+%>
+	rsvUtil_<%=cid %>.reset();

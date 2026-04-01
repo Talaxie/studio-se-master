@@ -1,0 +1,81 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map
+" 
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	    
+		public void setURL(INode node) {
+			
+			String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__") ;
+			String dbServer = ElementParameterParser.getValue(node, "__SERVER__");
+		        if("SYBSEIQ_16_SA".equals(dbVersion)){
+				if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+					String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + <%=dbServer %> + ":" + <%=dbport %> + ";DatabaseName=" + <%=dbname %>; 
+<%
+				}
+				else{
+%>
+					String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + <%=dbServer %> + ":" + <%=dbport %> + ";DatabaseName=" + <%=dbname %> + ";" + <%=dbproperties%>;
+<%
+				}
+                        }
+			else {
+				if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+					String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=dbServer%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+				} else {
+%>
+					String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=dbServer%> + ":" + <%=dbport%> + "/" + <%=dbname%> + "?" + <%=dbproperties%>;
+<%
+				}
+			}
+%>
+<%
+		}
+		
+		public String getDirverClassName(INode node){
+		    String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__") ;
+		    if("SYBSEIQ_16_SA".equals(dbVersion)){
+			    return "sap.jdbc4.sqlanywhere.IDriver";
+		    }
+		    else if("SYBSEIQ_16".equals(dbVersion)){
+			    return "com.sybase.jdbc4.jdbc.SybDriver";
+		    }else{
+			    return "com.sybase.jdbc3.jdbc.SybDriver";
+		    }
+		}
+		
+		public void newInstance(INode node) {
+			String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			if("SYBSEIQ_16".equals(dbVersion)){
+%>
+				jdbcclazz_<%=cid%>.newInstance();
+<%
+			}
+		}
+		
+		//-----------according schema type to generate ResultSet
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+

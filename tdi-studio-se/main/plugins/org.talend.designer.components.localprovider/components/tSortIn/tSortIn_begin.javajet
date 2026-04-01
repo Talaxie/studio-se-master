@@ -1,0 +1,101 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    java.util.List
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+String rowName = null;
+String origin = ElementParameterParser.getValue(node, "__ORIGIN__");
+
+	for (INode pNode : node.getProcess().getNodesOfType("tSortOut")) {
+		if (!pNode.getUniqueName().equals(origin + "_SortOut")) continue;
+		for (IConnection conn : pNode.getIncomingConnections()) {
+			rowName = conn.getName();
+			break;
+		}
+		
+	}
+%>
+
+<%
+String outRowName = "";
+if ((node.getOutgoingSortedConnections()!=null)&&(node.getOutgoingSortedConnections().size()>0)) {
+    for(IConnection outgoingConn : node.getOutgoingSortedConnections()) {
+        if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            outRowName = outgoingConn.getName();
+            break;
+        }
+    }
+} else {
+	outRowName = "defaultRow";
+}
+
+String isExternalSort = ElementParameterParser.getValue(node, "__EXTERNAL__");
+%>
+<%
+if(("false").equals(isExternalSort)){
+%>
+<%=rowName %>Struct[] array_<%=cid %> = (<%=rowName %>Struct[]) globalMap.remove("<%=origin %>");
+
+int nb_line_<%=cid %> = 0;
+
+<%=rowName %>Struct current_<%=cid %> = null;
+
+for(int i_<%=cid %> = 0; i_<%=cid %> < array_<%=cid %>.length; i_<%=cid %>++){
+	current_<%=cid %> = array_<%=cid %>[i_<%=cid %>];
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+ 	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {	
+	for (IMetadataColumn column : metadata.getListColumns()) { 
+%>
+	<%=outRowName %>.<%=column.getLabel() %> = current_<%=cid %>.<%=column.getLabel() %>;
+<%
+	}
+%>
+	// increase number of line sorted
+	nb_line_<%=cid %>++;
+<%
+	}
+}
+}else{
+%>
+java.util.Iterator<<%=rowName %>Struct> iterator_<%=cid %> = (java.util.Iterator<<%=rowName %>Struct>) globalMap.remove("<%=origin %>");
+int nb_line_<%=cid %> = 0;
+<%=rowName %>Struct current_<%=cid %> = null;
+
+while (iterator_<%=cid %>.hasNext()) {
+	current_<%=cid %> = iterator_<%=cid %>.next();
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+ 	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {	
+	for (IMetadataColumn column : metadata.getListColumns()) { 
+%>
+	<%=outRowName %>.<%=column.getLabel() %> = current_<%=cid %>.<%=column.getLabel() %>;
+<%
+	}
+%>	
+	// increase number of line sorted
+	nb_line_<%=cid %>++;
+<%
+}
+%>
+<%
+	}
+}
+%>

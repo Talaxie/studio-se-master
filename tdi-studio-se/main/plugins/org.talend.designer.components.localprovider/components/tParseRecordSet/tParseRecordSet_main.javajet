@@ -1,0 +1,144 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.Map
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+String recordsetField = ElementParameterParser.getValue(node, "__RECORDSET_FIELD__");
+List<Map<String, String>> attriTable = (List<Map<String,String>>)ElementParameterParser.getObjectValueXML(node, "__ATTRIBUTE_TABLE__");
+
+String inputConnName = "";
+if (node.getIncomingConnections()!=null) {
+	for (IConnection incomingConn : node.getIncomingConnections()) {
+		if (incomingConn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+			inputConnName = incomingConn.getName();
+			IMetadataTable inputMetadataTable = incomingConn.getMetadataTable();
+			for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+				if(inputCol.getLabel().equals(recordsetField)){
+%>
+	java.sql.ResultSet re_<%=cid%> = (java.sql.ResultSet)<%=inputConnName%>.<%=recordsetField%>;
+<%
+				}
+			}
+		}
+	}
+}
+
+List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+String outputConnName = "";
+if (outputConns!=null && outputConns.size()>0) {
+	IConnection outputConn = outputConns.get(0);
+	outputConnName = outputConn.getName();  
+    IMetadataTable outputMetadata = outputConn.getMetadataTable();
+    if (outputMetadata!=null) {
+    	List<IMetadataColumn> columns= outputMetadata.getListColumns();
+%>
+	boolean hasNextRecord_<%=cid%>=false;
+	String res_str_<%=cid%> = null;
+	java.sql.Timestamp res_ts_<%=cid%> = null;
+    while (true) {
+	try{
+		hasNextRecord_<%=cid%>=re_<%=cid%>.next();
+	}catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		hasNextRecord_<%=cid%>=false;
+	}
+	if (!hasNextRecord_<%=cid%>) {
+		break;
+	}
+	nb_line_<%=cid%>++;	
+<%
+		//get the mapping column 
+		for (Map<String, String> tmpMap:attriTable) { 
+			for(IMetadataColumn column:columns) {
+				String attriName = tmpMap.get("SCHEMA_COLUMN");
+				if (attriName!=null && column.getLabel().equals(attriName)) {
+					if(tmpMap.get("VALUE").length()>0){
+						boolean isNotSetDefault = false;
+						String defaultValue=column.getDefault();
+						if(defaultValue!=null){
+							isNotSetDefault = defaultValue.length()==0;
+						}else{
+							isNotSetDefault=true;
+						}
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						if (javaType == JavaTypesManager.OBJECT) {
+%>
+	<%=outputConnName%>.<%=column.getLabel() %> = re_<%=cid%>.getObject(<%=tmpMap.get("VALUE")%>);
+<%
+						}else if (javaType == JavaTypesManager.DATE) {
+    							String patternValue = column.getPattern();
+    							if (patternValue != null && patternValue.length()>0){
+%>
+									res_str_<%=cid%> = re_<%=cid%>.getString(<%=tmpMap.get("VALUE")%>);
+									if(res_str_<%=cid%> != null){
+										<%=outputConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(res_str_<%=cid%>.trim(),<%=patternValue%>);
+									}else{
+										<%=outputConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(res_str_<%=cid%>,<%=patternValue%>);
+   									}
+<%
+    							 } else {
+%>
+									res_ts_<%=cid%> = re_<%=cid %>.getTimestamp(<%=tmpMap.get("VALUE")%>);
+									if(res_ts_<%=cid%> != null){
+    									<%=outputConnName%>.<%=column.getLabel() %> = 
+    										new java.util.Date(res_ts_<%=cid%>.getTime());
+       								 }else{
+    									<%=outputConnName%>.<%=column.getLabel() %> = null;
+        							}
+<%
+								}
+						}else if (javaType == JavaTypesManager.STRING) {
+%>
+	res_str_<%=cid%> = re_<%=cid%>.getString(<%=tmpMap.get("VALUE")%>);
+	if(res_str_<%=cid%> != null){
+		<%=outputConnName%>.<%=column.getLabel() %> = res_str_<%=cid%>.trim();
+	}else{
+		//<%=outputConnName%>.<%=column.getLabel() %> = res_str_<%=cid%>;
+		<%=outputConnName%>.<%=column.getLabel() %> = <%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;
+	}
+<%
+    					}else {
+%>
+	res_str_<%=cid%> = re_<%=cid%>.getString(<%=tmpMap.get("VALUE")%>);
+	if(res_str_<%=cid%>!=null){
+		<%=outputConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(res_str_<%=cid%>.trim());
+	}else{
+		//<%=outputConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(res_str_<%=cid%>);
+		<%=outputConnName%>.<%=column.getLabel() %> = <%=isNotSetDefault?JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate):column.getDefault()%>;		
+	}
+<%
+						}
+					}else{
+%>
+		<%=outputConnName%>.<%=column.getLabel()%> = <%=inputConnName%>.<%=column.getLabel()%>;
+<%
+					}
+				}
+			}
+		}
+
+	}
+}
+%>
+
+
+
+
+			

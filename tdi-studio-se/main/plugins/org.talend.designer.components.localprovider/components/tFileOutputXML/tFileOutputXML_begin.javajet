@@ -1,0 +1,241 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.utils.TalendQuoteUtils
+    java.util.List
+    java.util.Map
+    java.util.HashMap
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	boolean inputIsDocument = "true".equals(ElementParameterParser.getValue(node, "__INPUT_IS_DOCUMENT__"));
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+			List<Map<String, String>> rootTags = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT_TAGS__");
+			if (rootTags.size()==0) {
+				Map<String, String> defaultRootNode = new HashMap<String, String>();
+				defaultRootNode.put("TAG","\"root\"");
+				rootTags.add(defaultRootNode);
+			}
+			int headers = rootTags.size() + 1;
+			boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+			String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+			boolean trim = "true".equals(ElementParameterParser.getValue(node, "__TRIM__"));
+			
+			//**
+			List<Map<String, String>> columnMapping = 
+					(List<Map<String,String>>)ElementParameterParser.getObjectValue(
+						node,
+						"__MAPPING__"
+					);
+			String useDynamicGrouping = ElementParameterParser.getValue(
+					node,
+					"__USE_DYNAMIC_GROUPING__"
+				);
+			List<Map<String, String>> groupBys =
+					(List<Map<String,String>>)ElementParameterParser.getObjectValue(
+						node,
+						"__GROUP_BY__"
+					);
+			if (("false").equals(useDynamicGrouping)) {
+				groupBys.clear();
+			}
+			if (encoding!=null) {
+				if (("").equals(encoding)) {
+						encoding = "ISO-8859-15";
+				}
+			}
+			String groupby[][] = new String[groupBys.size()][3];
+			for(int i = 0; i < groupBys.size(); i++){
+				groupby[i][0] = groupBys.get(i).get("COLUMN");
+				groupby[i][1] = groupBys.get(i).get("LABEL");
+			}
+			int atts = 0;
+			int tags = 0;
+			outter1:
+			for(int i = 0; i < columnMapping.size(); i++){
+				Map<String, String> map = columnMapping.get(i);
+				String col = metadata.getListColumns().get(i).getLabel();
+				for(int j = 0; j < groupby.length; j++){
+					if(groupby[j][0].equals(col)){
+						if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+							groupby[j][2] = col;
+							groupby[j][2] = TalendQuoteUtils.addQuotes(groupby[j][2]);
+						}else{
+							groupby[j][2] = map.get("LABEL");
+						}
+						continue outter1;
+					}
+				}
+				if(("true").equals(map.get("AS_ATTRIBUTE"))){
+					atts ++;
+				}else{
+					tags ++;
+				}
+			}
+			String[][] attribute = new String[atts][2];
+			String[][] tag = new String[tags][2];
+			int ia=0;
+			int it=0;
+			outter2:
+			for(int i = 0; i < columnMapping.size(); i++){
+				Map<String, String> map = columnMapping.get(i);
+				String col = metadata.getListColumns().get(i).getLabel();
+				for(int j = 0; j < groupby.length; j++){
+					if(groupby[j][0].equals(col)){
+						continue outter2;
+					}
+				}
+				if(("true").equals(map.get("AS_ATTRIBUTE"))){
+					if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+						attribute[ia][1] = col;
+					}else{
+						attribute[ia][1] = map.get("LABEL");
+					}
+					attribute[ia++][0] = col;
+				}else{
+					if(("true").equals(map.get("SCHEMA_COLUMN_NAME"))){
+						tag[it][1] = col;
+					}else{
+						tag[it][1] = map.get("LABEL");
+					}
+					tag[it++][0] = col;
+				}
+			}
+			//**
+%>
+	String originalFileName_<%=cid %> = <%=fileName %>;
+	java.io.File originalFile_<%=cid %> = new java.io.File(originalFileName_<%=cid %>); 
+
+	String fileName_<%=cid %> = originalFileName_<%=cid %>;
+	java.io.File file_<%=cid %> = new java.io.File(fileName_<%=cid %>); 
+	if(!file_<%=cid %>.isAbsolute()) {
+		file_<%=cid %> = file_<%=cid %>.getCanonicalFile();
+	}
+
+<%
+			if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+%>
+	//create directory only if not exists
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Creating directory '" + file_<%=cid %>.getParentFile() + "'.");
+	<%}%>
+	file_<%=cid %>.getParentFile().mkdirs();
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Directory '" + file_<%=cid %>.getParentFile() + "' created successfully.");
+	<%}%>
+<%
+			}
+			if(!inputIsDocument) {
+%>
+	String[] headers_<%=cid %> = new String[<%=headers %>];
+		
+	headers_<%=cid %>[0] = "<?xml version=\"1.0\" encoding=\""+<%= encoding %>+"\"?>";  
+
+<%
+				if(rootTags.size() > 0){
+%>
+	String[] footers_<%=cid%> = new String[<%=rootTags.size()%>];
+
+<%
+					for (int i=0; i<rootTags.size(); i++){
+						Map<String, String> rootTag = rootTags.get(i);
+%>
+	headers_<%=cid %>[<%=i+1 %>] = "<"+<%=rootTag.get("TAG") %>+">";
+
+	footers_<%=cid %>[<%=i %>] = "</"+<%=rootTag.get("TAG") %>+">";
+
+<%
+					}
+				}
+
+				if(groupby.length>0){
+%>
+	String[][] groupby_<%=cid %> = new String[<%=groupby.length %>][2];
+
+	int groupby_new_<%=cid %> = 0;
+
+	boolean start_<%=cid %> = false;
+
+<%
+					for(int i = 0; i < groupby.length; i++){
+%>
+	groupby_<%=cid %>[<%=i %>][0] = "";
+
+	groupby_<%=cid %>[<%=i %>][1] = "</"+<%=groupby[i][2] %>+">";
+
+<%
+					}
+				}
+%>
+
+	int nb_line_<%=cid%> = 0;
+
+<%
+				if(split) {
+%>
+	int currentRowCount_<%=cid %> = 0;
+	int currentFileCount_<%=cid %> = 0;
+
+	String canonicalPath_<%=cid %> = originalFile_<%=cid %>.getCanonicalPath();
+	StringBuffer sb_<%=cid %> = new StringBuffer(canonicalPath_<%=cid %>);
+	int lastIndexOf_<%=cid %> = canonicalPath_<%=cid %>.lastIndexOf('.');
+	int position_<%=cid %> = lastIndexOf_<%=cid %> > -1 ? lastIndexOf_<%=cid %> : canonicalPath_<%=cid %>.length();
+	sb_<%=cid %>.insert(position_<%=cid %>, currentFileCount_<%=cid %>);
+
+	fileName_<%=cid %> = sb_<%=cid %>.toString();
+	file_<%=cid %> = new java.io.File(fileName_<%=cid %>);
+<%
+				}
+%>
+	java.io.BufferedWriter out_<%=cid%> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(file_<%=cid %>), <%=encoding%>));
+	<%if(isDeleteEmptyFile) {%>
+	resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+	resourceMap.put("isFileGenerated_<%=cid%>", true);
+	resourceMap.put("file_<%=cid%>", file_<%=cid%>);
+	resourceMap.put("stream_<%=cid%>", out_<%=cid%>);
+	<%}%>
+
+<%	
+				for(int i = 0; i < headers;i++){
+%>
+	out_<%=cid%>.write(headers_<%=cid %>[<%=i %>]);
+	out_<%=cid%>.newLine();	
+<%
+				}
+			} else {
+%>
+	int nb_line_<%=cid%> = 0;
+	org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createPrettyPrint();
+	format_<%=cid%>.setEncoding(<%=encoding%>);
+	format_<%=cid%>.setNewLineAfterDeclaration(false);
+	format_<%=cid%>.setTrimText(<%=trim%>);
+	
+	org.dom4j.io.XMLWriter writer_<%=cid%> = new org.dom4j.io.XMLWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(file_<%=cid %>), <%=encoding%>), format_<%=cid%>);
+	<%if(isDeleteEmptyFile) {%>
+	resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+	resourceMap.put("isFileGenerated_<%=cid%>", true);
+	resourceMap.put("file_<%=cid%>", file_<%=cid%>);
+	resourceMap.put("stream_<%=cid%>", writer_<%=cid%>);
+	
+	boolean isEmpty_<%=cid%> = true;
+	<%}%>
+<%
+			}
+		}
+	}
+%>

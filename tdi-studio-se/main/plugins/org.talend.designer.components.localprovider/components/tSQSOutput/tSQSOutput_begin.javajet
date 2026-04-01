@@ -1,0 +1,41 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+    boolean useBatch = "true".equals(ElementParameterParser.getValue(node,"__USE_BATCH__"));
+	%>
+	<%@ include file="../tSQSConnection/SQSClient.javajet" %>
+	
+	
+	int nbline_<%=cid%> = 0;
+	int nb_success_<%=cid%> = 0;
+	int nb_reject_<%=cid%> = 0;
+	<%
+	if(useBatch){
+	%>
+		java.util.List<com.amazonaws.services.sqs.model.SendMessageBatchRequestEntry> entries_<%=cid%> = new java.util.ArrayList<>();
+		java.util.List<com.amazonaws.services.sqs.model.BatchResultErrorEntry> resultErrorEntries_<%=cid%> = null;
+		java.util.List<com.amazonaws.services.sqs.model.SendMessageBatchResultEntry> resultSuccessEntries_<%=cid%> = null;
+	<%
+	}
+	%>
+	com.amazonaws.services.sqs.model.<%=useBatch?"SendMessageBatchRequest":"SendMessageRequest"%> sendMsgRequest_<%=cid%> = null;
+	try{
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Sending messages to :" + <%=queueUrl%>);
+		<%
+		}
+		%>

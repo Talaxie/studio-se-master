@@ -1,0 +1,184 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.Map
+    java.util.List
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String onlyOnceEachDuplicatedKey = ElementParameterParser.getValue(node, "__ONLY_ONCE_EACH_DUPLICATED_KEY__");
+List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__UNIQUE_KEY__");
+boolean changeHashAndEqualsForBigDecimal = "true".equals(ElementParameterParser.getValue(node, "__CHANGE_HASH_AND_EQUALS_FOR_BIGDECIMAL__"));
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+boolean hasKey = false;
+for(Map<String, String> keyColumn:keyColumns){
+	if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+		hasKey = true;
+		break;
+	}
+}
+
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+		List<IMetadataColumn> columns = metadata.getListColumns();
+    
+%>
+<%
+	if(hasKey) {
+	%>
+	
+		class KeyStruct_<%=cid %> {
+	
+			private static final int DEFAULT_HASHCODE = 1;
+		    private static final int PRIME = 31;
+		    private int hashCode = DEFAULT_HASHCODE;
+		    public boolean hashCodeDirty = true;
+	
+	        <%
+	        
+			for (int i=0; i<columns.size();i++) {
+				IMetadataColumn column = columns.get(i);
+				Map<String,String> keyColumn = keyColumns.get(i);
+				if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+					%>
+					<%=JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> <%=column.getLabel() %>;<%
+				}
+			}
+			%>        
+	        
+		    @Override
+			public int hashCode() {
+				if (this.hashCodeDirty) {
+					final int prime = PRIME;
+					int result = DEFAULT_HASHCODE;
+			<%
+					for (int i=0; i<columns.size();i++) {
+						IMetadataColumn column = columns.get(i);
+						Map<String,String> keyColumn = keyColumns.get(i);
+						if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+		
+							if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+							
+							 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+							 	if(javaType == JavaTypesManager.BOOLEAN) {
+									%>
+				        			result = prime * result + (this.<%=column.getLabel() %> ? 1231 : 1237);
+									<%
+								} else {	
+									%>
+									result = prime * result + (int) this.<%=column.getLabel() %>;
+									<%
+								}
+								
+							} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+		
+								%>
+								result = prime * result + java.util.Arrays.hashCode(this.<%=column.getLabel() %>);
+								<%
+							
+							} else if((javaType == JavaTypesManager.BIGDECIMAL) && changeHashAndEqualsForBigDecimal) {
+								%>
+								result = prime * result + ((this.<%=column.getLabel() %> == null) ? 0 : this.<%=column.getLabel() %>.stripTrailingZeros().hashCode());
+								<%
+							} else {
+								%>
+								result = prime * result + ((this.<%=column.getLabel() %> == null) ? 0 : this.<%=column.getLabel() %>.hashCode());
+								<%
+							}
+						
+						}
+					}
+		    %>
+		    		this.hashCode = result;
+		    		this.hashCodeDirty = false;		
+				}
+				return this.hashCode;
+			}
+			
+			@Override
+			public boolean equals(Object obj) {
+				if (this == obj) return true;
+				if (obj == null) return false;
+				if (getClass() != obj.getClass()) return false;
+				final KeyStruct_<%=cid %> other = (KeyStruct_<%=cid %>) obj;
+				<%	
+					for (int i=0; i<columns.size();i++) {
+						IMetadataColumn column = columns.get(i);
+						Map<String,String> keyColumn = keyColumns.get(i);
+						if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+						
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						
+							if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+								%>
+									if (this.<%=column.getLabel() %> != other.<%=column.getLabel() %>) 
+										return false;
+								<%
+							} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+								%>
+									if(!java.util.Arrays.equals(this.<%=column.getLabel() %>, other.<%=column.getLabel() %>)) {
+										return false;
+									}
+								<%
+							} else {
+								%>
+									if (this.<%=column.getLabel() %> == null) {
+										if (other.<%=column.getLabel() %> != null) 
+											return false;
+								<%if((javaType == JavaTypesManager.BIGDECIMAL) && changeHashAndEqualsForBigDecimal) {%>
+									} else if ((other.<%=column.getLabel() %> == null) || (this.<%=column.getLabel() %>.stripTrailingZeros().compareTo(other.<%=column.getLabel() %>.stripTrailingZeros())!=0))
+								<%} else {%>
+									} else if (!this.<%=column.getLabel() %>.equals(other.<%=column.getLabel() %>))
+								<%}%> 
+										return false;
+								<%
+							}
+						}
+					}
+				%>
+				
+				return true;
+			}
+	  
+	        
+		}
+
+	<%
+	}
+%>
+int nb_uniques_<%=cid %> = 0;
+int nb_duplicates_<%=cid %> = 0;
+<%
+if (isLog4jEnabled) {
+%>
+	log.debug("<%=cid%> - Start to process the data from datasource.");
+<%
+}
+if(hasKey){%>
+KeyStruct_<%=cid %> finder_<%=cid %> = new KeyStruct_<%=cid %>();
+java.util.Set<KeyStruct_<%=cid %>> keys<%=cid %> = new java.util.HashSet<KeyStruct_<%=cid %>>();
+<%
+	if(("true").equals(onlyOnceEachDuplicatedKey)){
+%>
+java.util.Set<KeyStruct_<%=cid %>> keysForDuplicated<%=cid %> = new java.util.HashSet<KeyStruct_<%=cid %>>();
+<%
+	}
+}
+}
+}%> 

@@ -1,0 +1,36 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String namedPipeName = ElementParameterParser.getValue(node, "__NAMEDPIPE_NAME__");
+	boolean deleteIfExists = ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__").equals("true");
+	
+%>
+	String namedPipeName_<%=cid%> = <%=namedPipeName%>;
+	String namedPipeNativeName_<%=cid%> = (new com.infobright.io.NamedPipeFactory()).getNativePipeName(namedPipeName_<%=cid%>);
+	<% if (deleteIfExists) { %>
+		java.io.File file_<%=cid%> = new java.io.File(namedPipeNativeName_<%=cid%>);
+		if (file_<%=cid%>.exists())
+			file_<%=cid%>.delete();
+	<% } %>
+
+	com.infobright.io.NamedPipe outputStream_<%=cid%> = (new com.infobright.io.NamedPipeFactory()).createServer(namedPipeName_<%=cid%>, true, true, 1024000, 10000);
+
+	// in Windows, wait for named pipe to get opened
+	if ((new com.infobright.io.NamedPipeFactory()).isWindowsMode()) { 
+		Thread.sleep(10000);
+	}
+
+	globalMap.put("<%=cid%>_PIPE_NAME", namedPipeName_<%=cid%>);
+	globalMap.put("<%=cid%>_PIPE_NATIVE_NAME",  namedPipeNativeName_<%=cid%>);
+	globalMap.put("<%=cid%>_PIPE_OUTPUTSTREAM", outputStream_<%=cid%>);
+

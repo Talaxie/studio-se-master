@@ -1,0 +1,131 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+" 
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+
+    String connectionCid = ElementParameterParser.getValue(node,"__CONNECTION__");
+    
+    boolean close = ("true").equals(ElementParameterParser.getValue(node,"__CLOSE__"));
+    
+    INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(),connectionCid,true);
+    
+    boolean isUseConnection = ("true").equals(ElementParameterParser.getValue(connectionNode, "__USE_CONNECTION__"));
+    
+    if(isUseConnection){
+    	String realConnNodeName = ElementParameterParser.getValue(connectionNode,"__CONNECTION__");
+    	connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(),realConnNodeName);
+    }
+    String serverType=ElementParameterParser.getValue(connectionNode, "__SERVER__");
+    boolean isTransacted = "true".equals(ElementParameterParser.getValue(connectionNode, "__IS_TRANSACTED__")); 
+
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	if (("JBoss").equals(serverType) || ("ActiveMQ").equals(serverType)) {
+	%>
+		javax.jms.Session session_<%=cid%> = (javax.jms.Session)globalMap.get("session_<%=connectionCid%>");
+		javax.jms.Connection connection_<%=cid%> = (javax.jms.Connection)globalMap.get("connection_<%=connectionCid%>");
+		javax.jms.MessageProducer producer_<%=cid%> = (javax.jms.MessageProducer)globalMap.get("producer_<%=connectionCid%>");
+		if(session_<%=cid%> != null && connection_<%=cid %> != null) {
+			<%
+			if(isTransacted){
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Committing the session...");
+				<%
+				}
+				%>
+				session_<%=cid%>.commit();
+				<%
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Commit successfully.");
+				<%
+				}
+			}
+			if(close){
+			%>
+			    if (producer_<%=cid %> != null) { 
+			    	<%
+			    	if (isLog4jEnabled) {
+					%>
+						log.info("<%=cid%> - Closing producer...");
+					<%
+					}
+					%>
+			    	producer_<%=cid %>.close(); 
+			    	<%
+					if (isLog4jEnabled) {
+					%>
+						log.info("<%=cid%> - Closed successfully.");
+					<%
+					}
+					%>
+			    }
+			    <%
+			   	if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closing connection...");
+				<%
+				}
+			    %>
+		        session_<%=cid %>.close();
+		        connection_<%=cid %>.close();
+				<% 
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closed successfully.");
+				<%
+				}
+			}
+			%>
+		}
+	<%
+	} else {
+	%>
+		com.ibm.mq.MQQueueManager qMgr_<%=cid%> = (com.ibm.mq.MQQueueManager)globalMap.get("qMgr_<%=connectionCid%>");
+	    if(qMgr_<%=cid%> != null) {
+			<%
+			if (isLog4jEnabled) {
+			%>
+				log.info("<%=cid%> - Committing ...");
+			<%
+			}
+			%>
+			qMgr_<%=cid%>.commit();
+			globalMap.put("currentMessageIsConsumed_<%=connectionCid%>",true);//if current message has been commited,no need to backout it to the backout queue.
+			
+			<%  
+			if (isLog4jEnabled) {
+			%>
+				log.info("<%=cid%> - Commit successfully.");
+			<%
+			}
+			if(close){
+			   	if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closing connection...");
+				<%
+				}
+			    %>
+			    qMgr_<%=cid%>.disconnect();
+				<% 
+				if (isLog4jEnabled) {
+				%>
+					log.info("<%=cid%> - Closed successfully.");
+				<%
+				}
+			}
+			%>
+		}
+	<%
+	}
+	%>

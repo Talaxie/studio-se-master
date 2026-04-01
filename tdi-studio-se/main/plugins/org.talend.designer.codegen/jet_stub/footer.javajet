@@ -1,0 +1,1960 @@
+<%@ jet
+    package="org.talend.designer.codegen.translators"
+    imports="
+        org.talend.core.model.general.ModuleNeeded
+        org.talend.core.model.process.IProcess
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.CorePlugin
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        java.util.Vector
+        java.util.List
+        java.util.ArrayList
+        java.util.Set
+        java.util.HashSet
+        org.talend.core.model.process.IContextParameter
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.utils.JavaResourcesHelper
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IContext
+        org.talend.core.model.process.ProcessUtils
+        org.talend.core.model.components.IComponent
+        org.talend.core.model.components.EComponentType
+        org.talend.core.model.utils.NodeUtil
+    "
+    class="Footer"
+    skeleton="footer_java.skeleton"
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    Vector v = (Vector) codeGenArgument.getArgument();
+    IProcess process = (IProcess)v.get(0);
+    String className = process.getName();
+    boolean isTestContainer=ProcessUtils.isTestContainer(process);
+    if (isTestContainer) {
+        className = className + "Test";
+    }
+
+    List<INode> rootNodes = (List<INode>)v.get(1);
+	boolean containsTPartitioner = process.getNodesOfType("tPartitioner").size() > 0 ? true : false;
+    boolean stats = codeGenArgument.isStatistics();
+    boolean trace = codeGenArgument.isTrace();
+    boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+    List<IContextParameter> params = new ArrayList<IContextParameter>();
+    params=process.getContextManager().getDefaultContext().getContextParameterList();
+
+	String jobFolderName = "";
+	IProcess baseProcess = ProcessUtils.getTestContainerBaseProcess(process);
+	if (baseProcess != null) {
+		jobFolderName = JavaResourcesHelper.getJobFolderName(baseProcess.getName(), baseProcess.getVersion()) + '/';
+	}
+	jobFolderName = jobFolderName + JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+	String jobClassPackageFolder = codeGenArgument.getCurrentProjectName().toLowerCase() + '/' + jobFolderName;
+
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));//log4j enable
+    boolean isLog4j2Enabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J2_ACTIVATE__"));//log4j2 enable
+    boolean isLog4j1Enabled = !isLog4j2Enabled;//log4j1 enable
+    String MDC_CLASS = "org.slf4j.MDC";
+
+    boolean exist_tParallelize = false;
+    List<? extends INode> tParallelizeList = process.getNodesOfType("tParallelize");
+    if(tParallelizeList != null && tParallelizeList.size() > 0){
+        exist_tParallelize = true;
+    }
+
+    boolean exist_tMOM = false;
+    List<INode> momComponentsList = (List<INode>)process.getNodesOfType("tMomConnection");
+    momComponentsList.addAll((List<INode>)process.getNodesOfType("tMomInput"));
+    momComponentsList.addAll((List<INode>)process.getNodesOfType("tMomOutput"));
+    if (momComponentsList.size() > 0) {
+        exist_tMOM = true;
+    }
+
+    String[] sqlDbComponents = new String[] {
+        "tAccessConnection",
+        "tAmazonMysqlConnection",
+        "tAmazonOracleConnection",
+        "tAS400Connection",
+        "tDB2Connection",
+        "tFirebirdConnection",
+        "tGreenplumConnection",
+        "tHiveConnection",
+        "tInformixConnection",
+        "tIngresConnection",
+        "tInterbaseConnection",
+        "tJDBCConnection",
+        "JDBCConnection",
+        "tMSSqlConnection",
+        "tMysqlConnection",
+        "tNetezzaConnection",
+        "tOracleConnection",
+        "tParAccelConnection",
+        "tPostgresqlConnection",
+        "tRedshiftConnection",
+        "tSQLiteConnection",
+        "tSybaseConnection",
+        "tTeradataConnection",
+        "tVectorWiseConnection",
+        "tVerticaConnection"
+    };
+    boolean exist_tSQLDB = false;
+    List<INode> sqlDbComponentsList =  new ArrayList<INode>();
+    for (String sqlDbComponent : sqlDbComponents) {
+        sqlDbComponentsList.addAll((List<INode>)process.getNodesOfType(sqlDbComponent));
+    }
+    if (sqlDbComponentsList.size() > 0) {
+        exist_tSQLDB = true;
+    }
+
+
+    String[] tcompV0Components = new String[] {
+        "tAzureStorageConnection",
+        "tGoogleDriveConnection",
+        "tMarketoConnection",
+        "tSnowflakeConnection",
+        "tSalesforceConnection",
+        "tNetsuiteConnection",
+        "tMarkLogicConnection"
+    };
+    List<INode> tcompV0ComponentsList =  new ArrayList<INode>();
+    for (String tcompV0Component : tcompV0Components) {
+        tcompV0ComponentsList.addAll((List<INode>)process.getNodesOfType(tcompV0Component));
+    }
+
+    boolean exist_tSCP = false;
+    List<INode> scpComponentsList = (List<INode>)process.getNodesOfType("tSCPConnection");
+	String parameterNames = "";
+	int scpsize = scpComponentsList.size();
+    if (scpsize > 0) {
+        exist_tSCP = true;
+        for (int i = 0; i < scpsize; i++) {
+            parameterNames += "\"conn_" + scpComponentsList.get(i).getUniqueName() + "\"";
+			if(i < scpsize-1){
+			    parameterNames += ",";
+			}
+        }
+    }
+
+    boolean exist_tCassandra = false;
+    List<INode> cassandraComponentsList = (List<INode>)process.getNodesOfType("tCassandraConnection");
+    if (cassandraComponentsList.size() > 0) {
+        exist_tCassandra = true;
+    }
+    boolean exist_tHBase = false;
+    List<INode> hbaseComponentsList = (List<INode>)process.getNodesOfType("tHBaseConnection");
+    if (hbaseComponentsList.size() > 0) {
+        exist_tHBase = true;
+    }
+
+    boolean exist_tFtp = false;
+    List<INode> ftpComponentsList = (List<INode>)process.getNodesOfType("tFTPConnection");
+    if (ftpComponentsList.size() > 0) {
+        exist_tFtp = true;
+    }
+
+    boolean exist_tS3 = false;
+    List<INode> s3ComponentsList = (List<INode>)process.getNodesOfType("tS3Connection");
+    if (s3ComponentsList.size() > 0) {
+        exist_tS3 = true;
+    }
+
+	boolean exist_tLDAP = false;
+    List<INode> ldapComponentsList = (List<INode>)process.getNodesOfType("tLDAPConnection");
+    if (ldapComponentsList.size() > 0) {
+        exist_tLDAP = true;
+    }
+
+    boolean exist_tMDM = false;
+    List<INode> mdmComponentsList = (List<INode>)process.getNodesOfType("tMDMConnection");
+    if (mdmComponentsList.size() > 0) {
+        exist_tMDM = true;
+    }
+
+    boolean exist_tPalo = false;
+    List<INode> paloComponentsList = (List<INode>)process.getNodesOfType("tPaloConnection");
+    if (paloComponentsList.size() > 0) {
+        exist_tPalo = true;
+    }
+
+    boolean exist_tEXist= false;
+    List<INode> existComponentsList = (List<INode>)process.getNodesOfType("tEXistConnection");
+    if (existComponentsList.size() > 0) {
+        exist_tEXist = true;
+    }
+
+    boolean exist_tSalesforce= false;
+    List<INode> salesforceComponentsList = (List<INode>)process.getNodesOfType("tSalesforceConnection");
+    if (salesforceComponentsList.size() > 0) {
+        exist_tSalesforce = true;
+    }
+
+    List<INode> snowflakeComponentsList = (List<INode>)process.getNodesOfType("tSnowflakeConnection");
+
+    boolean exist_tSAP= false;
+    List<INode> sapComponentsList = (List<INode>)process.getNodesOfType("tSAPConnection");
+    if (sapComponentsList.size() > 0) {
+        exist_tSAP = true;
+    }
+
+    boolean exist_tGS= false;
+    List<INode> gsComponentsList = (List<INode>)process.getNodesOfType("tGSConnection");
+    if (gsComponentsList.size() > 0) {
+        exist_tGS = true;
+    }
+
+    boolean hasSAM4RS = false;
+    for (INode node : process.getNodesOfType("tRESTClient")) {
+        if (Boolean.valueOf(ElementParameterParser.getValue(node, "__SERVICE_ACTIVITY_MONITOR__"))) {
+            hasSAM4RS = true;
+            break;
+        }
+    }
+    boolean hasSAM4WS = false;
+    for (INode node : process.getNodesOfType("tESBConsumer")) {
+        if (Boolean.valueOf(ElementParameterParser.getValue(node, "__SERVICE_ACTIVITY_MONITOR__"))) {
+            hasSAM4WS = true;
+            break;
+        }
+    }
+    class API_selector{
+        public boolean useDatastax(INode node){
+            String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+            String apiType = ElementParameterParser.getValue(node, "__API_TYPE__");
+            return "CASSANDRA_2_2".equals(dbVersion) || "CASSANDRA_3_0".equals(dbVersion) || "CASSANDRA_4_0".equals(dbVersion) || ("CASSANDRA_2_0_0".equals(dbVersion) && "DATASTAX".equals(apiType));
+        }
+    }
+%>
+    public String resuming_logs_dir_path = null;
+    public String resuming_checkpoint_path = null;
+    public String parent_part_launcher = null;
+    private String resumeEntryMethodName = null;
+    private boolean globalResumeTicket = false;
+
+    public boolean watch = false;
+    // portStats is null, it means don't execute the statistics
+    public Integer portStats = null;
+    public int portTraces = 4334;
+    public String clientHost;
+    public String defaultClientHost = "localhost";
+    public String contextStr = "<%=codeGenArgument.getContextName() %>";
+    public boolean isDefaultContext = true;
+    public String pid = "0";
+    public String rootPid = null;
+    public String fatherPid = null;
+    public String fatherNode = null;
+    public long startTime = 0;
+    public boolean isChildJob = false;
+    public String log4jLevel = "";
+    
+    private boolean enableLogStash;
+
+    private boolean execStat = true;
+
+    private ThreadLocal<java.util.Map<String, String>> threadLocal = new ThreadLocal<java.util.Map<String, String>>() {
+        protected java.util.Map<String, String> initialValue() {
+            java.util.Map<String,String> threadRunResultMap = new java.util.HashMap<String, String>();
+            threadRunResultMap.put("errorCode", null);
+            threadRunResultMap.put("status", "");
+            return threadRunResultMap;
+        };
+    };
+
+<%
+    if(isRunInMultiThread || exist_tParallelize){
+%>
+    private SyncInt runningThreadCount =new SyncInt();
+
+    private class SyncInt
+    {
+        private int count = 0;
+        public synchronized void add(int i)
+        {
+            count +=i;
+        }
+
+        public synchronized int getCount()
+        {
+            return count;
+        }
+    }
+<%
+    }
+%>
+
+    protected PropertiesWithType context_param = new PropertiesWithType();
+    public java.util.Map<String, Object> parentContextMap = new java.util.HashMap<String, Object>();
+
+    public String status= "";
+    
+    <%
+    boolean containGenericComponents = false;
+    nodeloop:
+	for(INode node : process.getGeneratingNodes()) {
+		IComponent component = node.getComponent();
+		for (ModuleNeeded module : component.getModulesNeeded(node)) {
+		    if (module.getModuleName() != null && module.getModuleName().startsWith("components-common")) {
+		        containGenericComponents = true;
+		        break nodeloop;
+		    }
+		}
+	}
+	if(containGenericComponents) {
+    %>
+    private final org.talend.components.common.runtime.SharedConnectionsPool connectionPool = new org.talend.components.common.runtime.SharedConnectionsPool() {
+    	public java.sql.Connection getDBConnection(String dbDriver, String url, String userName, String password, String dbConnectionName)
+            throws ClassNotFoundException, java.sql.SQLException {
+            return SharedDBConnection.getDBConnection(dbDriver, url, userName, password, dbConnectionName);
+        }
+
+    	public java.sql.Connection getDBConnection(String dbDriver, String url, String dbConnectionName)
+            throws ClassNotFoundException, java.sql.SQLException {
+            return SharedDBConnection.getDBConnection(dbDriver, url, dbConnectionName);
+        }
+    };
+    
+    private static final String GLOBAL_CONNECTION_POOL_KEY = "GLOBAL_CONNECTION_POOL";
+    
+    {
+    	globalMap.put(GLOBAL_CONNECTION_POOL_KEY, connectionPool);
+    }
+    <%}%>
+    
+    private final static java.util.Properties jobInfo = new java.util.Properties();
+    private final static java.util.Map<String,String> mdcInfo = new java.util.HashMap<>();
+    private final static java.util.concurrent.atomic.AtomicLong subJobPidCounter = new java.util.concurrent.atomic.AtomicLong();
+
+
+    public static void main(String[] args){
+        final <%=className %> <%=className %>Class = new <%=className %>();
+
+        int exitCode = <%=className %>Class.runJobInTOS(args);
+        <%if(isLog4jEnabled){%>
+	        if(exitCode==0){
+		        log.info("TalendJob: '<%=codeGenArgument.getJobName()%>' - Done.");
+	        }
+        <%}%>
+
+        System.exit(exitCode);
+    }
+	
+
+	
+	
+	private void getjobInfo() {
+		final String TEMPLATE_PATH = "src/main/templates/jobInfo_template.properties";
+		final String BUILD_PATH = "../jobInfo.properties";
+		final String path = this.getClass().getResource("").getPath();
+		if(path.lastIndexOf("target") > 0) {
+			final java.io.File templateFile = new java.io.File(
+					path.substring(0, path.lastIndexOf("target")).concat(TEMPLATE_PATH));
+			if (templateFile.exists()) {
+				readJobInfo(templateFile);
+				return;
+			}
+		}
+			readJobInfo(new java.io.File(BUILD_PATH));
+	}
+
+    private void readJobInfo(java.io.File jobInfoFile){
+	
+        if(jobInfoFile.exists()) {
+            try (java.io.InputStream is = new java.io.FileInputStream(jobInfoFile)) {
+            	jobInfo.load(is);
+            } catch (IOException e) {
+            	 <%if(isLog4jEnabled){%>
+                log.debug("Read jobInfo.properties file fail: " + e.getMessage());
+                <%}%>
+                
+            }
+        }
+            <%if(isLog4jEnabled){%>
+		log.info(String.format("Project name: %s\tJob name: %s\tGIT Commit ID: %s\tTalend Version: %s",
+				projectName,jobName,jobInfo.getProperty("gitCommitId"), "<%=System.getProperties().getProperty("talend.studio.version")%>"));
+		<%}%>
+    }
+
+   <%
+    if (isTestContainer) {
+         List<String> instanceList =  ProcessUtils.getTestInstances(process);
+         String encoding = System.getProperty("file.encoding");
+         for(String instance : instanceList)
+         {
+         String context = ProcessUtils.getInstanceContext(process,instance);
+        %>
+      @Test
+        public void test<%=instance%>() throws java.lang.Exception{
+        <%
+        int assertNum = ProcessUtils.getAssertAmount(process);
+        %>
+         if(<%=assertNum%><=0){
+            throw new java.lang.Exception("There is no tAssert in your test case!");
+          }
+            junitGlobalMap.put("tests.log",new String());
+            junitGlobalMap.put("tests.nbFailure",new Integer(0));
+            final <%=className %> <%=className %>Class = new <%=className %>();
+            java.util.List<String> paraList_<%=instance%> = new java.util.ArrayList<String>();
+            paraList_<%=instance%>.add("--context=<%=context%>");
+            <%
+        for(String testData : ProcessUtils.getTestData(process,instance)){
+            String path =  ProcessUtils.getTestDataValue(process, instance, testData);
+            String paramemterName = ProcessUtils.getTestDataParamemter(process, instance, testData);
+            if(path!=null&&path.length()>0){
+            %>
+
+            String instance_<%=testData%>=null;
+            <%
+            if(ProcessUtils.isSpark(process)){
+            String lineSeparator = "\r\n";
+            String fileContentEnCodeStr = "";
+            try {
+                fileContentEnCodeStr = java.util.Base64.getMimeEncoder().encodeToString(path.getBytes("UTF-8"));
+            } catch (java.io.UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+            StringBuilder result = new StringBuilder();
+            String[] arrayStr = fileContentEnCodeStr.split(lineSeparator);
+            for(String item : arrayStr){
+                result.append(item);
+            }
+            String testDataValue = result.toString();
+            %>
+                try {
+                    instance_<%=testData%> = new String(java.util.Base64.getMimeDecoder().decode("<%=testDataValue%>"), utf8Charset);
+                } catch (java.lang.Exception e) {
+                    e.printStackTrace();
+                }
+
+            <%
+            }else if(paramemterName!=null){
+            %>
+                java.net.URL url_<%=testData%> = getClass().getResource("<%=path%>");
+                instance_<%=testData%>="<%=paramemterName%>=" + java.net.URLDecoder.decode(url_<%=testData%>.getPath(), "<%=encoding%>");
+
+            <%
+            }else{
+            %>
+                java.net.URL url_<%=testData%> = getClass().getResource("<%=path%>");
+                instance_<%=testData%>="<%=testData%>=" + java.net.URLDecoder.decode(url_<%=testData%>.getPath(), "<%=encoding%>");
+            <%
+            }
+            %>
+            paraList_<%=instance%>.add("--context_param");
+            paraList_<%=instance%>.add(instance_<%=testData%>);
+        <%
+         }
+
+        }
+        %>
+        String[] arrays = new String[paraList_<%=instance%>.size()];
+        for(int i=0;i<paraList_<%=instance%>.size();i++){
+            arrays[i] = (String)paraList_<%=instance%>.get(i);
+        }
+        <%=className %>Class.runJobInTOS(arrays);
+
+        String errors = (String)junitGlobalMap.get("tests.log");
+        Integer nbFailure = (Integer)junitGlobalMap.get("tests.nbFailure");
+        assertTrue("Failure="+nbFailure+java.lang.System.getProperty("line.separator")+errors, errors.isEmpty());
+
+         if(<%=className %>Class.exception!=null){
+            throw <%=className %>Class.exception;
+        }
+        }
+        <%
+        }
+    }
+    %>
+
+    public String[][] runJob(String[] args) {
+
+        int exitCode = runJobInTOS(args);
+    <%
+        List<INode> tBufferNodes = (List<INode>)process.getNodesOfType("tBufferOutput");
+        if(tBufferNodes != null && tBufferNodes.size() > 0) {
+    %>
+        String[][] bufferValue = (String[][])globalBuffer.toArray(new String[globalBuffer.size()][]);
+    <%
+        } else {
+    %>
+        String[][] bufferValue = new String[][] { { Integer.toString(exitCode) } };
+    <%
+        }
+    %>
+
+        return bufferValue;
+    }
+
+    public boolean hastBufferOutputComponent() {
+		boolean hastBufferOutput = false;
+    	<%//For TDI-28558
+        	List<INode> tBufferNodesList = (List<INode>)process.getNodesOfType("tBufferOutput");
+        	if(tBufferNodesList != null && tBufferNodesList.size() > 0) {
+    	%>
+        		hastBufferOutput = true;
+    	<%
+        	}
+		%>
+        return hastBufferOutput;
+    }
+
+    public int runJobInTOS(String[] args) {
+	   	// reset status
+	   	status = "";
+	   	
+        String lastStr = "";
+        for (String arg : args) {
+            if (arg.equalsIgnoreCase("--context_param")) {
+                lastStr = arg;
+            } else if (lastStr.equals("")) {
+                evalParam(arg);
+            } else {
+                evalParam(lastStr + " " + arg);
+                lastStr = "";
+            }
+        }
+        enableLogStash = "true".equalsIgnoreCase(System.getProperty("audit.enabled"));
+
+        <%if(isLog4jEnabled){%>
+	        if(!"".equals(log4jLevel)){
+	        	<%if(isLog4j1Enabled){%>
+				if("trace".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.TRACE);
+				}else if("debug".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.DEBUG);
+				}else if("info".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.INFO);
+				}else if("warn".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.WARN);
+				}else if("error".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.ERROR);
+				}else if("fatal".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.FATAL);
+				}else if ("off".equalsIgnoreCase(log4jLevel)){
+					log.setLevel(org.apache.log4j.Level.OFF);
+				}
+				org.apache.log4j.Logger.getRootLogger().setLevel(log.getLevel());
+				<%}%>
+				
+				<%if(isLog4j2Enabled){%>
+				if("trace".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.TRACE);
+				}else if("debug".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.DEBUG);
+				}else if("info".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.INFO);
+				}else if("warn".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.WARN);
+				}else if("error".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.ERROR);
+				}else if("fatal".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.FATAL);
+				}else if ("off".equalsIgnoreCase(log4jLevel)){
+					org.apache.logging.log4j.core.config.Configurator.setLevel(log.getName(), org.apache.logging.log4j.Level.OFF);
+				}
+				org.apache.logging.log4j.core.config.Configurator.setLevel(org.apache.logging.log4j.LogManager.getRootLogger().getName(), log.getLevel());
+				<%}%>
+			}
+
+	        getjobInfo();
+			log.info("TalendJob: '<%=codeGenArgument.getJobName()%>' - Start.");
+		<%}%>
+
+            <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+                java.util.Set<Object> jobInfoKeys = jobInfo.keySet();
+                for(Object jobInfoKey: jobInfoKeys) {
+                    <%=MDC_CLASS%>.put("_" + jobInfoKey.toString(), jobInfo.get(jobInfoKey).toString());
+                }
+                <%=MDC_CLASS%>.put("_pid", pid);
+                <%=MDC_CLASS%>.put("_rootPid", rootPid);
+                <%=MDC_CLASS%>.put("_fatherPid", fatherPid);
+                <%=MDC_CLASS%>.put("_projectName", projectName);
+                <%=MDC_CLASS%>.put("_startTimestamp",java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC ).format( java.time.format.DateTimeFormatter.ISO_INSTANT ));
+                <%=MDC_CLASS%>.put("_jobRepositoryId","<%=process.getId() %>");
+                <%=MDC_CLASS%>.put("_compiledAtTimestamp","<%=java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC ).format( java.time.format.DateTimeFormatter.ISO_INSTANT )%>");
+
+                java.lang.management.RuntimeMXBean mx = java.lang.management.ManagementFactory.getRuntimeMXBean();
+                String[] mxNameTable = mx.getName().split("@"); //$NON-NLS-1$
+                if (mxNameTable.length == 2) {
+                    <%=MDC_CLASS%>.put("_systemPid", mxNameTable[0]);
+                } else {
+                    <%=MDC_CLASS%>.put("_systemPid", String.valueOf(java.lang.Thread.currentThread().getId()));
+                }
+
+                <%
+            }%>
+		
+		<%
+		INode jobCatcherNode = null;
+		
+		int threadPoolSize = 0;
+		boolean tRESTRequestLoopExists = false;
+		for (INode nodeInProcess : process.getGeneratingNodes()) {
+			String componentName = nodeInProcess.getComponent().getName();
+
+			if(jobCatcherNode==null && "tJobStructureCatcher".equals(componentName)) {
+				jobCatcherNode = nodeInProcess;
+				continue;
+			}
+
+			if(!nodeInProcess.isActivate()) continue;
+
+			if("tRESTRequestLoop".equals(componentName)) {
+				tRESTRequestLoopExists = true;
+				continue;
+			}
+			
+			if("tWriteXMLFieldOut".equals(componentName)) {
+				IConnection nextMergeConn = NodeUtil.getNextMergeConnection(nodeInProcess);
+				if(nextMergeConn == null || nextMergeConn.getInputId()==1){
+					threadPoolSize++;
+				}
+			}
+		}
+		
+		boolean enableLogStash = !Boolean.getBoolean("deactivate_extended_component_log") && (jobCatcherNode!=null);
+		boolean enable_runtime_lineage_log = NodeUtil.isJobUsingRuntimeLineage(process) && (jobCatcherNode!=null);
+		if(enable_runtime_lineage_log) {
+		%>
+			java.util.Properties p_<%=jobCatcherNode.getUniqueName()%> = new java.util.Properties();
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("root.logger", "runtime");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("encoding", "UTF-8");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("application.name", "Talaxie Studio");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("service.name", "Talaxie Studio Job");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("instance.name", "Talaxie Studio Job Instance");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("propagate.appender.exceptions", "none");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("log.appender", "file");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.path", "runtime.json");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.maxsize", "52428800");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.maxbackup", "20");
+			p_<%=jobCatcherNode.getUniqueName()%>.setProperty("host", "false");
+			
+			final String runtime_dir_<%=jobCatcherNode.getUniqueName()%> = System.getProperty("runtime.lineage.outputpath");
+			final String runtime_path_<%=jobCatcherNode.getUniqueName()%> = System.getProperty("runtime.lineage.appender.file.path");
+			if(runtime_path_<%=jobCatcherNode.getUniqueName()%>==null || runtime_path_<%=jobCatcherNode.getUniqueName()%>.isEmpty()) {
+				if(runtime_dir_<%=jobCatcherNode.getUniqueName()%>!=null && !runtime_dir_<%=jobCatcherNode.getUniqueName()%>.isEmpty()) {
+					System.setProperty("runtime.lineage.appender.file.path", 
+						new StringBuilder().append(runtime_dir_<%=jobCatcherNode.getUniqueName()%>)
+						.append((runtime_dir_<%=jobCatcherNode.getUniqueName()%>.endsWith("/") || runtime_dir_<%=jobCatcherNode.getUniqueName()%>.endsWith("\\")) ? "" : java.io.File.separator)
+						.append(projectName)
+						.append(java.io.File.separatorChar)
+						.append(jobName)
+						.append(java.io.File.separatorChar)
+						.append(jobVersion)
+						.append(java.io.File.separatorChar)
+						.append("runtime_log_")
+						.append(new java.text.SimpleDateFormat("yyyyMMddHHmmss").format(new java.util.Date()))
+						.append(".json")
+						.toString()
+					);
+				}
+			}
+			
+			System.getProperties().stringPropertyNames().stream()
+					.filter(it -> it.startsWith("runtime.lineage.") && !"runtime.lineage.outputpath".equals(it))
+					.forEach(key -> p_<%=jobCatcherNode.getUniqueName()%>.setProperty(key.substring("runtime.lineage.".length()), System.getProperty(key)));
+			
+			<%if(isLog4j1Enabled) {%>
+			org.apache.log4j.Logger.getLogger(p_<%=jobCatcherNode.getUniqueName()%>.getProperty("root.logger")).setLevel(org.apache.log4j.Level.DEBUG);
+			<%}%>
+			
+			<%if(isLog4j2Enabled) {%>
+			org.apache.logging.log4j.core.config.Configurator.setLevel(p_<%=jobCatcherNode.getUniqueName()%>.getProperty("root.logger"), org.apache.logging.log4j.Level.DEBUG);
+			<%}%>
+			
+			runtime_lineage_logger_<%=jobCatcherNode.getUniqueName()%> = org.talend.job.audit.JobEventAuditLoggerFactory.createJobAuditLogger(p_<%=jobCatcherNode.getUniqueName()%>);
+		<%
+		}
+		
+		if(enableLogStash) {
+			String location = ElementParameterParser.getValue(jobCatcherNode, "__LOCATION__");
+		%>
+			if(enableLogStash) {
+				java.util.Properties properties_<%=jobCatcherNode.getUniqueName()%> = new java.util.Properties();
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("root.logger", "audit");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("encoding", "UTF-8");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("application.name", "Talaxie Studio");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("service.name", "Talaxie Studio Job");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("instance.name", "Talaxie Studio Job Instance");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("propagate.appender.exceptions", "none");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("log.appender", "file");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.path", <%=location%>);
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.maxsize", "52428800");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("appender.file.maxbackup", "20");
+				properties_<%=jobCatcherNode.getUniqueName()%>.setProperty("host", "false");
+
+				System.getProperties().stringPropertyNames().stream()
+					.filter(it -> it.startsWith("audit.logger."))
+					.forEach(key -> properties_<%=jobCatcherNode.getUniqueName()%>.setProperty(key.substring("audit.logger.".length()), System.getProperty(key)));
+
+				<%if(isLog4j1Enabled) {%>
+				org.apache.log4j.Logger.getLogger(properties_<%=jobCatcherNode.getUniqueName()%>.getProperty("root.logger")).setLevel(org.apache.log4j.Level.DEBUG);
+				<%}%>
+				
+				<%if(isLog4j2Enabled) {%>
+				org.apache.logging.log4j.core.config.Configurator.setLevel(properties_<%=jobCatcherNode.getUniqueName()%>.getProperty("root.logger"), org.apache.logging.log4j.Level.DEBUG);
+				<%}%>
+				auditLogger_<%=jobCatcherNode.getUniqueName()%> = org.talend.job.audit.JobEventAuditLoggerFactory.createJobAuditLogger(properties_<%=jobCatcherNode.getUniqueName()%>);
+			}
+		<%
+		}
+		%>
+
+        if(clientHost == null) {
+            clientHost = defaultClientHost;
+        }
+
+        if(pid == null || "0".equals(pid)) {
+            pid = TalendString.getAsciiRandomString(6);
+        }
+
+        <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+            <%=MDC_CLASS%>.put("_pid", pid);
+        <%}%>
+
+        if (rootPid==null) {
+            rootPid = pid;
+        }
+
+        <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+            <%=MDC_CLASS%>.put("_rootPid", rootPid);
+        <%}%>
+
+        if (fatherPid==null) {
+            fatherPid = pid;
+        }else{
+            isChildJob = true;
+        }
+        <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+            <%=MDC_CLASS%>.put("_fatherPid", fatherPid);
+        <%}%>
+
+<%
+        if (stats) {
+%>
+        if (portStats != null) {
+            // portStats = -1; //for testing
+            if (portStats < 0 || portStats > 65535) {
+                // issue:10869, the portStats is invalid, so this client socket can't open
+                System.err.println("The statistics socket port " + portStats + " is invalid.");
+                execStat = false;
+            }
+        } else {
+            execStat = false;
+        }
+<%
+        }
+%>
+        boolean inOSGi = routines.system.BundleUtils.inOSGi();
+
+        try {
+            java.util.Dictionary<String, Object> jobProperties = null;
+            if (inOSGi) {
+                jobProperties = routines.system.BundleUtils.getJobProperties(jobName);
+    
+                if (jobProperties != null && jobProperties.get("context") != null) {
+                    contextStr = (String)jobProperties.get("context");
+                }
+            }
+            //call job/subjob with an existing context, like: --context=production. if without this parameter, there will use the default context instead.
+            java.io.InputStream inContext = <%=className%>.class.getClassLoader().getResourceAsStream("<%=jobClassPackageFolder%>/contexts/" + contextStr + ".properties");
+            if (inContext == null) {
+                inContext = <%=className%>.class.getClassLoader().getResourceAsStream("config/contexts/" + contextStr + ".properties");
+            }
+            if (inContext != null) {
+                try {
+                    //defaultProps is in order to keep the original context value
+                    if(context != null && context.isEmpty()) {
+    	                defaultProps.load(inContext);
+    	                if (inOSGi && jobProperties != null) {
+                             java.util.Enumeration<String> keys = jobProperties.keys();
+                             while (keys.hasMoreElements()) {
+                                 String propKey = keys.nextElement();
+                                 if (defaultProps.containsKey(propKey)) {
+                                     defaultProps.put(propKey, (String) jobProperties.get(propKey));
+                                 }
+                             }
+    	                }
+    	                context = new ContextProperties(defaultProps);
+                    }
+                } finally {
+                    inContext.close();
+                }
+            } else if (!isDefaultContext) {
+                //print info and job continue to run, for case: context_param is not empty.
+                System.err.println("Could not find the context " + contextStr);
+            }
+            
+            if(!context_param.isEmpty()) {
+                context.putAll(context_param);
+				//set types for params from parentJobs
+				for (Object key: context_param.keySet()){
+					String context_key = key.toString();
+					String context_type = context_param.getContextType(context_key);
+					context.setContextType(context_key, context_type);
+
+				}
+            }
+            <%
+            String warningMessageFormat = "Null value will be used for context parameter %s: %s";
+            final int maxContextInOneMethodToProcess = 100;
+            int lastMethodNumber = 0;
+%>
+            class ContextProcessing {
+                private void processContext_0() {
+<%
+                    for (int i = 1; i <= params.size(); i++) {
+                        IContextParameter ctxParam = params.get(i-1);
+                        if (i % maxContextInOneMethodToProcess == 0) {
+                            /* close previous method and declare new */
+                            lastMethodNumber++;
+%>
+                        }
+
+                private void processContext_<%=lastMethodNumber%>() {
+<%
+                        } //endIf
+%>
+                        context.setContextType("<%=ctxParam.getName()%>", "<%=ctxParam.getType()%>");
+                        if(context.getStringValue("<%=ctxParam.getName()%>") == null) {
+                            context.<%=ctxParam.getName()%> = null;
+                        } else {
+                        <%//}B1 block%>
+<%
+                        String typeToGenerate ="String";
+                        if( !(ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory") ||ctxParam.getType().equals("id_List Of Value"))) {
+                           typeToGenerate=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+                        }
+                        
+                        if (ctxParam.getType().equals("id_Password")) {
+%>
+                            String pwd_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                            context.<%=ctxParam.getName()%> = null;
+                            if(pwd_<%=ctxParam.getName()%>_value!=null) {
+                                if(context_param.containsKey("<%=ctxParam.getName()%>")) {//no need to decrypt if it come from program argument or parent job runtime
+                                    context.<%=ctxParam.getName()%> = pwd_<%=ctxParam.getName()%>_value;
+                                } else if (!pwd_<%=ctxParam.getName()%>_value.isEmpty()) {
+                                    try {
+                                        context.<%=ctxParam.getName()%> = routines.system.PasswordEncryptUtil.decryptPassword(pwd_<%=ctxParam.getName()%>_value);
+                                        context.put("<%=ctxParam.getName()%>",context.<%=ctxParam.getName()%>);
+                                    } catch (java.lang.RuntimeException e) {
+                                        //do nothing
+                                    }
+                                }
+                            }
+<%
+                        } else if(typeToGenerate.equals("java.util.Date")) {
+%>
+                            String context_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                            try{
+                                if (context_<%=ctxParam.getName()%>_value == null){
+                                    context_<%=ctxParam.getName()%>_value = "";
+                                }
+                                int context_<%=ctxParam.getName()%>_pos = context_<%=ctxParam.getName()%>_value.indexOf(";");
+                                String context_<%=ctxParam.getName()%>_pattern =  "yyyy-MM-dd HH:mm:ss";
+                                if(context_<%=ctxParam.getName()%>_pos > -1){
+                                    context_<%=ctxParam.getName()%>_pattern = context_<%=ctxParam.getName()%>_value.substring(0, context_<%=ctxParam.getName()%>_pos);
+                                    context_<%=ctxParam.getName()%>_value = context_<%=ctxParam.getName()%>_value.substring(context_<%=ctxParam.getName()%>_pos + 1);
+                                }
+
+                                context.<%=ctxParam.getName()%>=(java.util.Date)(new java.text.SimpleDateFormat(context_<%=ctxParam.getName()%>_pattern).parse(context_<%=ctxParam.getName()%>_value));
+
+                            } catch(ParseException e) {
+                                try { <% /*try to check if date passed as long also*/ %>
+                                    long context_<%=ctxParam.getName()%>_longValue = Long.valueOf(context_<%=ctxParam.getName()%>_value);
+                                    context.<%=ctxParam.getName()%> = new java.util.Date(context_<%=ctxParam.getName()%>_longValue);
+                                } catch (NumberFormatException cantParseToLongException) {
+<%
+                                    if (isLog4jEnabled) {
+%>
+                                        log.warn(String.format("<%=warningMessageFormat %>", "<%=ctxParam.getName() %>", "Can't parse date string: " + e.getMessage() + " and long: " + cantParseToLongException.getMessage()));
+<%
+                                    } else {
+%>
+                                        System.err.println(String.format("<%=warningMessageFormat %>", "<%=ctxParam.getName() %>", "Can't parse date string: " + e.getMessage() + " and long: " + cantParseToLongException.getMessage()));
+<%
+                                    }
+%>
+                                    context.<%=ctxParam.getName()%>=null;
+                                }
+                            }
+<%
+                        } else if(typeToGenerate.equals("Object")||typeToGenerate.equals("String")||typeToGenerate.equals("java.lang.String")) {
+%>
+                            context.<%=ctxParam.getName()%>=(<%=typeToGenerate%>) context.getProperty("<%=ctxParam.getName()%>");
+<%
+                        } else if(typeToGenerate.equals("Character")&&ctxParam.getName()!=null) {
+%>
+                            context.<%=ctxParam.getName()%>= new java.text.StringCharacterIterator(context.getProperty("<%=ctxParam.getName()%>")).first();
+<%
+                        } else {
+%>
+                            try{
+                                context.<%=ctxParam.getName()%>=routines.system.ParserUtils.parseTo_<%=typeToGenerate%> (context.getProperty("<%=ctxParam.getName()%>"));
+                            } catch(NumberFormatException e){
+<%
+                             if (isLog4jEnabled) {
+%>
+                                log.warn(String.format("<%=warningMessageFormat %>", "<%=ctxParam.getName() %>", e.getMessage()));
+<%
+                             } else {
+%>
+                                System.err.println(String.format("<%=warningMessageFormat %>", "<%=ctxParam.getName() %>", e.getMessage()));
+<%
+                             }
+%>
+                                context.<%=ctxParam.getName()%>=null;
+                            }
+<%
+                        }
+%>
+                        <%//{B1 block%>
+                        }
+<%
+                    }
+%>
+                } <%/*close last method*/%>
+                public void processAllContext() {
+<%
+                    for (int i = 0; i <=lastMethodNumber; i++) {
+%>
+                        processContext_<%=i %>();
+<%
+                    }
+%>
+                }
+            }
+
+            new ContextProcessing().processAllContext();
+        } catch (java.io.IOException ie) {
+            System.err.println("Could not load context "+contextStr);
+            ie.printStackTrace();
+        }
+
+        // get context value from parent directly
+        if (parentContextMap != null && !parentContextMap.isEmpty()) {
+        <% for (IContextParameter ctxParam :params){
+            //about the type, they are same as header.javajet
+            String typeToGenerate = "String";
+            if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory")){
+                typeToGenerate = "String";
+            }else{
+                typeToGenerate = JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+            }
+        %>if (parentContextMap.containsKey("<%=ctxParam.getName()%>")) {
+                context.<%=ctxParam.getName()%> = (<%=typeToGenerate %>) parentContextMap.get("<%=ctxParam.getName()%>");
+            }<%}%>
+        }
+
+        //Resume: init the resumeUtil
+        resumeEntryMethodName = ResumeUtil.getResumeEntryMethodName(resuming_checkpoint_path);
+        resumeUtil = new ResumeUtil(resuming_logs_dir_path, isChildJob, rootPid);
+        resumeUtil.initCommonInfo(pid, rootPid, fatherPid, projectName, jobName, contextStr, jobVersion);
+
+		List<String> parametersToEncrypt = new java.util.ArrayList<String>();
+<% 		for(IContextParameter ctxParam :params) {
+        	if ("id_Password".equals(ctxParam.getType())) {
+%>
+			parametersToEncrypt.add("<%=ctxParam.getName()%>");
+<%
+        	}
+        }
+%>
+        //Resume: jobStart
+        resumeUtil.addLog("JOB_STARTED", "JOB:" + jobName, parent_part_launcher, Thread.currentThread().getId() + "", "","","","",resumeUtil.convertToJsonText(context,ContextProperties.class,parametersToEncrypt));
+
+        <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+            <%=MDC_CLASS%>.put("_context", contextStr);
+            log.info("TalendJob: '<%=codeGenArgument.getJobName()%>' - Started.");
+            java.util.Optional.ofNullable(<%=MDC_CLASS%>.getCopyOfContextMap()).ifPresent(mdcInfo::putAll);
+        <%}%>
+
+<%
+        if (stats) {
+%>
+if(execStat) {
+    try {
+        runStat.openSocket(!isChildJob);
+        runStat.setAllPID(rootPid, fatherPid, pid, jobName);
+        runStat.startThreadStat(clientHost, portStats);
+        runStat.updateStatOnJob(RunStat.JOBSTART, fatherNode);
+    } catch (java.io.IOException ioException) {
+        ioException.printStackTrace();
+    }
+}
+<%
+    }
+%>
+
+<%
+    if (trace) {
+%>
+    try {
+        runTrace.openSocket(!isChildJob);
+        runTrace.startThreadTrace(clientHost, portTraces);
+        if (runTrace.isPause()) {
+			while (runTrace.isPause()) {
+				Thread.sleep(100);
+			}
+		}
+    } catch (java.io.IOException ioException) {
+        ioException.printStackTrace();
+    } catch (InterruptedException e) {
+			e.printStackTrace();
+	}
+<%
+    }
+%>
+
+<%= ElementParameterParser.getValue(process, "__HEADER_CODE__")%>
+	<%//if(containsTPartitioner){//as tMatchGroupIn and tFuzzyUniqRow use this concurrentHashMap, so generate always%>
+	    java.util.concurrent.ConcurrentHashMap<Object, Object> concurrentHashMap = new java.util.concurrent.ConcurrentHashMap<Object, Object>();
+	    globalMap.put("concurrentHashMap", concurrentHashMap);
+	<%//}%>
+
+    long startUsedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    long endUsedMemory = 0;
+    long end = 0;
+
+    startTime = System.currentTimeMillis();
+<%
+
+    boolean isCustomProxySettingsUsed = false;
+    List<? extends INode> proxyNodes = process.getNodesOfType("tSetProxy");
+    for (int i = 0; i < proxyNodes.size(); i++) {
+        INode proxyNode = proxyNodes.get(i);
+        String useCustomProxyCheckboxValue = ElementParameterParser.getValue(proxyNode, "__PROXY_GLOBAL__");
+
+        if (useCustomProxyCheckboxValue != null && !"true".equals(useCustomProxyCheckboxValue)) {
+            isCustomProxySettingsUsed = true;
+            break;
+        }
+    }
+    
+    if (isCustomProxySettingsUsed) {
+%>
+        java.net.ProxySelector proxySelectorOnStartJob = java.net.ProxySelector.getDefault();
+<%
+    }
+
+        //1. send the begin msg
+
+        for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        <%=statCatcherNode.getUniqueName() %>.addMessage("begin");
+<%
+        }
+        
+        List<INode> prejobNodes = new ArrayList<INode>();
+
+        List<INode> postjobNodes = new ArrayList<INode>();
+
+        List<INode> hadoopConfNodes = new ArrayList<INode>();
+        Set<String> hadoopClusterIds = new HashSet<String>();
+
+        INode implicit_Context = null;
+
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+
+            if (componentName.equals("tPrejob")) {
+                prejobNodes.add(rootNode);
+                continue;
+            }
+
+            if (componentName.equals("tPostjob")) {
+                postjobNodes.add(rootNode);
+                continue;
+            }
+
+            if (componentName.equals("tHadoopConfManager")) {
+                hadoopConfNodes.add(rootNode);
+                org.talend.core.model.process.IElementParameter ciParam = rootNode.getElementParameter("CLUSTER_ID");
+                if (ciParam != null) {
+                    Object repIdObj = ciParam.getValue();
+                    if (repIdObj != null) {
+                        hadoopClusterIds.add(String.valueOf(repIdObj));
+                    }
+                }
+                continue;
+            }
+
+            if (uniqueName.startsWith("Implicit_Context_")) {
+                implicit_Context = rootNode;
+                continue;
+            }
+        }
+%>
+
+<%
+//2. load implicit contextload
+ if(implicit_Context != null) {
+%>
+<%=createCallProcess(implicit_Context, className, false) %>
+<%
+ }
+%>
+
+this.globalResumeTicket = true;//to run tPreJob
+
+<%
+//3. run pre-job
+ if(!prejobNodes.isEmpty()) {
+    for(INode preNode:prejobNodes) {
+%>
+<%=createCallProcess(preNode, className, false) %>
+<%
+    }
+ }
+%>
+
+<%if (hadoopClusterIds.size() > 1) {%>
+    System.err.println("Only one hadoop configuration is allowed in one job!");
+<%}%>
+
+<%
+// run tHadoopConfManager component if there is it.
+ if(!hadoopConfNodes.isEmpty()) {
+    INode hadoopConfNode = hadoopConfNodes.get(0);
+    if (hadoopConfNode.isStart()) {
+%>
+<%=createCallProcess(hadoopConfNode, className, false) %>
+<%
+ }
+ }
+%>
+
+<%
+        //4. flush the begin msg
+        for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        try {
+            <%=statCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+        }
+<%
+        }
+        
+        if(enableLogStash) {
+%>
+		if(enableLogStash) {
+	        <%=jobCatcherNode.getUniqueName() %>.addJobStartMessage();
+	        try {
+	            <%=jobCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+	        } catch (java.lang.Exception e) {
+	            e.printStackTrace();
+	        }
+        }
+<%
+        }
+%>
+
+this.globalResumeTicket = false;//to run others jobs
+
+<%
+
+    //5. all others sub-job (MultiThread mode)
+    if(isRunInMultiThread){
+        %>final Thread launchingThread = Thread.currentThread();<%
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+
+            //filter the special subjob
+            if("tPrejob".equals(componentName)) continue;
+            if("tPostjob".equals(componentName)) continue;
+            if("tHadoopConfManager".equals(componentName)) continue;
+
+            //bug16808 when use parallel option at Output components, that will multi thread
+            if(componentName.startsWith("tAsyncIn")) continue;
+            //end bug16808
+
+            if(implicit_Context!=null && implicit_Context.getUniqueName().equals(uniqueName)) continue;
+
+            if (!componentName.equals("tJobStructureCatcher") && !componentName.equals("tLogCatcher") && !componentName.equals("tFlowMeterCatcher") && !componentName.equals("tAssertCatcher") && !componentName.equals("tStatCatcher")) {
+%>
+        runningThreadCount.add(1);
+        new Thread(){
+            public void run() {
+                <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+                    mdcInfo.forEach(<%=MDC_CLASS%>::put);
+                <% } %>
+
+                java.util.Map threadRunResultMap = new java.util.HashMap();
+                threadRunResultMap.put("errorCode", null);
+                threadRunResultMap.put("status", "");
+                threadLocal.set(threadRunResultMap);
+
+                <%=createCallProcess(rootNode, className, true) %>
+                finally {
+                    Integer localErrorCode = (Integer)(((java.util.Map)threadLocal.get()).get("errorCode"));
+                    String localStatus = (String)(((java.util.Map)threadLocal.get()).get("status"));
+                    if (localErrorCode != null) {
+                        if (errorCode == null || localErrorCode.compareTo(errorCode) > 0) {
+                           errorCode = localErrorCode;
+                        }
+                    }
+                    if (!status.equals("failure")){
+                        status = localStatus;
+                    }
+
+                    if ("true".equals(((java.util.Map) threadLocal.get()).get("JobInterrupted"))) {
+                        launchingThread.interrupt();
+                    }
+
+                    runningThreadCount.add(-1);
+                }
+            }
+        }.start();
+
+<%
+            }
+        }
+%>
+    boolean interrupted = false;
+    while (runningThreadCount.getCount() > 0) {
+        try {
+            Thread.sleep(10);
+        } catch (java.lang.InterruptedException e) {
+            interrupted = true;
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    if (interrupted) {
+        Thread.currentThread().interrupt();
+    }
+
+
+<%
+    } else { // isRunInMultiThread  //5. all others sub-job (SingleThread  mode)
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+
+            //filter the special subjob
+            if("tPrejob".equals(componentName)) continue;
+            if("tPostjob".equals(componentName)) continue;
+            if("tHadoopConfManager".equals(componentName)) continue;
+            if(implicit_Context!=null && implicit_Context.getUniqueName().equals(uniqueName)) continue;
+
+            if (!componentName.equals("tJobStructureCatcher") && !componentName.equals("tLogCatcher") && !componentName.equals("tFlowMeterCatcher") && !componentName.equals("tAssertCatcher") && !componentName.equals("tStatCatcher") && !componentName.equals("tAsyncIn")) {
+%>
+<%=createCallProcess(rootNode, className, false) %>
+<%
+                if (process.getNodesOfType("tStatCatcher").size() > 0) {
+%>
+<%=statsErrorHandlingAfterMainCall(rootNode, process.getNodesOfType("tStatCatcher"))%>
+<%
+                }
+            }
+        }
+    }// end if(isRunInMultiThread)
+%>
+
+this.globalResumeTicket = true;//to run tPostJob
+
+<%
+//6. run the post-job
+ if(!postjobNodes.isEmpty()){
+    for(INode postNode:postjobNodes){
+%>
+<%=createCallProcess(postNode, className, false) %>
+<%
+    }
+ }
+%>
+
+<%= ElementParameterParser.getValue(process, "__FOOTER_CODE__")%>
+
+<%
+    if (isCustomProxySettingsUsed) { 
+%>
+        java.net.ProxySelector.setDefault(proxySelectorOnStartJob);
+<%
+    }
+%>
+        end = System.currentTimeMillis();
+
+        if (watch) {
+            System.out.println((end-startTime)+" milliseconds");
+        }
+
+        endUsedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        if (false) {
+            System.out.println((endUsedMemory - startUsedMemory) + " bytes memory increase when running : <%=className %>");
+        }
+<%
+    //7. send & flush the end msg to statcatcher
+    for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        <%=statCatcherNode.getUniqueName() %>.addMessage(status==""?"end":status, (end-startTime));
+        try {
+            <%=statCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+        }
+<%
+    }
+    
+    if(enableLogStash) {
+%>
+		if(enableLogStash) {
+	        <%=jobCatcherNode.getUniqueName() %>.addJobEndMessage(startTime, end, status);
+	        try {
+	            <%=jobCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+	        } catch (java.lang.Exception e) {
+	            e.printStackTrace();
+	        }
+        }
+<%
+    }
+
+    //tRESTRequest may appear in microservice, the code may be called before call submit(task) method, so can't shutdown it here
+    if(!tRESTRequestLoopExists && threadPoolSize>0) {
+%>
+        es.shutdown();
+        <%//shutdownNow should never be executed, only for safe%>
+        try {
+            if(!es.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+                es.shutdownNow();
+                if(!es.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+
+                }
+            }
+        } catch (java.lang.InterruptedException ie) {
+            es.shutdownNow();
+        } catch (java.lang.Exception e) {
+
+        }
+<%
+    }
+%>
+
+<% if (exist_tMOM) { %>
+    closeJmsConnections();
+<% } %>
+
+<% if (exist_tSCP) { 
+%>
+    closeCloseableConnections(<%=parameterNames%>);
+<% 
+} 
+%>
+
+<%
+    if (stats) {
+%>
+if (execStat) {
+    runStat.updateStatOnJob(RunStat.JOBEND, fatherNode);
+    runStat.stopThreadStat();
+}
+<%
+    }
+
+    if (trace) {
+%>
+        runTrace.stopThreadTrace();
+<%
+    }
+%>
+    int returnCode = 0;
+
+<%
+    if (isRunInMultiThread) {
+%>
+        Integer localErrorCode = (Integer)(((java.util.Map)threadLocal.get()).get("errorCode"));
+        String localStatus = (String)(((java.util.Map)threadLocal.get()).get("status"));
+        if (localErrorCode != null) {
+            if (errorCode == null || localErrorCode.compareTo(errorCode) > 0) {
+                   errorCode = localErrorCode;
+            }
+        }
+        if (localStatus != null && !status.equals("failure")){
+            status = localStatus;
+        }
+<%
+    }
+%>
+
+    if(errorCode == null) {
+         returnCode = status != null && status.equals("failure") ? 1 : 0;
+    } else {
+         returnCode = errorCode.intValue();
+    }
+    resumeUtil.addLog("JOB_ENDED", "JOB:" + jobName, parent_part_launcher, Thread.currentThread().getId() + "", "","" + returnCode,"","","");
+    resumeUtil.flush();
+
+    <%if(isLog4jEnabled && isLog4j2Enabled) {%>
+
+        <%=MDC_CLASS%>.remove("_subJobName");
+        <%=MDC_CLASS%>.remove("_subJobPid");
+        <%=MDC_CLASS%>.remove("_systemPid");
+        log.info("TalendJob: '<%=codeGenArgument.getJobName()%>' - Finished - status: " + status + " returnCode: " + returnCode );
+    <%}%>
+
+    return returnCode;
+
+  }
+
+    // only for OSGi env
+    public void destroy() {
+<% if(exist_tMOM) { %>
+    closeJmsConnections();
+<% } %>
+<% if(exist_tSCP) { %>
+    closeCloseableConnections(<%=parameterNames%>);
+<% } %>
+<% if (exist_tSQLDB) { %>
+    closeSqlDbConnections();
+<% } %>
+<% if (exist_tCassandra) { %>
+    closeCassandraConnections();
+<% } %>
+<% if (exist_tHBase) { %>
+    closeHBaseConnections();
+<% } %>
+<% if (exist_tFtp) { %>
+    closeFtpConnections();
+<% } %>
+<% if (exist_tS3) { %>
+    closeS3Connections();
+<% } %>
+<% if (exist_tLDAP) { %>
+    closeLDAPConnections();
+<% } %>
+<% if (exist_tMDM) { %>
+    closeMDMConnections();
+<% } %>
+<% if (exist_tPalo) { %>
+    closePaloConnections();
+<% } %>
+<% if (exist_tEXist) { %>
+    closeEXistConnections();
+<% } %>
+<% if (exist_tGS) { %>
+    closeGSConnections();
+<% } %>
+
+
+    }
+
+<%
+    if(exist_tMOM) {
+%>
+    private void closeJmsConnections() {
+        try {
+            Object obj_conn;
+<%
+            for (INode momNode : momComponentsList) {
+            // fix for TESB-16026
+            if (!(Boolean.valueOf(ElementParameterParser.getValue(momNode, "__USE_CONNECTION__")) || Boolean.valueOf(ElementParameterParser.getValue(momNode, "__USE_SHARED_CONNECTION__")))) {
+            // end fix for TESB-16026
+%>
+            obj_conn = globalMap.remove("connection_<%=momNode.getUniqueName() %>");
+            if (null != obj_conn) {
+                ((javax.jms.Connection) obj_conn).close();
+            }
+<%
+            }
+            // fix for TESB-16026
+            }
+            // end fix for TESB-16026
+%>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%
+    }
+%>
+
+<%
+    if(exist_tSCP) {
+%>
+    private void closeCloseableConnections(String... names) {
+	        java.util.Arrays.stream(names).forEach(name-> {
+            try {
+			    Object obj_conn = globalMap.remove(name);
+				if(obj_conn != null){
+				    ((java.io.Closeable)obj_conn).close();
+				}
+            } catch (IOException ioException) {
+            }
+        });
+	}
+<%
+    }
+%>
+
+<%  if(exist_tSQLDB) { %>
+    private void closeSqlDbConnections() {
+        try {
+            Object obj_conn;
+<%    for (INode sqlDbComponent : sqlDbComponentsList) { %>
+            obj_conn = globalMap.remove("conn_<%=sqlDbComponent.getUniqueName() %>");
+            if (null != obj_conn) {
+                ((java.sql.Connection) obj_conn).close();
+            }
+<%    } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+<% if (exist_tCassandra) { %>
+    private void closeCassandraConnections() {
+        try {
+            Object obj_cluster;
+            Object obj_conn;
+<%  for (INode cassandraDbNode : cassandraComponentsList) {
+		String dbVersionCassandra = ElementParameterParser.getValue(cassandraDbNode, "__DB_VERSION__");
+        if((new API_selector()).useDatastax(cassandraDbNode)) { 
+			if("CASSANDRA_4_0".equals(dbVersionCassandra)) {
+			%>
+				obj_conn = globalMap.remove("connection_<%=cassandraDbNode.getUniqueName()%>");if(obj_conn != null) {
+					((com.datastax.oss.driver.api.core.CqlSession) obj_conn).close();
+				}
+			<%
+			} else {
+			%>
+				obj_cluster = globalMap.remove("cluster_<%=cassandraDbNode.getUniqueName()%>");
+				obj_conn = globalMap.remove("connection_<%=cassandraDbNode.getUniqueName()%>");
+				if(obj_conn != null) {
+					((com.datastax.driver.core.Session) obj_conn).close();
+				}
+				if(obj_cluster != null) {
+					((com.datastax.driver.core.Cluster) obj_cluster).close();
+				}
+			<%
+			}
+		} else { %>
+            obj_conn = globalMap.remove("cluster_<%=cassandraDbNode.getUniqueName()%>");
+            if(obj_conn!=null) {
+                ((me.prettyprint.hector.api.Cluster) obj_conn).getConnectionManager().shutdown();
+            }
+<%      }
+    }%>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%   }//End if
+%>
+
+<%  if(exist_tHBase) { %>
+    private void closeHBaseConnections() {
+        try {
+<%
+	for (INode hbaseComponent : hbaseComponentsList) {
+
+        String hbaseDistribution = ElementParameterParser.getValue(hbaseComponent, "__DISTRIBUTION__");
+	    String hbaseVersion = ElementParameterParser.getValue(hbaseComponent, "__HBASE_VERSION__");
+
+        org.talend.hadoop.distribution.component.HBaseComponent hbaseDistrib = null;
+        try {
+            hbaseDistrib = (org.talend.hadoop.distribution.component.HBaseComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(hbaseDistribution, hbaseVersion);
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+            return "";
+        }
+
+        boolean isCustom = hbaseDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+
+	    boolean isHadoop2 = "HADOOP_2".equals(ElementParameterParser.getValue(hbaseComponent, "__HADOOP_CUSTOM_VERSION__"));
+        boolean isSparkDistrib = "SPARK".equals(hbaseDistribution);
+        boolean isHBase2x = isSparkDistrib ? "HBASE_2".equals(ElementParameterParser.getValue(hbaseComponent, "__HBASE_API_VERSION__")) : hbaseDistrib.doSupportHBase2x();
+        %>
+        org.apache.hadoop.conf.Configuration conn_<%=hbaseComponent.getUniqueName()%> =(org.apache.hadoop.conf.Configuration)globalMap.get("conn_<%=hbaseComponent.getUniqueName()%>");
+
+        if(conn_<%=hbaseComponent.getUniqueName()%> != null )
+        {
+        <%
+            if((isCustom && isHadoop2) || (!isCustom && hbaseDistrib.doSupportNewHBaseAPI())) {
+                if (!isHBase2x) {%>
+                            org.apache.hadoop.hbase.client.HConnection hConnection_<%=hbaseComponent.getUniqueName() %> = org.apache.hadoop.hbase.client.HConnectionManager.getConnection(conn_<%=hbaseComponent.getUniqueName() %>);
+                        <% } else {%>
+                            org.apache.hadoop.hbase.client.Connection hConnection_<%=hbaseComponent.getUniqueName() %> = org.apache.hadoop.hbase.client.ConnectionFactory.createConnection(conn_<%=hbaseComponent.getUniqueName() %>);
+                        <% }%>
+            if ((hConnection_<%=hbaseComponent.getUniqueName() %> != null) && (!hConnection_<%=hbaseComponent.getUniqueName() %>.isClosed())) {
+                hConnection_<%=hbaseComponent.getUniqueName() %>.close();
+        }
+        <%} else {%>
+            org.apache.hadoop.hbase.client.HConnectionManager.deleteConnection(conn_<%=hbaseComponent.getUniqueName() %>,true);
+        <%}%>
+        }
+      globalMap.remove("conn_<%=hbaseComponent.getUniqueName() %>");
+	<%}%>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+<% if (exist_tFtp) { %>
+    private void closeFtpConnections() {
+        try {
+            Object obj_conn;
+<%  for (INode ftpNode : ftpComponentsList) { %>
+            obj_conn = globalMap.remove("conn_<%=ftpNode.getUniqueName() %>");
+            if (obj_conn != null) {
+<%          String type;
+            if (("true").equals(ElementParameterParser.getValue(ftpNode, "__SFTP__"))) {
+                type = "sftp";
+            } else if (("true").equals(ElementParameterParser.getValue(ftpNode, "__FTPS__"))) {
+                type = "ftps";
+            } else {
+                type = "ftp";
+            }
+            if ("sftp".equals(type)) { %>
+                ((com.jcraft.jsch.ChannelSftp) obj_conn).quit();
+            <%} else { %>
+                ((org.apache.commons.net.ftp.FTPClient) obj_conn).logout();
+                ((org.apache.commons.net.ftp.FTPClient) obj_conn).disconnect();
+            <%}%>
+            }
+<%  } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%}%>
+
+<%  if(exist_tS3) { %>
+    private void closeS3Connections() {
+        try {
+<%    for (INode s3Component : s3ComponentsList) { %>
+    	com.amazonaws.services.s3.AmazonS3Client conn_<%=s3Component.getUniqueName() %> = (com.amazonaws.services.s3.AmazonS3Client)globalMap.get("conn_<%=s3Component.getUniqueName() %>");
+	    if(conn_<%=s3Component.getUniqueName() %> !=null){
+			conn_<%=s3Component.getUniqueName() %>.shutdown();
+		}
+<%    } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+<% if (exist_tLDAP) { %>
+    private void closeLDAPConnections() {
+        try {
+            Object obj_conn;
+<%  for (INode ldapNode : ldapComponentsList) { %>
+            obj_conn = globalMap.remove("conn_<%=ldapNode.getUniqueName() %>");
+            if (obj_conn != null) {
+                ((javax.naming.ldap.InitialLdapContext) obj_conn).close();
+            }
+<%  } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%}%>
+
+<%  if(exist_tMDM) { %>
+    private void closeMDMConnections() {
+        try {
+            java.util.Iterator keySets = globalMap.keySet().iterator();
+            while (keySets.hasNext()) {
+                String key = keySets.next().toString();
+                if (key.startsWith("TMDMService_tMDMConnection_")) {
+                    org.talend.mdm.webservice.TMDMService service = (org.talend.mdm.webservice.TMDMService)globalMap.get(key);
+                    if (service != null) {
+                        service.logout(new org.talend.mdm.webservice.WSLogout());
+                    }
+                }
+            }
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+
+<%  if(exist_tPalo) { %>
+    private void closePaloConnections() {
+        try {
+<%    for (INode paloComponent : paloComponentsList) { %>
+    	org.talend.jpalo.paloconnection pConn_<%=paloComponent.getUniqueName()%> = (org.talend.jpalo.paloconnection)globalMap.get("pConn_<%=paloComponent.getUniqueName()%>");
+	    if(pConn_<%=paloComponent.getUniqueName()%> !=null){
+					pConn_<%=paloComponent.getUniqueName() %>.logout();
+
+		}
+<%    } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+<%  if(exist_tEXist) { %>
+    private void closeEXistConnections() {
+        try {
+<%    for (INode existComponent : existComponentsList) { %>
+		org.xmldb.api.base.Collection col_<%=existComponent.getUniqueName()%> = (org.xmldb.api.base.Collection)globalMap.get("col_<%=existComponent.getUniqueName()%>");
+	    if(col_<%=existComponent.getUniqueName()%> !=null){
+					col_<%=existComponent.getUniqueName()%>.close();
+
+		}
+<%    } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+<%  if(exist_tGS) { %>
+    private void closeGSConnections() {
+        try {
+<%    for (INode gsComponent : gsComponentsList) { %>
+
+    <%
+    String authType = ElementParameterParser.getValue(gsComponent, "__AUTH_TYPE__");
+    if (authType.equals("USER_ACCOUNT_HMAC")){
+    %>
+
+    org.jets3t.service.impl.rest.httpclient.GoogleStorageService service_<%=gsComponent.getUniqueName()%> =
+            (org.jets3t.service.impl.rest.httpclient.GoogleStorageService)globalMap.get("service_<%=gsComponent.getUniqueName()%>");
+    if(service_<%=gsComponent.getUniqueName()%> !=null){
+            service_<%=gsComponent.getUniqueName()%>.shutdown();
+    }
+    <%
+    } else if (authType.equals("SERVICE_ACCOUNT")) {
+    %>
+        //Don't need to close storage when use google storage api
+    <%
+    }
+    %>
+
+<%    } %>
+        } catch (java.lang.Exception e) {
+        }
+    }
+<%  } %>
+
+    private java.util.Map<String, Object> getSharedConnections4REST() {
+        java.util.Map<String, Object> connections = new java.util.HashMap<String, Object>();
+<%
+        for (INode momNode : momComponentsList) {
+%>
+            connections.put("connection_<%=momNode.getUniqueName() %>", globalMap.get("connection_<%=momNode.getUniqueName() %>"));
+            connections.put("session_<%=momNode.getUniqueName() %>", globalMap.get("session_<%=momNode.getUniqueName() %>"));
+<%
+        }
+%>
+<%
+        for (INode scpNode : scpComponentsList) {
+%>
+            connections.put("conn_<%=scpNode.getUniqueName() %>", globalMap.get("conn_<%=scpNode.getUniqueName() %>"));
+<%
+        }
+%>
+<%
+        for (INode sqlDbNode : sqlDbComponentsList) {
+%>
+            connections.put("conn_<%=sqlDbNode.getUniqueName() %>", globalMap.get("conn_<%=sqlDbNode.getUniqueName() %>"));
+<%
+        }
+%>
+<%
+
+        for (INode cassandraDbNode : cassandraComponentsList) {
+            if((new API_selector()).useDatastax(cassandraDbNode)) { %>
+            connections.put("connection_<%=cassandraDbNode.getUniqueName() %>", globalMap.get("connection_<%=cassandraDbNode.getUniqueName() %>"));
+            connections.put("cluster_<%=cassandraDbNode.getUniqueName() %>", globalMap.get("cluster_<%=cassandraDbNode.getUniqueName() %>"));
+<%          } else { %>
+            connections.put("cluster_<%=cassandraDbNode.getUniqueName() %>", globalMap.get("cluster_<%=cassandraDbNode.getUniqueName()%>"));
+<%          }
+        }
+%>
+
+<%
+        for (INode hbaseNode : hbaseComponentsList) {
+%>
+            connections.put("conn_<%=hbaseNode.getUniqueName() %>", globalMap.get("conn_<%=hbaseNode.getUniqueName() %>"));
+<%
+        }
+%>
+
+<%      for (INode ftpNode : ftpComponentsList) { %>
+            connections.put("conn_<%=ftpNode.getUniqueName() %>", globalMap.get("conn_<%=ftpNode.getUniqueName() %>"));
+<%      } %>
+<%
+        for (INode s3Node : s3ComponentsList) {
+%>
+            connections.put("conn_<%=s3Node.getUniqueName() %>", globalMap.get("conn_<%=s3Node.getUniqueName() %>"));
+<%
+        }
+%>
+<%      for (INode ldapNode : ldapComponentsList) { %>
+            connections.put("conn_<%=ldapNode.getUniqueName() %>", globalMap.get("conn_<%=ldapNode.getUniqueName() %>"));
+            connections.put("connBaseDN_<%=ldapNode.getUniqueName() %>", globalMap.get("connBaseDN_<%=ldapNode.getUniqueName() %>"));
+<%      } %>
+
+<%      for (INode mdmNode : mdmComponentsList) {%>
+            connections.put("mdmUrl_<%=mdmNode.getUniqueName() %>", globalMap.get("mdmUrl_<%=mdmNode.getUniqueName() %>"));
+            connections.put("username_<%=mdmNode.getUniqueName() %>", globalMap.get("username_<%=mdmNode.getUniqueName() %>"));
+            connections.put("password_<%=mdmNode.getUniqueName() %>", globalMap.get("password_<%=mdmNode.getUniqueName() %>"));
+            connections.put("useTransaction_<%=mdmNode.getUniqueName() %>", globalMap.get("useTransaction_<%=mdmNode.getUniqueName() %>"));
+            connections.put("useClientTranId_<%=mdmNode.getUniqueName() %>", globalMap.get("useClientTranId_<%=mdmNode.getUniqueName() %>"));
+<%      } %>
+
+<%      for (INode paloNode : paloComponentsList) { %>
+            connections.put("p_<%=paloNode.getUniqueName() %>", globalMap.get("p_<%=paloNode.getUniqueName() %>"));
+            connections.put("pConn_<%=paloNode.getUniqueName() %>", globalMap.get("pConn_<%=paloNode.getUniqueName() %>"));
+<%      } %>
+<%      for (INode existNode : existComponentsList) { %>
+            connections.put("col_<%=existNode.getUniqueName()%>", globalMap.get("col_<%=existNode.getUniqueName()%>"));
+<%      }
+
+        for (INode tcompV0ConnectionNode : tcompV0ComponentsList) { %>
+            connections.put("<%=tcompV0ConnectionNode.getUniqueName()%>_connection", globalMap.get("<%=tcompV0ConnectionNode.getUniqueName()%>_connection"));
+            connections.put("<%=tcompV0ConnectionNode.getUniqueName()%>_COMPONENT_RUNTIME_PROPERTIES", globalMap.get("<%=tcompV0ConnectionNode.getUniqueName()%>_COMPONENT_RUNTIME_PROPERTIES"));
+<%      }
+
+        for (INode sapNode : sapComponentsList) { %>
+            connections.put("conn_<%=sapNode.getUniqueName()%>", globalMap.get("conn_<%=sapNode.getUniqueName()%>"));
+<%      } %>
+<%      for (INode gsNode : gsComponentsList) { %>
+            connections.put("service_<%=gsNode.getUniqueName()%>", globalMap.get("service_<%=gsNode.getUniqueName()%>"));
+<%      } %>
+
+
+        return connections;
+    }
+
+    private void evalParam(String arg) {
+        if (arg.startsWith("--resuming_logs_dir_path")) {
+            resuming_logs_dir_path = arg.substring(25);
+        } else if (arg.startsWith("--resuming_checkpoint_path")) {
+            resuming_checkpoint_path = arg.substring(27);
+        } else if (arg.startsWith("--parent_part_launcher")) {
+            parent_part_launcher = arg.substring(23);
+        } else if (arg.startsWith("--watch")) {
+            watch = true;
+        } else if (arg.startsWith("--stat_port=")) {
+            String portStatsStr = arg.substring(12);
+            if (portStatsStr != null && !portStatsStr.equals("null")) {
+                portStats = Integer.parseInt(portStatsStr);
+            }
+        } else if (arg.startsWith("--trace_port=")) {
+            portTraces = Integer.parseInt(arg.substring(13));
+        } else if (arg.startsWith("--client_host=")) {
+            clientHost = arg.substring(14);
+        } else if (arg.startsWith("--context=")) {
+            contextStr = arg.substring(10);
+            isDefaultContext = false;
+        } else if (arg.startsWith("--father_pid=")) {
+            fatherPid = arg.substring(13);
+        } else if (arg.startsWith("--root_pid=")) {
+            rootPid = arg.substring(11);
+        } else if (arg.startsWith("--father_node=")) {
+            fatherNode = arg.substring(14);
+        } else if (arg.startsWith("--pid=")) {
+            pid = arg.substring(6);
+        } else if (arg.startsWith("--context_type")) {
+            String keyValue = arg.substring(15);
+			int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                if (fatherPid==null) {
+                    context_param.setContextType(keyValue.substring(0, index), replaceEscapeChars(keyValue.substring(index + 1)));
+                } else { // the subjob won't escape the especial chars
+                    context_param.setContextType(keyValue.substring(0, index), keyValue.substring(index + 1) );
+                }
+
+            }
+		} else if (arg.startsWith("--context_param")) {
+            String keyValue = arg.substring(16);
+            int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                if (fatherPid==null) {
+                    context_param.put(keyValue.substring(0, index), replaceEscapeChars(keyValue.substring(index + 1)));
+                } else { // the subjob won't escape the especial chars
+                    context_param.put(keyValue.substring(0, index), keyValue.substring(index + 1) );
+                }
+            }
+		} else if (arg.startsWith("-D")) {
+            String keyValue = arg.substring(2);
+            int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                String key = keyValue.substring(0, index);
+                String value = keyValue.substring(index + 1);
+                System.setProperty(key, value);
+            }
+        } else if (arg.startsWith("--context_file")) {
+        	String keyValue = arg.substring(15);
+        	String filePath = new String(java.util.Base64.getDecoder().decode(keyValue));
+        	java.nio.file.Path contextFile = java.nio.file.Paths.get(filePath);
+            try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(contextFile)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    int index = -1;
+                    if ( (index = line.indexOf('=')) > -1) {
+							if (line.startsWith("--context_param")) {
+								if ("id_Password".equals(context_param.getContextType(line.substring(16, index)))) {
+									context_param.put(line.substring(16, index), routines.system.PasswordEncryptUtil.decryptPassword(
+											line.substring(index + 1)));
+								} else {
+									context_param.put(line.substring(16, index), line.substring(index + 1));
+								}
+							}else {//--context_type
+								context_param.setContextType(line.substring(15, index), line.substring(index + 1));
+							}
+                    }
+                }
+            } catch (java.io.IOException e) {
+            	System.err.println("Could not load the context file: " + filePath);
+                e.printStackTrace();
+            }
+        } else if (arg.startsWith("--log4jLevel=")) {
+            log4jLevel = arg.substring(13);
+		} else if (arg.startsWith("--audit.enabled") && arg.contains("=")) {//for trunjob call
+		    final int equal = arg.indexOf('=');
+			final String key = arg.substring("--".length(), equal);
+			System.setProperty(key, arg.substring(equal + 1));
+		}
+    }
+    
+    private static final String NULL_VALUE_EXPRESSION_IN_COMMAND_STRING_FOR_CHILD_JOB_ONLY = "<TALEND_NULL>";
+
+    private final String[][] escapeChars = {
+        {"\\\\","\\"},{"\\n","\n"},{"\\'","\'"},{"\\r","\r"},
+        {"\\f","\f"},{"\\b","\b"},{"\\t","\t"}
+        };
+    private String replaceEscapeChars (String keyValue) {
+
+		if (keyValue == null || ("").equals(keyValue.trim())) {
+			return keyValue;
+		}
+
+		StringBuilder result = new StringBuilder();
+		int currIndex = 0;
+		while (currIndex < keyValue.length()) {
+			int index = -1;
+			// judege if the left string includes escape chars
+			for (String[] strArray : escapeChars) {
+				index = keyValue.indexOf(strArray[0],currIndex);
+				if (index>=0) {
+
+					result.append(keyValue.substring(currIndex, index + strArray[0].length()).replace(strArray[0], strArray[1]));
+					currIndex = index + strArray[0].length();
+					break;
+				}
+			}
+			// if the left string doesn't include escape chars, append the left into the result
+			if (index < 0) {
+				result.append(keyValue.substring(currIndex));
+				currIndex = currIndex + keyValue.length();
+			}
+		}
+
+		return result.toString();
+    }
+
+    public Integer getErrorCode() {
+        return errorCode;
+    }
+
+
+    public String getStatus() {
+        return status;
+    }
+
+    ResumeUtil resumeUtil = null;
+}

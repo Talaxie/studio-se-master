@@ -1,0 +1,337 @@
+<%@ jet
+%>
+<%
+List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValueXML(node, "__MAPPING__");
+List< ? extends IConnection> conns = NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA);
+String firstConnName = "";
+List<IMetadataTable> metadatas = node.getMetadataList();
+%>
+  class JSONUtil_<%=cid%>{
+      public int getData(String query,javax.script.Invocable invocableEngine,java.util.List<org.json.simple.JSONArray> jsonResultList,int recordMaxSize){
+          try{
+              //only 2 types: String/Boolean
+              String resultObj = invocableEngine.invokeFunction("jsonPath",query).toString();
+              if(!"false".equals(resultObj)){
+	              org.json.simple.JSONArray resultArray= (org.json.simple.JSONArray)org.json.simple.JSONValue.parse(resultObj);
+	              jsonResultList.add(resultArray);
+	              if(recordMaxSize != -1 && recordMaxSize != resultArray.size()){
+		             //just give an error, don't stop
+					<%if(isLog4jEnabled){%>
+						log.warn("<%=cid%> - The Json resource datas maybe have some problems, please make sure the data structure with the same fields.");
+					<%}%>
+		              System.err.println("The Json resource datas maybe have some problems, please make sure the data structure with the same fields.");
+	               }
+	               recordMaxSize = Math.max(recordMaxSize, resultArray.size());
+               }else{
+					<%if(isLog4jEnabled){%>
+						log.warn("<%=cid%> - Can't find any data with JSONPath " + query);
+					<%}%>
+	               System.err.println("Can't find any data with JSONPath " + query);
+	               //add null to take a place in List(buffer)
+	               jsonResultList.add(null); 
+               }
+          }catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+				<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - " + e.getMessage());
+				<%}%>
+              e.printStackTrace();
+          }
+          return recordMaxSize;
+      }
+
+<%
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		List<IMetadataColumn> columns=metadata.getListColumns();
+		if (conns!=null) {
+			if (conns.size()>0) {
+				IConnection conn = conns.get(0);
+				firstConnName = conn.getName();
+				for (int i=0;i<mapping.size();i++) {
+    				if(i % 100 == 0){
+%>
+	                   void setRowValue_<%=(i/100) %>(<%=firstConnName %>Struct <%=firstConnName %>, java.util.List<org.json.simple.JSONArray> JSONResultList_<%=cid%>, int nbResultArray_<%=cid%>) throws java.io.UnsupportedEncodingException{
+<%
+    				}
+%>
+<%
+                        for(IMetadataColumn column:columns) {
+                            if (mapping.get(i).get("SCHEMA_COLUMN")!=null) {
+                                if (column.getLabel().compareTo(mapping.get(i).get("SCHEMA_COLUMN"))==0) {
+    								String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+    								JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+    								String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+%>
+							        if(JSONResultList_<%=cid%>.get(<%=i%>) != null && nbResultArray_<%=cid%><JSONResultList_<%=cid%>.get(<%=i%>).size() && JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>)!=null){
+<%		
+                                        if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>		
+			                                <%=firstConnName %>.<%=column.getLabel() %> = JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>).toString();
+<%		
+                                        } else if(javaType == JavaTypesManager.DATE) {						
+%>					
+			                                <%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>).toString(), <%= patternValue %>);				
+<%		
+                                        }else if(advancedSeparator && JavaTypesManager.isNumberType(javaType)) { 
+%>
+			                                <%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>).toString(), <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+                                        } else if(javaType == JavaTypesManager.BYTE_ARRAY) { 
+%>							
+			                                <%=firstConnName %>.<%=column.getLabel() %> = JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>).toString().getBytes(<%=encoding %>);
+<%
+                                        } else {
+%>
+			                                <%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(JSONResultList_<%=cid%>.get(<%=i%>).get(nbResultArray_<%=cid%>).toString());
+<%
+                                        }
+%>
+							        }else{
+
+<%
+                                        String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+                                        if(defaultValue == null) {
+%>
+			                                throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=firstConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+                                        } else {
+%>
+		                                    <%=firstConnName %>.<%=column.getLabel() %> = <%=defaultValue%>;
+		
+<%
+                                        }
+%>
+		                             }
+<%
+
+                                }
+                            }
+					   }
+    				if((i + 1) % 100 == 0){
+%>
+			             }
+<%
+    				}
+				} // for (int i=0)
+  				if(mapping.size() > 0 && mapping.size() % 100 > 0){
+%>
+                    }
+<%
+ 				 }
+			}
+
+		}
+
+	}
+}
+%>
+  }
+int nb_line_<%=cid%> = 0;
+java.lang.Object jsonText_<%=cid%> = null;
+JSONUtil_<%=cid%> jsonUtil_<%=cid%>=new JSONUtil_<%=cid%>();
+java.util.List<org.json.simple.JSONArray> JSONResultList_<%=cid%> = new java.util.ArrayList<org.json.simple.JSONArray>();
+int recordMaxSize_<%=cid%> = -1;
+
+//init js json engine
+javax.script.ScriptEngineManager scriptEngineMgr_<%=cid%> = new javax.script.ScriptEngineManager();
+javax.script.ScriptEngine jsEngine_<%=cid%> = scriptEngineMgr_<%=cid%>.getEngineByName("JavaScript");
+if (jsEngine_<%=cid%> == null) {
+	<%if(isLog4jEnabled){%>
+		log.warn("<%=cid%> - No script engine found for JavaScript");
+	<%}%>
+    System.err.println("No script engine found for JavaScript");
+} else {
+    java.net.URL jsonjsUrl_<%=cid%> = com.jsonpath.test.ReadJar.class.getResource("json.js");
+    if(jsonjsUrl_<%=cid%>!=null) {
+    	jsEngine_<%=cid%>.eval(new java.io.BufferedReader(new java.io.InputStreamReader(jsonjsUrl_<%=cid%>.openStream())));
+    }
+    
+    java.net.URL jsonpathjsUrl_<%=cid%> = com.jsonpath.test.ReadJar.class.getResource("jsonpath.js");
+    if(jsonpathjsUrl_<%=cid%>!=null) {
+		jsEngine_<%=cid%>.eval(new java.io.BufferedReader(new java.io.InputStreamReader(jsonpathjsUrl_<%=cid%>.openStream())));
+	}
+	    Object filenameOrStream_<%=cid %> = null;
+        try {
+            filenameOrStream_<%=cid %> = <%=filenameOrStream %>;
+        } catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+			if (dieOnError) {
+%>
+            	throw(e_<%=cid%>);
+<%			
+			}else{
+%>
+				<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+				<%}%>
+	            System.err.println(e_<%=cid%>.getMessage());
+	            globalMap.put("<%=cid %>_ERROR_MESSAGE", e_<%=cid%>.getMessage());
+<%
+			}
+%>
+        }
+
+<%if(!isUseUrl){//read from a file%>
+	java.io.BufferedReader fr_<%=cid%> = null;
+		try{
+	        if(filenameOrStream_<%=cid %> instanceof java.io.InputStream){
+	            fr_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader((java.io.InputStream)filenameOrStream_<%=cid %>,<%=encoding%>));
+	        }else{
+	            fr_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream((String)filenameOrStream_<%=cid %>),<%=encoding %>));
+	        }
+<%}else{ //read from internet%>
+	java.io.InputStreamReader fr_<%=cid %> = null;
+		try{
+	        if(filenameOrStream_<%=cid %> instanceof java.io.InputStream){
+	            fr_<%=cid%> = new java.io.InputStreamReader((java.io.InputStream)filenameOrStream_<%=cid %>,<%=encoding%>);
+	        }else{
+	        java.net.URL url_<%=cid %> = new java.net.URL(<%=urlpath %>);
+		               java.net.URLConnection urlConn_<%=cid %> = url_<%=cid %>.openConnection();
+		               fr_<%=cid %> = new java.io.InputStreamReader(urlConn_<%=cid %>.getInputStream(),<%=encoding %>);
+	        }
+<%}%>
+	       
+		jsonText_<%=cid%> = org.json.simple.JSONValue.parse(fr_<%=cid%>);
+		if(jsonText_<%=cid%> == null) {
+			throw new RuntimeException("fail to parse the json file : " + <%if(!isUseUrl) {%> <%=filenameOrStream %> <%} else {%> <%=urlpath %> <%}%>);
+		}
+	} catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+	<%if (dieOnError) {%>
+		throw e_<%=cid%>;
+	<%} else {%>
+		<%if(isLog4jEnabled){%>
+			log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+		<%}%>
+ 		System.err.println(e_<%=cid%>.getMessage());
+ 		globalMap.put("<%=cid %>_ERROR_MESSAGE", e_<%=cid%>.getMessage());
+	<%}%>
+	} finally {
+		if(fr_<%=cid%> != null ) {
+			fr_<%=cid%>.close();
+		}
+    }
+
+	if(jsonText_<%=cid%>!=null) {
+		jsEngine_<%=cid%>.eval("var obj="+jsonText_<%=cid%>.toString());
+
+		javax.script.Invocable invocableEngine_<%=cid%> = (javax.script.Invocable)jsEngine_<%=cid%>;
+
+<%
+	for(Map<String,String> path:mapping){
+		String column = path.get("SCHEMA_COLUMN");
+		String query = path.get("QUERY");
+%>
+
+recordMaxSize_<%=cid%>=jsonUtil_<%=cid%>.getData(<%=query%>,invocableEngine_<%=cid%>,JSONResultList_<%=cid%>,recordMaxSize_<%=cid%>);
+
+<%
+	}
+%>
+	}
+}
+    <%if(isLog4jEnabled){%>
+    	log.info("<%=cid%> - Retrieving records from data.");
+    <%}%>
+	for(int nbResultArray_<%=cid%> = 0; nbResultArray_<%=cid%> < recordMaxSize_<%=cid%>; nbResultArray_<%=cid%>++){
+	
+		nb_line_<%=cid%>++;
+<%
+log4jFileUtil.debugRetriveData(node);
+
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		List<IMetadataColumn> columns=metadata.getListColumns();
+		if (conns!=null) {
+            String rejectConnName = "";
+            List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+            if(rejectConns != null && rejectConns.size() > 0) {
+                IConnection rejectConn = rejectConns.get(0);
+                rejectConnName = rejectConn.getName();
+            }
+            List<IMetadataColumn> rejectColumnList = null;
+            IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+            if(metadataTable != null) {
+                rejectColumnList = metadataTable.getListColumns();      
+            }
+            for (int i=0;i<conns.size();i++) {
+				IConnection connTemp = conns.get(i);
+				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+					<%=connTemp.getName() %> = null;			
+<%
+				}
+    		}
+			if (conns.size()>0) { // conns.size()>0	
+				IConnection conn = conns.get(0);
+				firstConnName = conn.getName();
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { // add for DATA
+%>
+                	boolean whetherReject_<%=cid %> = false;
+                	<%=firstConnName %> = new <%=conn.getName() %>Struct();
+                	try{
+<%
+            			for (int i=0;i<mapping.size();i++) {
+            				if(i % 100 == 0){
+%>
+                            jsonUtil_<%=cid%>.setRowValue_<%= (i/100) %>(<%=firstConnName %>,JSONResultList_<%=cid%>,nbResultArray_<%=cid%>);
+<%
+    				        }
+            			}// for
+ 						if(rejectConnName.equals(firstConnName)) {
+%> 
+                            <%=firstConnName %> = null; 
+<%
+                        }
+%>
+                    } catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+                        whetherReject_<%=cid%> = true;
+<%
+                        if (dieOnError) {
+%>
+                            throw(e);
+<%
+                        } else {
+							if(isLog4jEnabled){%>
+								log.error("<%=cid%> - " + e.getMessage());
+							<%}
+                            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+                                <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+                                for(IMetadataColumn column : metadata.getListColumns()) {
+%>
+                                    <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+                            	}
+%>
+                                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                                <%=firstConnName %> = null;
+<%
+                            } else if(("").equals(rejectConnName)){
+%>
+                                System.err.println(e.getMessage());
+                                <%=firstConnName %> = null;
+<%
+                            }else if(rejectConnName.equals(firstConnName)){
+%>
+				                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+                            } %>
+                            globalMap.put("<%=cid %>_ERROR_MESSAGE", e.getMessage());
+<%
+                        }
+%>
+                    }
+<%
+                }// end for DATA
+			}// conns.size()>0
+		} // if(conns!=null)
+	} // if (metadata!=null)
+} // if ((metadatas!=null)&&(metadatas.size()>0))
+%>

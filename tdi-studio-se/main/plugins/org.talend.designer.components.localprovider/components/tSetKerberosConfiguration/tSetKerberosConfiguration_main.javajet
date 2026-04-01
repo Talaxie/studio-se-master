@@ -1,0 +1,53 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.INode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+   
+    String kdc = ElementParameterParser.getValue(node,"__KDC__");
+    String realm = ElementParameterParser.getValue(node,"__REALM__");
+    String username = ElementParameterParser.getValue(node,"__USERNAME__");
+    String password = ElementParameterParser.getValue(node,"__PASSWORD__");
+	%>
+	System.setProperty("java.security.krb5.kdc", <%=kdc%>);
+	System.setProperty("java.security.krb5.realm", <%=realm%>);
+			          
+	java.util.Map state_<%=cid%> = new java.util.HashMap();
+	state_<%=cid%>.put("javax.security.auth.login.name", <%=username%>);
+	
+    <%
+    String passwordFieldName = "__PASSWORD__";
+    %>
+    
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>	
+	
+	state_<%=cid%>.put("javax.security.auth.login.password", decryptedPassword_<%=cid%>.toCharArray());
+			      
+	java.util.Map option_<%=cid%> = new java.util.HashMap();
+	//option_<%=cid%>.put("debug", "true");
+	option_<%=cid%>.put("tryFirstPass", "true");
+	option_<%=cid%>.put("useTicketCache", "false");
+	option_<%=cid%>.put("doNotPrompt", "false");
+	option_<%=cid%>.put("storePass", "false");
+
+	com.sun.security.auth.module.Krb5LoginModule login_<%=cid%> = new com.sun.security.auth.module.Krb5LoginModule();
+	javax.security.auth.Subject subject_<%=cid%> = new javax.security.auth.Subject();
+	login_<%=cid%>.initialize(subject_<%=cid%>, null, state_<%=cid%>, option_<%=cid%>);
+
+	if(login_<%=cid%>.login()){
+		System.out.println("Build the connection with Kerberos Successfully!");
+		login_<%=cid%>.commit();
+	}else{
+		System.err.println("Fail to build the connection with Kerberos!");
+	}
+	globalMap.put("kerberos_subject_<%=cid%>",subject_<%=cid%>);
+	
+	
+	        

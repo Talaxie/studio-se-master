@@ -1,0 +1,78 @@
+<%@ jet 
+	imports="
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.eclipse.emf.common.util.EList
+
+			org.talend.designer.xmlmap.generation.GenerationManager			
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.core.model.process.IConnection
+            java.util.Map
+            java.util.HashMap
+            java.util.List
+            java.util.ArrayList
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	GenerationManager gm =  (GenerationManager)node.initGenerationManager();
+	String cid = node.getUniqueName();
+	
+	XmlMapData xmlMapData = (XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	EList<InputXmlTree> inputTables = xmlMapData.getInputTrees();
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	EList<VarTable> varTables = xmlMapData.getVarTables();
+
+	List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+	
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+	  		nameToOutputConnection.put(connection.getName(), connection);
+	}
+	
+	List<String> tableNames = new ArrayList<String>();
+	Map<String,String> tableNameToDocumentColumnName = new HashMap<String,String>();
+	Map<String,Boolean> tableNameToAllowEmptyElement = new HashMap<String,Boolean>();
+	
+	for(OutputXmlTree outputTable : outputTables) {
+		String outputTableName = outputTable.getName();
+		if(nameToOutputConnection.get(outputTableName) == null) {
+			continue;
+		}
+		tableNames.add(outputTableName);
+		
+		for(OutputTreeNode outputNode: outputTable.getNodes()) {
+			if(("id_Document").equals(outputNode.getType())){
+				tableNameToDocumentColumnName.put(outputTableName,outputNode.getName());
+				tableNameToAllowEmptyElement.put(outputTableName,outputTable.isEnableEmptyElement());
+				break;
+			}
+		}
+	}
+	
+	for(String tableName : tableNames) {
+%>
+	<%=tableName%> = null;
+	if(row_out_<%=cid %>!=null && row_out_<%=cid %> instanceof <%=tableName%>Struct) {
+		<%=tableName%> = (<%=tableName%>Struct)row_out_<%=cid %>;
+<%
+		String docColumnName = tableNameToDocumentColumnName.get(tableName);
+		if(docColumnName!=null) {
+			boolean allowEmptyElement = tableNameToAllowEmptyElement.get(tableName);
+%>
+			routines.system.NestXMLTool.generateOk(<%=tableName%>.<%=docColumnName%>, <%=!allowEmptyElement%>);
+<%
+		}
+%>		
+	}
+<%
+	}
+%>

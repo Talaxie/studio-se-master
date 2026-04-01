@@ -1,0 +1,82 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map" 
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+	
+	System.setProperty("hsqldb.method_class_names", "net.ucanaccess.converters.*");
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	    
+		public void setURL(INode node) {
+			
+%>
+			String url_<%=cid %> = null;
+<%
+		    String runningMode = ElementParameterParser.getValue(node, "__RUNNING_MODE__");
+		    String tls = ElementParameterParser.getValue(node, "__TLS__");
+		    String dbalias = ElementParameterParser.getValue(node, "__DATABASE_ALIAS__");
+		    String dbpath = ElementParameterParser.getValue(node, "__DBPATH__");
+		    if(("HSQLDB_SERVER").equals(runningMode)) {
+		        if(("true").equals(tls)) {
+%>
+		            url_<%=cid %> = "jdbc:hsqldb:hsqls://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbalias%>;
+<%
+		        } else {
+%>
+		            url_<%=cid %> = "jdbc:hsqldb:hsql://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbalias%>;
+<%
+		        }
+		    } else if(("HSQLDB_WEBSERVER").equals(runningMode)) {
+		        if(("true").equals(tls)) {
+%>
+		            url_<%=cid %> = "jdbc:hsqldb:https://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbalias%>;
+<%
+		        } else {
+%>
+		            url_<%=cid %> = "jdbc:hsqldb:http://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbalias%>;
+<%
+		        }
+		    } else if(("HSQLDB_INPROGRESS_PERSISTENT").equals(runningMode)) {
+%>
+		        url_<%=cid %> = "jdbc:hsqldb:file:" + <%=dbpath%> + "/" + <%=dbname%>;
+<%
+		    } else if(("HSQLDB_IN_MEMORY").equals(runningMode)) {
+%>
+				url_<%=cid %> = "jdbc:hsqldb:mem:" + <%=dbname%> ;
+<%
+			}
+%>
+<%
+			if(dbproperties != null && !("\"\"").equals(dbproperties) && !("").equals(dbproperties)) {
+%>
+				url_<%=cid %> += ";" + <%=dbproperties%>;
+<%
+			}
+		}
+		
+		public String getDirverClassName(INode node){
+			return "org.hsqldb.jdbcDriver";
+		}
+		
+		//-----------according schema type to generate ResultSet
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+
+

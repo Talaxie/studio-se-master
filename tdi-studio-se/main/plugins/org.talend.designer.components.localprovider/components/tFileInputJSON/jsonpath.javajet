@@ -1,0 +1,290 @@
+<%@ jet
+%>
+<%
+List<Map<String, String>> mapping = (List<Map<String,String>>)ElementParameterParser.getObjectValueXML(node, "__MAPPING_JSONPATH__");
+List< ? extends IConnection> conns = NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA);
+String firstConnName = "";
+List<IMetadataTable> metadatas = node.getMetadataList();
+
+String loopPath = ElementParameterParser.getValue(node, "__JSON_LOOP_QUERY__");
+boolean useLoopAsRoot = "true".equals(ElementParameterParser.getValue(node, "__USE_LOOP_AS_ROOT__"));
+%>
+class JsonPathCache_<%=cid%> {
+	final java.util.Map<String,com.jayway.jsonpath.JsonPath> jsonPathString2compiledJsonPath = new java.util.HashMap<String,com.jayway.jsonpath.JsonPath>();
+	
+	public com.jayway.jsonpath.JsonPath getCompiledJsonPath(String jsonPath) {
+		if(jsonPathString2compiledJsonPath.containsKey(jsonPath)) {
+			return jsonPathString2compiledJsonPath.get(jsonPath);
+		} else {
+			com.jayway.jsonpath.JsonPath compiledLoopPath = com.jayway.jsonpath.JsonPath.compile(jsonPath);
+			jsonPathString2compiledJsonPath.put(jsonPath,compiledLoopPath);
+			return compiledLoopPath;
+		}
+	}
+}
+
+int nb_line_<%=cid%> = 0;
+
+JsonPathCache_<%=cid%> jsonPathCache_<%=cid%> = new JsonPathCache_<%=cid%>();
+
+String loopPath_<%=cid%> = <%=loopPath%>;
+java.util.List<Object> resultset_<%=cid%> = new java.util.ArrayList<Object>();
+
+java.io.InputStream is_<%=cid%> = null;
+com.jayway.jsonpath.ParseContext parseContext_<%=cid%> = com.jayway.jsonpath.JsonPath.using(com.jayway.jsonpath.Configuration.defaultConfiguration());
+Object filenameOrStream_<%=cid %> = null;
+        try {
+            filenameOrStream_<%=cid %> = <%=filenameOrStream %>;
+        } catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+			if (dieOnError) {
+%>
+            	throw(e_<%=cid%>);
+<%			
+			}else{
+%>
+				<%if(isLog4jEnabled){%>
+					log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+				<%}%>
+	            globalMap.put("<%=cid %>_ERROR_MESSAGE", e_<%=cid%>.getMessage());
+	            System.err.println(e_<%=cid%>.getMessage());
+<%
+			}
+%>
+        }
+        
+com.jayway.jsonpath.ReadContext document_<%=cid%> = null;
+try {
+     if(filenameOrStream_<%=cid %> instanceof java.io.InputStream){
+         is_<%=cid%> = (java.io.InputStream)filenameOrStream_<%=cid %>;
+     }else{
+	    <%if(!isUseUrl){//read from a file%>
+	        is_<%=cid%> = new java.io.FileInputStream((String)filenameOrStream_<%=cid %>);
+	    <%}else{ //read from internet%>
+	        java.net.URL url_<%=cid %> = new java.net.URL(<%=urlpath %>);
+	        java.net.URLConnection urlConn_<%=cid %> = url_<%=cid %>.openConnection();
+	        is_<%=cid%> = urlConn_<%=cid %>.getInputStream();
+	    <%}%>
+	 }
+	
+	
+	document_<%=cid%> = parseContext_<%=cid%>.parse(is_<%=cid%>,<%=encoding %>);
+	com.jayway.jsonpath.JsonPath compiledLoopPath_<%=cid%> = jsonPathCache_<%=cid%>.getCompiledJsonPath(loopPath_<%=cid%>);
+	Object result_<%=cid%> = document_<%=cid%>.read(compiledLoopPath_<%=cid%>,net.minidev.json.JSONObject.class);
+	if (result_<%=cid%> instanceof net.minidev.json.JSONArray) {
+		resultset_<%=cid%> = (net.minidev.json.JSONArray) result_<%=cid%>;
+	} else {
+		resultset_<%=cid%>.add(result_<%=cid%>);
+	}
+} catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+<%
+if(dieOnError){
+%>
+	throw(e_<%=cid %>);
+<%
+} else {
+	if(isLog4jEnabled){%>
+	log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+	<%}%>
+	globalMap.put("<%=cid %>_ERROR_MESSAGE", e_<%=cid%>.getMessage());
+	System.err.println(e_<%=cid%>.getMessage());
+<%
+}
+%>
+} finally {
+	if(is_<%=cid%> != null) {
+		is_<%=cid%>.close();
+	}
+}
+
+String jsonPath_<%=cid%> = null;
+com.jayway.jsonpath.JsonPath compiledJsonPath_<%=cid%> = null;
+
+Object value_<%=cid%> = null;
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Retrieving records from data.");
+<%}%>
+Object root_<%=cid%> = null;
+for(Object row_<%=cid%> : resultset_<%=cid%>) {
+	nb_line_<%=cid%>++;
+<%
+	log4jFileUtil.debugRetriveData(node);
+	
+	if ((metadatas==null) || (metadatas.isEmpty())) {
+		return stringBuffer.toString();
+	}
+	
+	IMetadataTable metadata = metadatas.get(0);
+	
+	if (metadata==null) {
+		return stringBuffer.toString();
+	}
+	
+	if (conns==null || conns.isEmpty()) {
+		return stringBuffer.toString(); 
+	}
+	
+	List<IMetadataColumn> columns=metadata.getListColumns();
+	
+	String rejectConnName = "";
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+    List<IMetadataColumn> rejectColumnList = null;
+    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    if(metadataTable != null) {
+    	rejectColumnList = metadataTable.getListColumns();
+    }
+    for (int i=0;i<conns.size();i++) {
+		IConnection connTemp = conns.get(i);
+		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+			<%=connTemp.getName() %> = null;			
+<%
+		}
+	}
+	
+	IConnection conn = conns.get(0);
+	firstConnName = conn.getName();
+	
+	if(!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		return stringBuffer.toString();
+	}
+%>
+	boolean whetherReject_<%=cid %> = false;
+	<%=firstConnName %> = new <%=conn.getName() %>Struct();
+	
+	try{
+<%
+		for (int i=0;i<mapping.size();i++) {
+			for(IMetadataColumn column:columns) {
+				String schemaColumn = mapping.get(i).get("SCHEMA_COLUMN");
+				if(schemaColumn==null || !column.getLabel().equals(schemaColumn)) {
+					continue;
+				}
+				
+				String jsonPath = mapping.get(i).get("QUERY");
+				
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+				
+			 	String defaultValue = column.getDefault();
+        		boolean isNotSetDefault = (defaultValue == null || defaultValue.trim().length()==0);
+%>
+				jsonPath_<%=cid%> = <%=jsonPath%>;
+				compiledJsonPath_<%=cid%> = jsonPathCache_<%=cid%>.getCompiledJsonPath(jsonPath_<%=cid%>);
+				
+				try {
+				   <%
+				   if(useLoopAsRoot){
+				   %>
+				       value_<%=cid%> = compiledJsonPath_<%=cid%>.read(row_<%=cid%>);
+				   <%
+				   }else{
+				   %>
+					    if(jsonPath_<%=cid%>.startsWith("$")){
+					        if(root_<%=cid%> == null){
+					            root_<%=cid%> = document_<%=cid%>.read(jsonPathCache_<%=cid%>.getCompiledJsonPath("$"));
+					        }
+				           value_<%=cid%> = compiledJsonPath_<%=cid%>.read(root_<%=cid%>);
+				       }else{
+				           value_<%=cid%> = compiledJsonPath_<%=cid%>.read(row_<%=cid%>);
+				       }
+<%
+               }
+        			if(javaType == JavaTypesManager.STRING){
+%>
+						<%=firstConnName%>.<%=column.getLabel() %> = value_<%=cid%> == null ? <%@ include file="./set_default_value.javajet"%> : value_<%=cid%>.toString();
+<%
+					} else {
+%>
+						if(value_<%=cid%> != null && !value_<%=cid%>.toString().isEmpty()) {
+<%
+					if(javaType == JavaTypesManager.OBJECT) {
+%>
+						<%=firstConnName%>.<%=column.getLabel() %> = value_<%=cid%>.toString();
+<%
+					} else if(javaType == JavaTypesManager.DATE) {
+%>
+						<%=firstConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(value_<%=cid%>.toString(), <%=pattern%>);
+<%
+        			} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType)) {
+%>
+						<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(value_<%=cid%>.toString(), <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+        			} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+						<%=firstConnName %>.<%=column.getLabel() %> = value_<%=cid%>.toString().getBytes(<%=encoding %>);
+<%
+        			} else {
+%>
+						<%=firstConnName%>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate %>(value_<%=cid%>.toString());
+<%
+        			}
+%>
+						} else {
+							<%=firstConnName %>.<%=column.getLabel() %> = <%@ include file="./set_default_value.javajet"%>;
+						}
+<%
+        			}
+%>
+				} catch (com.jayway.jsonpath.PathNotFoundException e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+					<%=firstConnName %>.<%=column.getLabel() %> = <%@ include file="./set_default_value.javajet"%>;
+				}				
+<%
+			}
+		}
+		
+		if(rejectConnName.equals(firstConnName)) {
+%> 
+        <%=firstConnName %> = null; 
+<%
+    	}
+%>
+    } catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+        whetherReject_<%=cid%> = true;
+<%
+    	if (dieOnError) {
+%>
+        throw(e_<%=cid%>);
+<%
+    	} else {
+            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+                <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+                for(IMetadataColumn column : metadata.getListColumns()) {
+%>
+               		<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+            	}
+%>
+                <%=rejectConnName%>.errorMessage = e_<%=cid%>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                <%=firstConnName %> = null;
+<%
+            } else if(("").equals(rejectConnName)){
+            	if(isLog4jEnabled){%>
+					log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+				<%}
+%>
+                System.err.println(e_<%=cid%>.getMessage());
+                <%=firstConnName %> = null;
+<%
+            }else if(rejectConnName.equals(firstConnName)){
+%>
+                <%=rejectConnName%>.errorMessage = e_<%=cid%>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+            } %>
+            globalMap.put("<%=cid %>_ERROR_MESSAGE", e_<%=cid%>.getMessage());
+<%
+        }
+%>
+    }
+//}

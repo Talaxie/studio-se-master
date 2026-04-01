@@ -1,0 +1,51 @@
+<%@ jet 
+imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String clientMode = ElementParameterParser.getValue(node, "__CLIENT_MODE__");
+	
+	String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+%>
+if(resourceMap.get("finish_<%=cid%>") == null){
+<%
+	if ("HTTP_CLIENT".equals(clientMode)) {
+		if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+%>
+		if (resourceMap.get("client_<%=cid %>") != null) {
+			((org.talend.bonita.RestClient)resourceMap.get("client_<%=cid %>")).logout();
+			((org.talend.bonita.RestClient)resourceMap.get("client_<%=cid %>")).close();
+		}
+<%
+		} else {
+%>
+		if (resourceMap.get("httpConn_<%=cid %>") != null) {
+			((java.net.HttpURLConnection)resourceMap.get("httpConn_<%=cid %>")).disconnect();
+		}
+<%
+		}
+	} else {
+		if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+%>
+		if (resourceMap.get("client_<%=cid %>") != null) {
+			((org.talend.bonita.RestClient)resourceMap.get("client_<%=cid %>")).logout();
+		}
+<%
+		} else {
+%>
+		if (resourceMap.get("loginContext_<%=cid%>") != null) {
+			((javax.security.auth.login.LoginContext)resourceMap.get("loginContext_<%=cid%>")).logout();
+		}
+<%
+		}
+	}
+%>
+}

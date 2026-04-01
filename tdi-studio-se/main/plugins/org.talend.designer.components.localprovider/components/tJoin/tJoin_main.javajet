@@ -1,0 +1,194 @@
+<%@ jet
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.IConnectionCategory
+		java.util.List
+		java.util.Map
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//11
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {//22
+%>
+
+<%    
+        String cid = node.getUniqueName();
+            	
+    	//get the input Main and Lookup connection
+    	IConnection inMainCon = null;
+    	IConnection inRefCon = null;   
+    	List< ? extends IConnection> connsIn = node.getIncomingConnections();     
+    	for (IConnection conn : connsIn) {//3
+    		if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+    			inMainCon = conn;
+    		}
+    		else if(conn.getLineStyle().equals(EConnectionType.FLOW_REF))
+    		{
+    			inRefCon = conn;
+    		}
+        }//3
+        
+        if(inMainCon == null){
+        	return "";
+        }
+        
+        IMetadataTable preMetadata = inMainCon.getMetadataTable();
+        String incomingName = inMainCon.getName();
+        
+    	List<IMetadataColumn> columns = metadata.getListColumns();
+    	int columnSize = columns.size();
+    	List<IMetadataColumn> preColumns = preMetadata.getListColumns();
+    	int preColumnSize = preColumns.size();
+    	int minSize = Math.min(columnSize, preColumnSize);
+        
+        List<Map<String, String>> lookupCols = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOKUP_COLS__");
+        boolean useLookup = ("true").equals(ElementParameterParser.getValue(node, "__USE_LOOKUP_COLS__"));
+        boolean useReject = ("true").equals(ElementParameterParser.getValue(node, "__USE_INNER_JOIN__"));
+        
+    	List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+		List<? extends IConnection> connsFilter = node.getOutgoingConnections("FLOW");
+		List<? extends IConnection> connsReject = node.getOutgoingConnections("REJECT");
+    	
+    	for (IConnection conn : outConns) {
+    		if(!conn.isActivate()) continue;
+    		if(!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) continue;
+    		String outputConnName = conn.getName();    		
+%>
+			<%=outputConnName %> = null;	
+<%		
+		}
+		if(inRefCon != null){//exist lookup	
+			int firstConn = 0;
+			for (IConnection conn : outConns) {
+				if(!conn.isActivate()) continue;
+				if(!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) continue;
+				String outputConnName = conn.getName();
+%>
+	
+				<%=outputConnName %> = new <%=outputConnName %>Struct();	
+<%
+				//first, iterate with minSize
+				for (int i = 0; i < minSize; i++) {//4
+					IMetadataColumn column = columns.get(i);
+					IMetadataColumn preColumn = preColumns.get(i);
+					boolean isLookup = false;
+
+					if(useLookup) {
+						//find the lookup column
+						for (int j = 0; j < lookupCols.size(); j++) {
+							Map<String, String> lineValue = lookupCols.get(j);
+							if (column.getLabel().equals(lineValue.get("OUTPUT_COLUMN"))) {
+								isLookup = true;
+								break;
+							}
+						}
+					}
+            
+					if(!isLookup) {
+%>					
+						<%=outputConnName %>.<%=column.getLabel() %> = <%=incomingName %>.<%=preColumn.getLabel() %>;
+<%
+					}
+				} //4
+				firstConn++;
+			}
+%>
+
+			if(util_<%=cid %>.isJoined(<%=incomingName %>)){ 
+<%
+				if(useLookup) {
+					for (IConnection conn : connsFilter) {
+						if(!conn.isActivate()) continue;
+						String outputConnName = conn.getName();
+						//second, iterate with columnSize
+						for (int i = 0; i < columnSize; i++) {//4
+							IMetadataColumn column = columns.get(i);
+							
+							//find the lookup column
+							boolean isLookup = false;			
+							String lookupName = null;
+							for (int j = 0; j < lookupCols.size(); j++) {
+								 Map<String, String> lineValue = lookupCols.get(j);
+								 if (column.getLabel().equals(lineValue.get("OUTPUT_COLUMN"))) {
+									isLookup = true;
+									lookupName = lineValue.get("LOOKUP_COLUMN");
+									break;
+								 }
+							}
+				
+							if(isLookup) {
+%>			
+								<%=outputConnName %>.<%=column.getLabel() %> = util_<%=cid %>.lookupValue.<%=lookupName %>;
+<%
+							}
+						} //4
+					}
+				}
+
+				for (IConnection conn : connsReject) { 
+					if(!conn.isActivate()) continue;
+%> 
+					<%=conn.getName()%> = null; 
+<%
+				}
+%>
+			} 
+	
+<%
+			if(useReject){
+%>	
+				else{
+<%
+					for (IConnection conn : connsFilter) { 
+						if(!conn.isActivate()) continue;
+%> 
+						<%=conn.getName()%> = null; 
+<%
+					}
+%>
+				}
+<%
+			}else{
+				for (IConnection conn : connsReject) { 
+					if(!conn.isActivate()) continue;
+%> 
+					<%=conn.getName()%> = null;
+<%
+				}
+			}
+		} else {//exist lookup    	
+
+			for (IConnection conn : connsFilter) {
+				if(!conn.isActivate()) continue;
+				String outputConnName = conn.getName();
+%>
+	
+				<%=outputConnName %> = new <%=outputConnName %>Struct();	
+<%
+				//first, iterate with minSize
+				for (int i = 0; i < minSize; i++) {//4
+					IMetadataColumn column = columns.get(i);
+					IMetadataColumn preColumn = preColumns.get(i);
+%>					
+					<%=outputConnName %>.<%=column.getLabel() %> = <%=incomingName %>.<%=preColumn.getLabel() %>;			
+<%
+				} //4
+			}
+		}
+%>		
+///////////////////////    			
+<%
+    }//22
+}//11
+%>

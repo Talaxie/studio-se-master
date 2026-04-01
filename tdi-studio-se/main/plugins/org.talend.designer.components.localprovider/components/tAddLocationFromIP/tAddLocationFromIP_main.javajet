@@ -1,0 +1,79 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    java.util.List
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List<IMetadataColumn> columnList = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if(metadatas != null && metadatas.size() > 0) {
+    IMetadataTable metadata = metadatas.get(0);
+    if(metadata != null) {
+        columnList = metadata.getListColumns();
+    }
+}
+String incomingConnName = null;
+List<? extends IConnection> inConns = node.getIncomingConnections();
+if(inConns != null && inConns.size() > 0) {
+    for(IConnection inConn : inConns) {
+        if(inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            incomingConnName = inConn.getName();
+            break;
+        }
+    }
+}
+String outgoingConnName = null;
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+if(outgoingConns != null && outgoingConns.size() > 0) {
+    for(IConnection outgoingConn : outgoingConns) {
+        if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            outgoingConnName = outgoingConn.getName();
+            break;
+        }
+    }
+}
+if(incomingConnName != null && outgoingConnName != null && columnList != null && columnList.size() > 0) {
+    String inputColumn = ElementParameterParser.getValue(node, "__INPUT_COLUMN__");
+    boolean isHostName = ("true").equals(ElementParameterParser.getValue(node, "__INPUT_HOST_NAME__"));
+    boolean isIPAddress = ("true").equals(ElementParameterParser.getValue(node, "__INPUT_IP__"));
+    boolean isLocationTypeCode = ("true").equals(ElementParameterParser.getValue(node, "__LOCATION_TYPE_CODE__"));
+    boolean isLocationTypeName = ("true").equals(ElementParameterParser.getValue(node, "__LOCATION_TYPE_NAME__"));
+    for(int i = 0 ; i < columnList.size() ; i++) {
+        if(i == columnList.size() -1) {
+            if(isHostName) {
+                %>
+                com.maxmind.geoip.Country country_<%=cid%> = lookupService_<%=cid%>.getCountry(java.net.InetAddress.getByName(<%=incomingConnName%>.<%=inputColumn%>).getHostAddress());
+                <%
+            } else if(isIPAddress) {
+                %>
+                com.maxmind.geoip.Country country_<%=cid%> = lookupService_<%=cid%>.getCountry(<%=incomingConnName%>.<%=inputColumn%>);
+                <%
+            }
+            if(isLocationTypeCode) {
+                %>
+                <%=outgoingConnName%>.<%=columnList.get(i).getLabel()%> = country_<%=cid%>.getCode();
+                <%
+            } else if(isLocationTypeName) {
+                %>
+                <%=outgoingConnName%>.<%=columnList.get(i).getLabel()%> = country_<%=cid%>.getName();
+                <%
+            }
+        } else {
+            %>
+            <%=outgoingConnName%>.<%=columnList.get(i).getLabel()%> = <%=incomingConnName%>.<%=columnList.get(i).getLabel()%>;
+            <%            
+        }
+    }
+}
+%>

@@ -1,0 +1,64 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+	<%@ include file="../templates/DB/HelpClass/HelpClass.javajet"%>
+<%
+	class ConnectionUtil extends DefaultConnectionUtil{
+	
+		public void createURL(INode node) {
+			super.createURL(node);
+			String dbserver = ElementParameterParser.getValue(node, "__DBSERVER__");
+%>
+<%
+		    if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+		        String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%>;
+<%
+		    } else {
+%>
+		        String url_<%=cid%> = "jdbc:informix-sqli://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":informixserver=" + <%=dbserver%> + ";" + <%=dbproperties%>;
+<%
+			}	
+		}
+	
+		public String getDirverClassName(INode node){
+			return "com.informix.jdbc.IfxDriver";
+		}
+		
+		public void setAutoCommit(INode node) {
+			boolean useTransaction = ("true").equals(ElementParameterParser.getValue(node,"__USE_TRANSACTION__"));
+			boolean setAutoCommit = "true".equals(ElementParameterParser.getValue(node, "__AUTO_COMMIT__"));
+			if(isLog4jEnabled){
+%>
+			log.debug("<%=cid%> - Connection is set auto commit to '<%=setAutoCommit%>'.");
+<%
+			}
+			if (useTransaction) {
+%>
+			conn_<%=cid%>.setAutoCommit(<%=setAutoCommit%>);
+<%
+			}
+		}
+		
+		public void afterComponentProcess(INode node){
+			String dbserver = ElementParameterParser.getValue(node, "__DBSERVER__");
+%>
+			globalMap.put("dbserver_<%=cid%>",<%=dbserver%>);
+			globalMap.put("dbname_<%=cid%>",<%=dbname%>);
+<%
+	    }
+				
+	}//end class
+	
+	connUtil = new ConnectionUtil();
+%>
+<%//----------------------------component codes-----------------------------------------%>
+
+	<%@ include file="../templates/DB/AbstractDBConnection.javajet"%>
+
+	globalMap.put("dbschema_" + "<%=cid%>", <%=dbschema%>);
+	

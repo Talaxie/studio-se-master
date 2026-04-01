@@ -1,0 +1,86 @@
+<%@ jet
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+  " 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean sinceStarter = ("true").equals(ElementParameterParser.getValue(node, "__SINCE_STARTER__"));
+	String starter = ElementParameterParser.getValue(node, "__STARTER__");
+	boolean display = ("true").equals(ElementParameterParser.getValue(node, "__DISPLAY__"));
+	boolean displayComponentName = ("true").equals(ElementParameterParser.getValue(node, "__DISPLAY_COMPONENT_NAME__"));
+	boolean displayReadableDuration = ("true").equals(ElementParameterParser.getValue(node, "__DISPLAY_READABLE_DURATION__"));
+	String caption = ElementParameterParser.getValue(node, "__CAPTION__");
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	%>
+	long time<%=cid%>;
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Stop time: "+System.currentTimeMillis()+" milliseconds");
+	<%
+	}
+	if (sinceStarter) {
+	%>
+	  	time<%=cid%> = System.currentTimeMillis() - ((Long)globalMap.get("<%=starter%>")).longValue();
+		<%
+		if(isLog4jEnabled){
+		%>
+			log.info("<%=cid%> - Duration since <%=starter%> start: "+time<%=cid%>+" milliseconds");
+		<%
+		}
+	}else {
+	%>
+		time<%=cid%> = System.currentTimeMillis() - startTime;
+		<%
+		if(isLog4jEnabled){
+		%>
+			log.info("<%=cid%> - Duration since job start: "+time<%=cid%>+" milliseconds");
+		<%
+		}
+	}
+
+	if (display) {
+		if (displayComponentName) {
+	  	%>
+	   		System.out.print("[ <%=cid%> ]  ");
+		<%
+		}
+		if (displayReadableDuration) {
+		%>
+	    	System.out.print("   " + time<%=cid%>/1000 + "seconds   ");
+		    
+	  		<%
+	  		if(isLog4jEnabled){
+			%>
+				log.info("<%=cid%> - Readable duration : "+ time<%=cid%>/1000 + " seconds");
+			<%
+			}
+	  	}
+	  	%>
+	  	System.out.println(<%=caption%> + "  " + time<%=cid%> + " milliseconds");
+	  	<%
+  		if(isLog4jEnabled){
+		%>
+			log.info("<%=cid%> - "+ <%=caption%> + "  " + time<%=cid%> + " milliseconds");
+		<%
+		}
+		%> 
+	<%
+	}
+	%>
+	Long currentTime<%=cid%> = System.currentTimeMillis();
+	globalMap.put("<%=cid%>", currentTime<%=cid%>);
+	<%
+  	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Current time " + currentTime<%=cid%> + " milliseconds");
+	<%
+	}
+	%>
+	globalMap.put("<%=cid%>_STOPTIME", currentTime<%=cid%>);
+	globalMap.put("<%=cid%>_DURATION", time<%=cid%>);

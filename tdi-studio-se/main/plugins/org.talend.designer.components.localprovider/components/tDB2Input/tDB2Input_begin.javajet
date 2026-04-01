@@ -1,0 +1,71 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map
+" 
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	    
+		public void setURL(INode node) {
+	    	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			String url_<%=cid %> = "jdbc:db2://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+<%
+			} else {
+%>
+			String url_<%=cid %> = "jdbc:db2://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%> + ":" + <%=dbproperties%>;
+<%
+			}
+		}
+		
+		public String getDirverClassName(INode node){
+			return "com.ibm.db2.jcc.DB2Driver";
+		}
+		
+		public void generateDoubleResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+	    	if(column.isNullable()) {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDoubleObject(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+			} else {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getDouble(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+			}
+	    }
+	    
+	    public void generateBooleanResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+    		if(column.isNullable()) {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getBooleanObject(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+			} else {
+%>
+				<%=firstConnName%>.<%=column.getLabel()%> = routines.system.JDBCUtil.getBoolean(rs_<%=cid %>, <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+<%
+			}
+    	}
+		
+		//-----------according schema type to generate ResultSet
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+
+

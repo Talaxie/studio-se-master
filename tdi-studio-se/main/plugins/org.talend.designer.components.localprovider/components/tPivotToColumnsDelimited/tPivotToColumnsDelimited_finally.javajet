@@ -1,0 +1,71 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+	
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        
+        List<Map<String, String>> groupbys = 
+            ( List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUPBYS__");
+
+        boolean csvOption = ("true").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"));
+        
+        String pivotColumn = ElementParameterParser.getValue(node, "__PIVOT_COLUMN__");
+
+        String aggColumn = ElementParameterParser.getValue(node, "__AGGREGATION_COLUMN__");
+        
+        String aggFunction = ElementParameterParser.getValue(node, "__AGGREGATION_FUNCTION__");
+        
+        String rowSeparator = ElementParameterParser.getValue(node,"__ROWSEPARATOR__");
+        
+        String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+        
+        boolean isCsvOption=("true").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"));
+		%>
+		if(resourceMap.get("finish_<%=cid%>") == null){
+			<%
+			if(isCsvOption) {
+			%>
+				if(resourceMap.get("CsvWriter<%=cid%>") != null){
+					((com.talend.csv.CSVWriter)resourceMap.get("CsvWriter<%=cid%>")).close();
+				}
+			<%
+			}else{
+			%>
+				if(resourceMap.get("out<%=cid%>") != null){
+				 	((java.io.BufferedWriter)resourceMap.get("out<%=cid%>")).flush();
+				 	((java.io.BufferedWriter)resourceMap.get("out<%=cid%>")).close();
+				}
+			<%
+			}
+			if(isDeleteEmptyFile){
+			%>
+				if(resourceMap.get("out<%=cid%>") != null && resourceMap.get("fileName_<%=cid%>") != null){
+					if(Integer.valueOf(String.valueOf(resourceMap.get("out<%=cid%>"))) == 0 && (new java.io.File(String.valueOf(resourceMap.get("fileName_<%=cid%>"))).exists())){
+						new java.io.File(String.valueOf(resourceMap.get("fileName_<%=cid%>"))).delete();
+					}
+				}
+			<%
+			}
+			%>
+		}
+	<%
+    }
+}
+%>

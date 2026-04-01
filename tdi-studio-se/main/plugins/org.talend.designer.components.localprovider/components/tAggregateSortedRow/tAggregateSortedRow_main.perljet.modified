@@ -1,0 +1,247 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean knowRowCount = ElementParameterParser.getValue(
+    node,
+    "__KNOW_ROW_COUNT__"
+).equals("true");
+
+String rowCount = ElementParameterParser.getValue(node, "__ROW_COUNT__");
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        List<Map<String, String>> operations =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__OPERATIONS__"
+            );
+
+        List<Map<String, String>> groupbys =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__GROUPBYS__"
+            );
+
+        String destination = ElementParameterParser.getValue(
+            node,
+            "__DESTINATION__"
+        );
+
+        // We need the name of the input connection and the name of the
+        // previous component
+        String inputRowName = new String("input_row");
+        String prevComponentName = new String("prev_component_name");
+
+        List< ? extends IConnection> inConns = node.getIncomingConnections();
+        if (inConns != null && !inConns.isEmpty()) {
+            IConnection inConn = inConns.get(0);
+
+            inputRowName = inConn.getName();
+            prevComponentName = inConn.getMetadataTable().getTableName();
+        }
+
+%>
+$current_key_<%=cid%> = join(
+    $;,
+<%
+        for (Map<String, String> groupby : groupbys) {
+            String indexConstant =
+                prevComponentName
+                + "__"
+                + groupby.get("INPUT_COLUMN")
+            ;
+%>
+    $<%=inputRowName%>->[<%=indexConstant%>],
+<%
+        }
+%>
+);
+
+<%
+        String connName = new String();
+        for (IConnection outConn: node.getOutgoingConnections()) {
+            connName = outConn.getName();
+%>
+$branch_<%=connName%>_is_active = false;
+<%
+        }
+%>
+
+if (defined $previous_key_<%=cid%>
+    and $current_key_<%=cid%> ne $previous_key_<%=cid%>) {
+<%
+        for (IConnection outConn: node.getOutgoingConnections()) {
+            connName = outConn.getName();
+%>
+    $branch_<%=connName%>_is_active = true;
+<%
+        }
+%>
+
+    @<%=cid%> = ();
+
+    my @key_values = split $;, $previous_key_<%=cid%>;
+<%
+        for (int keyNum = 1; keyNum <= groupbys.size(); keyNum++) {
+            Map<String, String> groupby = groupbys.get(keyNum - 1);
+
+            StringBuffer indexName = new StringBuffer();
+            indexName.append(cid);
+            indexName.append("__");
+            indexName.append(groupby.get("OUTPUT_COLUMN"));
+%>
+    $<%=cid%>[<%=indexName%>] = $key_values[<%=keyNum - 1%>];
+<%
+        }
+
+        for(int opNum = 1; opNum <= operations.size(); opNum++) {
+            Map<String, String> operation = operations.get(opNum - 1);
+            String function = operation.get("FUNCTION");
+
+            StringBuffer indexName = new StringBuffer();
+            indexName.append(cid);
+            indexName.append("__");
+            indexName.append(operation.get("OUTPUT_COLUMN"));
+
+            StringBuffer operationString = new StringBuffer();
+            // operationString must contain something like:
+            // $hash{ $row1[0] }{ $row1[1] }{operation1}
+            operationString.append("$operations_");
+            operationString.append(cid);
+            operationString.append("{operation");
+            operationString.append(opNum);
+            operationString.append("}");
+
+            StringBuffer expression = new StringBuffer();
+            expression.append(operationString);
+
+            if (function.equals("sum")) {
+                expression.append("{sum}");
+            }
+            else if (function.equals("avg")) {
+                expression.append("{sum} / ");
+                expression.append(operationString);
+                expression.append("{cardinality}");
+            }
+            else if (function.equals("count")) {
+                expression.append("{cardinality}");
+            }
+            else if (function.equals("min")) {
+                expression.append("{min}");
+            }
+            else if (function.equals("max")) {
+                expression.append("{max}");
+            }
+            else if (function.equals("first")) {
+                expression.append("{first}");
+            }
+            else if (function.equals("last")) {
+                expression.append("{last}");
+            }
+%>
+    $<%=cid%>[<%=indexName%>] = <%=expression%>;
+<%
+        }
+%>
+    $<%=cid%> = \@<%=cid%>;
+
+    %operations_<%=cid%> = ();
+}
+
+$previous_key_<%=cid%> = $current_key_<%=cid%>;
+
+<%
+        for(int opNum = 1; opNum <= operations.size(); opNum++) {
+            Map<String, String> operation = operations.get(opNum - 1);
+            String function = operation.get("FUNCTION");
+
+            StringBuffer operationString = new StringBuffer();
+            // operationString must contain something like:
+            // $hash{ $row1[0] }{ $row1[1] }{operation1}
+            operationString.append("$operations_");
+            operationString.append(cid);
+            operationString.append("{operation");
+            operationString.append(opNum);
+            operationString.append("}");
+
+            StringBuffer curval = new StringBuffer();
+            curval.append("$");
+            curval.append(inputRowName);
+            curval.append("->[");
+            curval.append(prevComponentName);
+            curval.append("__");
+            curval.append(operation.get("INPUT_COLUMN"));
+            curval.append("]");
+%>
+
+# operation <%=opNum%> starts here
+<%
+            if (function.equals("sum")) {
+%>
+<%=operationString%>{sum} += <%=curval%>;
+<%
+            }
+            else if (function.equals("avg")) {
+%>
+<%=operationString%>{sum} += <%=curval%>;
+<%=operationString%>{cardinality}++;
+<%
+            }
+            else if (function.equals("count")) {
+%>
+<%=operationString%>{cardinality}++;
+<%
+            }
+            else if (function.equals("min")) {
+%>
+$curval = <%=curval%>;
+
+<%=operationString%>{min} ||= <%=curval%>;
+
+if (<%=operationString%>{min} > <%=curval%>) {
+    <%=operationString%>{min} = <%=curval%>;
+}
+<%
+            }
+            else if (function.equals("max")) {
+%>
+<%=operationString%>{max} ||= <%=curval%>;
+
+if (<%=operationString%>{max} < <%=curval%>) {
+    <%=operationString%>{max} = <%=curval%>;
+}
+<%
+            }
+            else if (function.equals("first")) {
+%>
+<%=operationString%>{first} = <%=curval%> unless(exists(<%=operationString%>{first})) ;
+<%
+            }
+            else if (function.equals("last")) {
+%>
+<%=operationString%>{last} = <%=curval%> ;
+<%
+            }
+        }
+%>
+
+<%
+    }
+}
+%>

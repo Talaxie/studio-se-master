@@ -1,0 +1,338 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IHashableInputConnections
+		org.talend.core.model.process.IHashConfiguration
+		org.talend.core.model.process.IHashableColumn
+		org.talend.core.model.process.IMatchingMode
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+		java.util.Comparator
+		java.util.Collections
+		org.talend.core.model.process.IDataConnection
+		org.talend.designer.xmlmap.XmlMapComponent
+		org.eclipse.emf.common.util.EList
+		org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+		org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+		org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+		org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+		org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+		org.talend.designer.xmlmap.model.emf.xmlmap.LookupConnection
+		org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+		org.talend.designer.xmlmap.model.emf.xmlmap.NodeType
+		org.talend.designer.xmlmap.model.emf.xmlmap.InputLoopNodesTable
+	"
+	skeleton="tAdvancedXMLMapHash_java.skeleton"
+%>
+
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    
+	if (connections != null && connections.size() > 0) { // T_AH_100
+        for (IConnection connection : connections) { // T_AH_101
+        	String connectionName = connection.getName();
+   
+			INode validTarget = ((IDataConnection) connection).getLinkNodeForHash();
+			
+			List<InputLoopNodesTable> allInputLoopNodesTables = new ArrayList<InputLoopNodesTable>();
+			boolean unvalidLookupKeyExistForHash = false;
+
+			if(validTarget != null) { // T_AH_102
+					//////////////////////////////////////////////////////
+					boolean isXMLMapComponent = "tXMLMap".equals(validTarget.getComponent().getName());
+					boolean findFromBasicType = false;
+					boolean findFromDocumentType = false;
+					LoopHelper loopHelper = null;
+					IMetadataTable metadataTable = connection.getMetadataTable();
+					List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+					Map<InputLoopNodesTable,List<String>> outputLoopToUnvalidLookupKeys = new HashMap<InputLoopNodesTable,List<String>>();
+					if(isXMLMapComponent) {
+						XmlMapComponent xmlMapComponent = (XmlMapComponent)validTarget;
+						XmlMapData xmlMapData=(XmlMapData)ElementParameterParser.getObjectValueXMLTree(xmlMapComponent);
+						EList<InputXmlTree> inputTablesWithInvalid = xmlMapData.getInputTrees();
+						Map<String, InputXmlTree> nameToTable = new HashMap<String, InputXmlTree>();
+						for(InputXmlTree inputTable : inputTablesWithInvalid) {
+							nameToTable.put(inputTable.getName(),inputTable);
+						}
+						InputXmlTree currentInputTree = nameToTable.get(connectionName);
+						if(currentInputTree!=null && currentInputTree.isLookup()) {
+							EList<TreeNode> treeNodes = currentInputTree.getNodes();
+							for(TreeNode treeNode : treeNodes) {
+								String columnType = treeNode.getType();
+								List<TreeNode> allLeaf = new ArrayList<TreeNode>();
+								getAllLeaf(treeNode,allLeaf);
+								for(TreeNode leaf : allLeaf) {
+									if(leaf == null) {
+										continue;
+									}
+									String expressionKey = leaf.getExpression();
+									if (expressionKey != null && !"".equals(expressionKey.trim())) {
+										if("id_Document".equals(columnType)) {
+											findFromDocumentType = true; 
+										} else {
+											findFromBasicType = true;
+										}	
+									}
+									
+								}
+							}
+						}
+						
+						/////////////////////////////////////////////////////////////////////////////////////////////
+						//multiloop logic
+						EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+						EList<VarTable> varTables = xmlMapData.getVarTables();
+						
+						List<IConnection> inputConnections = (List<IConnection>)xmlMapComponent.getIncomingConnections();
+						HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+						for(IConnection conn : inputConnections){
+							hNameToConnection.put(conn.getName(), conn);
+						}
+						
+						List<IConnection> outputConnections = (List<IConnection>) xmlMapComponent.getOutgoingConnections();
+						Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+					    for (IConnection conn : outputConnections) {
+						  		nameToOutputConnection.put(conn.getName(), conn);
+						}
+						
+						//filter unvalid input tables
+						List<InputXmlTree> inputTables = new ArrayList<InputXmlTree>();
+						for(int i=0; i<inputTablesWithInvalid.size(); i++){
+							InputXmlTree  currentTree = inputTablesWithInvalid.get(i);
+							if(hNameToConnection.get(currentTree.getName()) != null){
+								inputTables.add(currentTree);
+							}
+						}
+						
+						InputXmlTree mainTable = inputTables.get(0);
+						TreeNode documentInMain = null;
+						for(TreeNode currentNode : mainTable.getNodes()) {
+							if("id_Document".equals(currentNode)) {
+								documentInMain = currentNode;
+							}
+						}
+						
+						//filter unvalid output tables
+						ArrayList<OutputXmlTree> outputTablesSortedByReject = new ArrayList<OutputXmlTree>();
+						for(OutputXmlTree outputTable : outputTables) {
+							if(nameToOutputConnection.get(outputTable.getName())!=null) {
+								outputTablesSortedByReject.add(outputTable);
+							}
+						}
+						// sorting outputs : rejects tables after not rejects table
+						Collections.sort(outputTablesSortedByReject, new Comparator<OutputXmlTree>() {
+					
+							public int compare(OutputXmlTree o1, OutputXmlTree o2) {
+								if (o1.isReject() != o2.isReject()) {
+									if (o1.isReject()) {
+										return 1;
+									} else {
+										return -1;
+									}
+								}
+								if (o1.isRejectInnerJoin() != o2.isRejectInnerJoin()) {
+									if (o1.isRejectInnerJoin()) {
+										return 1;
+									} else {
+										return -1;
+									}
+								}
+								return 0;
+							}
+					
+						});
+						
+						boolean parallelRelationExist = false;
+						
+						for(OutputXmlTree outputTable : outputTablesSortedByReject) {
+							List<OutputTreeNode> loopNodes = new ArrayList<OutputTreeNode>();
+							boolean docExist = false;
+							for(OutputTreeNode currentNode : outputTable.getNodes()) {
+								if("id_Document".equals(currentNode.getType())) {
+									getAllLoopNodes(currentNode,loopNodes);
+									docExist = true;
+								}
+							}
+							
+							if(docExist) {
+								for(OutputTreeNode loop : loopNodes) {
+									InputLoopNodesTable inputLoopTable = loop.getInputLoopNodesTable();
+									if(inputLoopTable!=null && inputLoopTable.getInputloopnodes()!=null && inputLoopTable.getInputloopnodes().size()>0) {
+										allInputLoopNodesTables.add(loop.getInputLoopNodesTable());
+									}
+								}
+							} else {//only flat column exist
+								allInputLoopNodesTables.addAll(getValidInputLoopNodesTables(outputTable.getInputLoopNodesTables()));
+							}
+						}
+						
+						if(allInputLoopNodesTables.size()>0) {
+							for(int i=0;i<allInputLoopNodesTables.size()-1;i++) {
+								InputLoopNodesTable inputLoopNodesTable = allInputLoopNodesTables.get(i);
+								List<TreeNode> inputLoopNodes = inputLoopNodesTable.getInputloopnodes();
+								int size = inputLoopNodes.size();
+								
+								InputLoopNodesTable nextInputLoopNodesTable = allInputLoopNodesTables.get(i+1);
+								List<TreeNode> nextInputLoopNodes = nextInputLoopNodesTable.getInputloopnodes();
+								int nextSize = nextInputLoopNodes.size();
+								if((size != nextSize) || (!inputLoopNodes.containsAll(nextInputLoopNodes))) {
+									parallelRelationExist = true;
+									break;
+								}
+							}
+						}
+						
+						if(parallelRelationExist && findFromBasicType && mainTable.isMultiLoops()) {
+							loopHelper = new LoopHelper(documentInMain,outputTablesSortedByReject,inputTables);
+							for(int i=0;i<allInputLoopNodesTables.size();i++) {
+								InputLoopNodesTable inputLoopNodesTable = allInputLoopNodesTables.get(i);
+								List<TreeNode> inputLoopNodes = inputLoopNodesTable.getInputloopnodes();
+								loopHelper.initForOneOutputTableLoop(inputLoopNodes);
+								List<String> unvalidLookupKeys = new ArrayList<String>();
+								outputLoopToUnvalidLookupKeys.put(inputLoopNodesTable,unvalidLookupKeys);
+								if(currentInputTree!=null && currentInputTree.isLookup()) {
+									EList<TreeNode> treeNodes = currentInputTree.getNodes();
+									for(TreeNode treeNode : treeNodes) {
+										//only check the flat column,because hash only ready for flat column
+										if(!loopHelper.validLookupKey(treeNode)) {
+											unvalidLookupKeyExistForHash = true;
+											unvalidLookupKeys.add(treeNode.getName());
+										}
+										
+									}
+									
+								}
+							}
+						}
+						
+					}
+					//////////////////////////////////////////////////////
+					
+			
+					String matchingModeStr = null;
+					List<IHashableColumn> hashableColumns = null;
+					IMatchingMode matchingMode = null;
+					IHashConfiguration hashConfiguration = null;
+					boolean bSortOnDisk = "true".equals(ElementParameterParser.getValue(node, "__SORT_ON_DISK__"));
+					
+					if (validTarget instanceof IHashableInputConnections){
+					
+					  IHashableInputConnections target = (IHashableInputConnections) validTarget;
+					  hashConfiguration = target.getHashConfiguration(connection.getName());
+					} else{
+				  	  matchingModeStr = "ALL_MATCHES";
+				    }
+					if(hashConfiguration == null) {
+						hashableColumns = new ArrayList(0);
+					} else {
+						hashableColumns = hashConfiguration.getHashableColumns();
+						matchingMode = hashConfiguration.getMatchingMode();
+					}
+					
+					
+					if (matchingModeStr == null){
+					  if(matchingMode == null) {
+						if(hashableColumns.size() > 0) {
+							matchingModeStr = "UNIQUE_MATCH";
+						} else {
+							matchingModeStr = "ALL_ROWS";
+						}
+					  } else {
+						matchingModeStr = matchingMode.toString();
+					  }
+			        }
+			   %>
+			   
+			   <%
+				if(hashConfiguration != null && hashConfiguration.isPersistent() || bSortOnDisk) {
+				%>
+
+					<%=connectionName%>Struct <%=connectionName%>_HashRow = tHash_Lookup_<%=connectionName%>.getNextFreeRow();
+
+	   			<%	
+	   			} else {
+	   				if(!unvalidLookupKeyExistForHash) {
+	   			%>
+
+					<%=connectionName%>Struct <%=connectionName%>_HashRow = new <%=connectionName%>Struct();
+					
+				<%
+					} else {
+						for(int i=0;i<allInputLoopNodesTables.size();i++) {
+							String loopKey = "loopKey"+i;
+%>
+							<%=connectionName%>Struct <%=connectionName%>_<%=loopKey%>_HashRow = new <%=connectionName%><%=loopKey%>Struct();
+<%
+						}
+					}
+				}
+			} // T_AH_103 
+            else { // T_AH_104
+				%> 
+				/*
+				 * Valid target not found for connection "<%= connectionName%>"
+				 */ 
+				<%
+            } // T_AH_104
+			
+			IMetadataTable metadataTable = connection.getMetadataTable();
+			
+			List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+			if(!unvalidLookupKeyExistForHash) {
+	            for (IMetadataColumn column : listColumns) {
+	                String columnName = column.getLabel();
+					if("id_Dynamic".equals(column.getTalendType())) {
+					%>
+					<%=connectionName%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>.clone();
+					<%
+					} else {
+					%>
+					<%=connectionName%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>;
+					<%	
+					}
+	            } 
+	      		%>
+					tHash_Lookup_<%=connectionName%>.put(<%=connectionName%>_HashRow);
+				<%
+	            
+			} else {
+				for(int i=0;i<allInputLoopNodesTables.size();i++) {
+					String loopKey = "loopKey"+i;
+					for (IMetadataColumn column : listColumns) {
+		                String columnName = column.getLabel();
+						if("id_Dynamic".equals(column.getTalendType())) {
+						%>
+						<%=connectionName%>_<%=loopKey%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>.clone();
+						<%
+						} else {
+						%>
+						<%=connectionName%>_<%=loopKey%>_HashRow.<%=columnName%> = <%=connectionName%>.<%=columnName%>;
+						<%	
+						}
+		            }
+		            %>
+					tHash_Lookup_<%=connectionName%>.put(<%=connectionName%>_<%=loopKey%>_HashRow);
+					<% 
+	            }
+			}
+			
+		} // T_AH_101
+	} // T_AH_100
+
+%>
+            
+
+
+

@@ -1,0 +1,477 @@
+<%
+    String authType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+    boolean isAPI2011 = ("API_2011").equals(ElementParameterParser.getValue(node,"__API_VERSION__"));
+    
+    boolean emptyLookupIntoNull = "true".equals(ElementParameterParser.getValue(node,"__EMPTY_LOOKUP_TO_NULL__"));
+
+    String str4nil = "\"\"";
+    String entityname = ElementParameterParser.getValue(node, "__ENTITYNAME__").trim();
+    String customEntityname = ElementParameterParser.getValue(node, "__CUSTOM_ENTITY_NAME__");
+    if("CustomEntity".equals(entityname)){
+        entityname = customEntityname.replaceAll("\"","");
+    }
+    entityname = entityname.toLowerCase();
+    String action = ElementParameterParser.getValue(node,"__ACTION__");
+
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {//2
+            List<? extends IConnection> conns = node.getIncomingConnections();
+            for (IConnection conn : conns) {//3
+                if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//4
+                    String connName = conn.getName();
+                    List<IMetadataColumn> columns = metadata.getListColumns();
+                    int sizeColumns = columns.size();
+                    List<Map<String, String>> lookupMapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOKUP_MAPPING__");
+
+                    if(!isAPI2011 || ("ON_PREMISE").equals(authType)){// (2007,on-premise),(2007,online),(2011,on-premise)
+
+                        if("update".equals(action) && sizeColumns == 2 && "ownerid".equals(columns.get(1).getLabel())){
+                             action = "reassignOwnerID";
+                        }
+                        boolean hasOwnerID = false;
+                        %>
+                        StringBuffer OperXml_<%=cid%> = new StringBuffer();
+
+                        <%
+                        if("insert".equals(action) || "update".equals(action)){//************
+                            List activityEntities = java.util.Arrays.asList(new String[]{"activitypointer","appointment","bulkoperation","campaignactivity","campaignresponse","email","fax","incidentresolution","letter","opportunityclose","orderclose","phonecall","quoteclose","serviceappointment","task"});
+
+                            if("insert".equals(action)){
+                            %>
+                                OperXml_<%=cid%>.append("<Create xmlns=\"http://schemas.microsoft.com/crm/2007/WebServices\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">");
+                            <%
+                            }else if("update".equals(action)){
+                            %>
+                                OperXml_<%=cid%>.append("<Update xmlns=\"http://schemas.microsoft.com/crm/2007/WebServices\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">");
+                            <%
+                            }
+                            %>
+                            OperXml_<%=cid%>.append("\n");
+                            OperXml_<%=cid%>.append("<entity xsi:type=\"web:");
+                            OperXml_<%=cid%>.append("<%=entityname%>");
+                            OperXml_<%=cid%>.append("\" xmlns:web=\"http://schemas.microsoft.com/crm/2007/WebServices\">");
+                            OperXml_<%=cid%>.append("\n");
+
+                            <%
+                            for(int i = 0; i < sizeColumns; i++){//5
+                                IMetadataColumn column = columns.get(i);
+                                JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                                String entityMethodTemp = column.getLabel();
+                                String entityMethod = "";
+
+                                if("update".equals(action) && "ownerid".equals(column.getLabel()))  {
+                                    hasOwnerID = true;
+                                    continue;
+                                }
+                                
+                                boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+ 								if(!isPrimitive && ignoreNull) { //begin of skipping null values.
+ 								%>
+ 			    					if(<%=conn.getName() %>.<%=column.getLabel() %> != null ) { //
+ 								<%
+ 								}
+
+                                if(!"Id".equals(column.getLabel())){
+                                %>
+                                    OperXml_<%=cid%>.append("<");
+                                    OperXml_<%=cid%>.append("<%=column.getLabel()%>");
+                                    <%
+                                    if(lookupMapping.size()>0){
+                                        for(Map<String, String> lookupMapper:lookupMapping){
+                                            if(column.getLabel().equals(lookupMapper.get("INPUT_COLUMN"))){
+                                            %>
+                                            OperXml_<%=cid%>.append(" type=\"");
+                                            OperXml_<%=cid%>.append(<%=lookupMapper.get("TYPE")%>);
+                                            OperXml_<%=cid%>.append("\"");
+                                            <%
+                                            }
+                                        }
+                                    }
+                                    %>
+                                    OperXml_<%=cid%>.append(">");
+                                    OperXml_<%=cid%>.append("<![CDATA[");
+                                    <%
+                                    String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                                    if(javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0){//Date
+                                    %>
+                                        if(<%=conn.getName() %>.<%=column.getLabel() %> != null ){
+                                            OperXml_<%=cid%>.append(FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>));
+                                        }else{
+                                            OperXml_<%=cid%>.append(<%= str4nil %>);
+                                        }
+                                    <%
+                                    } else {//others
+                                    %>
+                                        if(<%=conn.getName() %>.<%=column.getLabel() %> != null ){
+                                            OperXml_<%=cid%>.append(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>));
+                                        }else{
+                                            OperXml_<%=cid%>.append(<%= str4nil %>);
+                                        }
+                                    <%
+                                    }
+                                    %>
+                                    OperXml_<%=cid%>.append("]]>");
+                                    OperXml_<%=cid%>.append("</");
+                                    OperXml_<%=cid%>.append("<%=column.getLabel()%>");
+                                    OperXml_<%=cid%>.append(">");
+                                    OperXml_<%=cid%>.append("\n");
+                                <%
+                                }else{
+                                    String entityIdStr = entityname;
+                                    if(activityEntities.contains(entityIdStr)){
+                                        entityIdStr = "activity";
+                                    }
+                                    %>
+                                    OperXml_<%=cid%>.append("<");
+                                    OperXml_<%=cid%>.append("<%=entityIdStr%>");
+                                    OperXml_<%=cid%>.append("id>");
+                                    OperXml_<%=cid%>.append(<%=conn.getName() %>.Id);
+                                    OperXml_<%=cid%>.append("</");
+                                    OperXml_<%=cid%>.append("<%=entityIdStr%>");
+                                    OperXml_<%=cid%>.append("id>");
+                                    OperXml_<%=cid%>.append("\n");
+                                <%
+                                }
+                                if(!isPrimitive && ignoreNull) {//end of skipping null values.
+ 								%>
+ 			    					} //
+ 								<%
+ 								}
+                            }//5
+                            if("insert".equals(action)){//#######
+                            %>
+                                OperXml_<%=cid%>.append("</entity>");
+                                OperXml_<%=cid%>.append("\n");
+                                OperXml_<%=cid%>.append("</Create>");
+                                com.microsoft.schemas.crm._2007.webservices.CreateDocument createDoc_<%=cid%> =  com.microsoft.schemas.crm._2007.webservices.CreateDocument.Factory.parse(OperXml_<%=cid%>.toString());
+                                service_<%=cid%>.create(createDoc_<%=cid%>, catd_<%=cid%>, null, null);
+                            <%
+                            }else if("update".equals(action)){//#######
+                            %>
+                                OperXml_<%=cid%>.append("</entity>");
+                                OperXml_<%=cid%>.append("\n");
+                                OperXml_<%=cid%>.append("</Update>");
+                                com.microsoft.schemas.crm._2007.webservices.UpdateDocument updateDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.UpdateDocument.Factory.parse(OperXml_<%=cid%>.toString());
+                                service_<%=cid%>.update(updateDoc_<%=cid%>,catd_<%=cid%>,null,null);
+                            <%
+                            }//#######
+                        }else if("delete".equals(action)){//*************
+                        %>
+                            OperXml_<%=cid%>.append("<Delete xmlns=\"http://schemas.microsoft.com/crm/2007/WebServices\">");
+                            OperXml_<%=cid%>.append("\n");
+                            OperXml_<%=cid%>.append("<entityName>");
+                            OperXml_<%=cid%>.append("<%=entityname%>");
+                            OperXml_<%=cid%>.append("</entityName>");
+                            OperXml_<%=cid%>.append("\n");
+                            OperXml_<%=cid%>.append("<id>");
+                            OperXml_<%=cid%>.append(<%=conn.getName() %>.Id);
+                            OperXml_<%=cid%>.append("</id>\n");
+                            OperXml_<%=cid%>.append("</Delete>");
+                            com.microsoft.schemas.crm._2007.webservices.DeleteDocument deleteDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.DeleteDocument.Factory.parse(OperXml_<%=cid%>.toString());
+                            service_<%=cid%>.delete(deleteDoc_<%=cid%>,catd_<%=cid%>,null,null);
+                        <%
+                        }//************
+                        if("reassignOwnerID".equals(action) || ("update".equals(action) && hasOwnerID)){
+                        %>
+                            com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Execute execute_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Execute.Factory
+                                    .newInstance();
+                            com.microsoft.schemas.crm._2007.webservices.ExecuteDocument executeDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Factory
+                                    .newInstance();
+                            com.microsoft.schemas.crm._2007.webservices.AssignRequest assignRequest_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.AssignRequest.Factory
+                                    .newInstance();
+                            com.microsoft.schemas.crm._2006.coretypes.SecurityPrincipal assignee_<%=cid%> = com.microsoft.schemas.crm._2006.coretypes.SecurityPrincipal.Factory.newInstance();
+                            assignee_<%=cid%>.setPrincipalId(String.valueOf(<%=conn.getName() %>.ownerid));
+                            assignee_<%=cid%>.setType(com.microsoft.schemas.crm._2006.coretypes.SecurityPrincipalType.Enum.forString("User"));
+                            assignRequest_<%=cid%>.setAssignee(assignee_<%=cid%>);
+
+                            com.microsoft.schemas.crm._2007.webservices.TargetOwnedDynamic dynamicTarget_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.TargetOwnedDynamic.Factory
+                                    .newInstance();
+                            dynamicTarget_<%=cid%>.setEntityName("<%=entityname%>");
+                            dynamicTarget_<%=cid%>.setEntityId(String.valueOf(<%=conn.getName() %>.Id));
+
+                            assignRequest_<%=cid%>.setTarget(dynamicTarget_<%=cid%>);
+
+                            execute_<%=cid%>.setRequest(assignRequest_<%=cid%>);
+                            executeDoc_<%=cid%>.setExecute(execute_<%=cid%>);
+
+                            executeDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Factory.parse(executeDoc_<%=cid%>.toString());
+
+                            service_<%=cid%>.execute(executeDoc_<%=cid%>, catd_<%=cid%>, null,null);
+
+                        <%
+                        }
+                        %>
+                    <%
+                    }else{//(2011,on-line)
+                        Map<String, String> crmTypeMapping = new HashMap<String, String>();
+                        crmTypeMapping.put("BOOLEAN", "bool");
+                        crmTypeMapping.put("CUSTOMER", "entityRef");
+                        crmTypeMapping.put("DATETIME", "datatime");
+                        crmTypeMapping.put("DECIMAL", "bigDecimal");
+                        crmTypeMapping.put("DOUBLE", "double");
+                        crmTypeMapping.put("INTEGER", "int");
+                        crmTypeMapping.put("LOOKUP", "entityRef");
+                        crmTypeMapping.put("MEMO", "string");
+                        crmTypeMapping.put("MONEY", "money");
+                        crmTypeMapping.put("OWNER", "entityRef");
+                        crmTypeMapping.put("PARTYLIST", "entityCollection");
+                        crmTypeMapping.put("PICKLIST", "optionSetValue");
+                        crmTypeMapping.put("STATE", "optionSetValue");
+                        crmTypeMapping.put("STATUS", "optionSetValue");
+                        crmTypeMapping.put("STRING", "string");
+                        crmTypeMapping.put("UNIQUEIDENTIFIER", "guid");
+                        crmTypeMapping.put("CALENDARRULES", "entityCollection");
+                        crmTypeMapping.put("BIGINT", "long");
+                        crmTypeMapping.put("MANAGEDPROPERTY", "booleanManagedProperty");
+                        crmTypeMapping.put("ENTITYNAME", "string");
+
+                        if("insert".equals(action) || "update".equals(action)){
+                            String ownerColumnName = null;
+                            String idColumnName = null;
+                            %>
+                            com.microsoft.schemas.xrm._2011.contracts.Entity entity_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.Entity.Factory.newInstance();
+                            entity_<%=cid%>.setLogicalName("<%=entityname%>");
+
+                            com.microsoft.schemas.xrm._2011.contracts.AttributeCollection attributes_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.AttributeCollection.Factory.newInstance();
+                            org.datacontract.schemas._2004._07.system_collections_generic.KeyValuePairOfstringanyType attribute_<%=cid%> = null;
+                            
+                            org.apache.xmlbeans.GDateBuilder gdb_<%=cid%> = null;
+                            org.apache.xmlbeans.XmlObject xmlObject_<%=cid%> = null;
+                            <%
+                            for(int i = 0; i < sizeColumns; i++){
+                                IMetadataColumn column = columns.get(i);
+                                JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                                String crmType = column.getType();
+                                String columnName = column.getLabel();
+                                if("update".equals(action)){
+                                    if("OWNER".equals(crmType)){
+                                        ownerColumnName = columnName;
+                                        continue;
+                                    }
+                                    if(column.isKey() && idColumnName == null){
+                                        idColumnName = columnName;
+                                    }
+                                }
+                                boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType(javaType, column.isNullable());
+                                if(!isPrimitive && ignoreNull) {
+  								//This will skip the null values and won't add them to the request. 
+  								%>   				
+  			    					if(<%=connName%>.<%=columnName%> != null){
+  								<%
+  								}
+                                %>
+                                attribute_<%=cid%> = attributes_<%=cid%>.addNewKeyValuePairOfstringanyType();
+                                attribute_<%=cid%>.setKey("<%=columnName%>");
+                                <%
+                                if(!isPrimitive && !ignoreNull) {
+  								//if you want to set null, just skip this step. 
+  								%>   				
+  			    					if(<%=connName%>.<%=columnName%> != null){
+  								<%
+  								}
+                                if("entityRef".equals(crmTypeMapping.get(crmType))){
+                                    boolean hasFound = false;
+                                    if(lookupMapping.size()>0){
+                                        for(Map<String, String> lookupMapper:lookupMapping){
+                                            if(columnName.equals(lookupMapper.get("INPUT_COLUMN"))){
+                                                hasFound = true;
+                                                %>
+												if(<%=connName%>.<%=columnName%> != null<%if(emptyLookupIntoNull) {%> && !(String.valueOf(<%=connName%>.<%=columnName%>).isEmpty())<%}%>) {
+		                                            xmlObject_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.EntityReference.Factory.newInstance();
+                                                	((com.microsoft.schemas.xrm._2011.contracts.EntityReference)xmlObject_<%=cid%>).setId(<%=connName%>.<%=columnName%>);
+	                                               	((com.microsoft.schemas.xrm._2011.contracts.EntityReference)xmlObject_<%=cid%>).setLogicalName(<%=lookupMapper.get("TYPE")%>);
+                                                } else {
+                                                	xmlObject_<%=cid%> = null;
+                                                }
+                                            <%
+                                            }
+                                        }
+                                    }
+                                    if(!hasFound){
+                                    %>
+                                    "The type of column "<%=columnName%>" is EntityReference, need to specify the reference entity logical name in EntityReference Type Mapping table."
+                                    <%
+                                    }
+                                }else if("optionSetValue".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.OptionSetValue.Factory.newInstance();
+                                    ((com.microsoft.schemas.xrm._2011.contracts.OptionSetValue)xmlObject_<%=cid%>).setValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("money".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.Money.Factory.newInstance();
+                                    ((com.microsoft.schemas.xrm._2011.contracts.Money)xmlObject_<%=cid%>).setValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("guid".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = com.microsoft.schemas._2003._10.serialization.Guid.Factory.newInstance();
+                                    ((com.microsoft.schemas._2003._10.serialization.Guid)xmlObject_<%=cid%>).setStringValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("string".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlString.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlString)xmlObject_<%=cid%>).setStringValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("datatime".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlDateTime.Factory.newInstance();
+                                    if(<%=connName%>.<%=columnName%> == null) {
+                                    	((org.apache.xmlbeans.XmlDateTime)xmlObject_<%=cid%>).setDateValue(<%=connName%>.<%=columnName%>);
+                                    } else {
+                                    	gdb_<%=cid%> = new org.apache.xmlbeans.GDateBuilder(<%=connName%>.<%=columnName%>);
+                                    	gdb_<%=cid%>.normalize();
+                                    	((org.apache.xmlbeans.XmlDateTime)xmlObject_<%=cid%>).setGDateValue(gdb_<%=cid%>.toGDate());
+                                    }
+                                <%
+                                }else if("bool".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlBoolean.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlBoolean)xmlObject_<%=cid%>).setBooleanValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("bigDecimal".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlDecimal.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlDecimal)xmlObject_<%=cid%>).setBigDecimalValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("int".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlInt.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlInt)xmlObject_<%=cid%>).setIntValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("long".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlLong.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlLong)xmlObject_<%=cid%>).setLongValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("double".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    xmlObject_<%=cid%> = org.apache.xmlbeans.XmlDouble.Factory.newInstance();
+                                    ((org.apache.xmlbeans.XmlDouble)xmlObject_<%=cid%>).setDoubleValue(<%=connName%>.<%=columnName%>);
+                                <%
+                                }else if("entityCollection".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    "don't support entityCollection yet;"
+                                <%
+                                }else if("booleanManagedProperty".equals(crmTypeMapping.get(crmType))){
+                                %>
+                                    "don't support booleanManagedProperty yet;"
+                                <%
+                                }else{
+                                %>
+                                    "wrong type <%=crmType%>"
+                                <%
+                                }
+                                if(!isPrimitive && !ignoreNull) {
+  								//End of setting null values part. 
+  								%>
+  									} else {
+  										xmlObject_<%=cid%> = null;
+  									}
+  								<%
+  								}
+                                %>
+                                attribute_<%=cid%>.setValue(xmlObject_<%=cid%>);
+                                <%
+                                if(!isPrimitive && ignoreNull) {
+  								//End of ignoring null values part. 
+  								%>
+  									}
+  								<%
+  								}
+                            }
+                            %>
+                            entity_<%=cid%>.setAttributes(attributes_<%=cid%>);
+                            <%if("insert".equals(action)){%>
+                                com.microsoft.schemas.xrm._2011.contracts.services.CreateDocument.Create create_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.CreateDocument.Create.Factory.newInstance();
+                                create_<%=cid%>.setEntity(entity_<%=cid%>);
+                                com.microsoft.schemas.xrm._2011.contracts.services.CreateDocument createDoc_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.CreateDocument.Factory.newInstance();
+                                createDoc_<%=cid%>.setCreate(create_<%=cid%>);
+                                com.microsoft.schemas.xrm._2011.contracts.services.CreateResponseDocument.CreateResponse createResp_<%=cid%> = null;
+                                try{
+                                    createResp_<%=cid%> = serviceStub_<%=cid%>.create(createDoc_<%=cid%>).getCreateResponse();
+                                }catch(com.microsoft.schemas.xrm._2011.contracts.IOrganizationService_Create_OrganizationServiceFaultFault_FaultMessage ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+                                    throw new Exception(ex_<%=cid%>.getFaultMessage().getOrganizationServiceFault().getMessage());
+                                }
+                                //String returnId_<%=cid%> = createResp_<%=cid%>.getCreateResult();
+                            <%
+                            }else if("update".equals(action)){
+                                if(ownerColumnName != null && columns.size() == 2){
+                                //don't need to update, just do reassign opertion is enough.
+                                }else{
+                                %>
+                                    com.microsoft.schemas.xrm._2011.contracts.services.UpdateDocument.Update update_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.UpdateDocument.Update.Factory.newInstance();
+                                    update_<%=cid%>.setEntity(entity_<%=cid%>);
+                                    com.microsoft.schemas.xrm._2011.contracts.services.UpdateDocument updateDoc_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.UpdateDocument.Factory.newInstance();
+                                    updateDoc_<%=cid%>.setUpdate(update_<%=cid%>);
+                                    try{
+                                        serviceStub_<%=cid%>.update(updateDoc_<%=cid%>);
+                                    }catch(com.microsoft.schemas.xrm._2011.contracts.IOrganizationService_Update_OrganizationServiceFaultFault_FaultMessage ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+                                        throw new Exception(ex_<%=cid%>.getFaultMessage().getOrganizationServiceFault().getMessage());
+                                    }
+                                <%
+                                }
+                                if(ownerColumnName != null){
+                                %>
+                                    com.microsoft.schemas.xrm._2011.contracts.OrganizationRequest request_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.OrganizationRequest.Factory.newInstance();
+                                    request_<%=cid%>.setNilRequestId();
+                                    request_<%=cid%>.setRequestName("Assign");
+                                    com.microsoft.schemas.xrm._2011.contracts.ParameterCollection parameters_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.ParameterCollection.Factory.newInstance();
+                                    org.datacontract.schemas._2004._07.system_collections_generic.KeyValuePairOfstringanyType parameter_<%=cid%> = null;
+
+                                    parameter_<%=cid%> = parameters_<%=cid%>.addNewKeyValuePairOfstringanyType();
+                                    parameter_<%=cid%>.setKey("Target");
+                                    com.microsoft.schemas.xrm._2011.contracts.EntityReference targetEntity_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.EntityReference.Factory.newInstance();
+                                    targetEntity_<%=cid%>.setId(<%=connName%>.<%=idColumnName%>);
+                                    targetEntity_<%=cid%>.setLogicalName("<%=entityname%>");
+                                    parameter_<%=cid%>.setValue(targetEntity_<%=cid%>);
+
+                                    parameter_<%=cid%> = parameters_<%=cid%>.addNewKeyValuePairOfstringanyType();
+                                    parameter_<%=cid%>.setKey("Assignee");
+                                    com.microsoft.schemas.xrm._2011.contracts.EntityReference assigneeEntity_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.EntityReference.Factory.newInstance();
+                                    assigneeEntity_<%=cid%>.setId(<%=connName%>.<%=ownerColumnName%>);
+                                    assigneeEntity_<%=cid%>.setLogicalName("systemuser");
+                                    parameter_<%=cid%>.setValue(assigneeEntity_<%=cid%>);
+
+                                    request_<%=cid%>.setParameters(parameters_<%=cid%>);
+                                    com.microsoft.schemas.xrm._2011.contracts.services.ExecuteDocument.Execute execute_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.ExecuteDocument.Execute.Factory.newInstance();
+                                    execute_<%=cid%>.setRequest(request_<%=cid%>);
+                                    com.microsoft.schemas.xrm._2011.contracts.services.ExecuteDocument executeDoc_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.ExecuteDocument.Factory.newInstance();
+                                    executeDoc_<%=cid%>.setExecute(execute_<%=cid%>);
+                                    try{
+                                        serviceStub_<%=cid%>.execute(executeDoc_<%=cid%>);
+                                    }catch(com.microsoft.schemas.xrm._2011.contracts.IOrganizationService_Execute_OrganizationServiceFaultFault_FaultMessage ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+                                        throw new Exception(ex_<%=cid%>.getFaultMessage().getOrganizationServiceFault().getMessage());
+                                    }
+                                <%
+                                }
+                            }
+                        }
+                        else if("delete".equals(action)){
+                        %>
+                            com.microsoft.schemas.xrm._2011.contracts.services.DeleteDocument.Delete delete_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.DeleteDocument.Delete.Factory.newInstance();
+                            delete_<%=cid%>.setEntityName("<%=entityname%>");
+                            delete_<%=cid%>.setId(<%=conn.getName() %>.Id);
+                            com.microsoft.schemas.xrm._2011.contracts.services.DeleteDocument deleteDoc_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.DeleteDocument.Factory.newInstance();
+                            deleteDoc_<%=cid%>.setDelete(delete_<%=cid%>);
+                            try{
+                                serviceStub_<%=cid%>.delete(deleteDoc_<%=cid%>);
+                            }catch(com.microsoft.schemas.xrm._2011.contracts.IOrganizationService_Delete_OrganizationServiceFaultFault_FaultMessage ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+                                throw new Exception(ex_<%=cid%>.getFaultMessage().getOrganizationServiceFault().getMessage());
+                            }
+                        <%
+                        }
+                    }
+                    %>
+                    nb_line_<%=cid %>++;
+                <%
+                }//4
+            }//3
+        }//2
+    }//1
+    %>

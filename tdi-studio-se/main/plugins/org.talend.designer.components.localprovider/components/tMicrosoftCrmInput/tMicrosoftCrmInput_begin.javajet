@@ -1,0 +1,56 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.Map
+        java.util.HashMap
+        java.util.Arrays
+        java.util.ArrayList
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        "
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+
+    String authenticationType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+    String crmVersion = ElementParameterParser.getValue(node, "__MS_CRM_VERSION__");
+
+    boolean isMsCrm2015OnPremise = "ON_PREMISE".equals(authenticationType) && "CRM_2015".equals(crmVersion);
+    
+    String attemptConnTimes = ElementParameterParser.getValue(node, "__MAX_RECONN_ATTEMPS__");
+	String attemptsInterval = ElementParameterParser.getValue(node, "__ATTEMPS_INTERVAL_TIME__");
+%>
+	int nb_line_<%=cid%> = 0;
+	
+	int reConnMaxNum_<%=cid%>=<%=attemptConnTimes%>;
+	reConnMaxNum_<%=cid%> = reConnMaxNum_<%=cid%> >= 0 ? reConnMaxNum_<%=cid%> : 0;
+<%
+    if(isMsCrm2015OnPremise){
+       %>
+          <%@ include file="./tMicrosoftCrmInput_begin_CXF.javajet"%>
+       <%
+    }else{
+    	  String crmOnlineVersion = ElementParameterParser.getValue(node, "__API_VERSION__");
+    	  boolean isOnline2016WithOdata="ONLINE".equals(authenticationType) && ("API_2016_ODATA".equals(crmOnlineVersion) || "API_2018_ODATA".equals(crmOnlineVersion));
+    	  boolean isMsCrm2016OnPremise = "ON_PREMISE".equals(authenticationType) && ("CRM_2016".equals(crmVersion) || "CRM_2018".equals(crmVersion));
+    	  if(isOnline2016WithOdata || isMsCrm2016OnPremise){
+    	  %>
+           <%@ include file="./tMicrosoftCrmInput_begin_odata.javajet"%>
+        <%
+    	  }else{
+        %>
+           <%@ include file="./tMicrosoftCrmInput_begin_AXIS.javajet"%>
+        <%
+        }
+    }
+%>

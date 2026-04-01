@@ -1,0 +1,2109 @@
+<%@ jet 
+	imports="
+	java.util.ArrayList
+	java.util.Collections
+	java.util.Comparator
+	java.util.List
+	java.util.HashMap
+	java.util.Map
+	java.util.HashSet
+	java.util.Set
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.commons.utils.generation.CodeGenerationUtils
+	org.talend.designer.mapper.MapperMain
+	org.talend.designer.mapper.MapperComponent
+	org.talend.designer.mapper.external.data.ExternalMapperData
+	org.talend.designer.mapper.external.data.ExternalMapperTable
+	org.talend.designer.mapper.external.data.ExternalMapperTableEntry
+	org.talend.designer.mapper.language.ILanguage
+	org.talend.designer.mapper.language.generation.GenerationManagerFactory
+	org.talend.designer.mapper.language.generation.JavaGenerationManager
+	org.talend.designer.mapper.language.generation.HashedMetadataTable
+	org.talend.designer.mapper.language.LanguageProvider
+	org.talend.designer.mapper.model.tableentry.TableEntryLocation
+	org.talend.designer.mapper.utils.DataMapExpressionParser
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.EConnectionType
+	org.talend.designer.mapper.language.generation.TableType
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.process.BlockCode
+	org.talend.core.model.process.IMatchingMode
+	org.talend.core.model.process.INode
+	" 
+	skeleton="tMap_commons.skeleton"
+
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	MapperComponent node = (MapperComponent) codeGenArgument.getArgument();
+	
+	boolean stats = codeGenArgument.isStatistics(); 
+
+	String tMapInName = "TMAP_IN";
+	String tMapOutName = "TMAP_OUT";
+
+	String componentName = node.getUniqueName();
+	boolean isVirtualIn = componentName.endsWith(tMapInName);
+	boolean isVirtualOut = componentName.endsWith(tMapOutName);
+	
+	boolean trace = codeGenArgument.isTrace();
+	int tryOffset = 0;
+	
+	String componentNameForKeyProblem = componentName.replaceAll("_" + tMapOutName, "").replaceAll("_" + tMapInName, "");
+	
+    List<IConnection> inputConnections = (List<IConnection>) node.getIncomingConnections();
+
+	if(isVirtualIn) {
+		String searchedComponentName = componentName.replaceAll(tMapInName, tMapOutName);
+		List<? extends INode> generatedNodes = node.getProcess().getGeneratingNodes();
+		for(INode loopNode : generatedNodes) {
+			if(loopNode.getUniqueName().equals(searchedComponentName)) {
+				inputConnections = (List<IConnection>) loopNode.getIncomingConnections();
+				break;
+			}
+		}
+	}
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean dieonerror = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+        ILanguage currentLanguage = LanguageProvider.getJavaLanguage();
+        
+        List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+        ExternalMapperData data = (ExternalMapperData) node.getExternalData();
+        String uniqueNameComponent = node.getUniqueName();
+        boolean checkingSyntax = codeGenArgument.isCheckingSyntax();
+        //boolean checkingSyntax = true;
+
+		//System.out.println("checkingSyntax=" + checkingSyntax + ", componentNameForKeyProblem=" + componentNameForKeyProblem);
+
+        String cr = "\n";
+        String rejected = "rejected_" + uniqueNameComponent;
+        String rejectedInnerJoin = "rejectedInnerJoin_" + uniqueNameComponent;
+        String mainRowRejected = "mainRowRejected_" + uniqueNameComponent;
+
+        List<ExternalMapperTable> inputTablesWithInvalid = data.getInputTables();
+        List<ExternalMapperTable> varsTables = data.getVarsTables();
+        List<ExternalMapperTable> outputTables = data.getOutputTables();
+
+		boolean isPersistent = true;
+		boolean previousMainNodeIsVirtual = false;
+		boolean isFirstPersistentSortedTable = false;
+		boolean previousStateIsFirstPersistentSortedTable = false;
+		boolean isPersistentSortedTable = false;
+		boolean hasMainFilter = false;
+		boolean mainFilterAlreadyDone = false;
+
+        DataMapExpressionParser expressionParser = new DataMapExpressionParser(currentLanguage);
+
+        JavaGenerationManager gm = (JavaGenerationManager) node.initGenerationManager();
+
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // INPUTS : initialization of input arrays from expressions keys and hashes
+        // 
+        
+        HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+        for (IConnection connection : inputConnections) {
+            hNameToConnection.put(connection.getName(), connection);
+        }
+
+		// filter input tables to get only valid tables
+		boolean findNext = false;
+		
+		List<ExternalMapperTable> inputTables = new ArrayList<ExternalMapperTable>();
+		for(int i=0; i < inputTablesWithInvalid.size(); i++) {
+			ExternalMapperTable currentLoopTable = inputTablesWithInvalid.get(i);
+			if(hNameToConnection.get(currentLoopTable.getName()) != null) {
+				inputTables.add(currentLoopTable);
+			}
+		}
+
+        gm.setInputTables(inputTables);
+        gm.setVarsTables(varsTables);
+        
+     	HashMap<String, ExternalMapperTableEntry> hExternalInputTableEntries = new HashMap<String, ExternalMapperTableEntry>();
+        
+        //get the auto convert parameters from the global project setting
+        Map<String,String> autoConverterMap = new HashMap<String,String>();
+        
+        //store all the input entries to map for looking up for auto data convert
+    	Map<TableEntryLocation, ExternalMapperTableEntry> locationMap4Entry = new HashMap<TableEntryLocation, ExternalMapperTableEntry>();
+    	
+    	//store all the input columns to map for looking up for auto data convert
+    	Map<TableEntryLocation, IMetadataColumn> locationMap4Column = new HashMap<TableEntryLocation, IMetadataColumn>();
+    	
+    	boolean enable_auto_convert_type = "true".equals(ElementParameterParser.getValue(node, "__ENABLE_AUTO_CONVERT_TYPE__"));
+    	
+    	if(enable_auto_convert_type) {
+%>
+			<%@ include file="./default_auto_convert_function.javajet"%>
+<%
+            if(GlobalServiceRegister.getDefault().isServiceRegistered(IAutoConvertTypesService.class)) {
+                IAutoConvertTypesService autoConvertTypesService = (IAutoConvertTypesService)GlobalServiceRegister.getDefault().getService(IAutoConvertTypesService.class);
+            	List<AutoConversionType> autoConversionTypes = autoConvertTypesService.getAllAutoConversionTypes();
+            	if(autoConversionTypes!=null) {
+                	for(AutoConversionType autoConversionType : autoConversionTypes) {
+                		autoConverterMap.put(contact(autoConversionType.getSourceDataType(), ":", autoConversionType.getTargetDataType()), autoConversionType.getConversionFunction());
+                	}
+            	}
+        	}
+        	
+        	for(ExternalMapperTable inputTable : inputTables) {
+        		IConnection connection = hNameToConnection.get(inputTable.getName());
+        		
+        		if(connection == null) {
+        			continue;
+        		}
+        		
+        		IMetadataTable metadata = connection.getMetadataTable();
+        		
+        		if(metadata == null) {
+        			continue;
+        		}
+        		
+        		List<IMetadataColumn> columns = metadata.getListColumns();
+        		
+        		if(columns == null || columns.isEmpty()) {
+        			continue;
+        		}
+        		
+        		List<ExternalMapperTableEntry> metadataTableEntries = inputTable.getMetadataTableEntries();
+        		
+        		if(metadataTableEntries == null || metadataTableEntries.isEmpty()) {
+        			continue;
+        		}
+        		
+        		for (ExternalMapperTableEntry externalTableEntry : metadataTableEntries) {
+                	hExternalInputTableEntries.put(externalTableEntry.getName(), externalTableEntry);
+        		}
+        		
+        		for(IMetadataColumn column : columns) {
+        			ExternalMapperTableEntry entry = hExternalInputTableEntries.get(column.getLabel());
+        			
+        			if(entry == null) {
+        				continue;
+        			}
+        			
+        			TableEntryLocation location = new TableEntryLocation(inputTable.getName(), column.getLabel());
+        			
+        			locationMap4Entry.put(location, entry);
+        			locationMap4Column.put(location, column);
+        		}
+        	}
+        	
+        	for(ExternalMapperTable varsTable : varsTables) {
+        		List<ExternalMapperTableEntry> varsTableEntries = varsTable.getMetadataTableEntries();
+                if (varsTableEntries == null || varsTableEntries.isEmpty()) {
+                    continue;
+                }
+                
+                for (ExternalMapperTableEntry varsTableEntry : varsTableEntries) {
+                	TableEntryLocation location = new TableEntryLocation(varsTable.getName(), varsTableEntry.getName());
+                	locationMap4Entry.put(location, varsTableEntry);
+        		}
+        	}
+    	}
+        
+		int sizeInputTables = inputTables.size();
+
+		ExternalMapperTable mainInputTable = null;
+		String mainInputTableName = null;
+		IConnection realMainConnection = null;
+		
+		if(sizeInputTables > 0) { // T_TM_M_199
+
+			ExternalMapperTable externalTable = inputTables.get(0);
+            String tableName = externalTable.getName();
+            IConnection connection = hNameToConnection.get(tableName);
+            EConnectionType connectionType = connection.getLineStyle();
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+            	mainInputTable = externalTable;
+            	mainInputTableName = mainInputTable.getName();
+	            previousMainNodeIsVirtual = connection.getSource() != null ? connection.getSource().isVirtualGenerateNode() : false;
+	            realMainConnection = org.talend.core.model.utils.NodeUtil.getRealConnectionTypeBased(connection);
+            }
+
+		} // T_TM_M_199
+
+		String nextLookupName = null;
+		List<IMetadataColumn> nextLookupColumnsKeys = new ArrayList<IMetadataColumn>();
+
+		boolean hasPersistentLookup = false;
+		int indexLastPersistentSortedTable = -1;		
+
+		for (int iInputTable = 1; iInputTable < sizeInputTables; iInputTable++) { // T_TM_M_241
+			ExternalMapperTable inputTable = inputTables.get(iInputTable);
+            String tableName = inputTable.getName();
+            IConnection connection = hNameToConnection.get(tableName);
+            if (connection == null) {
+	        	continue;
+            }
+
+            if (inputTable != null) { // T_TM_M_245
+	        	hExternalInputTableEntries.clear();
+            	List<ExternalMapperTableEntry> metadataTableEntries = inputTable.getMetadataTableEntries();
+                if (metadataTableEntries == null) {
+	            	continue;
+                }
+                	
+                if(inputTable.isPersistent() && !"ALL_ROWS".equals(inputTable.getMatchingMode())) {
+                	hasPersistentLookup = true;
+					indexLastPersistentSortedTable = iInputTable;
+                }
+                	
+			} // T_TM_M_245
+		} // T_TM_M_241
+
+		boolean firstLookupIsPersistentSorted = false;
+		%>
+		
+		
+		boolean hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = false;
+		<%
+
+
+			  	   if(mainInputTable != null
+			  	   	 && mainInputTable.isActivateExpressionFilter()
+			  	   	 && mainInputTable.getExpressionFilter() != null 
+			  	   	 && !("").equals(mainInputTable.getExpressionFilter().trim())) { // T_TM_M_300 
+
+						if(isVirtualOut) { // T_TM_M_301
+
+							mainFilterAlreadyDone = true;
+	
+		                	String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+   	                     	JavaGenerationManager.PROBLEM_KEY_FIELD.FILTER.toString(), mainInputTableName);
+					  	  	 %>
+		              
+				   	  		  	if(
+ 				  		  			<%= checkingSyntax ? CodeGenerationUtils.buildJavaStartFieldKey(key) : "" %>
+ 				  		  			(
+ 				  		  			<%// keep this line to allow comments in filter %>
+ 				  		  			<%= mainInputTable.getExpressionFilter()%>
+ 				  		  			<%// keep this line to allow comments in filter %>
+ 				  		  			)
+  				  		  			<%= checkingSyntax ? CodeGenerationUtils.buildJavaEndFieldKey(key) : "" %>
+	  	  		  				) { // G_TM_M_281
+
+							<%
+							if(isVirtualOut) {
+					
+								gm.addBlocksCodeToClose(new BlockCode("G_TM_M_281 close main tMap filter for table '" + mainInputTableName +"'"));
+					
+							}
+								
+						} // T_TM_M_301
+				 	} // T_TM_M_300
+			
+
+		int currentJoinedTableIndex = 1;
+		// exprKey(s) initialization(s) for Main flow
+		// ---------------------------------------------
+		boolean isFirstTableIsLookupPersistent = sizeInputTables > 1 && inputTables.get(1).isPersistent() && !"ALL_ROWS".equals(inputTables.get(1).getMatchingMode());
+		if (isFirstTableIsLookupPersistent) { // T_TM_M_201
+			ExternalMapperTable inputTable = inputTables.get(1);
+            String tableName = inputTable.getName();
+            nextLookupName = inputTable.getName();
+            firstLookupIsPersistentSorted = true;
+            
+            IConnection connection = hNameToConnection.get(tableName);
+            if (!isVirtualIn && connection != null) { // T_TM_M_206
+            	//EConnectionType connectionType = connection.getLineStyle();
+	
+            	IMetadataTable metadataTable = connection.getMetadataTable();
+            	if (inputTable != null) { // T_TM_M_205
+		        	hExternalInputTableEntries.clear();
+		        	
+		        	%>
+					hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = false;
+					<%
+		        	
+            		List<ExternalMapperTableEntry> metadataTableEntries = inputTable.getMetadataTableEntries();
+                	if (metadataTableEntries != null) { // T_TM_M_207
+                	
+                		for (ExternalMapperTableEntry externalTableEntry : metadataTableEntries) {
+			            	hExternalInputTableEntries.put(externalTableEntry.getName(), externalTableEntry);
+                		}
+                		List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+                		for (IMetadataColumn column : listColumns) { // T_TM_M_204
+			            	String columnName = column.getLabel();
+                			ExternalMapperTableEntry externalInputTableEntry = hExternalInputTableEntries.get(columnName);
+                    		if (externalInputTableEntry != null) { // T_TM_M_203
+			                	String expressionKey = externalInputTableEntry.getExpression();
+                        		if (expressionKey != null && !"".equals(expressionKey.trim())) { // T_TM_M_202
+		                        	nextLookupColumnsKeys.add(column);
+	                                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                                	boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+				            		String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+			                		JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), tableName, columnName);
+            						if (checkingSyntax) {
+	    	        				%>
+	 	           						<%= CodeGenerationUtils.buildJavaStartFieldKey(key) %>
+    	    	    				<%
+            						}
+            						
+            						expressionKey = getExpressionWithAutoConvertFunction(expressionKey, externalInputTableEntry, column, expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+        	                        
+                       		    	if(javaPrimitiveKeyColumn) {
+                        		    	
+                       		    		JavaType javaType = JavaTypesManager.getJavaTypeFromName(typeToGenerate);
+                       		    		String nullableType = JavaTypesManager.getTypeToGenerate(javaType.getId(), true);
+                       		    		String defaultValue = JavaTypesManager.getDefaultValueFromJavaIdType(javaType.getId(), false);
+                        		    	%>
+                        		    	<%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= tableName %>__<%= column.getLabel() %> = <%= defaultValue %>; 
+                        		    	Object exprKeyValue_<%= tableName %>__<%= columnName %> = <%= expressionKey %>;
+                        		    	if(exprKeyValue_<%= tableName %>__<%= columnName %> == null) {
+                        		    		hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = true;
+                        		    	} else {
+							            	exprKey_<%= tableName %>__<%= column.getLabel() %> =  (<%= typeToGenerate %>)(<%= nullableType %>) exprKeyValue_<%= tableName %>__<%= columnName %>;
+                       		    		}
+                       		    		<%
+                       		    	} else {
+					            		%>
+						            	<%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= tableName %>__<%= column.getLabel() %> = <%= expressionKey %>;
+            							<%
+                       		    	}
+
+
+            						if (checkingSyntax) {
+                					%>
+	                					<%= CodeGenerationUtils.buildJavaEndFieldKey(key) %>
+            			    		<%
+            						}
+								} // T_TM_M_202
+							} // T_TM_M_203
+						} // T_TM_M_204
+					} // T_TM_M_207
+				} // T_TM_M_205
+			} // T_TM_M_206
+		
+			if(!isVirtualIn) { // T_TM_M_211
+			
+			
+		        %>
+
+                    SortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%> sortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%> = fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.getNextFreeRow();
+
+                    sortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.fillFrom(<%= mainInputTableName %><%
+                    
+                    for (IMetadataColumn column : nextLookupColumnsKeys) {
+                    	String columnName = column.getLabel();
+                    	%>, exprKey_<%= nextLookupName %>__<%=column.getLabel() %><%
+                    }
+                    %>);
+
+                    fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.put(sortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>);
+
+				<%
+
+			} // T_TM_M_211
+
+
+
+		} // T_TM_M_201
+	
+	
+		if(isFirstTableIsLookupPersistent && !isVirtualOut) { // T_TM_M_212
+	    %>
+	
+	      fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.endPut();
+	      
+		<%
+		} // T_TM_M_212
+	
+	
+		if(isVirtualIn) { // T_TM_M_291
+			
+			%>
+			if(<%= mainInputTableName %> == null) {
+				<%= mainInputTableName %> = new <%= realMainConnection.getName() %>Struct();
+			}
+			<%
+		} // T_TM_M_291
+		
+		if(!hasPersistentLookup)  {
+			for (int iInputTable = 1; iInputTable < sizeInputTables; iInputTable++) {
+				final ExternalMapperTable externalTable = inputTables.get(iInputTable);
+
+				final String tableName = externalTable.getName();
+				final IConnection connection = hNameToConnection.get(tableName);
+				if (connection == null) {
+					continue;
+				}
+
+				final EConnectionType connectionType = connection.getLineStyle();
+
+				if (connectionType == EConnectionType.FLOW_REF) {//lookup line
+					final List<ExternalMapperTableEntry> metadataTableEntries = externalTable.getMetadataTableEntries();
+					if (metadataTableEntries == null) {
+						continue;
+					}
+
+					if (!isVirtualIn) {
+					%>
+						<%=tableName %>Struct <%=tableName %> = null;
+					<%
+					}
+				}
+			}
+		}
+		
+		if (!dieonerror) {
+			tryOffset = stringBuffer.length();
+
+		} // close dieonerror if check
+		%>
+		// ###############################
+		// # Input tables (lookups)
+		<%
+
+		ArrayList<ExternalMapperTable> inputTablesWithInnerJoin = new ArrayList<ExternalMapperTable>();
+		boolean hasValidLookupTables = false;
+
+		int closeBracketCounter = 0;
+		%>
+		boolean <%= rejectedInnerJoin %> = false;
+		boolean <%= mainRowRejected %> = false;
+		<%
+
+		String previousLookupName = null;
+		String previousTableName = mainInputTableName;
+
+		int previousJoinedTablesPersistentSortedDelimited = 0;
+		int nextJoinedTableIndex = currentJoinedTableIndex;
+
+		List<IConnection> cumulatedInputConnections = new ArrayList<IConnection>();
+
+		sizeInputTables = inputTables.size();
+
+		boolean lastPersistentSortedTableIsAlreadyProcessed = false;
+		boolean previousTableIsPersistentSorted = false;
+		boolean previousTableIsMultipleResultMode = false;
+		List<String> declarationsStructForNextSortedWhile = new ArrayList<String>();
+		List<String> closeAllRowsBlockCount = new ArrayList<String>();
+
+		for (int iInputTable = 0; iInputTable < sizeInputTables; iInputTable++) { // T_TM_M_261
+			ExternalMapperTable externalTable = inputTables.get(iInputTable);
+			
+			boolean isMultipleResultMode = false;
+			
+			ExternalMapperTable nextInputTable = (iInputTable + 1 < sizeInputTables) ? inputTables.get(iInputTable + 1) : null;
+			
+			//System.out.println("### " + externalTable.getName() + " ->  " + (nextInputTable != null ? nextInputTable.getName() : null));
+			
+			boolean hasNextValidTable = (nextInputTable != null);
+			
+			boolean isLastTable = !hasNextValidTable;
+			boolean isLastPersistentSortedTable = (indexLastPersistentSortedTable == iInputTable);
+			
+			boolean nextTableIsPersistentSorted = 
+				!isLastTable 
+				&& inputTables.get(iInputTable + 1).isPersistent() 
+				&& !"ALL_ROWS".equals(inputTables.get(iInputTable + 1).getMatchingMode());
+
+			boolean nextTableIsFirstPersistentSorted = nextTableIsPersistentSorted && !previousStateIsFirstPersistentSortedTable;
+			
+			boolean isLastTableForTMAP_OUT = isVirtualOut && nextTableIsFirstPersistentSorted;
+			boolean isLastPersistentSortedTableForTMAP_OUT = false;
+
+
+            String tableName = externalTable.getName();
+            
+            //System.out.println("tableName=" + tableName);
+            
+            IConnection connection = hNameToConnection.get(tableName);
+            if (connection == null) {
+                continue;
+            }
+            
+            
+            EConnectionType connectionType = connection.getLineStyle();
+            
+            if (connectionType == EConnectionType.FLOW_MAIN) {
+            
+            		cumulatedInputConnections.add(connection);
+            
+			  	  	   if(!mainFilterAlreadyDone 
+			  	  	    && !hasPersistentLookup
+			  	  	   	&& externalTable.isActivateExpressionFilter() 
+			  	  	   	&& externalTable.getExpressionFilter() != null 
+			  	  	   	&& !("").equals(externalTable.getExpressionFilter().trim())
+			  	  	   ) { 
+
+						hasMainFilter = true;
+
+		                String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+   	                     JavaGenerationManager.PROBLEM_KEY_FIELD.FILTER.toString(), tableName);
+					  	  	 %>
+		              
+			   	  		  if(
+ 				  		  			<%= checkingSyntax ? CodeGenerationUtils.buildJavaStartFieldKey(key) : "" %>
+ 				  		  			(
+ 				  		  			<%// keep this line to allow comments in filter %>
+ 				  		  			<%= externalTable.getExpressionFilter()%>
+ 				  		  			<%// keep this line to allow comments in filter %>
+ 				  		  			)
+  				  		  			<%= checkingSyntax ? CodeGenerationUtils.buildJavaEndFieldKey(key) : "" %>
+	  	  		  				) { // G_TM_M_280
+
+							 // CALL close main tMap filter for table '<%=tableName %>'
+							<%
+							gm.addBlocksCodeToClose(new BlockCode("G_TM_M_280 close main tMap filter for table '" + tableName +"'"));
+
+			 	  	   }
+                  continue;
+                  
+            } else if (connectionType == EConnectionType.FLOW_REF) { // T_TM_M_249
+
+				String lookupMode = externalTable.getLookupMode();
+				boolean isCacheOrReloadLookupMode = org.talend.designer.mapper.model.table.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(lookupMode);
+				boolean isOneOfReloadLookupMode = 
+					   isCacheOrReloadLookupMode ||
+					   org.talend.designer.mapper.model.table.LOOKUP_MODE.RELOAD.name().equals(lookupMode) 
+					;
+
+                IMetadataTable metadataTable = connection.getMetadataTable();
+                if (externalTable != null) { // T_TM_M_250
+                    if (externalTable.isInnerJoin()) {
+                        inputTablesWithInnerJoin.add(externalTable);
+                    }
+                    hExternalInputTableEntries.clear();
+                    List<ExternalMapperTableEntry> metadataTableEntries = externalTable.getMetadataTableEntries();
+                    if (metadataTableEntries == null) {
+                        continue;
+                    }
+
+					isPersistentSortedTable = externalTable.isPersistent() && !"ALL_ROWS".equals(externalTable.getMatchingMode());
+
+					if(previousStateIsFirstPersistentSortedTable == false && isPersistentSortedTable) {
+						isFirstPersistentSortedTable = true;
+					}
+					
+					isLastPersistentSortedTableForTMAP_OUT = isVirtualOut && isFirstPersistentSortedTable;
+
+					nextJoinedTableIndex++;
+
+					if(isFirstPersistentSortedTable && isVirtualOut) {
+						break;
+					} 
+					
+				%>
+
+				///////////////////////////////////////////////
+				// Starting Lookup Table "<%= tableName %>" 
+				///////////////////////////////////////////////
+
+
+				
+				<%
+				//System.out.println("previousStateIsFirstPersistentSortedTable=" + previousStateIsFirstPersistentSortedTable + ", isFirstPersistentSortedTable=" + isFirstPersistentSortedTable + ", nextTableIsPersistentSorted=" + nextTableIsPersistentSorted); 
+
+            if(isPersistentSortedTable) { // T_TM_M_294
+
+				previousJoinedTablesPersistentSortedDelimited = currentJoinedTableIndex;
+
+				%>				
+				SortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%> rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>;
+			
+				<%
+				if(!isOneOfReloadLookupMode) {
+				%>
+					tHash_Lookup_<%= tableName %>.initGet();
+				<%
+				}
+				%>
+				
+
+				fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.initGet();
+
+				<%
+				if(true || previousTableName != null && !previousTableName.equals(mainInputTableName)) {
+	         		for(String structName : declarationsStructForNextSortedWhile) {
+				%>
+
+	       			//<%= previousTableIsMultipleResultMode ? "" : previousTableName + "Struct " %><%= previousTableName %> = new <%= previousTableName %>Struct();
+
+	       			 <%= structName %>Struct <%= structName %> = new <%= structName %>Struct();
+	       			
+					<%
+					}
+					declarationsStructForNextSortedWhile.clear();
+				}
+				%>
+
+				//TEST firstLookupIsPersistentSorted=<%= firstLookupIsPersistentSorted %> isFirstPersistentSortedTable=<%= isFirstPersistentSortedTable %>
+
+				<%= isFirstPersistentSortedTable && !firstLookupIsPersistentSorted && !isVirtualIn ? "boolean " : "" %><%= rejectedInnerJoin %> = false;
+			
+	           	while (fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.hasNext()) { // G_TM_M_250 loop "<%= currentJoinedTableIndex %>"
+				
+
+								<%
+								if(isLastPersistentSortedTable) {
+									%>
+									 // CALL close loop of lookup '<%=currentJoinedTableIndex %>'
+									<%
+									gm.addBlocksCodeToClose(new BlockCode("G_TM_M_250 close loop read file data '" + currentJoinedTableIndex +"'"));
+								}
+								%>
+
+					
+				
+				
+					rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%> = (SortableRow_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>) fsi_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.next();
+               		rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.copyDataTo(<%
+               		
+               			String comma = "";
+		         		for(IConnection aConnection : cumulatedInputConnections) {
+		         		
+			         		%><%=comma%> <%= aConnection.getName() %><%
+		         			comma = ", ";
+		         		}
+               		
+               		%>);
+               		
+               		<%= rejectedInnerJoin %> = rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.is__rejectedInnerJoin;
+               		
+			<%
+			}  // T_TM_M_294 
+			else if(isFirstPersistentSortedTable) { // T_TM_M_295
+			%>
+				<%= rejectedInnerJoin %> = false;
+			<%
+			} // T_TM_M_295
+
+                    for (ExternalMapperTableEntry externalTableEntry : metadataTableEntries) {
+                        hExternalInputTableEntries.put(externalTableEntry.getName(), externalTableEntry);
+                    }
+                    List<IMetadataColumn> listColumns = metadataTable.getListColumns();
+                    ArrayList<String> keysNames = new ArrayList<String>();
+                    ArrayList<String> keysValues = new ArrayList<String>();
+                    ArrayList<String> keysTypes = new ArrayList<String>();
+                    ArrayList<ExternalMapperTableEntry> keysEntries = new ArrayList<ExternalMapperTableEntry>();
+                    ArrayList<IMetadataColumn> keysColumns = new ArrayList<IMetadataColumn>();
+                    
+                    boolean hasPrimitiveKey = false;
+                    
+                    for (IMetadataColumn column : listColumns) {
+                        String columnName = column.getLabel();
+                        ExternalMapperTableEntry externalInputTableEntry = hExternalInputTableEntries.get(columnName);
+                        if (externalInputTableEntry != null) {
+                            String expressionKey = externalInputTableEntry.getExpression();
+                            if (expressionKey != null && !"".equals(expressionKey.trim())) {
+                                keysNames.add(columnName);
+                                keysValues.add(expressionKey);
+                                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                                keysTypes.add(typeToGenerate);
+                                boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+                                if(javaPrimitiveKeyColumn) {
+                                	hasPrimitiveKey = true;
+                                }
+                                
+                                keysEntries.add(externalInputTableEntry);
+                                keysColumns.add(column);
+                            }
+                        }
+                    }
+                    String[] aKeysNames = keysNames.toArray(new String[0]);
+                    String[] aKeysValues = keysValues.toArray(new String[0]);
+    		           
+    		        String className = tableName + "Struct";
+
+                    hasValidLookupTables = true;
+                    
+                    String matchingMode = externalTable.getMatchingMode();
+					if(matchingMode == null) {
+						if(aKeysValues.length > 0) {
+							matchingMode = "UNIQUE_MATCH";
+						} else {
+							matchingMode = "ALL_ROWS";
+						}
+					}
+                    isMultipleResultMode = ("ALL_ROWS").equals(matchingMode) || ("ALL_MATCHES").equals(matchingMode);
+
+			//System.out.println("tableName=" +  tableName + " => isMultipleResultMode=" + isMultipleResultMode);
+
+			declarationsStructForNextSortedWhile.add(tableName);
+
+ 			if (
+ 					!isVirtualIn 
+	 				|| 
+ 					(
+	 					isVirtualIn 
+ 						&& (isFirstPersistentSortedTable || previousStateIsFirstPersistentSortedTable) 
+ 					)
+ 				) { // T_TM_M_296
+
+                     %>
+                            
+ 					    boolean forceLoop<%= tableName %> = false;
+       		  	    	
+       		  	    	<%
+       		  	    	
+       		  	    	
+       		  	    	String beforeMatchFilter = null;
+       		  	    	
+                        %>
+ 							<%= className %> <%= tableName %>ObjectFromLookup = null;
+                          
+		           		  	if(!<%= rejectedInnerJoin %><%
+		           		  		
+		           		  		if (beforeMatchFilter != null) { // T 101
+   	                    				%> && <%= beforeMatchFilter %><%
+           		  	    			} // T 101
+		           		  	    
+		           		  	 %>) { // G_TM_M_020
+
+								<% 
+                        		if(aKeysValues.length > 0 || checkingSyntax) { // T 001
+
+								%>
+								hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = false;
+								<%
+
+                        		for (int iKeyName = 0; iKeyName < aKeysNames.length; iKeyName++) {
+
+                        		    String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+                        		    JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), tableName, aKeysNames[iKeyName]);
+                        		    if (checkingSyntax) {
+    	                        		%>
+ 	                        		   <%= CodeGenerationUtils.buildJavaStartFieldKey(key) %>
+                        			    <%
+                        		    }
+
+                       		    	String typeToGenerate = keysTypes.get(iKeyName);
+                       		        boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+                       		        
+                       		        aKeysValues[iKeyName] = getExpressionWithAutoConvertFunction(aKeysValues[iKeyName], keysEntries.get(iKeyName), keysColumns.get(iKeyName), expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+                       		    	
+									if(isPersistentSortedTable) {
+
+
+                        		    	if(javaPrimitiveKeyColumn) {
+                        		    	
+                        		    		JavaType javaType = JavaTypesManager.getJavaTypeFromName(typeToGenerate);
+                        		    		String nullableType = JavaTypesManager.getTypeToGenerate(javaType.getId(), true);
+	                        		    	%>
+	                        		    	Object exprKeyValue_<%= tableName %>__<%= aKeysNames[iKeyName] %> = <%= aKeysValues[iKeyName] %>;
+	                        		    	if(exprKeyValue_<%= tableName %>__<%= aKeysNames[iKeyName] %> == null) {
+	                        		    		hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = true;
+	                        		    	} else {
+	                        		    		<%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = (<%= typeToGenerate %>)(<%= nullableType %>) rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.exprKey_<%= tableName %>__<%= aKeysNames[iKeyName] %>;
+                        		    		}
+                        		    		<%
+                        		    	} else {
+                        		    		if("java.util.Date".equals(typeToGenerate)) {%>
+                    		    		        <%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.exprKey_<%= tableName %>__<%= aKeysNames[iKeyName] %> == null ? null : new java.util.Date(rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.exprKey_<%= tableName %>__<%= aKeysNames[iKeyName] %>.getTime());
+                    		    		    <%
+                    		    		    }else {
+	                        		    	%>
+                        		    		    <%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = rsc_<%=componentNameForKeyProblem%>_<%=currentJoinedTableIndex%>.exprKey_<%= tableName %>__<%= aKeysNames[iKeyName] %>;
+                        		    		<%
+                        		    	    }
+                        		    	}
+
+                        		    } else {
+                        		    
+                        		    	if(javaPrimitiveKeyColumn) {
+                        		    	
+                        		    		JavaType javaType = JavaTypesManager.getJavaTypeFromName(typeToGenerate);
+                        		    		String nullableType = JavaTypesManager.getTypeToGenerate(javaType.getId(), true);
+	                        		    	%>
+	                        		    	Object exprKeyValue_<%= tableName %>__<%= aKeysNames[iKeyName] %> = <%= aKeysValues[iKeyName] %>;
+	                        		    	if(exprKeyValue_<%= tableName %>__<%= aKeysNames[iKeyName] %> == null) {
+	                        		    		hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = true;
+	                        		    	} else {
+                        		    			<%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = (<%= typeToGenerate %>)(<%= nullableType %>) exprKeyValue_<%= tableName %>__<%= aKeysNames[iKeyName] %>;
+                        		    		}
+                        		    		<%
+                        		    	} else {
+                        		    		if("java.util.Date".equals(typeToGenerate)) {%>
+                        		    		    <%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = <%= aKeysValues[iKeyName] %> == null ? null : new java.util.Date((<%= aKeysValues[iKeyName] %>).getTime());
+                        		    		<%
+                        		    		}else {
+	                        		    	%>
+                        		    		    <%= tableName %>HashKey.<%= aKeysNames[iKeyName] %> = <%= aKeysValues[iKeyName] %>;
+                        		    		<%
+                        		    		}
+                        		    	}
+                        		    }
+                        		    if (checkingSyntax) {
+                        		    	%>
+                        		        <%= CodeGenerationUtils.buildJavaEndFieldKey(key) %>
+                        		        <%
+                        		    }
+                        		}
+
+
+                        		} // T 001
+                        		%>
+
+								<% 
+                        		if(!isPersistentSortedTable && aKeysValues.length > 0) { // T 002
+                        		%>
+		                        	<%=tableName%>HashKey.hashCodeDirty = true;
+                        		<%
+                        		} // T 002
+                        		%>
+	  					
+	  							<%
+	  							if(hasPrimitiveKey) { // T_TM_M_171
+	  							%>
+	
+		  							if(!hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%>) { // G_TM_M_091
+		  							
+			  					<%
+			  					} // T_TM_M_171
+			  					%>
+			  					
+			  					<%
+			  					INode lookupSubProcessStartNode = searchSubProcessStartNode(connection);
+			  					String lookupSubProcessStartNodeName = lookupSubProcessStartNode.getUniqueName();
+								
+								if(isOneOfReloadLookupMode) { // T_TM_M_354
+									if(isCacheOrReloadLookupMode) { // T_TM_M_355
+									%>
+
+			  							tHash_Lookup_Cache_<%= tableName %>.lookup( <%= tableName %>HashKey );
+			  							if(tHash_Lookup_Cache_<%= tableName %>.hasNext()) { // G_TM_M_835
+			  							
+		  									tHash_Lookup_<%= tableName %> = tHash_Lookup_Cache_<%= tableName %>;
+			  								
+			  							} // G_TM_M_834
+										else { // G_TM_M_835
+
+									<%
+									}
+									
+									List<ExternalMapperTableEntry> globalMapEntries = externalTable.getGlobalMapKeysValues();
+									if(globalMapEntries != null) {
+										for(ExternalMapperTableEntry entry : globalMapEntries) {
+										%>
+											globalMap.put(<%= entry.getName()%>, <%= entry.getExpression() %>);
+										<%
+										}
+									}
+									%>
+								
+									<%= lookupSubProcessStartNodeName %>Process(globalMap);
+									
+									<%
+								    
+								    boolean isAllRows = "ALL_ROWS".equals(externalTable.getMatchingMode());
+								    
+								    if(externalTable.isPersistent()) {
+								    %>
+										tHash_Lookup_<%=tableName%> = 
+											(org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+												((org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+													 globalMap.get( "tHash_Lookup_<%=tableName%>" ));
+									<%
+								    } else {
+								    %>
+										tHash_Lookup_<%=tableName%> = 
+										(org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+										((org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+											globalMap.get( "tHash_Lookup_<%=tableName%>" ));
+									<%
+								    }
+								    %>
+								
+									tHash_Lookup_<%= tableName %>.initGet();
+								
+									tHash_Lookup_<%= tableName %>.lookup( <%= tableName %>HashKey );
+										
+									<%	
+									if(isCacheOrReloadLookupMode) { // T_TM_M_359
+									%>
+
+										} // G_TM_M_835
+										
+									<%	
+									} // T_TM_M_359
+									%>
+									
+										
+								<%
+								} // T_TM_M_354
+								else { // T_TM_M_357
+								%>
+	  					
+		  							tHash_Lookup_<%= tableName %>.lookup( <%= tableName %>HashKey );
+
+	  							<%
+	  							}
+	  							%>
+
+	  							<%
+	  							if(hasPrimitiveKey) { // T_TM_M_172
+	  							%>
+
+			  						} // G_TM_M_091
+			  						
+			  					<%
+			  					} // T_TM_M_171
+			  					%>
+
+ 								<%
+  								if(externalTable.isInnerJoin() || isMultipleResultMode) {
+  								%>
+								  
+								  if(<%= hasPrimitiveKey ? "hasCasePrimitiveKeyWithNull_" + uniqueNameComponent + " || " : "" %>!tHash_Lookup_<%= tableName %>.hasNext()) { // G_TM_M_090
+
+  								<%
+								}
+								%>
+		  				
+	  								<%
+	  								if(externalTable.isInnerJoin()) {
+	  								%>
+			  							<%= rejectedInnerJoin %> = true;
+	  								<%
+  									}
+  									%>
+						
+									<%if(isMultipleResultMode) { // T 56 %>
+	
+		  								forceLoop<%= tableName %> = true;
+	  					
+  									<% } // T 56 %>
+  									  		
+ 								<%
+  								if(externalTable.isInnerJoin() || isMultipleResultMode) {
+  								%>
+								  
+								  } // G_TM_M_090
+
+  								<%
+								}
+								%>
+
+
+
+							} // G_TM_M_020
+			           		  	  
+							<%
+							if(isMultipleResultMode) { // T 57 
+							%>
+								
+								else { // G 20 - G 21
+   									forceLoop<%= tableName %> = true;
+			           		  	} // G 21
+                    		  	
+                    		<%
+							} // T 57
+
+							if(!isPersistentSortedTable && ("UNIQUE_MATCH").equals(matchingMode)) { // T 52 
+							%>
+				           		if(tHash_Lookup_<%= tableName %> != null && tHash_Lookup_<%= tableName %>.getCount(<%= tableName %>HashKey) > 1) { // G 071
+			  							
+			  						<%
+			  						StringBuilder sbMoreOneResult = new StringBuilder("\"WARNING: UNIQUE MATCH is configured for the lookup '"+ tableName +"' and it contains more one result from keys : ");
+			  						for(int iKeys = 0; iKeys < aKeysNames.length; iKeys++) {
+			  							if(iKeys > 0) {
+					  						sbMoreOneResult.append(",");
+			  						 	}
+				  						sbMoreOneResult.append( " " + tableName + "."+ aKeysNames[iKeys] + " = '\" + " + tableName + "HashKey."+ aKeysNames[iKeys] + " + \"'");
+									}
+			  						sbMoreOneResult.append( "\"");
+									%>
+									 		
+									//System.out.println(<%= sbMoreOneResult.toString()%>);
+								} // G 071
+							<% 
+							} // T 52 
+							%>
+
+							<%if(hasPersistentLookup) {%>
+							<%=tableName %>Struct <%=tableName %> = null;
+							<%}%>
+                    		  	 
+							<%
+							if(isMultipleResultMode) { // T 60
+							// the condition "tHash_Lookup_tableName != null" is for "reload at each row" mode, in this mode tHash_Lookup_tableName can't be initialized
+							%>
+
+								while ((tHash_Lookup_<%= tableName %> != null && tHash_Lookup_<%= tableName %>.hasNext()) || forceLoop<%= tableName %>) { // G_TM_M_043
+
+								<%
+								if(!hasPersistentLookup || isLastPersistentSortedTable || lastPersistentSortedTableIsAlreadyProcessed || (isVirtualOut && hasPersistentLookup && !isPersistentSortedTable)) {
+									%>
+									 // CALL close loop of lookup '<%=tableName %>'
+									<%
+									gm.addBlocksCodeToClose(new BlockCode("close loop of lookup '" + tableName +"' // G_TM_M_043"));
+								}
+								%>
+                    		  	 
+							<% } // T 60 %>   
+                    		  	 
+	       		  	    	<%= tableName %>Struct fromLookup_<%= tableName %> = null;
+							<%= tableName %> = <%= tableName %>Default;
+										 
+							<% 
+							if (isMultipleResultMode) { // T 69 
+							%>
+								
+								if(!forceLoop<%= tableName %>) { // G 46
+								
+							<%
+							} // T 69
+		                    %>
+								 
+							<%
+							if (!isMultipleResultMode) { // T 600
+                    		%>
+							
+								if (tHash_Lookup_<%= tableName %> !=null && tHash_Lookup_<%= tableName %>.hasNext()) { // G 099
+								
+							<%
+							} // T 600
+                    		%>
+								
+								fromLookup_<%= tableName %> = tHash_Lookup_<%= tableName %>.next();
+
+							<%
+							if (!isMultipleResultMode) { // T 601
+							%>
+							
+								} // G 099
+							
+							<%
+							} // T 601
+							%>
+
+							if(fromLookup_<%= tableName %> != null) {
+								<%= tableName %> = fromLookup_<%= tableName %>;
+							}
+							
+							<%	
+							if(isCacheOrReloadLookupMode) { // T_TM_M_360
+							%>
+
+								if(tHash_Lookup_Cache_<%=tableName%> != tHash_Lookup_<%= tableName %>) {
+									tHash_Lookup_Cache_<%=tableName%>.put(<%= tableName %>);
+								}
+								
+							<%	
+							} // T_TM_M_360
+							%>
+							
+			  							
+							<%
+							if(
+								externalTable.isActivateExpressionFilter() 
+								&& externalTable.getExpressionFilter() != null 
+								&& !("").equals(externalTable.getExpressionFilter().trim())
+							) { // T 012 
+                    		  	  	   		
+								String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+								JavaGenerationManager.PROBLEM_KEY_FIELD.FILTER.toString(), tableName);
+								%>
+                    		  	  		
+								if( !<%= rejectedInnerJoin %> && 
+									<%= checkingSyntax ? CodeGenerationUtils.buildJavaStartFieldKey(key) : "" %>
+									!(
+										<%// keep this line to allow comments in filter %>
+										<%= externalTable.getExpressionFilter()%>
+										<%// keep this line to allow comments in filter %>
+									)
+									<%= checkingSyntax ? CodeGenerationUtils.buildJavaEndFieldKey(key) : "" %>
+								) { // G 016
+                    		  	  		  
+									fromLookup_<%= tableName %> = null;
+									<%= tableName %> = <%= tableName %>Default;
+                    		  	  		  		
+									<%
+									if(externalTable.isInnerJoin()) { // G 058
+									%>
+									
+										<%= rejectedInnerJoin %> = true;
+													
+									<%
+									} // G 058
+									%>
+								} // G 016
+     	               		  	
+								<%
+								if(aKeysValues.length == 0){ // T 081
+								%>
+								
+									if(fromLookup_<%= tableName %> == null && !<%= rejectedInnerJoin %>) { // G 017
+								
+										continue;
+									
+									} // G 017
+								
+								<%
+								} // T 081
+								%>
+     	               		  	  	  
+							<%
+							} // T 012
+							%>	
+	                    		  	
+		                    <%
+		                    if(isMultipleResultMode) { // T 70 
+		                    %>
+	                    	
+	                    		} // G 46
+	                    		  	
+								forceLoop<%= tableName %> = false;
+									 	
+							<%
+							} // T 70
+
+
+              				if(!isLastTable) { // T_TM_M_218
+
+								if(!isLastTable && nextInputTable != null && nextInputTable.isPersistent() && !"ALL_ROWS".equals(nextInputTable.getMatchingMode())) { // T_TM_M_216
+									nextLookupColumnsKeys.clear();
+            						String nextTableName = nextInputTable.getName();
+
+            						IConnection nextConnection = hNameToConnection.get(nextTableName);
+	            
+            						IMetadataTable nextMetadataTable = nextConnection.getMetadataTable();
+            						if (nextInputTable != null) { // T_TM_M_215
+	                				hExternalInputTableEntries.clear();
+                					List<ExternalMapperTableEntry> nextMetadataTableEntries = nextInputTable.getMetadataTableEntries();
+                					if (nextMetadataTableEntries == null) {
+	                    				continue;
+                					}
+                					nextLookupName = nextInputTable.getName();
+                					for (ExternalMapperTableEntry externalTableEntry : nextMetadataTableEntries) {
+	                    				hExternalInputTableEntries.put(externalTableEntry.getName(), externalTableEntry);
+                					}
+	                	
+    				            	List<IMetadataColumn> nextListColumns = nextMetadataTable.getListColumns();
+				                	for (IMetadataColumn column : nextListColumns) { // T_TM_M_214
+	                    				String columnName = column.getLabel();
+                    					ExternalMapperTableEntry externalInputTableEntry = hExternalInputTableEntries.get(columnName);
+				                    	if (externalInputTableEntry != null) { // T_TM_M_213
+	                        				String expressionKey = externalInputTableEntry.getExpression();
+                        					if (expressionKey != null && !"".equals(expressionKey.trim())) { // T_TM_M_212
+											%>
+								
+												<%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= nextTableName %>__<%= column.getLabel() %> = <%= JavaTypesManager.getDefaultValueFromJavaIdType(externalInputTableEntry.getType(), externalInputTableEntry.isNullable()) %>;
+								
+											<%
+											} // T_TM_M_212
+                        				} // T_TM_M_213
+                    				} // T_TM_M_214
+
+                					%>
+		            					if(!<%= rejectedInnerJoin %>) { // G_TM_M_255
+		            				<%
+
+                					for (IMetadataColumn column : nextListColumns) { // T_TM_M_214
+	                    				String columnName = column.getLabel();
+                    					ExternalMapperTableEntry externalInputTableEntry = hExternalInputTableEntries.get(columnName);
+                    					if (externalInputTableEntry != null) { // T_TM_M_213
+	                        				String expressionKey = externalInputTableEntry.getExpression();
+                        					if (expressionKey != null && !"".equals(expressionKey.trim())) { // T_TM_M_212
+				                                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+                                				boolean javaPrimitiveKeyColumn = JavaTypesManager.isJavaPrimitiveType(typeToGenerate);
+                        						nextLookupColumnsKeys.add(column);
+					            				String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+				                				JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), nextTableName, columnName);
+            									if (checkingSyntax) {
+    	        								%>
+ 	           										<%= CodeGenerationUtils.buildJavaStartFieldKey(key) %>
+        	    								<%
+            									}
+            									
+            									expressionKey = getExpressionWithAutoConvertFunction(expressionKey, externalInputTableEntry, column, expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+                    	                        
+				                       	    	if(javaPrimitiveKeyColumn) {
+                       		    					JavaType javaType = JavaTypesManager.getJavaTypeFromName(typeToGenerate);
+                       		    					String nullableType = JavaTypesManager.getTypeToGenerate(javaType.getId(), true);
+                       		    					String defaultValue = JavaTypesManager.getDefaultValueFromJavaIdType(javaType.getId(), false);
+                        		    				%>
+                        		    				Object exprKeyValue_<%= nextTableName %>__<%= columnName %> = <%= expressionKey %>;
+                        		    				if(exprKeyValue_<%= nextTableName %>__<%= columnName %> == null) {
+            	            		    				hasCasePrimitiveKeyWithNull_<%= uniqueNameComponent%> = true;
+			                        		    	} else {
+							            				exprKey_<%= nextTableName %>__<%= column.getLabel() %> =  (<%= typeToGenerate %>)(<%= nullableType %>) exprKeyValue_<%= nextTableName %>__<%= columnName %>;
+                       		    					}
+                       		    					<%
+                       		    				} else {
+						            				%>
+					            					exprKey_<%= nextTableName %>__<%= column.getLabel() %> = <%= expressionKey %>;
+            										<%
+                       		    				}
+
+            									if (checkingSyntax) {
+                								%>
+                									<%= CodeGenerationUtils.buildJavaEndFieldKey(key) %>
+            				    				<%
+            									}
+											} // T_TM_M_212
+				                        } // T_TM_M_213
+                    				} // T_TM_M_214
+                    
+			                    	%>
+                    					} // G_TM_M_255
+                    				<%
+                    
+								} // T_TM_M_215
+
+				           		cumulatedInputConnections.add(connection);
+
+								%>
+
+								SortableRow_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%> rsc_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%> = new SortableRow_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>();
+
+								rsc_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>.fillFrom(<%
+
+						    	    String comma = "";
+			         				for(IConnection aConnection : cumulatedInputConnections) {
+						        		%><%=comma%> <%= aConnection.getName() %><%
+			         					comma = ", ";
+		         					}
+                    				int sizeNextColumns = nextLookupColumnsKeys.size();
+                    				for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_M_105
+	                    				IMetadataColumn column = nextLookupColumnsKeys.get(iColumn);
+	
+					         			%><%=comma%> exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %><%
+	                    
+            			        	} // T_TM_M_105
+					
+								%>);
+
+								rsc_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>.is__rejectedInnerJoin = <%= rejectedInnerJoin %>;
+						
+								<%= rejectedInnerJoin %> = false;
+
+								// Sort and store in KeyFile(s) and DataFile(s)
+								fsi_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>.put(rsc_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>);
+					
+								<%
+
+
+					} // T_TM_M_216
+					else { // T_TM_M_217  
+			
+						cumulatedInputConnections.add(connection);
+			
+					} // T_TM_M_217
+			
+                	if(hasPersistentLookup && !isLastPersistentSortedTable && isMultipleResultMode 
+                		&& !(isVirtualOut && hasPersistentLookup && !isPersistentSortedTable)
+                		&& !(isVirtualIn && hasPersistentLookup && !isPersistentSortedTable)
+                		) { // T_TM_M_247
+					%>
+								if(forceLoop<%= tableName %>) {
+									break;
+								}
+							
+	            			}  // G_TM_M_043 loop (MultipleResult) <%= tableName %>
+					<%
+					} // T_TM_M_247
+					else if(isVirtualIn && !isPersistentSortedTable && externalTable.isPersistent()) { // T_TM_M_259
+					
+						closeAllRowsBlockCount.add(tableName);
+					
+					} // T_TM_M_259
+	    		
+                	if(!isLastTableForTMAP_OUT && !isLastTable && nextTableIsPersistentSorted) { // T_TM_M_248
+                	
+                		if(isVirtualIn && nextTableIsPersistentSorted) {
+							int sizeCloseAllRowsBlocks = closeAllRowsBlockCount.size();
+                			for(int iCloseBlockAllRows = 0; iCloseBlockAllRows < sizeCloseAllRowsBlocks; iCloseBlockAllRows++) {
+                				String lookupName = closeAllRowsBlockCount.get(iCloseBlockAllRows);
+							%>
+	        	    			}  // G_TM_M_043 loop (closeAllRowsBlock) <%= lookupName %>
+							<%
+                				
+                			}
+                			closeAllRowsBlockCount.clear();
+                		}
+                		if(org.talend.designer.mapper.model.table.LOOKUP_MODE.RELOAD.name().equals(lookupMode) ) {
+							%>
+							if((tHash_Lookup_<%= tableName %> != null && !tHash_Lookup_<%= tableName %>.hasNext())){
+								tHash_Lookup_<%=tableName%>.endGet();
+								tHash_Lookup_<%=tableName%>=null;
+							}
+							<%
+						}
+						%>
+	    	        	} // G_TM_M_250 loop "<%= previousJoinedTablesPersistentSortedDelimited %>"
+
+	            		<%
+	            	
+	            	} // T_TM_M_248
+	            	%>
+	            	
+	           	<%
+	            } // T_TM_M_218
+					if(org.talend.designer.mapper.model.table.LOOKUP_MODE.RELOAD.name().equals(lookupMode)) {
+					%>
+						if((tHash_Lookup_<%= tableName %> != null && !tHash_Lookup_<%= tableName %>.hasNext())){
+							tHash_Lookup_<%=tableName%>.endGet();
+							tHash_Lookup_<%=tableName%> = null;
+						}
+					<% }
+	            %>
+	            	
+	            <%
+				} // T_TM_M_296
+				 else { // T_TM_M_297  
+				
+					cumulatedInputConnections.add(connection);
+				
+				} // T_TM_M_297
+
+				
+       		    if(!isVirtualOut 
+       		    	&& !isLastTable 
+       		    	&& nextTableIsPersistentSorted 
+       		    	&& (isFirstPersistentSortedTable || previousStateIsFirstPersistentSortedTable == true)
+       		    ) { // T_TM_M_299
+				%>				
+					fsi_<%=componentNameForKeyProblem%>_<%=previousJoinedTablesPersistentSortedDelimited%>.endGet();
+				<%
+				} // T_TM_M_299
+	    	        	
+				
+				
+                if(!isVirtualOut && !isLastTable && nextInputTable != null && nextInputTable.isPersistent()) { // T_TM_M_238
+                %> 
+	            	
+	            	fsi_<%=componentNameForKeyProblem%>_<%=nextJoinedTableIndex%>.endPut();
+	            	
+				<%
+				} // T_TM_M_238
+
+
+				if(isFirstPersistentSortedTable == true && previousStateIsFirstPersistentSortedTable == false) { // T_TM_M_219
+					previousStateIsFirstPersistentSortedTable = true;
+					isFirstPersistentSortedTable = false;
+				} // T_TM_M_219
+
+				if(isLastPersistentSortedTable) {
+					lastPersistentSortedTableIsAlreadyProcessed = true;
+				}
+
+				currentJoinedTableIndex = nextJoinedTableIndex;
+				
+				//System.out.println("currentJoinedTableIndex=" + currentJoinedTableIndex);
+
+            	previousTableName = tableName;
+
+                } // T_TM_M_250
+
+            } // T_TM_M_249
+            
+            previousTableIsMultipleResultMode = isMultipleResultMode; 
+            previousTableIsPersistentSorted = isPersistentSortedTable;
+            
+        } // for (ExternalMapperTable externalTable : inputTables) {  // T_TM_M_261
+        boolean atLeastOneInputTableWithInnerJoin = !inputTablesWithInnerJoin.isEmpty();
+
+            if (!dieonerror) {
+				//here mean disable TDI-45732 for some special case, is a workaround fix
+			    if(gm.getBlocksCodeToClose()!=null && gm.getBlocksCodeToClose().size()>0){
+            %>
+                try {
+            <%
+			    }else{
+				    stringBuffer.insert(tryOffset,"try {");
+				}
+            } // close dieonerror if check
+
+
+        %>// ###############################
+        <%
+
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+if(!isVirtualOut) { // T_TM_M_320
+	
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // VARIABLES
+        // 
+        
+        %>
+        { // start of Var scope
+        
+	        // ###############################
+        	// # Vars tables
+        
+        <%
+        
+        for (ExternalMapperTable varsTable : varsTables) {
+            List<ExternalMapperTableEntry> varsTableEntries = varsTable.getMetadataTableEntries();
+            if (varsTableEntries == null) {
+                continue;
+            }
+            String varsTableName = varsTable.getName();
+            String instanceVarName = varsTableName + "__" + uniqueNameComponent;
+            String className = instanceVarName + "__Struct";
+
+            %><%= cr + className + " " + varsTableName + " = " + instanceVarName + ";" %><%
+            
+            for (ExternalMapperTableEntry varsTableEntry : varsTableEntries) {
+                String varsColumnName = varsTableEntry.getName();
+                String varExpression = varsTableEntry.getExpression();
+                if (varExpression == null || varExpression.trim().length() == 0) {
+                    varExpression = JavaTypesManager.getDefaultValueFromJavaIdType(varsTableEntry.getType(),
+                            varsTableEntry.isNullable());
+                } else {
+                	varExpression = getExpressionWithAutoConvertFunction(varExpression, varsTableEntry, null, expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+                }
+                
+                //TODO : remove the code below as it's never be used.
+                TableEntryLocation[] entryLocations = expressionParser.parseTableEntryLocations(varExpression);
+                ArrayList<TableEntryLocation> listCoupleForAddTablePrefix = new ArrayList<TableEntryLocation>();
+                for (TableEntryLocation location : entryLocations) {
+                    if (gm.isInputTable(varExpression)) {
+                        listCoupleForAddTablePrefix.add(location);
+                    }
+                }
+
+                String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+                        JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), varsTableName,
+                        varsColumnName);
+
+                if (checkingSyntax) {
+                    %><%= cr  + CodeGenerationUtils.buildJavaStartFieldKey(key) %><%
+                }
+                
+                %><%= cr + gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, varsTableName, varsColumnName, false) + " = " + varExpression
+                        + ";" %><%
+
+                if (checkingSyntax) {
+                    %><%= cr + CodeGenerationUtils.buildJavaEndFieldKey(key)%><%
+                }
+
+            }
+        }
+        
+        %>// ###############################<%
+        
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // /////////////////////////////////////////////////////////////////////////////////////////////////////
+        // OUTPUTS
+        // 
+        
+        %>
+        // ###############################
+        // # Output tables
+        <%
+
+		StringBuilder sb = new StringBuilder();
+
+        ArrayList<ExternalMapperTable> outputTablesSortedByReject = new ArrayList<ExternalMapperTable>(outputTables);
+        // sorting outputs : rejects tables after not rejects table
+        Collections.sort(outputTablesSortedByReject, new Comparator<ExternalMapperTable>() {
+
+            public int compare(ExternalMapperTable o1, ExternalMapperTable o2) {
+                if (o1.isReject() != o2.isReject()) {
+                    if (o1.isReject()) {
+                        return 1;
+                    } else {
+                        return -1;
+                    }
+                }
+                if (o1.isRejectInnerJoin() != o2.isRejectInnerJoin()) {
+                    if (o1.isRejectInnerJoin()) {
+                        return 1;
+                    } else {
+                        return -1;
+                    }
+                }
+                return 0;
+            }
+
+        });
+
+        boolean lastValueReject = false;
+        boolean oneFilterForNotRejectTable = false;
+        boolean allNotRejectTablesHaveFilter = true;
+        boolean atLeastOneReject = false;
+        boolean atLeastOneRejectInnerJoin = false;
+        boolean closeTestInnerJoinConditionsBracket = false;
+
+        Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+        for (IConnection outputConnection : outputConnections) {
+            nameToOutputConnection.put(outputConnection.getName(), outputConnection);
+        }
+
+        int lstSizeOutputs = outputTablesSortedByReject.size();
+        // ///////////////////////////////////////////////////////////////////
+        // init of allNotRejectTablesHaveFilter and atLeastOneReject
+        String lastValidOutputTableName = null;
+        for (int i = 0; i < lstSizeOutputs; i++) {
+            ExternalMapperTable outputTable = (ExternalMapperTable) outputTablesSortedByReject.get(i);
+
+            String outputTableName = outputTable.getName();
+
+            if (outputTable.isRejectInnerJoin()) {
+                atLeastOneRejectInnerJoin = true;
+            }
+            List<ExternalMapperTableEntry> columnsEntries = outputTable.getMetadataTableEntries();
+            List<ExternalMapperTableEntry> filters = outputTable.getConstraintTableEntries();
+            boolean hasFilter = filters != null && filters.size() > 0 && !gm.checkFiltersAreEmpty(outputTable) 
+            	|| outputTable.isActivateExpressionFilter() && outputTable.getExpressionFilter() != null && !("").equals(outputTable.getExpressionFilter().trim());
+            if (columnsEntries != null && columnsEntries.size() > 0) {
+                if (!hasFilter && !(outputTable.isReject() || outputTable.isRejectInnerJoin())) {
+                    if(!outputTable.isErrorRejectTable()){
+                    	allNotRejectTablesHaveFilter = false;
+                    }
+                }
+                if (outputTable.isReject()) {
+                    atLeastOneReject = true;
+                }
+            }
+				IConnection outputConnection = nameToOutputConnection.get(outputTableName);
+            if (outputTable.getIsJoinTableOf() == null /* == main table */ && !hasJoinedTable(outputTableName,data) /* if main table has no joined table linked */ ) {
+            	if (outputConnection != null) {
+                	sb.append(cr + outputTableName + " = null;");
+            	}
+                if(checkingSyntax 
+                || !checkingSyntax && outputConnection != null) {
+	            	lastValidOutputTableName = outputTableName;
+	            }
+			} else if(outputTable.getIsJoinTableOf() == null && hasJoinedTable(outputTableName,data) && outputConnection != null){
+			
+			    if (outputConnection != null) {
+                	sb.append(cr + outputTableName + " = null;");
+            	}
+            	
+				sb.append(cr + outputTableName + "_List.clear();");
+			}else if(outputTable.getIsJoinTableOf() != null){
+	            lastValidOutputTableName = outputTableName;
+			}
+
+        }
+        // ///////////////////////////////////////////////////////////////////
+
+		// System.out.println(uniqueNameComponent + " lastValidOutputTableName="+lastValidOutputTableName);
+
+        sb.append(cr);
+
+        if (allNotRejectTablesHaveFilter && atLeastOneReject) {
+            // write rejected = false;
+            sb.append(cr + "boolean " + rejected + " = true;");
+        }
+
+        // write conditions for inner join reject
+        if (lastValidOutputTableName != null && hasValidLookupTables && lstSizeOutputs > 0 && atLeastOneInputTableWithInnerJoin) {
+            sb.append(cr + "if(");
+            sb.append("!" + rejectedInnerJoin);
+            sb.append(" ) {");
+            closeTestInnerJoinConditionsBracket = true;
+        }
+
+        // ///////////////////////////////////////////////////////////////////
+        // run through output tables list for generating intilization of outputs arrays
+        int dummyVarCounter = 0;
+        int curCount = 0;
+        for (int indexCurrentTable = 0; indexCurrentTable < lstSizeOutputs; indexCurrentTable++) {
+            ExternalMapperTable outputTable = (ExternalMapperTable) outputTablesSortedByReject.get(indexCurrentTable);
+            String joinedTableName = outputTable.getIsJoinTableOf();
+            List<ExternalMapperTableEntry> outputTableEntries = outputTable.getMetadataTableEntries();
+            String outputTableName = outputTable.getName();
+            
+            //add for feature:2445
+            if (!dieonerror){
+                if(outputTable.isErrorRejectTable()){
+                	continue;
+                }
+            }
+            
+            boolean connectionExists = true;
+            IConnection outputConnection =null;
+            if(outputTable.getIsJoinTableOf()==null){
+            	outputConnection = nameToOutputConnection.get(outputTableName);
+            }else{
+            	outputConnection = nameToOutputConnection.get(outputTable.getIsJoinTableOf());
+            }
+            HashedMetadataTable hashedMetadataTable = null;
+            if (outputTableEntries == null || outputConnection == null) {
+                connectionExists = false;
+            } else {
+            	hashedMetadataTable = new HashedMetadataTable(outputConnection.getMetadataTable());
+            }
+
+			// System.out.println("Output table: (1)" + outputTableName);
+
+            List<ExternalMapperTableEntry> filters = outputTable.getConstraintTableEntries();
+
+            boolean currentIsReject = outputTable.isReject();
+            boolean currentIsRejectInnerJoin = outputTable.isRejectInnerJoin();
+
+            boolean hasFilters = filters != null && filters.size() > 0 && !gm.checkFiltersAreEmpty(outputTable);
+            boolean hasExpressionFilter = outputTable.isActivateExpressionFilter() && outputTable.getExpressionFilter() != null && !("").equals(outputTable.getExpressionFilter().trim());
+
+            boolean rejectValueHasJustChanged = lastValueReject != (currentIsReject || currentIsRejectInnerJoin);
+
+            oneFilterForNotRejectTable = !(currentIsReject || currentIsRejectInnerJoin) && (hasFilters || hasExpressionFilter);
+
+            if (rejectValueHasJustChanged) {
+
+                if (closeTestInnerJoinConditionsBracket) {
+                    sb.append(cr + "} // closing inner join bracket (1)");
+                    if (atLeastOneReject && allNotRejectTablesHaveFilter) {
+                        sb.append(cr + " else {");
+                        sb.append(cr + rejected + " = false;");
+                        sb.append(cr + "} // closing else inner join bracket (1)");
+                    }
+                    closeTestInnerJoinConditionsBracket = false;
+                }
+            }
+
+            // No connection matching and no checking errors
+            if (connectionExists || checkingSyntax) {
+	            if (rejectValueHasJustChanged) {
+	                sb.append(cr + "// ###### START REJECTS ##### ");
+	            }
+
+	            // write filters conditions and code to execute
+	            if (!currentIsReject && !currentIsRejectInnerJoin || rejectValueHasJustChanged
+	                    && oneFilterForNotRejectTable || currentIsReject && allNotRejectTablesHaveFilter
+	                    || currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin || checkingSyntax) {
+
+	                boolean closeFilterOrRejectBracket = false;
+	                if (currentIsReject || currentIsRejectInnerJoin) {
+	                    sb.append(cr + cr + "// # Output reject table : '" + outputTableName + "'");
+	                } else {
+	                    sb.append(cr + cr + "// # Output table : '" + outputTableName + "'");
+	                }
+	                if (hasFilters || hasExpressionFilter || currentIsReject || currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin) {
+	                    sb.append(cr + "// # Filter conditions ");
+	
+	                    String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+	                            JavaGenerationManager.PROBLEM_KEY_FIELD.FILTER.toString(), outputTableName, null);
+	                    if (checkingSyntax) {
+	                        sb.append("\n").append(CodeGenerationUtils.buildJavaStartFieldKey(key));
+	                    }
+	
+	                    String ifConditions = "if( ";
+	
+	                    String rejectedTests = null;
+	                    if (allNotRejectTablesHaveFilter && atLeastOneReject && currentIsReject && currentIsRejectInnerJoin
+	                            && atLeastOneInputTableWithInnerJoin) {
+	                        rejectedTests = rejected + " || " + rejectedInnerJoin;
+	                        if (hasFilters || hasExpressionFilter) {
+	                            rejectedTests = "(" + rejectedTests + ")";
+	                        }
+	                    } else if (allNotRejectTablesHaveFilter && atLeastOneReject && currentIsReject) {
+	                        rejectedTests = rejected;
+	                    } else if (currentIsRejectInnerJoin && atLeastOneInputTableWithInnerJoin) {
+	                        rejectedTests = rejectedInnerJoin;
+	                    }
+	                    if (hasFilters && !hasExpressionFilter || hasExpressionFilter) {
+	                        String filtersConditions = null;
+	                        if(hasExpressionFilter) {
+		                     	filtersConditions = outputTable.getExpressionFilter();
+		                     } else {
+		                        filtersConditions = gm.buildConditions(filters, expressionParser);
+		                     }
+	                        if (rejectedTests == null) {
+	                            ifConditions += cr + cr + filtersConditions  + cr + cr;
+	                        } else {
+	                            ifConditions += rejectedTests + " && (" + cr + cr + filtersConditions + cr + cr +")";
+	                        }
+	                    } else {
+	                        ifConditions += rejectedTests;
+	                    }
+	                    ifConditions += " ) {";
+	
+	                    sb.append(cr).append(ifConditions);
+	
+	                    if (checkingSyntax) {
+	                        sb.append("\n").append(CodeGenerationUtils.buildJavaEndFieldKey(key));
+	                    }
+	
+	                    closeFilterOrRejectBracket = true;
+	                    if (allNotRejectTablesHaveFilter && !(currentIsReject || currentIsRejectInnerJoin)
+	                            && atLeastOneReject) {
+	                        sb.append(cr + rejected + " = false;");
+	                    }
+	                }
+
+					if(outputTable.getIsJoinTableOf()!=null){
+						sb.append(cr).append(outputTable.getIsJoinTableOf() + "_tmp= new "+outputTable.getIsJoinTableOf() +"Struct();");
+						sb.append(cr);
+					}
+											
+	                if (outputTableEntries != null && (!currentIsReject && !currentIsRejectInnerJoin || currentIsReject || currentIsRejectInnerJoin
+	                        && atLeastOneInputTableWithInnerJoin || checkingSyntax)) {
+						if(joinedTableName==null && isLog4jEnabled){
+							sb.append(cr + "count_" + outputTableName + "_" + componentNameForKeyProblem + "++;" + cr);
+						}
+						boolean needAppendColumnLog = true;
+	                    for (ExternalMapperTableEntry outputTableEntry : outputTableEntries) {
+	                        String outputColumnName = outputTableEntry.getName();
+	                        IMetadataColumn metadataColumnFromConn = null;
+	                        if(connectionExists) {
+		                        metadataColumnFromConn = hashedMetadataTable.getColumn(outputColumnName);
+		                    }
+	                        String outputExpression = outputTableEntry.getExpression();
+	                        if (outputExpression == null || outputExpression.trim().length() == 0) {
+	                        	needAppendColumnLog = false;
+	                        	if(metadataColumnFromConn == null) {
+		                            outputExpression = JavaTypesManager.getDefaultValueFromJavaIdType(outputTableEntry
+	    	                                .getType(), outputTableEntry.isNullable());
+	    	                    } else {
+		                            outputExpression = JavaTypesManager.getDefaultValueFromJavaIdType(metadataColumnFromConn
+	    	                                .getTalendType(), metadataColumnFromConn.isNullable());
+	    	                    }
+	                        } else {
+	                        	outputExpression = getExpressionWithAutoConvertFunction(outputExpression, outputTableEntry, metadataColumnFromConn, expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+	                        	
+	                        	if(metadataColumnFromConn == null) {
+									continue;
+								}
+	                        }
+	
+	                        String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+	                                JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), outputTableName,
+	                                outputColumnName);
+	                        if (checkingSyntax) {
+	                            sb.append("\n").append(CodeGenerationUtils.buildJavaStartFieldKey(key));
+	                        }
+	
+	                        String assignationVar = null;
+	                        if (connectionExists) {                       
+	                        	if(outputTable.getIsJoinTableOf()==null){
+	                        		assignationVar = gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, outputTableName + "_tmp",outputColumnName, false);
+	                        	}else {
+	                            	assignationVar =gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, outputTable.getIsJoinTableOf() + "_tmp",outputColumnName, false);
+	                            }     
+	                        } else {
+	                        	if(metadataColumnFromConn == null) {
+		                            assignationVar = JavaTypesManager.getTypeToGenerate(outputTableEntry.getType(),
+	                                    outputTableEntry.isNullable())
+	                                    + " dummyVar" + (dummyVarCounter++);
+	                            } else {
+		                            assignationVar = JavaTypesManager.getTypeToGenerate(metadataColumnFromConn
+	    	                                .getTalendType(), metadataColumnFromConn.isNullable())
+	                                    + " dummyVar" + (dummyVarCounter++);
+	                            }
+	                        }
+	                        
+    	                    String expression = assignationVar + " = " + outputExpression + ";";
+	                        sb.append(cr).append(expression);
+	                        
+	                        if (checkingSyntax) {
+	                            sb.append("\n").append(CodeGenerationUtils.buildJavaEndFieldKey(key));
+	                        }
+	                        needAppendColumnLog = true;
+	                    } // for entries
+						
+	                    if (connectionExists) {
+	                    	if(hasJoinedTable(outputTableName, data)){
+	                    		sb.append(cr + outputTableName + "_List.add(" + outputTableName + "_tmp);");
+	                       		sb.append(cr + outputTableName + " = " + outputTableName + "_tmp;");
+	                    	} else if (outputTable.getIsJoinTableOf()!=null) {
+	                    		sb.append(cr + outputTable.getIsJoinTableOf() + "_List.add(" + outputTable.getIsJoinTableOf() + "_tmp);");
+	                    		sb.append(cr + outputTable.getIsJoinTableOf() + " = " + outputTable.getIsJoinTableOf() + "_tmp;");
+	                    	} else {
+	                        	sb.append(cr + outputTableName + " = " + outputTableName + "_tmp;");
+	                        }
+							
+							if(isLog4jEnabled){
+									sb.append(cr + "log.debug(\"" + componentNameForKeyProblem + " - Outputting the record \" + count_" + (joinedTableName!=null?joinedTableName:outputTableName) + "_" + componentNameForKeyProblem + " + \" of the output table '" + outputTableName + "'.\");" + cr);
+							}
+	                        
+	                        if (trace) { // only for traces to be able to use preview mode in tMap.
+       	                    	if(hasJoinedTable(outputTableName, data)){ 
+      	                    		sb.append("\n").append("java.util.LinkedHashMap<String,String> runTraceData" + indexCurrentTable +"=new java.util.LinkedHashMap<String,String>();");
+									sb.append("\n");    
+	   	                    		for (ExternalMapperTableEntry outputTableEntry : outputTable.getMetadataTableEntries()) { 
+  	                                	sb.append("runTraceData" + indexCurrentTable + ".put(\"" + outputTableEntry.getName() + "\", String.valueOf("+outputTableName + "_tmp." + outputTableEntry.getName() +"));");
+  	                                	sb.append("\n");
+       	                    		}
+
+       	                         	sb.append(
+       	                              	"runTrace.sendTrace(\""+ outputTableName + "[MAIN]" +"\",\""+ node.getUniqueName() + "\"," +
+       	                              	"runTraceData" + indexCurrentTable + ");"
+       	                          	);
+		                    	}else if(outputTable.getIsJoinTableOf()!=null){
+       	                    		sb.append("\n").append("java.util.LinkedHashMap<String,String> runTraceData" + indexCurrentTable +"=new java.util.LinkedHashMap<String,String>();");
+									sb.append("\n");         	                              
+      	                    		for(ExternalMapperTableEntry outputTableEntry : outputTable.getMetadataTableEntries()){ 
+      	                    			sb.append("runTraceData" + indexCurrentTable + ".put(\"" + outputTableEntry.getName() + "\", String.valueOf("+ outputTable.getIsJoinTableOf() + "_tmp." + outputTableEntry.getName() +"));");
+  	                                	sb.append("\n");
+      	                    		}
+        							sb.append(
+             	                        "runTrace.sendTrace(\"" + outputTable.getIsJoinTableOf() + ":" + outputTableName + "\",\"" + node.getUniqueName() + "\"," +
+                    					"runTraceData" + indexCurrentTable + ");"
+						            );
+	                    		}
+	                        }
+	                        
+	                    }
+	                    
+	                    
+	                    
+
+	                }
+	                if (closeFilterOrRejectBracket) {
+	                    sb.append(cr + "} // closing filter/reject");
+	                }
+	
+	            }
+	            lastValueReject = currentIsReject || currentIsRejectInnerJoin;
+	
+	         }
+
+			// System.out.println("Output table: (2)" + outputTableName);
+
+            boolean isLastTable = indexCurrentTable == lstSizeOutputs - 1;
+            if (closeTestInnerJoinConditionsBracket 
+            	&& (isLastTable || !checkingSyntax && (outputTableName.equals(lastValidOutputTableName) || lastValidOutputTableName == null))) {
+                sb.append(cr + "}  // closing inner join bracket (2)");
+                closeTestInnerJoinConditionsBracket = false;
+            }
+
+        } // for output tables
+
+        sb.append(cr + "// ###############################");
+
+        
+        sb.append(cr);
+        sb.append(cr + "} // end of Var scope");
+
+
+
+        sb.append(cr + cr + rejectedInnerJoin + " = false;");
+        
+        sb.append(cr);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+%>
+<%= sb.toString()%>
+
+<%
+} // T_TM_M_320
+	if (!dieonerror) {
+%>
+		} catch (java.lang.Exception e) {
+			//if anohter java.lang.Exception when processing an java.lang.Exception
+    		<%if(isLog4jEnabled){%>
+    			log.error("<%=componentNameForKeyProblem%> - " + e.getMessage());
+    		<%}%>
+			try{//EE
+        <%
+        
+        for (ExternalMapperTable varsTable : varsTables) {
+            List<ExternalMapperTableEntry> varsTableEntries = varsTable.getMetadataTableEntries();
+            if (varsTableEntries == null) {
+                continue;
+            }
+            String varsTableName = varsTable.getName();
+            String instanceVarName = varsTableName + "__" + uniqueNameComponent;
+            String className = instanceVarName + "__Struct";
+
+            %><%= cr + className + " " + varsTableName + " = " + instanceVarName + ";" %><%
+
+        }
+        
+        %>
+
+            <%
+		    Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+		    for (IConnection outputConnection : outputConnections) {
+		        nameToOutputConnection.put(outputConnection.getName(), outputConnection);
+		    }
+		                
+            int dummyVarCounter = 0;
+            for(ExternalMapperTable outputTable : outputTables){
+            	
+            	String outputTableName = outputTable.getName(); 
+                
+                //add for feature:2445
+                if (!dieonerror){
+                    if(!outputTable.isErrorRejectTable()){
+                    	continue;
+                    }
+                }
+                
+                List<ExternalMapperTableEntry> outputTableEntries = outputTable.getMetadataTableEntries();
+                
+                boolean connectionExists = true;
+                IConnection outputConnection =null;
+                if(outputTable.getIsJoinTableOf()==null){
+                	outputConnection = nameToOutputConnection.get(outputTableName);
+                }else{
+                	outputConnection = nameToOutputConnection.get(outputTable.getIsJoinTableOf());
+                }
+                HashedMetadataTable hashedMetadataTable = null;
+                if (outputTableEntries == null || outputConnection == null) {
+                    connectionExists = false;
+                } else {
+                	hashedMetadataTable = new HashedMetadataTable(outputConnection.getMetadataTable());
+                }
+                
+                //exist the ErrorReject schema, but there doesn't exist the Reject output link
+                if(!connectionExists){
+                	continue;
+                }
+             %>                
+                
+<%   
+
+                StringBuilder sb = new StringBuilder();
+                for (ExternalMapperTableEntry outputTableEntry : outputTableEntries) {
+                    String outputColumnName = outputTableEntry.getName();
+                    //System.out.println(outputColumnName);
+                    if(outputColumnName.equals("errorMessage") || outputColumnName.equals("errorStackTrace")){
+                    	continue;
+                    }  
+                    
+                    IMetadataColumn metadataColumnFromConn = null;
+                    if(connectionExists) {
+                        metadataColumnFromConn = hashedMetadataTable.getColumn(outputColumnName);
+                    }
+                    
+                    String outputExpression = outputTableEntry.getExpression();
+                    if (outputExpression == null || outputExpression.trim().length() == 0) {
+                    	if(metadataColumnFromConn == null) {
+                            outputExpression = JavaTypesManager.getDefaultValueFromJavaIdType(outputTableEntry
+                                    .getType(), outputTableEntry.isNullable());
+                        } else {
+                            outputExpression = JavaTypesManager.getDefaultValueFromJavaIdType(metadataColumnFromConn
+                                    .getTalendType(), metadataColumnFromConn.isNullable());
+                        }
+                    } else {
+                    	outputExpression = getExpressionWithAutoConvertFunction(outputExpression, outputTableEntry, metadataColumnFromConn, expressionParser, locationMap4Entry, locationMap4Column, autoConverterMap, enable_auto_convert_type);
+                    	
+                    	if(metadataColumnFromConn == null) {
+            				continue;
+            			}
+                    }
+					
+                    String key = CodeGenerationUtils.buildProblemKey(componentNameForKeyProblem,
+                            JavaGenerationManager.PROBLEM_KEY_FIELD.METADATA_COLUMN.toString(), outputTableName,
+                            outputColumnName);
+                    if (checkingSyntax) {
+                        sb.append("\n").append(CodeGenerationUtils.buildJavaStartFieldKey(key));
+                    }
+
+                    String assignationVar = null;
+                    if (connectionExists) {
+                    	if(outputTable.getIsJoinTableOf()==null){
+                    		assignationVar = gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, outputTableName + "_tmp",outputColumnName, false);
+                    	}else {
+                        	assignationVar =gm.getGeneratedCodeTableColumnVariable(uniqueNameComponent, outputTable.getIsJoinTableOf() + "_tmp",outputColumnName, false);
+                        }     
+                    } else {
+                    	if(metadataColumnFromConn == null) {
+                            assignationVar = JavaTypesManager.getTypeToGenerate(outputTableEntry.getType(),
+                                outputTableEntry.isNullable())
+                                + " dummyVar" + (dummyVarCounter++);
+                        } else {
+                            assignationVar = JavaTypesManager.getTypeToGenerate(metadataColumnFromConn
+                                    .getTalendType(), metadataColumnFromConn.isNullable())
+                                + " dummyVar" + (dummyVarCounter++);
+                        }
+                    }
+                    
+                    String expression = assignationVar + " = " + outputExpression + ";";
+                    sb.append(cr).append(expression);
+                    
+                    if (checkingSyntax) {
+                        sb.append("\n").append(CodeGenerationUtils.buildJavaEndFieldKey(key));
+                    }
+                } // for entries  
+%>            
+               
+                <% stringBuffer.append(sb.toString()); %>
+                <%=outputTableName %> = <%=outputTableName %>_tmp;
+                <%=outputTableName %>.errorMessage = e.getMessage();
+                <%=outputTableName %>.errorStackTrace = ResumeUtil.getExceptionStackTrace(e);
+              
+                
+            <%    
+            }
+            %>			
+			
+    
+            <%
+            //clear others branches.
+            for(ExternalMapperTable outputTable : outputTables){//111
+            	
+            	String outputTableName = outputTable.getName(); 
+                
+                //add for feature:2445
+                if (!dieonerror){
+                    if(outputTable.isErrorRejectTable()){
+                    	continue;
+                    }
+                }
+                
+                
+                //only process the table with output link
+                if (nameToOutputConnection.get(outputTableName)!=null) {//222
+                	if(hasJoinedTable(outputTableName,data)){
+                	
+                	//feature:11884, in merge case, the mergedTable/mergingTable both clear.
+				%>	
+                		<%=outputTableName %>_List.clear();
+            	<%    
+                	}else{
+				%>					
+                		<%=outputTableName %> = null;
+                <%		
+                	}
+                }//222
+				%>
+            <%    
+            }//111
+            %>
+         } catch (java.lang.Exception ee) {//EE
+        		<%if(isLog4jEnabled){%>
+        			log.error("<%=componentNameForKeyProblem%> - " + ee.getMessage());
+        		<%}%>
+				ee.printStackTrace();
+            <%
+            //clear others branches.
+            for(ExternalMapperTable outputTable : outputTables){//111
+            	
+            	String outputTableName = outputTable.getName(); 
+                
+                //add for feature:2445
+                if (!dieonerror){
+                    if(outputTable.isErrorRejectTable()){
+                    	continue;
+                    }
+                }
+                
+                
+                //only process the table with output link
+                if (nameToOutputConnection.get(outputTableName)!=null) {//222
+                	if(hasJoinedTable(outputTableName,data)){
+                	
+                	//feature:11884, in merge case, the mergedTable/mergingTable both clear.
+				%>	
+                		<%=outputTableName %>_List.clear();
+            	<%    
+                	}else{
+				%>					
+                		<%=outputTableName %> = null;
+                <%		
+                	}
+                }//222
+				%>
+            <%    
+            }//111
+            %>
+		}//EE  			
+	}//end catch
+<%
+	}
+%>

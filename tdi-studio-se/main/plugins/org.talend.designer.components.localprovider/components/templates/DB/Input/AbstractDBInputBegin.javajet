@@ -1,0 +1,368 @@
+<%@ jet
+imports="
+    	org.talend.core.model.process.INode
+    	org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.builder.database.ExtractMetaDataUtils
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+		java.util.Map
+		"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String type = ElementParameterParser.getValue(node, "__TYPE__");
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+	String dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+	String dbencoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	String enableStream = ElementParameterParser.getValue(node, "__ENABLE_STREAM__");
+	String dbms=ElementParameterParser.getValue(node, "__MAPPING__");
+	if("tJDBCInput".equals(node.getComponent().getName())) {
+		boolean isEnableMapping = ("true").equals(ElementParameterParser.getValue(node, "__ENABLE_MAPPING__"));
+		if (!isEnableMapping) {
+			dbms = "";
+		}
+	}
+
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+    boolean whetherTrimAllCol = ("true").equals(ElementParameterParser.getValue(node, "__TRIM_ALL_COLUMN__"));
+    List<Map<String, String>> trimColumnList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__TRIM_COLUMN__");
+
+    dbInputBeginUtil.beforeComponentProcess(node);
+    int dynamic_index=-1;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas != null) && (metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata != null) {
+%>
+		    int nb_line_<%=cid%> = 0;
+		    java.sql.Connection conn_<%=cid%> = null;
+<%
+		    String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+		    if(("true").equals(useExistingConn)) {
+		        String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+		        String conn = "conn_" + connection;
+%>
+				conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+				<%log4jCodeGenerateUtil.useExistConnection(node);%>
+<%
+				dbInputBeginUtil.afterUseExistConnection(node);
+		    } else {
+				dbInputBeginUtil.createConnection(node);
+				if ("teradata_id".equalsIgnoreCase(dbms)) {
+%>
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/tTeradataInput/TeradataQueryBandBegin.javajet"%>
+<%
+				}
+		    }
+%>
+		    <%dbInputBeginUtil.createStatement(node);%>
+
+		    String dbquery_<%=cid%> = <%=dbInputBeginUtil.getQueryString(node)%>;
+		    <% log4jCodeGenerateUtil.query(node, "dbquery_" + cid); %>
+
+		    globalMap.put("<%=cid %>_QUERY",dbquery_<%=cid%>);
+
+		    java.sql.ResultSet rs_<%=cid %> = null;
+
+		    try {
+		    	rs_<%=cid %> = stmt_<%=cid %>.executeQuery(dbquery_<%=cid%>);
+		    	java.sql.ResultSetMetaData rsmd_<%=cid %> = rs_<%=cid %>.getMetaData();
+		    	int colQtyInRs_<%=cid%> = rsmd_<%=cid %>.getColumnCount();
+
+<%
+		    List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		    List<IMetadataColumn> columnList = metadata.getListColumns();
+		    boolean isDynamic = metadata.isDynamicSchema();
+		    if(isDynamic){
+		    	String DynamicDatePattern = "\"dd-MM-yyyy\"";
+		    	for(IMetadataColumn column : columnList) {
+		    		if("id_Dynamic".equals(column.getTalendType())) {
+		    			DynamicDatePattern = column.getPattern();
+		    			break;
+		    		}
+		    	}
+		    %>
+		    routines.system.Dynamic dcg_<%=cid%> =  new routines.system.Dynamic();
+		    dcg_<%=cid%>.setDbmsId("<%=dbms %>");
+		    List<String> listSchema_<%=cid%>=new java.util.ArrayList<String>();
+		    <%
+
+		    for(int i=0; i< columnList.size(); i++) {
+		        if(columnList.get(i).getTalendType().equals("id_Dynamic")){
+		            dynamic_index = i+1;
+		        }else{
+		            IMetadataColumn column = columnList.get(i);
+		            String columName = column.getOriginalDbColumnName();
+		            if(columName==null || "".equals(columName)){
+		                columName = column.getLabel();
+		            }
+	            %>
+		    	    listSchema_<%=cid%>.add("<%=columName.toUpperCase()%>");
+	    	    <%
+		    	}
+			}
+		    %>
+
+			int fixedColumnCount_<%=cid%> = <%=dynamic_index-1%>;
+
+            for (int i = <%=dynamic_index%>; i <= rsmd_<%=cid%>.getColumnCount()-<%=columnList.size()-dynamic_index%>; i++) {
+                if (!(listSchema_<%=cid%>.contains(rsmd_<%=cid%>.getColumnLabel(i).toUpperCase()) )) {
+                	routines.system.DynamicMetadata dcm_<%=cid%>=new routines.system.DynamicMetadata();
+                	dcm_<%=cid%>.setName(rsmd_<%=cid%>.getColumnLabel(i));
+                	dcm_<%=cid%>.setDbName(rsmd_<%=cid%>.getColumnName(i));
+                	dcm_<%=cid%>.setType(routines.system.Dynamic.getTalendTypeFromDBType("<%=dbms %>", rsmd_<%=cid%>.getColumnTypeName(i).toUpperCase(), rsmd_<%=cid%>.getPrecision(i), rsmd_<%=cid%>.getScale(i)));
+                	dcm_<%=cid%>.setDbType(rsmd_<%=cid%>.getColumnTypeName(i));
+                	dcm_<%=cid%>.setDbTypeId(rsmd_<%=cid%>.getColumnType(i));
+                <% if((DynamicDatePattern!=null) && (!"".equals(DynamicDatePattern)) && (!"\"\"".equals(DynamicDatePattern))) {%>
+                	dcm_<%=cid%>.setFormat(<%=DynamicDatePattern%>);
+                <% } %>
+<%
+		if (("oracle_id".equalsIgnoreCase(dbms))) {
+%>
+			if("NUMBER".equalsIgnoreCase(rsmd_<%=cid%>.getColumnTypeName(i))) {
+				<% // a way to fix TDI-47895 %>
+				int length = rsmd_<%=cid%>.getPrecision(i);
+				dcm_<%=cid%>.setLength(length > 38 ? 38 : length);
+			} else if("LONG".equals(rsmd_<%=cid%>.getColumnTypeName(i).toUpperCase())) {
+				String length = MetadataTalendType.getDefaultDBTypes("oracle_id", "LONG", MetadataTalendType.DEFAULT_LENGTH);
+				if(length!=null && !("".equals(length))) {
+					dcm_<%=cid%>.setLength(Integer.parseInt(length));
+				} else {
+					dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
+				}
+			} else {
+				dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
+			}
+<%
+		} else {
+%>
+			dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
+<%
+		}
+%>
+                	dcm_<%=cid%>.setPrecision(rsmd_<%=cid%>.getScale(i));
+                	dcm_<%=cid%>.setNullable(rsmd_<%=cid%>.isNullable(i) == 0 ? false : true);
+                	dcm_<%=cid%>.setKey(false);
+                	dcm_<%=cid%>.setSourceType(DynamicMetadata.sourceTypes.database);
+                	dcm_<%=cid%>.setColumnPosition(i);
+                	dcg_<%=cid%>.metadatas.add(dcm_<%=cid%>);
+                }
+            }
+<%
+		    }
+		    %>
+		    String tmpContent_<%=cid%> = null;
+		    <%if(isDynamic){%>
+		    	int column_index_<%=cid%> =1;
+		    <%}%>
+		    <%if(isLog4jEnabled){%>
+		    	log.debug("<%=cid%> - Retrieving records from the database.");
+		    <%}%>
+		    while (rs_<%=cid %>.next()) {
+		        nb_line_<%=cid%>++;
+		        <%
+		        if(conns != null && conns.size() > 0) {
+		            IConnection conn = conns.get(0);
+		            String firstConnName = conn.getName();
+		            int currentColNo = 1;
+		            for(IMetadataColumn column : columnList) {
+		                boolean whetherTrimCol = false;
+		                if((trimColumnList != null && trimColumnList.size() > 0) && !whetherTrimAllCol) {
+		                    for(Map<String, String> trimColumn : trimColumnList) {
+		                        if(column.getLabel().equals(trimColumn.get("SCHEMA_COLUMN"))) {
+		                            if(("true").equals(trimColumn.get("TRIM"))) {
+		                                whetherTrimCol = true;
+		                                break;
+		                            }
+		                        }
+		                    }
+		                }
+		                String trimMethod = "";
+		                if(whetherTrimAllCol || whetherTrimCol) {
+		                    trimMethod = ".trim()";
+		                }
+		                String columnType = column.getType();
+
+		                String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+		                String defVal = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate);
+		                if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+							if(isDynamic){
+								if(!("Dynamic").equals(typeToGenerate) && dynamic_index < currentColNo) {
+								%>
+									column_index_<%=cid%> = <%=currentColNo-1%> + dcg_<%=cid%>.getColumnCount();
+								<%}else{%>
+									column_index_<%=cid%> = <%=currentColNo%>;
+								<%}%>
+							<%
+							}
+							%>
+							if(colQtyInRs_<%=cid%> < <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) {
+								<%=firstConnName%>.<%=column.getLabel()%> = <%=defVal%>;
+							} else {
+<%
+								typeToGenerate = dbInputBeginUtil.mappingType(typeToGenerate);
+
+								if(("Char").equals(typeToGenerate) || ("Character").equals(typeToGenerate)) {
+%>
+									<%dbInputBeginUtil.generateStringCharAndCharacterSet(firstConnName, column,currentColNo, trimMethod, typeToGenerate, whetherTrimAllCol, whetherTrimCol);%>
+<%
+								} else if(("Timestamp").equals(typeToGenerate)) {
+									if("vertica_id".equalsIgnoreCase(dbms) && "DATE".equalsIgnoreCase(column.getType())){
+%>
+										<%dbInputBeginUtil.generateOthersResultSet(firstConnName, column,  currentColNo,  "Date");%>
+<%
+									}else{
+%>
+										<%dbInputBeginUtil.generateTimestampResultSet(firstConnName, column, currentColNo);%>
+<%
+									}
+		                         } else if (("List").equals(typeToGenerate)) {
+%>
+		                            <%=firstConnName%>.<%=column.getLabel()%> = (List)rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+ <%
+		                        } else if(("String").equals(typeToGenerate)) {
+%>
+	                         		<%dbInputBeginUtil.generateStringResultSet(firstConnName, column, currentColNo,trimMethod);%>
+<%
+								} else if(("Double").equals(typeToGenerate)) {
+%>
+	                         		<%dbInputBeginUtil.generateDoubleResultSet(firstConnName, column, currentColNo);%>
+<%
+								} else if(("Boolean").equals(typeToGenerate)) {
+%>
+	                         		<%dbInputBeginUtil.generateBooleanResultSet(firstConnName, column, currentColNo);%>
+<%
+								} else if("Geometry".equals(typeToGenerate) && type.indexOf("ORACLE") >= 0) {
+%>
+                                    oracle.sql.STRUCT jGeomStruct = (oracle.sql.STRUCT) rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+                                    if (jGeomStruct != null) {
+                                    oracle.spatial.geometry.JGeometry jGeom = oracle.spatial.geometry.JGeometry.load(jGeomStruct);
+                                    oracle.spatial.util.WKT wkt = new oracle.spatial.util.WKT();
+                                    String wktValue = new String(wkt.fromJGeometry(jGeom));
+
+                                    <%=firstConnName%>.<%=column.getLabel()%> = new Geometry(wktValue);
+                                    } else {
+                                      <%=firstConnName%>.<%=column.getLabel()%> = null;
+                                    }
+<%
+                                    String sourceCRS = ElementParameterParser.getValue(node,"__CRS__");
+                                    String forceCRS = ElementParameterParser.getValue(node,"__FORCE_CRS__");
+                                    if (forceCRS.equals("true")) {
+%>
+                                        if (<%=firstConnName%>.<%=column.getLabel()%> != null) {
+                                        <%=firstConnName%>.<%=column.getLabel()%>.setEPSG(<%=sourceCRS%>);
+                                        }
+<%
+                                    }
+								} else if(("Bytes").equals(typeToGenerate) && (columnType != null && (("LONG RAW").equals(columnType) || ("RAW").equals(columnType)))) {//oracle
+%>
+									<%dbInputBeginUtil.generateBytesResultSet(firstConnName, column, currentColNo);%>
+<%
+								} else if(("Dynamic").equals(typeToGenerate)) {
+%>
+                                  <%=firstConnName%>.<%=column.getLabel()%>=dcg_<%=cid%>;
+<% //for bug TDI-20886
+									boolean trim = whetherTrimAllCol || whetherTrimCol;
+									if ("id_MSSQL".equalsIgnoreCase(dbms)) {
+										String driver = "";
+										if(("true").equals(useExistingConn)) {
+											String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+											INode connectionNode = null; 
+											for (INode processNode : node.getProcess().getGeneratingNodes()) { 
+												if(connection.equals(processNode.getUniqueName())) { 
+													connectionNode = processNode; 
+													break; 
+												} 
+											}
+											driver = ElementParameterParser.getValue(connectionNode,"__DRIVER__");
+										} else {
+											driver = ElementParameterParser.getValue(node,"__DRIVER__");
+										}
+%>
+										List<String> list_<%=cid %> = new java.util.ArrayList<String>();
+					    				for(int i_<%=cid %> = <%=metadata.getListColumns().size()%>; i_<%=cid %>  <= rsmd_<%=cid%>.getColumnCount(); i_<%=cid %> ++){
+					    					<% if("JTDS".equals(driver)) { %>
+						 					if ("NTEXT".equals(rsmd_<%=cid%>.getColumnTypeName(i_<%=cid %> ).toUpperCase())) {
+												net.sourceforge.jtds.jdbc.ClobImpl clob_<%=cid %> = (net.sourceforge.jtds.jdbc.ClobImpl) rs_<%=cid%>.getClob(i_<%=cid %>);
+												if(clob_<%=cid %> !=null){
+													net.sourceforge.jtds.jdbc.TalendNTextImpl tNTextImpl_<%=cid %> = new net.sourceforge.jtds.jdbc.TalendNTextImpl(clob_<%=cid %>);
+							  						list_<%=cid %>.add(tNTextImpl_<%=cid %>.getValue());
+												}else{
+													list_<%=cid %>.add(null);
+												}
+						   					}
+						   					<% } else {%> 
+						   					if("NTEXT".equals(rsmd_<%=cid%>.getColumnTypeName(i_<%=cid %> ).toUpperCase())) {
+						   						list_<%=cid %>.add(rs_<%=cid%>.getString(i_<%=cid %>));
+						   					}
+						   					<% } %>
+   	 				    				}
+                                 		 routines.system.DynamicUtils.readColumnsFromDatabase_Mssql(<%=firstConnName%>.<%=column.getLabel()%>, rs_<%=cid%>, fixedColumnCount_<%=cid%>,list_<%=cid %>,<%=trim%>);
+<%
+									}else if("access_id".equalsIgnoreCase(dbms)){
+%>
+										routines.system.DynamicUtils.readColumnsFromDatabase_Access(<%=firstConnName%>.<%=column.getLabel()%>, rs_<%=cid%>, fixedColumnCount_<%=cid%>,<%=trim%>);
+<%
+									}else{
+%>
+                                		 routines.system.DynamicUtils.readColumnsFromDatabase(<%=firstConnName%>.<%=column.getLabel()%>, rs_<%=cid%>, fixedColumnCount_<%=cid%>,<%=trim%>);
+<%
+									}
+								} else if(typeToGenerate.equals("Geometry")) {
+%>
+                                  Object geom = rs_<%=cid %>.getObject(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+                                  if (geom != null) {
+                                  	org.postgis.Geometry o =
+                                      org.postgis.PGgeometry.geomFromString(geom.toString());
+                                	StringBuffer sb = new StringBuffer();
+                                	o.outerWKT(sb, false);
+                                	<%=firstConnName%>.<%=column.getLabel()%> = new Geometry(sb.toString());
+                                  } else {
+                                  	<%=firstConnName%>.<%=column.getLabel()%> = null;
+                                  }
+<%
+                 	            } else {
+%>
+		                          <%dbInputBeginUtil.generateOthersResultSet( firstConnName, column,  currentColNo,  typeToGenerate);%>
+<%
+		                        }
+%>
+		                    }
+<%
+		                    currentColNo++;
+		                }
+		            }
+%>
+					<%if(isLog4jEnabled){%>
+						log.debug("<%=cid%> - Retrieving the record " + nb_line_<%=cid%> + ".");
+					<%}%>
+<%
+		            if(conns.size() > 1) {
+		                for(int connNO = 1 ; connNO < conns.size() ; connNO++) {
+		                    IConnection conn2 = conns.get(connNO);
+		                    if((conn2.getName().compareTo(firstConnName) != 0) && (conn2.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+		                        for(IMetadataColumn column:columnList){
+		                            %>
+		                            <%=conn2.getName()%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+		                            <%
+		                        }
+		                    }
+		                }
+		            }
+		        }
+		}
+	}
+%>

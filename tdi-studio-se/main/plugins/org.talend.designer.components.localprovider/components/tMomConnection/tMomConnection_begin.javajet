@@ -1,0 +1,206 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+" 
+class="MomConnection"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String host=ElementParameterParser.getValue(node, "__SERVERADDRESS__");
+	String port=ElementParameterParser.getValue(node, "__SERVERPORT__");
+	
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+	String serverType=ElementParameterParser.getValue(node, "__SERVER__");
+	boolean isUseSSL = ("true").equals(ElementParameterParser.getValue(node, "__USE_SSL__"));
+	String transProtocol="tcp";
+	if(isUseSSL){
+		transProtocol = "ssl";
+	}
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	boolean isUseSharedConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_SHARED_CONNECTION__"));
+	String sharedConnectionName = ElementParameterParser.getValue(node, "__SHARED_CONNECTION_NAME__");
+	
+	
+	if(("ActiveMQ").equals(serverType)){/***ActiveMQ*****/
+		boolean transacted = "true".equals(ElementParameterParser.getValue(node, "__IS_TRANSACTED__"));
+		String acknowledgmentMode = ElementParameterParser.getValue(node, "__ACKNOWLEDGMENT_MODE__");
+		
+		boolean staticdiscovery =  ("true").equals(ElementParameterParser.getValue(node, "__STATIC__"));
+		String connectParamFailover = ElementParameterParser.getValue(node, "__CONNECTION_PARAM_FAILOVER__");
+		String connectParamStatic = ElementParameterParser.getValue(node, "__CONNECTION_PARAM_STATIC__");
+		
+		boolean failover =  ("true").equals(ElementParameterParser.getValue(node, "__FAILOVER__"));
+		List<Map<String,String>> servers = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SERVERS__");
+		List<Map<String,String>> additionalOpts = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADDITIONAL_OPTIONS__");
+		
+		String strHost = null;
+		String strPort = null;
+		%>
+
+		/*---------------------------------------1.initial jms connection factry---------------------------------*/ 
+	
+		String url_<%=cid %> ="";
+		String endParam_<%=cid %> = "";
+		<%if(failover || staticdiscovery){
+		 	if(failover){%>
+				url_<%=cid %> = "failover:(";
+				endParam_<%=cid %>=<%=connectParamFailover%>;
+			<%}else if(staticdiscovery){%>
+				url_<%=cid %> = "discovery://static:(";
+				endParam_<%=cid %>=<%=connectParamStatic%>;
+			<%}
+			int i=0;
+			for(Map<String, String> serversMap : servers) {
+				strHost = serversMap.get("SERVERS_HOST");
+				strPort = serversMap.get("SERVERS_PORT");
+	
+				if(i>0) {
+				%>
+					url_<%=cid %> = url_<%=cid %> +",";
+				<%
+				}
+				%>
+				url_<%=cid %> = url_<%=cid %> +"<%=transProtocol%>://";
+				url_<%=cid %> = url_<%=cid %> +<%=strHost%>;
+				url_<%=cid %> = url_<%=cid %> +":";
+				url_<%=cid %> = url_<%=cid %> +<%=strPort%>;
+				<%if(isUseSSL){%>
+				url_<%=cid %> = url_<%=cid %> +"?verifyHostName=false";
+				<%}%>
+				
+				<%
+				i++;
+			}
+			%>
+			url_<%=cid %> = url_<%=cid %> +")"+endParam_<%=cid %>;
+			<%
+			for(Map<String, String> optrion : additionalOpts) {
+			%>
+				url_<%=cid %> = url_<%=cid %> +"&"+<%=optrion.get("OPTION_NAME")%>+"="+<%=optrion.get("OPTION_VALUE")%>;
+			<%
+			}
+		}else{%>
+			url_<%=cid %> = "<%=transProtocol%>://"+<%=host%>+":"+<%=port%><%if(isUseSSL){%>+"?verifyHostName=false"<%}%>;
+		<%}%>			
+		
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		<%
+		if(isUseSharedConnection){
+		%>
+			javax.jms.Connection connection_<%=cid %> = org.talend.mq.SharedActiveMQConnection.getMQConnection(url_<%=cid %>,<%=dbuser%>,decryptedPassword_<%=cid%>,<%=sharedConnectionName%>);
+			globalMap.put("connection_<%=cid%>", connection_<%=cid %>);
+		<%
+		}else{
+		%>
+			System.out.println("Connecting to URL: " + url_<%=cid %>);
+			org.apache.activemq.ActiveMQConnectionFactory factory_<%=cid %> = 
+				new org.apache.activemq.ActiveMQConnectionFactory(url_<%=cid %>);
+			<%
+				
+				/*---------------------------------------2.create Queue Or Topic from connection ---------------------------------*/ 
+			%>	
+						
+			<% if(dbuser == null || ("\"\"").equals(dbuser) || ("").equals(dbuser)) { %>
+				javax.jms.Connection connection_<%=cid %> = factory_<%=cid %>.createConnection();
+			<% } else { %>
+				javax.jms.Connection connection_<%=cid %> = factory_<%=cid %>.createConnection(<%=dbuser%>,decryptedPassword_<%=cid%>);
+			<% } %>
+			<%
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Created connection successfully.");
+				log.info("<%=cid%> - Activating the connection...");
+			<%
+			}
+			%>
+		    globalMap.put("connection_<%=cid%>", connection_<%=cid %>);
+		    connection_<%=cid %>.start();
+		    <%
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Activated successfully.");
+			<%
+			}
+		}
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Creating a session...");
+		<%
+		}
+		%>
+		
+	    javax.jms.Session session_<%=cid %> = connection_<%=cid %>.createSession(<%=transacted%>, javax.jms.Session.<%=acknowledgmentMode%>);
+	    globalMap.put("session_<%=cid %>", session_<%=cid %>);
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Created session successfully.");
+		<%
+		}
+	}else{	/***WebSphere MQ*****/
+	
+		String channel=ElementParameterParser.getValue(node, "__CHANNEL__");
+		String qm=ElementParameterParser.getValue(node, "__QM__");
+		boolean needSSLCipher = ("true").equals(ElementParameterParser.getValue(node,"__SET_MQ_SSL_CIPHER__"));
+		boolean useIBMCipherMappings = ("true").equals(ElementParameterParser.getValue(node,"__USE_IBM_MAPPING__"));
+		boolean useCustomCipherSuite = ("true").equals(ElementParameterParser.getValue(node,"__CUSTOM_CIPHER__"));
+		String customCipherSuite = ElementParameterParser.getValue(node, "__CUSTOM_CIPHER_SUITE__");
+		String sslCipher = ElementParameterParser.getValue(node, "__MQ_SSL_CIPHER__");
+		%>
+		System.setProperty("com.ibm.mq.cfg.MessageProperties.PropctlToFORCE_RFH2","Yes");
+		java.util.Hashtable properties<%=cid%>=new java.util.Hashtable();
+		properties<%=cid%>.put("hostname", <%=host%>);
+		properties<%=cid%>.put("port", Integer.valueOf(<%=port%>));
+		properties<%=cid%>.put("channel", <%=channel%>);
+		properties<%=cid%>.put("CCSID", new Integer(1208));
+		properties<%=cid%>.put("transport","MQSeries");
+		<%
+		if(needSSLCipher){
+		    if(useCustomCipherSuite){
+		    %>
+		        System.setProperty("com.ibm.mq.cfg.useIBMCipherMappings","<%=useIBMCipherMappings%>");
+		        com.ibm.mq.MQEnvironment.sslCipherSuite = <%=customCipherSuite%>;
+		    <%
+		    }else{
+		    %>
+		        com.ibm.mq.MQEnvironment.sslCipherSuite = "<%=sslCipher%>";
+		    <%
+		    }
+		}
+		if(!(dbuser == null) && !("\"\"").equals(dbuser) && !("").equals(dbuser)) {
+		%>
+			properties<%=cid%>.put("userID",<%=dbuser%>);
+			<%
+			String passwordFieldName = "__PASS__";
+			%>
+
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>			
+			
+			properties<%=cid%>.put("password",decryptedPassword_<%=cid%>);
+		<%
+		}
+		if(isUseSharedConnection){
+		%>
+			com.ibm.mq.MQQueueManager qMgr_<%=cid%> =  org.talend.mq.SharedWebSphereMQConnection.getMQConnection(<%=qm%>,properties<%=cid%>,<%=sharedConnectionName%>);
+		<%
+		}else{
+		%>
+			com.ibm.mq.MQQueueManager qMgr_<%=cid%> = new com.ibm.mq.MQQueueManager(<%=qm%>,properties<%=cid%>);
+		<%
+		}
+		%>
+		globalMap.put("qMgr_<%=cid%>", qMgr_<%=cid%> );
+	<%
+	}
+	%>

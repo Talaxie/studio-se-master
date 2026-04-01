@@ -1,0 +1,148 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.temp.ECodePart		
+		org.talend.core.model.process.IConnection 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.process.EConnectionType 
+        org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.core.model.utils.NodeUtil 
+  		java.util.List
+ 		java.util.Set
+  		java.util.HashSet
+		java.util.Iterator
+		java.util.Vector	
+	"
+	class="IterateSubProcessFooter" 
+	skeleton="subprocess_header_java.skeleton"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	Vector v = (Vector) codeGenArgument.getArgument();
+    INode node = (INode) v.get(0);
+    String finallyPart = v.get(1).toString();
+	
+	ECodePart codePart = codeGenArgument.getCodePart();
+	//boolean trace = codeGenArgument.isTrace();
+	boolean stat = codeGenArgument.isStatistics();
+	
+	Set<IConnection> connSet =  new HashSet<IConnection>();
+	connSet.addAll(node.getOutgoingConnections(EConnectionType.FLOW_MAIN));
+	connSet.addAll(node.getOutgoingConnections(EConnectionType.FLOW_MERGE));
+	//String incomingName = codeGenArgument.getIncomingName();
+	NodesSubTree subTree = (NodesSubTree) codeGenArgument.getSubTree();
+	
+	Set<IConnection> iterateConnSet =  new HashSet<IConnection>();
+	iterateConnSet.addAll(node.getIncomingConnections(EConnectionType.ITERATE));
+	
+	String iterateNodeName = node.getUniqueName();
+	
+	List<IConnection> allSubProcessConnection = codeGenArgument.getAllMainSubTreeConnections();
+%>
+
+<%
+	if (codePart.equals(ECodePart.END)) {//1
+		boolean parallelIterate = false;
+		for (IConnection iterateConn : iterateConnSet) {//2
+			parallelIterate = "true".equals(ElementParameterParser.getValue(iterateConn, "__ENABLE_PARALLEL__")); 
+	        if (parallelIterate) {//3
+    			String schemaInstanceDeclaration = createPrivateClassMethodInstance(subTree.getRootNode(), subTree.getRootNode().getOutgoingConnections().get(0).getName(), false, new java.util.HashSet<String>());
+    			if (schemaInstanceDeclaration.length()>0) {
+    				schemaInstanceDeclaration = "," + schemaInstanceDeclaration.substring(0,schemaInstanceDeclaration.length()-1); 
+    			}
+				if(stat){
+				%>
+					if(execStat){
+						runStat.updateStatOnConnection("<%=iterateConn.getUniqueName() %>",2,"exec"+iterateId);
+					}				
+				<%
+				}
+				%>
+						} catch (java.lang.Exception e) {
+							this.status = "failure";
+							Integer localErrorCode = (Integer) (((java.util.Map) threadLocal.get()).get("errorCode"));
+							if (localErrorCode != null) {
+								if (this.errorCode == null || localErrorCode.compareTo(this.errorCode) > 0) {
+									this.errorCode = localErrorCode;
+								}
+							}					
+				            		            
+		                    TalendException te = new TalendException(e, currentComponent, cLabel, globalMap);
+							<%
+							if(NodeUtil.hasVirtualComponent(subTree.getNodes())){
+							%>
+								te.setVirtualComponentName(currentVirtualComponent);
+							<%
+							}
+							%>
+							this.exception = te;
+							talendThreadPool.setErrorThread(this);
+				            talendThreadPool.stopAllWorkers();
+	
+						} catch (java.lang.Error error){
+							this.status = "failure";
+							Integer localErrorCode = (Integer) (((java.util.Map) threadLocal.get()).get("errorCode"));
+							if (localErrorCode != null) {
+								if (this.errorCode == null || localErrorCode.compareTo(this.errorCode) > 0) {
+									this.errorCode = localErrorCode;
+								}
+							}					
+							this.error = error;				            		            
+							talendThreadPool.setErrorThread(this);
+				            talendThreadPool.stopAllWorkers();
+						} finally {
+							try{
+								<%=finallyPart%>
+							}catch(java.lang.Exception e){	
+								//ignore
+							}catch(java.lang.Error error){
+								//ignore
+							}
+							resourceMap = null;
+						}
+						this.isRunning = false;
+				
+						Integer localErrorCode = (Integer) (((java.util.Map) threadLocal.get()).get("errorCode"));
+						String localStatus = (String) (((java.util.Map) threadLocal.get()).get("status"));
+						if (localErrorCode != null) {
+							if (this.errorCode == null || localErrorCode.compareTo(this.errorCode) > 0) {
+								this.errorCode = localErrorCode;
+							}
+						} 
+						if (!this.status.equals("failure")) {
+							this.status = localStatus;
+						}
+						
+						talendThreadPool.getTalendThreadResult().setErrorCode(this.errorCode);
+						talendThreadPool.getTalendThreadResult().setStatus(this.status);						
+					}
+				}
+
+				<%=node.getUniqueName() %>Thread bt_<%=node.getUniqueName() %> = new <%=node.getUniqueName() %>Thread(globalMap<%=schemaInstanceDeclaration %>,threadIdCounter_<%=node.getUniqueName()%>++);
+				mtp_<%=node.getUniqueName() %>.execute(bt_<%=node.getUniqueName() %>);
+
+				<%
+				continue;
+			}else {//3
+	      		if(stat){
+	      			if(node.getDesignSubjobStartNode().getComponent().getName().equals("tCollector")){
+	      			%>
+		      			if(execStat){
+							runStat.updateStatOnIterate("<%=iterateConn.getUniqueName() %>", RunStat.END);
+						}  
+	      			<%
+					}else{%>
+						if(execStat){
+							runStat.updateStatOnConnection("<%=iterateConn.getUniqueName() %>", 2, "exec" + NB_ITERATE_<%=iterateNodeName %>);
+						}				
+					<%
+					}
+		  		}
+		  	}//3				
+		}//2
+	}//1
+%>

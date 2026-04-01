@@ -1,0 +1,400 @@
+<%@ jet
+imports="
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.metadata.MappingTypeRetriever
+        org.talend.core.model.metadata.MetadataTalendType
+        org.talend.commons.utils.generation.CodeGenerationUtils
+        org.talend.core.model.utils.NodeUtil
+        java.util.List
+        java.util.ArrayList
+        java.util.LinkedList
+        java.util.StringJoiner
+        java.util.Map
+        java.util.HashMap
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/Log4jDBConnUtil.javajet"%>
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+    <%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    String cid = node.getUniqueName();
+
+    String tableName = null;
+    String dbschema = ElementParameterParser.getValue(node,"__ELT_SCHEMA_NAME__");
+    String uniqueNameConnection = null;
+    INode previousNode = null;
+
+    String differenttable = ElementParameterParser.getValue(node, "__DIFFERENT_TABLE_NAME__");
+    boolean useDifferentTable = "true".equals(ElementParameterParser.getValue(node, "__USE_DIFFERENT_TABLE__"));
+    boolean isTableNameVariable="true".equals(ElementParameterParser.getValue(node, "__IS_TABLE_NAME_VARIABLE__"));
+    boolean useUpdateStatement="true".equals(ElementParameterParser.getValue(node, "__USE_UPDATE_STATEMENT__"));
+    String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+    boolean isDeltaLake = "databricks_delta_lake_id".equals(dbmsId);
+    String partition = ElementParameterParser.getValue(node, "__PARTITION__");
+    %>
+    String select_query_<%=cid %> = null;
+    String tableName_<%=cid%> = null;
+    String selectQueryColumnsName_<%=cid %> = null;
+    String query_<%=cid%> = null;
+
+    <%
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    if(connections != null && connections.size() > 0 && connections.get(0) != null) {
+        IConnection connection = connections.get(0);
+        previousNode = connection.getSource();
+        String previousComponentName = previousNode.getUniqueName();
+        tableName = connection.getName();
+        uniqueNameConnection = connection.getUniqueName();
+
+        %>
+        select_query_<%=cid %> = (String) globalMap.get("<%=previousComponentName%>"+"QUERY"+"<%=uniqueNameConnection%>");
+        selectQueryColumnsName_<%=cid %> = (String) globalMap.get("<%=previousComponentName%>"+"QUERY_COLUMNS_NAME"+"<%=uniqueNameConnection%>");
+        <%
+    }
+
+     if(useDifferentTable) {
+          tableName = differenttable;
+     } else if (!isTableNameVariable) {
+          tableName = "\"" + tableName + "\"";
+     }%>
+
+    <%
+    String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+    String driverClass = null;
+    String jdbcUrl  = null;
+    String dbuser = null;
+    boolean useExistingConn = false;
+    boolean dryRun = false;
+    boolean autoWrapColumnName = false;
+    boolean autoWrapTableName = false;
+    if(previousNode != null) {
+        dryRun = ("true").equals(ElementParameterParser.getValue(previousNode, "__DRY_RUN__"));
+        if(!dryRun){
+            driverClass = ElementParameterParser.getValue(previousNode, "__DRIVER_CLASS__");
+            jdbcUrl = ElementParameterParser.getValue(previousNode, "__URL__");
+            dbuser = ElementParameterParser.getValue(previousNode, "__USER__");
+            useExistingConn = ("true").equals(ElementParameterParser.getValue(previousNode, "__USE_EXISTING_CONNECTION__"));
+        }
+        autoWrapColumnName = "true".equals(ElementParameterParser.getValue(previousNode, "__ACTIVE_DATABASE_DELIMITED_IDENTIFIERS__"));
+        autoWrapTableName = "true".equals(ElementParameterParser.getValue(previousNode, "__ACTIVE_ADD_QUOTES_IN_TABLE_NAME__"));
+    }
+
+    boolean useWhereTable = ("true").equals(ElementParameterParser.getValue(node, "__USE_WHERE_CONDITIONS_TABLE__"));
+	String whereClause = ElementParameterParser.getValue(node, "__WHERE_CLAUSE__");
+	List<Map<String, String>> whereConditions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__WHERE_CONDITIONS_TABLE__");
+%>
+    String lProtectedChar_<%=cid %> = "";
+    String rProtectedChar_<%=cid %> = "";
+    class ProtectedUtil_<%=cid%>{
+        public String getProtectedValue(String value, String lProtectedChar,String rProtectedChar){
+            if(!isEmpty(value) && !isEmpty(lProtectedChar) && !isEmpty(rProtectedChar)){
+                if (!value.startsWith(lProtectedChar) || !value.endsWith(rProtectedChar)) {
+                    return lProtectedChar + value + rProtectedChar;
+                }
+            }
+            return value;
+        }
+        boolean isEmpty(String value){
+            return value==null || value.trim().isEmpty();
+        }
+    }
+    ProtectedUtil_<%=cid%> util_<%=cid%> = new ProtectedUtil_<%=cid%>();
+<%
+    if(autoWrapTableName){
+    %>
+    <%
+            if(MYSQL.equalsIgnoreCase(dbmsId) || SINGLESTORE.equalsIgnoreCase(dbmsId) || "amazon_aurora_id".equalsIgnoreCase(dbmsId)) {
+            %>
+            rProtectedChar_<%=cid %> = lProtectedChar_<%=cid %> = "`";
+            <%
+            } else if(ACCESS.equalsIgnoreCase(dbmsId) || MSSQL.equalsIgnoreCase(dbmsId)) {
+            %>
+            lProtectedChar_<%=cid %> = "[";
+            rProtectedChar_<%=cid %> = "]";
+            <%
+            } else {
+            %>
+            rProtectedChar_<%=cid %> = lProtectedChar_<%=cid %> = "\"";
+            <%
+            }
+    }
+    %>
+    tableName_<%=cid%> = util_<%=cid%>.getProtectedValue(<%=tableName%>,lProtectedChar_<%=cid %>,rProtectedChar_<%=cid %>);
+    String dbschema_<%=cid%> = <%=dbschema%>;
+    if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() > 0) {
+       dbschema_<%=cid%>=util_<%=cid%>.getProtectedValue(dbschema_<%=cid%>,lProtectedChar_<%=cid %>,rProtectedChar_<%=cid %>);
+       tableName_<%=cid%> = dbschema_<%=cid%> + "." + tableName_<%=cid%>;
+    }
+    
+    String dbUser_<%=cid %> = null;
+<%
+    if(!dryRun){
+        if(useExistingConn) {
+           String connection = ElementParameterParser.getValue(previousNode, "__CONNECTION__");
+           INode connNode=NodeUtil.getNodeByUniqueName(previousNode.getProcess(),connection);
+           String conn = "conn_" + connection;
+           String username = "username_" + connection;
+           String connectionKey=null;
+           if("tSnowflakeConnection".equals(connNode.getComponent().getName())){
+              connectionKey=connection+"_connection";
+           }else{
+              connectionKey=conn;
+           }
+%>
+           java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=connectionKey%>");
+           dbUser_<%=cid %> = (String)globalMap.get("<%=username%>");
+<%
+           log4jCodeGenerateUtil.useExistConnection(node);
+        } else {
+%>
+           String driverClass_<%=cid%> = <%=driverClass %>;
+           java.lang.Class.forName(driverClass_<%=cid%>);
+           String url_<%=cid %> = <%=jdbcUrl %>;
+           dbUser_<%=cid %> = <%=dbuser%>;
+<%
+           String passwordFieldName = "__PASS__";
+%>
+
+           <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/eltpassword.javajet"%>
+           String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+           java.sql.Connection conn_<%=cid%> = null;
+<%
+           log4jCodeGenerateUtil.debugConnectionParams(node);
+            log4jCodeGenerateUtil.connect(node);
+        }
+    }
+    List<IMetadataColumn> columnList = null;
+
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if(metadatas !=null && metadatas.size()>0){
+        IMetadataTable metadata = metadatas.get(0);
+        if(metadata != null){
+            columnList = metadata.getListColumns();
+        }
+    }
+    
+    if(columnList != null && columnList.size()>0){
+        StringBuilder insertColName = new StringBuilder();
+
+        StringJoiner updateSetStmt = new StringJoiner(",");
+        boolean isUpdate = "UPDATE".equals(dataAction);
+        List<Map<String, String>> setColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SET_COLUMN__");
+        int counterOuter = 0;
+
+        for(IMetadataColumn column : columnList){
+            String suffix = ",";
+
+            if(counterOuter==(columnList.size()-1)){
+                suffix = "";
+            }
+
+            String columnName = column.getOriginalDbColumnName();
+            if(columnName==null || columnName.trim().isEmpty()){
+                columnName = column.getLabel();
+            }
+
+            //use empty string as need to keep old action if not autoWrapColumnName
+            if(MYSQL.equalsIgnoreCase(dbmsId) || SINGLESTORE.equalsIgnoreCase(dbmsId) || "amazon_aurora_id".equalsIgnoreCase(dbmsId)) {
+                columnName = ColumnHelper.wrapColumnNameByGraveAccentIfNecessary(autoWrapColumnName, "", columnName, "");
+            } else if(ACCESS.equalsIgnoreCase(dbmsId) || MSSQL.equalsIgnoreCase(dbmsId)) {
+                columnName = ColumnHelper.wrapColumnNameByBracketIfNecessary(autoWrapColumnName, "", columnName, "");
+            } else {
+                columnName = ColumnHelper.wrapColumnNameByDoubleQuoteIfNecessary(autoWrapColumnName, "", columnName, "");
+            }
+            
+          boolean isUpdateColumn = "true".equals(setColumns.get(counterOuter).get("UPDATE_COLUMN"));
+          insertColName.append(columnName).append(suffix);
+          if (isUpdate && isUpdateColumn) {
+            updateSetStmt.add(columnName+"=(\"+select_query_"+ cid +".replaceFirst(java.util.regex.Pattern.quote(selectQueryColumnsName_"+ cid +"),routines.system.StringUtils.splitSQLColumns(selectQueryColumnsName_"+ cid +")[ "+ counterOuter + "])+\")");
+          }
+          counterOuter++;
+        }
+
+        if(("INSERT").equals(dataAction)){
+            if(isDeltaLake){
+%>
+            String insertQuery_<%=cid %> = "INSERT INTO "+tableName_<%=cid%> +
+            <%
+            if(partition != null && !"\"\"".equals(partition)){%> " PARTITION (" + <%=partition%> + ")" +<%}
+            %>
+            "("+select_query_<%=cid %>+")";
+            <%}else{%>
+            String insertQuery_<%=cid %> = "INSERT INTO "+tableName_<%=cid%>+"(<%=insertColName.toString()%>)  ("+select_query_<%=cid %>+")";
+<%
+            }
+%>
+            query_<%=cid %> = insertQuery_<%=cid %>;
+<%
+        } else if (("UPDATE").equals(dataAction)){
+            if(isDeltaLake){
+%>
+                String updateQuery_<%=cid %> = null;
+                if (true)
+                throw new RuntimeException("UPDATE action is not supported by tELTOutput. Please use tDeltaLakeRow.");
+<%
+            }else if(useUpdateStatement){
+%>
+                String updateQuery_<%=cid %> = select_query_<%=cid %>;
+                query_<%=cid %> = select_query_<%=cid %>;
+<%
+            } else {
+%>
+                StringBuffer updateQuery_<%=cid %> = new StringBuffer("UPDATE "+tableName_<%=cid%>+" SET <%=updateSetStmt.toString()%> ");
+<%
+                // -- For useUpdateStatement this part is added inside tELTMap GenerationManager TDI-49267 --
+                if((CodeGenerationUtils.hasAlphaNumericCharacter(whereClause) && (!useWhereTable)) || (useWhereTable && whereConditions.size() > 0)) {
+%>
+                    updateQuery_<%=cid %>.append("  WHERE ");
+<%
+                }
+
+				if(!useWhereTable) {
+					if(CodeGenerationUtils.hasAlphaNumericCharacter(whereClause)) {
+%>
+						updateQuery_<%=cid %>.append(<%=CodeGenerationUtils.replaceAllCrBySpace(whereClause)%>);
+<%
+					}
+				} else {
+					if(whereConditions.size() > 0) {
+						String operator = "\"\"";
+						for(Map<String, String> whereCondition : whereConditions) {
+							String column_condition = whereCondition.get("COLUMN");
+							String function_condition = whereCondition.get("FUNCTION");
+							String value_condition = whereCondition.get("VALUE_SQL");
+%>
+							updateQuery_<%=cid %>.append(<%=operator %> + <%=column_condition %> + " " + <%=function_condition %> + " " + <%=value_condition %>);
+<%
+							operator = "\" AND \"";
+						}
+					}
+				}
+%>
+                query_<%=cid %> = updateQuery_<%=cid %>.toString();
+<%
+                // --! For useUpdateStatement this part is added inside tELTMap GenerationManager !--
+			}
+    	} else if (("DELETE").equals(dataAction)){
+%>
+			StringBuffer deleteQuery_<%=cid %> = new StringBuffer("DELETE  FROM "+ tableName_<%=cid%>+" WHERE EXISTS ("+select_query_<%=cid %>+") ");
+<%
+			if(!useWhereTable) {
+				if(CodeGenerationUtils.hasAlphaNumericCharacter(whereClause)) {
+%>
+        			deleteQuery_<%=cid %>.append("  AND " + <%=CodeGenerationUtils.replaceAllCrBySpace(whereClause)%>);
+<%
+				}
+    		} else {
+    			if(whereConditions.size() > 0) {
+        			for(Map<String, String> whereCondition : whereConditions) {
+						String column_condition = whereCondition.get("COLUMN");
+						String function_condition = whereCondition.get("FUNCTION");
+						String value_condition = whereCondition.get("VALUE_SQL");
+%>
+						deleteQuery_<%=cid %>.append("  AND " + <%=column_condition %> + " " + <%=function_condition %> + " " + <%=value_condition %>);
+<%
+					}
+				}
+			}
+%>
+			query_<%=cid %> = deleteQuery_<%=cid %>.toString();
+<%
+    	}
+%>
+
+        int nb_line_<%=cid%> = 0;
+        int nb_line_updated_<%=cid%> = 0;
+        int nb_line_inserted_<%=cid%> = 0;
+        int nb_line_deleted_<%=cid%> = 0;
+        <%
+    }
+
+    if(tableName != null && columnList != null){
+
+        {//use the block to limit the code scope for table action
+            Manager manager = null;
+
+            String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+            
+            List<Column> stmtStructure = getELTManager(dbmsId, cid, node, autoWrapColumnName).createColumnList(columnList, false, null, null);
+
+            String table = tableName;
+            dbLog = new DBLogUtil(node);
+            if(!dryRun){
+            %>
+
+            <%@ include file="../templates/_tableActionForELT.javajet"%>
+            <%
+            }
+        }
+        if(!dryRun){
+        if(("INSERT").equals(dataAction)){
+        %>
+        System.out.println("Inserting with : \n" + insertQuery_<%=cid %> + "\n");
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+insertQuery_"+ cid +"+\"");%>
+        java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insertQuery_<%=cid %>);
+        nb_line_inserted_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+        System.out.println("--> " + nb_line_inserted_<%=cid%> + " rows inserted. \n");
+        pstmt_<%=cid %>.close();
+		<%
+    	} else if(("UPDATE").equals(dataAction)){
+    	%>
+        System.out.println("Updating with : \n" + updateQuery_<%=cid %>.toString() +"\n");
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+updateQuery_"+ cid +"+\"");%>
+        java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(updateQuery_<%=cid %>.toString());
+        nb_line_updated_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+    	System.out.println("--> " + nb_line_updated_<%=cid%> + " rows updated. \n");
+    	pstmt_<%=cid %>.close();
+    	<%
+    	} else if (("DELETE").equals(dataAction)){
+		%>
+    	System.out.println("Deleting with : \n" + deleteQuery_<%=cid %>.toString() +"\n");
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+deleteQuery_"+ cid +"+\"");%>
+		java.sql.PreparedStatement pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(deleteQuery_<%=cid %>.toString());
+		nb_line_deleted_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+    	System.out.println("--> " + nb_line_deleted_<%=cid%> + " rows deleted. \n");
+    	pstmt_<%=cid %>.close();
+		<%
+		}
+		}
+	}
+	// END
+	%>
+
+    <%
+    if(!dryRun && !useExistingConn) {
+    %>
+        if(conn_<%=cid%> != null && !conn_<%=cid%>.isClosed()) {
+            <%log4jCodeGenerateUtil.close(node);%>
+        }
+    <%
+    }
+    %>
+    nb_line_<%=cid%> = nb_line_updated_<%=cid%> + nb_line_inserted_<%=cid%> + nb_line_deleted_<%=cid%>;
+    globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);
+    globalMap.put("<%=cid %>_NB_LINE_UPDATED",nb_line_updated_<%=cid%>);
+    globalMap.put("<%=cid %>_NB_LINE_INSERTED",nb_line_inserted_<%=cid%>);
+    globalMap.put("<%=cid %>_NB_LINE_DELETED",nb_line_deleted_<%=cid%>);
+    globalMap.put("<%=cid %>_QUERY",query_<%=cid%>);
+    <%
+    if(!dryRun && isLog4jEnabled){
+        Map<String,String> actionMap=new java.util.HashMap<String,String>();
+        actionMap.put("INSERT","inserted");
+        actionMap.put("UPDATE","updated");
+        actionMap.put("DELETE","deleted");
+        %>
+        log.info("<%=cid%> - Has <%=actionMap.get(dataAction)%> records count: " + nb_line_<%=actionMap.get(dataAction)%>_<%=cid%> + ".");
+    <%
+    }
+    %>

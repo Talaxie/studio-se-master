@@ -1,0 +1,153 @@
+<%@ include file="../../Log4j/Log4jDBConnUtil.javajet"%>
+<%
+	//this util class use by connection component
+	class DefaultDBRowUtil {
+	
+		protected String cid ;
+		protected String dbproperties ;
+		protected String dbhost;
+	    protected String dbport;
+	    protected String dbname;
+	    protected String dbuser;
+		protected String dbpwd ;
+		protected String useExistingConn;
+		protected DefaultLog4jCodeGenerateUtil log4jCodeGenerateUtil;
+	    
+	    public void beforeComponentProcess(INode node){
+	    	cid = node.getUniqueName();
+	    	log4jCodeGenerateUtil = new DefaultLog4jCodeGenerateUtil();
+			dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	    	dbport = ElementParameterParser.getValue(node, "__PORT__");
+	    	dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	    	dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+	    }
+	    
+	    public void afterUseExistConnection(INode node) {
+	    	log4jCodeGenerateUtil.useExistConnection(node);
+	    }
+		
+	    public String getDirverClassName(INode node){
+			return "";
+		}
+	    
+	    public void setURL(INode node) {
+	    }
+	    
+		public void createConnection(INode node) {
+			this.createConnection(node, true);
+		}
+
+		public void classForName(INode node){
+		%>
+			String driverClass_<%=cid%> = "<%=this.getDirverClassName(node) %>";
+		    java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+		<%
+			newInstance(node);
+		}
+		
+		protected void newInstance(INode node) {
+			//do nothing as default
+			//for sybase jdbc in java 11, we have to call jdbcclazz.newInstance method
+		}
+
+		public void newConnection(){
+		%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+		<%
+		}
+		
+		public void newConnection(INode node){
+		%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+		<%
+		}
+
+		public void createConnection(INode node, boolean needUserAndPassword) {
+	 		useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+	 		if(("true").equals(useExistingConn)) {
+				String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+				String conn = "conn_" + connection;
+				%>
+				conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+			<%
+					this.afterUseExistConnection(node);
+			} else {
+	 			boolean specify_alias = "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_DATASOURCE_ALIAS__"));
+		 		if(specify_alias){
+				%>
+		            java.util.Map<String, routines.system.TalendDataSource> dataSources_<%=cid%> = (java.util.Map<String, routines.system.TalendDataSource>) globalMap.get(KEY_DB_DATASOURCES);
+		            if (null != dataSources_<%=cid%>) {
+						<%
+		                String alias = ElementParameterParser.getValue(node, "__DATASOURCE_ALIAS__");
+						%>
+            			String dsAlias_<%=cid%> = <%=(null != alias && !("".equals(alias)))?alias:"\"\""%>;
+                		if (dataSources_<%=cid%>.get(dsAlias_<%=cid%>) == null) {
+                   			throw new RuntimeException("No DataSource with alias: " + dsAlias_<%=cid%> + " available!");
+                      	}
+                		conn_<%=cid%> = dataSources_<%=cid%>.get(dsAlias_<%=cid%>).getConnection();
+		            } else {
+				<%
+				}
+				this.classForName(node);
+				this.setURL(node);
+				log4jCodeGenerateUtil.debugConnectionParams(node);
+				if(needUserAndPassword) {
+				%>
+					String dbUser_<%=cid %> = <%=dbuser%>;
+	        
+            		<%
+            		String passwordFieldName = "__PASS__";
+            		%>
+            		
+            		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+        		   	
+        	        String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	        
+					<%log4jCodeGenerateUtil.connect_begin();
+					newConnection(node);
+				} else {
+					log4jCodeGenerateUtil.connect_begin_noUser();
+				%>
+					conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>);
+				<%
+				}
+				log4jCodeGenerateUtil.connect_end();
+				if(specify_alias){
+				%>
+			    }
+				<%
+				}
+			}
+		}
+
+		public void setCommit(INode node){
+			if(!("true").equals(useExistingConn)) {
+				String commitEvery = ElementParameterParser.getValue(node, "__COMMIT_EVERY__");
+				boolean useTransaction = !("false").equals(ElementParameterParser.getValue(node,"__USE_TRANSACTION__"));
+				if(!("").equals(commitEvery) && !("0").equals(commitEvery) && useTransaction) {
+				%>
+					if(conn_<%=cid%>.getAutoCommit()) {
+						<%log4jCodeGenerateUtil.autoCommit(node,false);%>
+					}        
+					int commitEvery_<%=cid%> = <%=commitEvery%>;
+					int commitCounter_<%=cid%> = 0;
+				<%
+				}
+			}
+		}
+
+		public String getQueryString(INode node) {
+			String dbquery= ElementParameterParser.getValue(node, "__QUERY__");
+			dbquery = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(dbquery);
+			
+			return dbquery;
+		}
+		
+		public void afterConnection(INode node){
+		}
+	}//end DefaultDBInputUtil class
+	
+	DefaultDBRowUtil dbRowBeginUtil = new DefaultDBRowUtil();
+%>

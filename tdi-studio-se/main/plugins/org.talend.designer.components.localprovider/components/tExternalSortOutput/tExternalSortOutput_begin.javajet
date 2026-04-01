@@ -1,0 +1,45 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();	
+	String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+	String tempDir = ElementParameterParser.getValue(node,"__TEMP_DIR__");
+%>
+
+//create directory only if not exists
+	<%if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){%>
+	<%String fileNewname = ElementParameterParser.getValue(node,"__FILENAME__");%>	
+		String fileNewName_<%=cid%> = <%=fileNewname%>;	
+		 java.io.File createFile<%=cid%> = new java.io.File(fileNewName_<%=cid%>);
+		 if(!createFile<%=cid%>.exists()){
+		 	(new java.io.File(fileNewName_<%=cid%>.substring(0,fileNewName_<%=cid%>.lastIndexOf("/")))).mkdirs();
+		 	createFile<%=cid%>.createNewFile();
+		 }
+	<%}%>
+		int nb_line_<%=cid%> = 0;
+		
+		final String OUT_DELIM_<%=cid %> = <%=fieldSeparator %>;
+		
+		final String OUT_DELIM_ROWSEP_<%=cid %> = "\r\n";		
+<%
+		if("true".equals(ElementParameterParser.getValue(node,"__SET_INPUT_TEMP_DIR__"))){
+%>
+			final java.io.File tempFile_<%=cid %> = java.io.File.createTempFile("<%=cid %>", null, new java.io.File(<%=ElementParameterParser.getValue(node,"__INPUT_TEMP_DIR__")%>));
+<%
+		}else{
+%>
+			final java.io.File tempFile_<%=cid %> = java.io.File.createTempFile("<%=cid %>", null);
+<%
+		}
+%>
+		tempFile_<%=cid %>.deleteOnExit();
+		
+		final java.io.BufferedWriter out_<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+        		new java.io.FileOutputStream(tempFile_<%=cid %>)));

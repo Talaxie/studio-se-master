@@ -1,0 +1,515 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.utils.TalendTextUtils
+		java.util.List 
+    	java.util.Map		
+	" 
+%>
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+	
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if (conns!=null && conns.size()>0) { //1
+	
+	//-------------------------------------------------------------
+	// get all the properties and do some checks
+	String filename = ElementParameterParser.getValueWithUIFieldKey(node,"__FILE_NAME__", "FILE_NAME");
+	//String filename = ElementParameterParser.getValue(node,"__FILE_NAME__", "FILE_NAME");
+	String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+	String header = ElementParameterParser.getValue(node, "__HEADER__");
+    String footer = ElementParameterParser.getValue(node, "__FOOTER__");
+	String limit = ElementParameterParser.getValue(node, "__LIMIT__");
+	String recordTypePosition = ElementParameterParser.getValue(node, "__RECORD_TYPE_POSITION__");
+	String headerRecordPosition = ElementParameterParser.getValue(node, "__HEADER_RECORD_POSITION__");
+	String headerRecordLength = ElementParameterParser.getValue(node, "__HEADER_RECORD_LENGTH__");
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	boolean dieOnUnknownHeader = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_UNKNOWN_HEADER__"));
+    String skipEmptyRows = "true"; //("true").equals(ElementParameterParser.getValue(node, "__SKIP_EMPTY_ROWS__"));
+	boolean trimAll = ("true").equals(ElementParameterParser.getValue(node,"__TRIMALL__"));
+	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+	//need to process rows longger than 100,000 characters, the property SafetySwitch(in talend_file_enhanced-1.3.jar) should be sent to false.(the default is true)
+    //that means if check the option(true), the logic value of bSafetySwitch should be changed to false (negate the property)
+	boolean bSafetySwitch = !(("true").equals(ElementParameterParser.getValue(node, "__PROCESS_LONG_ROW__")));
+	String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+	boolean advancedSeparator = ("true").equals(ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__"));
+	String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+	String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+	
+	String checkDateStr = ElementParameterParser.getValue(node,"__CHECK_DATE__");
+	boolean checkDate = (checkDateStr!=null&&!("").equals(checkDateStr))?("true").equals(checkDateStr):false;
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	List<Map<String, String>> schemas_o = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMAS__");
+	
+	List<Map<String, String>> schemas = new java.util.ArrayList<Map<String, String>>();
+	
+	for(Map<String, String> schema_o : schemas_o){
+		Map<String, String> schema = new java.util.HashMap<String, String>();
+		schema.put("SCHEMA", schema_o.get("SCHEMA"));
+		schema.put("PARENT_ROW", TalendTextUtils.removeQuotes(schema_o.get("PARENT_ROW")));
+		schema.put("KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("KEY_COLUMN")));
+		schema.put("PARENT_KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("PARENT_KEY_COLUMN")));
+		schema.put("PATTERN", schema_o.get("PATTERN"));
+		schema.put("CHECK_ROW_SIZE", schema_o.get("CHECK_ROW_SIZE"));
+		schema.put("HEADER", schema_o.get("HEADER"));
+		schemas.add(schema);
+	}
+	
+	String rejectConnName = null;
+    List< ? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+	
+	if (("").equals(header)) {
+		header = "0";
+	}
+	
+	if (("").equals(limit) || ("0").equals(limit)) {
+		limit = "-1";
+	}
+	
+	if (("").equals(footer)) {
+		footer = "0";
+	}
+	
+%>
+
+	class AdvancedPositionalParser_<%=cid%> {
+		private String headerValue;
+		private String connName;
+		private boolean hasStar = false;
+		private boolean checkRowSize = false;
+		private boolean trimAll = false;
+		private String pattern;
+		private int[] begins;
+		private int[] ends;
+		private int[] sizes;
+		private String padding;
+		private String alignment;
+		private int minimumSize = 0;
+		private int numberOfFields = 0;
+		
+		public AdvancedPositionalParser_<%=cid%>(String connName, String headerValue, String pattern, boolean checkRowSize, boolean trimAll) throws java.lang.Exception {
+			if (connName == null || headerValue == null || pattern == null)
+				throw new java.lang.RuntimeException("invalid connName, headerValue, or pattern");
+			this.connName = connName;
+			this.headerValue = headerValue;
+			this.pattern = pattern;
+			this.checkRowSize = checkRowSize;
+			this.trimAll = trimAll;
+			this.setPattern(pattern);
+		}
+		
+		/**
+		 * this function returns true if the header passed is the same as the header of the class
+		 */
+		public boolean headerMatches(String header) {
+			return headerValue.equals(header);
+		}
+		
+		/** 
+		 * this function is used to set the pattern specified by user. it also parses the pattern and 
+		 * determines where each column position would begin and end, and how many columns does the 
+		 * pattern have!
+		 * example: pattern = "2,4,4,*"
+		 *                     this pattern indicates that there are 4 columns in the schema.
+		 *                     also column[1] has size of 2 and it starts from index 0 to 2.
+		 *                     column[2] is from index 2 to 6, with length of 4
+		 *                     and so on...
+		 *                     note: star represents the remaining length, and can only be used in the last column
+		 */
+		public void setPattern(String pattern) throws java.lang.RuntimeException {
+			int beginIndex = 0;
+			int endIndex = 0;
+			int size = 0;
+			String[] patternSplit = pattern.split(",");
+			begins = new int[patternSplit.length];
+			ends = new int[patternSplit.length];
+			sizes = new int[patternSplit.length];
+			minimumSize = 0;
+			
+			for (int i=0; i < patternSplit.length; i++) {
+				numberOfFields++;
+				if (("*").equals(patternSplit[i]) ) {
+					if (i != (patternSplit.length -1)) {		// the star can only be used for the size of the last column
+						throw new java.lang.RuntimeException("The star (*) in the pattern can only be at the end of the pattern string.");
+					}
+					else {
+						hasStar = true;
+						begins[i] = beginIndex;
+						ends[i] = -1;
+						sizes[i] = -1;
+					}
+				}
+				else {
+				    String errorMessage = "'" + patternSplit[i] + "' is not a valid integer value  in the pattern: " + pattern;
+					try { size = Integer.parseInt(patternSplit[i]); }
+					catch (java.lang.Exception e) { 
+					    globalMap.put("<%=cid%>_ERROR_MESSAGE",errorMessage);
+					    throw new java.lang.RuntimeException(errorMessage); 
+					}
+
+					if (size <= 0) {
+						throw new java.lang.RuntimeException(errorMessage);
+					}
+					endIndex += size;
+					begins[i] = beginIndex;
+					ends[i] = endIndex;
+					beginIndex += size;
+					minimumSize += size;
+				}
+			}
+		}
+		
+		/** 
+		 * this function parses the row into fields based on the values of beings and ends
+		 */
+		public String[] parseRow(String row) throws java.lang.Exception {
+			String[] fields = new String[numberOfFields];
+			if (begins == null || ends == null || numberOfFields > begins.length || numberOfFields > ends.length) {		// this should never happen, unless outside code has changed either numberOfFields, beings, ends
+				throw new java.lang.Exception("The PositionalSchema object is not configured correctly. please contact talend support (support@talend.com)");
+			}
+			if (row != null && row.length() > 0) {
+				if (checkRowSize) {
+					if (hasStar == false && row.length() != minimumSize) {
+						throw new java.lang.Exception("row size does not match the pattern ('" + pattern + "'), expected size is " + minimumSize + ".row size is: " + row.length());
+					}
+					else if (minimumSize > row.length()) {
+						throw new java.lang.Exception("row size too small, expected size is " + minimumSize);
+					}
+				}
+				for (int i=0; i < numberOfFields; i++) {
+					fields[i] = "";
+					if (ends[i] == -1) {
+						if (row.length() > begins[i]) {
+							fields[i] = row.substring(begins[i]);
+						}
+					}
+					else {
+						if (row.length() > ends[i]) {
+							fields[i] = row.substring(begins[i], ends[i]);
+						} else if (row.length() > begins[i]) {
+							fields[i] = row.substring(begins[i]);
+						}
+					}
+					if (trimAll) {
+						fields[i] = fields[i].trim();
+					}
+				}
+			}
+			return fields;
+		}
+		
+		/**
+		 * returns the minimum size required to contain the record. this value is driven from the pattern
+		 * star at the end of the pattern does not accumulate to the size
+		 */
+		public int getMinimumRowSize() {
+			return minimumSize;
+		}
+		
+		/**
+		 * returns the number of fields specified in the pattern
+		 */
+		public int getNumberOfFieldsExpected() {
+			return numberOfFields;
+		}
+	}
+	
+	int nb_line_<%=cid%> = 0;
+	int nb_line_rejected_<%=cid%> = 0;
+	int nb_line_unknownHeader_<%=cid%> = 0;
+	int nb_line_parseError_<%=cid%> = 0;
+	
+	int skipHeader_<%=cid%> = <%=header%>;
+	int skipFooter_<%=cid %>  = <%=footer%>;
+	int limit_<%=cid%> = <%=limit%>;
+	
+	String rowSeparator_<%=cid %> = <%=rowSeparator %>;
+	if(rowSeparator_<%=cid %>.length()< 1){
+		throw new java.lang.Exception("Row Separator must include at least one character");
+	}
+	
+	if (skipFooter_<%=cid %> > 0) {
+		java.io.BufferedReader temp_in_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(<%= filename %>), <%= encoding %>));
+		org.talend.fileprocess.delimited.RowParser temp_reader_<%=cid%> = new org.talend.fileprocess.delimited.RowParser(temp_in_<%=cid%>, <%=rowSeparator %>, <%=skipEmptyRows %>);
+		int available_<%=cid%> = (int)temp_reader_<%=cid%>.getAvailableRowCount(skipFooter_<%=cid %>);
+		temp_reader_<%=cid%>.close();
+		temp_in_<%=cid%>.close();
+		temp_reader_<%=cid%> = null;
+		temp_in_<%=cid%> = null;
+		if(limit_<%=cid %> < 0){
+			limit_<%=cid %> = available_<%=cid %>; 
+		}else{
+			limit_<%=cid %> = (limit_<%=cid %> > available_<%=cid %>) ? available_<%=cid %> : limit_<%=cid %>;
+		}
+	}
+	
+	java.io.BufferedReader in_<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(<%=filename%>), <%=encoding%>));
+	org.talend.fileprocess.delimited.RowParser reader_<%=cid %> = new org.talend.fileprocess.delimited.RowParser(in_<%=cid %>, <%=rowSeparator %>, <%=skipEmptyRows %>);
+	reader_<%=cid %>.setSafetySwitch(<%=bSafetySwitch%>);
+	reader_<%=cid %>.skipHeaders(skipHeader_<%=cid%>);
+	
+<%
+    for (IConnection conn : conns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {
+			String headerValue = null;
+			String patternValue = null;
+			boolean checkRowSize = false;
+			for(Map<String, String> schema : schemas) {
+				if (conn.getName().equals(schema.get("SCHEMA"))) {
+					headerValue = schema.get("HEADER");
+					patternValue = schema.get("PATTERN");
+					checkRowSize = ("true").equals(schema.get("CHECK_ROW_SIZE"));
+				}
+			}
+    		IMetadataTable tempMetadataTable = conn.getMetadataTable();
+    		List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+			if (patternValue != null && headerValue != null && (!conn.getName().equals(rejectConnName)) ) {
+%>
+	AdvancedPositionalParser_<%=cid%> schema_<%=conn.getName()%>_<%=cid %> = new AdvancedPositionalParser_<%=cid%>("<%=conn.getName()%>",<%=headerValue%>,<%=patternValue%>,<%=String.valueOf(checkRowSize)%>,<%=String.valueOf(trimAll)%>);
+	if (schema_<%=conn.getName()%>_<%=cid %>.getNumberOfFieldsExpected() != <%=listColumns.size()%>) {
+		throw new java.lang.RuntimeException("Number of columns in the schema does not match the pattern specified for the connection '<%=conn.getName()%>' of <%=cid%> component.");
+	}
+<%
+			}
+			else if (!conn.getName().equals(rejectConnName)) {
+%>
+	throw new java.lang.RuntimeException("Please correctly specify the pattern, header, and the schema for the connection '<%=conn.getName()%>' of <%=cid%> component.");
+<%
+			}
+		}
+	}
+%>
+
+	String hdrpos_<%=cid%> = <%=headerRecordPosition%>;
+	if (hdrpos_<%=cid%>.indexOf("-") < 0) {
+		throw new java.lang.RuntimeException("Please input the header position corretly. for exmaple for first 3 characters enter: '0-3'");
+	}
+	int hdrStartIndex_<%=cid%> = Integer.parseInt(hdrpos_<%=cid%>.split("-")[0]);
+	int hdrEndIndex_<%=cid%> = Integer.parseInt(hdrpos_<%=cid%>.split("-")[1]);
+	boolean foundMatchingHeader_<%=cid%> = false;
+	String row_<%=cid %> = null;
+	String header_<%=cid%> = null;
+	
+<%
+		for(Map<String,String> schema : schemas){
+			if(!("").equals(schema.get("PARENT_ROW"))){
+%>
+String key_<%=schema.get("SCHEMA") %>_<%=schema.get("PARENT_ROW") %>_<%=cid %> = "";
+<%
+			}
+		}
+		
+	log4jFileUtil.startRetriveDataInfo();
+%>
+	
+	while (reader_<%=cid %>.readRecord()) {
+<%
+		for (IConnection conn : conns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {
+%>
+		<%=conn.getName()%> = null;
+<%
+			}
+		}
+%>
+		// parse the header record and match with the associated connection(s)
+		row_<%=cid %> = reader_<%=cid %>.getRowRecord();
+		foundMatchingHeader_<%=cid%> = false;
+		if (row_<%=cid%> != null && row_<%=cid%>.length() >= hdrEndIndex_<%=cid%>) {
+			header_<%=cid%> = row_<%=cid%>.substring(hdrStartIndex_<%=cid%>, hdrEndIndex_<%=cid%>)<%=trimAll? ".trim()":""%>;
+<%
+    for (IConnection conn : conns) {//_____0
+    	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {//_____0_____1
+    		IMetadataTable tempMetadataTable = conn.getMetadataTable();
+    		List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+			if (!conn.getName().equals(rejectConnName)) {//_____0_____1_____1
+				String parent = "";
+				String keyColumn = "";
+				for(Map<String, String> schema : schemas) {
+					if (conn.getName().equals(schema.get("SCHEMA"))) {
+						parent = schema.get("PARENT_ROW");
+						keyColumn = schema.get("KEY_COLUMN");
+					}
+				}
+				
+				if(!("").equals(parent)){
+					int keyIndex = listColumns.size() - 1;
+					for(int k=0; k < listColumns.size(); k++){
+						if(listColumns.get(k).getLabel().equals(keyColumn)){
+							keyIndex = k;
+							break;
+						}
+					}
+					if(keyIndex != listColumns.size() - 1){
+						IMetadataColumn column = listColumns.get(keyIndex);
+						listColumns.set(keyIndex, listColumns.get(listColumns.size() - 1));
+						listColumns.set(listColumns.size() - 1, column);
+					}
+				}
+%>
+			if (schema_<%=conn.getName()%>_<%=cid %>.headerMatches(header_<%=cid%>)) {
+				foundMatchingHeader_<%=cid%> = true;
+				<%=conn.getName()%> = new <%=conn.getName()%>Struct();
+				try {
+					String[] fields = schema_<%=conn.getName()%>_<%=cid %>.parseRow(row_<%=cid%>);
+<%
+				for (int i=0; i < listColumns.size(); i++) {//_____0_____1_____1_____1
+					boolean isKeyColumn = false;
+					if(i == listColumns.size() - 1 && !("").equals(parent)){
+						isKeyColumn = true;
+					}
+					IMetadataColumn column = listColumns.get(i);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String datePattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+
+					if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = <%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>;
+<%
+					} else if (javaType == JavaTypesManager.DATE) {
+						if(checkDate) {
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_Date(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>, <%=datePattern%>,false);
+<%						
+						} else {
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_Date(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>, <%=datePattern%>);
+<%
+						}
+
+					} else if (javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = <%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.getBytes(<%=encoding%>);
+<%
+					} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+						if(column.isNullable()){
+%>
+					if(("").equals(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.trim())){
+						<%=conn.getName()%>.<%=column.getLabel() %> = null;
+					}else{
+<%
+						}
+%>
+					<%=conn.getName()%>.<%=column.getLabel() %> = ParserUtils.parseTo_<%=typeToGenerate%>(ParserUtils.parseTo_Number(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.trim(), <%=thousandsSeparator%>, <%=decimalSeparator%>));
+<%
+						if(column.isNullable()){
+%>
+					}
+<%
+						}
+%>
+<%
+					} else if (JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+						if(column.isNullable()){
+%>
+					if(("").equals(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.trim())){
+						<%=conn.getName()%>.<%=column.getLabel() %> = null;
+					}else{
+<%
+						}
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_<%=typeToGenerate%>(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.trim());
+<%
+						if(column.isNullable()){
+%>
+					}
+<%
+						}
+%>
+<%
+					} else { 
+%>
+					<%=conn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_<%=typeToGenerate%>(<%=isKeyColumn ? "key_"+conn.getName()+"_"+parent+"_"+cid : "fields["+i+"]" %>.trim());
+<%
+					}
+				} //all columns//_____0_____1_____1_____1
+%>
+					fields = null;
+<%
+				for(int t = 0; t < schemas.size(); t++){//assign key values begin
+					Map<String, String> schema = schemas.get(t);
+					if(schema.get("PARENT_ROW").equals(conn.getName())){
+%>
+					key_<%=schema.get("SCHEMA") %>_<%=conn.getName() %>_<%=cid %> = String.valueOf(<%=conn.getName() %>.<%=schema.get("PARENT_KEY_COLUMN") %>);
+<%
+					}
+				}//assign key values end
+%>
+				} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+					<%=conn.getName()%> = null;
+<%
+					if (dieOnError) {
+%>
+					nb_line_rejected_<%=cid%>++;
+					nb_line_parseError_<%=cid%>++;
+					throw e;
+<%
+					} else if (rejectConnName != null) {
+%>
+					nb_line_rejected_<%=cid%>++;
+					nb_line_parseError_<%=cid%>++;
+					<%=rejectConnName%> = new <%=rejectConnName%>Struct();
+					<%=rejectConnName%>.errorCode = 1;
+					<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>; 
+					<%=rejectConnName%>.line = row_<%=cid %>;
+<%
+					} else if(isLog4jEnabled) {
+%>
+					log.error("<%=cid%> - " + e.getMessage());
+<%
+					}
+%>
+				} //catch				
+			} //if header matches
+<%
+			}//_____0_____1_____1
+    	}//_____0_____1
+    }//_____0
+%>
+			if (foundMatchingHeader_<%=cid%> == false) {
+<%
+	if (dieOnUnknownHeader) {
+%>
+				nb_line_rejected_<%=cid%>++;
+				nb_line_unknownHeader_<%=cid%>++;
+				throw new java.lang.RuntimeException("Unknown header value '" + header_<%=cid%> + "' in component <%=cid%>");
+<%
+	} else if (rejectConnName != null) {
+%>
+				nb_line_rejected_<%=cid%>++;
+				nb_line_unknownHeader_<%=cid%>++;
+				<%=rejectConnName%> = new <%=rejectConnName%>Struct();
+				<%=rejectConnName%>.errorCode = 2;
+				<%=rejectConnName%>.errorMessage = "Unknown header value '" + header_<%=cid%> + "'";
+				<%=rejectConnName%>.line = row_<%=cid %>;
+<%
+	} else if(isLog4jEnabled) {
+%>
+				log.error("<%=cid%> - Unknown header value '" + header_<%=cid%> + "'");
+<%
+	}
+%>
+			}
+		}
+<%
+	} //1
+%>

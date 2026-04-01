@@ -1,0 +1,207 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType    
+    java.util.List
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.utils.NodeUtil
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+    IMetadataTable metadata = metadatas.get(0);    
+    if (metadata!=null) {//2
+       
+        String cid = node.getUniqueName();
+        String normalizeColumn = ElementParameterParser.getValue(node, "__NORMALIZE_COLUMN__");
+        String deduplicate = ElementParameterParser.getValue(node, "__DEDUPLICATE__");
+        boolean useCSV = ("true").equals(ElementParameterParser.getValue(node, "__CSV_OPTION__"));
+        String escapeMode = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+        
+        String delim = ElementParameterParser.getValue(node, "__ITEMSEPARATOR__");
+        
+        boolean isDiscardTrailingEmptyStr=("true").equals(ElementParameterParser.getValue(node, "__DISCARD_TRAILING_EMPTY_STR__"));
+        boolean isTrim=("true").equals(ElementParameterParser.getValue(node, "__TRIM__"));
+    	String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");       
+        String incomingConnName = null;
+        String outgoingConnName = null;
+
+        List< ? extends IConnection> inConns = node.getIncomingConnections();
+        if (inConns != null && !inConns.isEmpty()) {
+            IConnection inConn = inConns.get(0);
+            incomingConnName = inConn.getName();
+        }
+        
+        List< ? extends IConnection> outConns = NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA);
+        if (outConns != null && !outConns.isEmpty()) {
+            IConnection outConn = outConns.get(0);
+            outgoingConnName = outConn.getName();
+        }
+        List< ? extends IConnection> outIterate = NodeUtil.getOutgoingConnections(node, IConnectionCategory.USE_ITERATE);
+        List<IMetadataColumn> metadataColumns = metadata.getListColumns();
+        if(incomingConnName != null && 
+            metadataColumns != null && !metadataColumns.isEmpty()) {//3
+            %>
+            normalizeRecord_<%=cid%> = new String[1];
+            if(<%=incomingConnName %>.<%=normalizeColumn%> != null) {
+				if("".equals(<%=incomingConnName %>.<%=normalizeColumn%>)){
+		        	normalizeRecord_<%=cid%>[0] = "";
+		        }else{
+	                <%if(useCSV){%>
+	                    com.talend.csv.CSVReader reader_<%=cid%> = new com.talend.csv.CSVReader(new java.io.StringReader(<%=incomingConnName %>.<%=normalizeColumn%>), <%=delim %>.charAt(0));
+	                    reader_<%=cid%>.setTrimWhitespace(false);
+	                    <%
+	                    if("ESCAPE_MODE_BACKSLASH".equals(escapeMode)) {
+	                    %>
+	                    	reader_<%=cid%>.setEscapeChar('\\');
+	                   	<%} else {%>
+	                 		reader_<%=cid%>.setEscapeChar(<%=textEnclosure %>.charAt(0));
+	                   	<%} %>
+	                    reader_<%=cid%>.setQuoteChar(<%=textEnclosure %>.charAt(0));
+	                    if (reader_<%=cid%>.readNext()) {
+	                        normalizeRecord_<%=cid%> = reader_<%=cid%>.getValues();
+	                    }
+	                <% 
+	                } else { 
+	            		if(isDiscardTrailingEmptyStr){
+	                    %>
+	                    	normalizeRecord_<%=cid%> = <%=incomingConnName %>.<%=normalizeColumn%>.split(<%=delim %>);
+	                    <%
+	            		}else{
+	                    %>
+	                		normalizeRecord_<%=cid%> = <%=incomingConnName %>.<%=normalizeColumn%>.split(<%=delim %>,-1);
+	                    <%
+	            		}
+	            	}
+	                %>    
+                }           
+            }
+            <%
+            if(!outIterate.isEmpty()||outgoingConnName != null){
+  				if(useCSV && isDiscardTrailingEmptyStr){
+  				%>
+		  			lastNoEmptyIndex_<%=cid%>=0;
+		            for(int i_<%=cid%>=normalizeRecord_<%=cid%>.length;i_<%=cid%> > 0;i_<%=cid%>--){
+		            	if(!"".equals(normalizeRecord_<%=cid%>[i_<%=cid%> - 1])){
+		            		lastNoEmptyIndex_<%=cid%>=i_<%=cid%>;
+		            		break;
+		            	}
+		            }
+            	<%
+            	}else{
+           	 	%>
+             		lastNoEmptyIndex_<%=cid%>=normalizeRecord_<%=cid%>.length;
+	             	<%if(isDiscardTrailingEmptyStr){%>
+	             		if(lastNoEmptyIndex_<%=cid%> == 1 && "".equals(normalizeRecord_<%=cid%>[0])){
+	             			lastNoEmptyIndex_<%=cid%> = 0;
+	             		}
+	             	<%}%>
+            	<%
+       			}
+            	%>
+            	for(int i_<%=cid%> = 0 ; i_<%=cid%> < lastNoEmptyIndex_<%=cid%> ; i_<%=cid%>++) {
+		  			<%if(isTrim){%>
+		            	if(normalizeRecord_<%=cid%>[i_<%=cid%>]!=null){
+		            		normalizeRecord_<%=cid%>[i_<%=cid%>]=normalizeRecord_<%=cid%>[i_<%=cid%>].trim();
+		            	}
+		            <%}%>
+	                currentRecord_<%=cid%> = new StringBuilder();
+	                nb_line_<%=cid%>++;               
+	                <%
+	                if(outgoingConnName != null ){
+		                if(("true").equals(deduplicate)) {//check deduplicate start
+		                    for(int i = 0 ; i < metadataColumns.size() ; i++) {
+		                        IMetadataColumn metadataColumn = (IMetadataColumn)metadataColumns.get(i);
+		                        JavaType javaType = JavaTypesManager.getJavaTypeFromId(metadataColumn.getTalendType());
+		                        String typeName = JavaTypesManager.getTypeToGenerate(metadataColumn.getTalendType(), metadataColumn.isNullable());
+		                        if(!metadataColumn.getLabel().equals(normalizeColumn)) {
+		                            if(javaType == JavaTypesManager.DATE) {
+	                                %>
+	                                	tmp_<%=cid%> = <%=incomingConnName%>.<%=metadataColumn.getLabel()%> == null ? null : String.valueOf(<%=incomingConnName%>.<%=metadataColumn.getLabel()%>.getTime());
+	                                <%
+	                            	} else if(javaType == JavaTypesManager.BYTE || 
+	                                    javaType == JavaTypesManager.SHORT || 
+	                                    javaType == JavaTypesManager.FLOAT ||
+	                                    javaType == JavaTypesManager.DOUBLE ||
+	                                    javaType == JavaTypesManager.LONG ||
+	                                    javaType == JavaTypesManager.INTEGER || 
+	                                    javaType == JavaTypesManager.BOOLEAN) {
+		                                if(("Byte").equals(typeName) || 
+		                                        ("Short").equals(typeName) || 
+		                                        ("Float").equals(typeName) || 
+		                                        ("Double").equals(typeName) || 
+		                                        ("Long").equals(typeName) || 
+		                                        ("Integer").equals(typeName) || 
+		                                        ("Boolean").equals(typeName)) {                    
+		                                    %>
+		                                    tmp_<%=cid%> = <%=incomingConnName%>.<%=metadataColumn.getLabel()%> == null ? null : <%=incomingConnName%>.<%=metadataColumn.getLabel()%>.toString();
+		                                    <%
+		                                } else {
+		                                    %>
+		                                    tmp_<%=cid%> = String.valueOf(<%=incomingConnName%>.<%=metadataColumn.getLabel()%>);
+		                                    <%
+		                                }
+	                            	} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+	                                %>
+	                                	tmp_<%=cid%> = <%=incomingConnName%>.<%=metadataColumn.getLabel()%> == null ? null : new String(<%=incomingConnName%>.<%=metadataColumn.getLabel()%>);
+	                                <%
+	                            	} else if(javaType == JavaTypesManager.STRING){
+	                                %>
+	                                	tmp_<%=cid%> = <%=incomingConnName%>.<%=metadataColumn.getLabel()%> == null ? null : String.valueOf(<%=incomingConnName%>.<%=metadataColumn.getLabel()%>);
+	                                <%
+	                            	} else {
+	                                %>
+	                                	tmp_<%=cid%> = String.valueOf(<%=incomingConnName%>.<%=metadataColumn.getLabel()%>);
+	                                <%
+	                            	}
+	                            	%>
+		                            if(tmp_<%=cid%> != null){
+		                                currentRecord_<%=cid%>.append(tmp_<%=cid%> + tmp_<%=cid%>.length());
+		                            }
+	                            <%
+	                       	 	} else {
+	                            %>
+		                            if(normalizeRecord_<%=cid%>[i_<%=cid%>] != null) {
+		                                currentRecord_<%=cid%>.append(normalizeRecord_<%=cid%>[i_<%=cid%>] + normalizeRecord_<%=cid%>[i_<%=cid%>].length());
+		                            }
+	                            <%
+		                        }
+		                    }
+		                    %>
+		                    if(!recordSet_<%=cid%>.contains(currentRecord_<%=cid%>.toString())) {
+		                        recordSet_<%=cid%>.add(currentRecord_<%=cid%>.toString());
+		                    } else {
+		                        continue;
+		                    }                    
+		                <%
+		                }//check deduplicate end                
+		                for(IMetadataColumn metadataColumn : metadataColumns) {
+		                    if(metadataColumn.getLabel().equals(normalizeColumn)) {
+	                        %>
+	                        	<%=outgoingConnName%>.<%=metadataColumn.getLabel()%> = normalizeRecord_<%=cid%>[i_<%=cid%>];
+		                    <%
+		                    } else {
+	                        %>
+	                        	<%=outgoingConnName%>.<%=metadataColumn.getLabel()%> = <%=incomingConnName%>.<%=metadataColumn.getLabel()%>;
+	                        <%
+	                    	}
+	                	}
+	                }
+        	}
+        }
+        //3
+    }
+    //2    
+}
+//1
+%>

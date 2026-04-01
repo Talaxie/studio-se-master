@@ -1,0 +1,144 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataColumn
+  	org.talend.core.model.process.IConnectionCategory
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String cid = node.getUniqueName();
+        String rss= ElementParameterParser.getValue(node,"__RSS__");
+        boolean isDate= ("true").equals(ElementParameterParser.getValue(node,"__ARTICLE_DATE__"));
+        boolean isAmount= ("true").equals(ElementParameterParser.getValue(node,"__ARTICLE_AMOUNT__"));
+        String  dateTime=ElementParameterParser.getValue(node,"__DATE__");
+        String  amount=ElementParameterParser.getValue(node,"__AMOUNT__");
+        boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+        boolean useProxy= ("true").equals(ElementParameterParser.getValue(node,"__USE_PROXY__"));
+       	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+       	
+       	String host=ElementParameterParser.getValue(node,"__PROXY_HOST__");
+       	String port=ElementParameterParser.getValue(node,"__PROXY_PORT__");
+       	String username=ElementParameterParser.getValue(node,"__PROXY_USERNAME__");
+  	
+%>
+    int nb_line_<%=cid%> = 0;
+    String rssurl<%=cid%>=<%=rss%>;
+    int aMount<%=cid%>=<%=amount%>;
+<%
+if(useProxy){
+%>
+    java.util.Properties props = System.getProperties();
+    
+    props.put("socksProxyHost",<%=host %>);  
+    props.put("socksProxyPort",<%=port %>);
+    props.put("java.net.socks.username", <%=username %>);
+    
+    <%
+    String passwordFieldName = "__PROXY_PASSWORD__";
+    %>
+    
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+    props.put("java.net.socks.password", decryptedPassword_<%=cid%>); 
+  
+    
+<%
+}
+%>   
+    java.net.URL url<%=cid%> = new java.net.URL(rssurl<%=cid%>);
+    it.sauronsoftware.feed4j.bean.Feed feed<%=cid%>=null;
+    boolean ifInvalid<%=cid%> = false;
+    
+  
+           
+    
+<%if(!dieOnError){%>    
+        try{
+<%}%>  
+        feed<%=cid%>= it.sauronsoftware.feed4j.FeedParser.parse(url<%=cid%> );
+<%if(!dieOnError){%>
+        }catch(it.sauronsoftware.feed4j.FeedXMLParseException e<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e<%=cid%>.getMessage());
+                System.err.print(e<%=cid%>.getMessage());
+                ifInvalid<%=cid%> = true;
+        }
+<%}%>
+
+	int items<%=cid%> = feed<%=cid%>.getItemCount();
+	
+<%      	 if(isAmount){
+      	 %>
+      	   		if(aMount<%=cid%>< items<%=cid%>)
+      	   		{
+      	   			items<%=cid%>=aMount<%=cid%>;
+      	   		}
+      	 
+      	 <%
+      	  }
+      	 %>
+      	 
+      	if(!ifInvalid<%=cid%>){
+          String row<%=cid%>[]=new String [4];
+
+          for (int i_<%=cid%> = 0; i_<%=cid%>< items<%=cid%>; i_<%=cid%>++) {
+             it.sauronsoftware.feed4j.bean.FeedItem itm<%=cid%> = feed<%=cid%>.getItem(i_<%=cid%>);
+              row<%=cid%>[0]=itm<%=cid%>.getTitle();
+              row<%=cid%>[1]=itm<%=cid%>.getDescriptionAsText();
+              row<%=cid%>[2]=(itm<%=cid%>.getPubDate()==null ? "" :itm<%=cid%>.getPubDate().toGMTString());
+              row<%=cid%>[3]=(itm<%=cid%>.getLink()==null ? "" :itm<%=cid%>.getLink().toString());
+      <%        if(isDate)
+              {
+      %>  
+        if(!("").equals(row<%=cid%>[2])){     	
+              	java.util.Date d<%=cid%>=new java.util.Date();
+              	java.text.SimpleDateFormat formatterDate<%=cid%>=new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+              	d<%=cid%>=formatterDate<%=cid%>.parse(<%=dateTime%>);
+              	 java.util.Date pubDate<%=cid%>=new java.util.Date(row<%=cid%>[2]);
+             	 int value<%=cid%>=pubDate<%=cid%>.compareTo(d<%=cid%>);
+             	 if(value<%=cid%><0)
+             	 {
+             	 	continue;
+             	 }
+        }
+      <%       	
+              }
+      %>        
+    
+    <%
+    	if(conns!=null){
+        	if (conns.size()>0){
+           		for(IConnection conn:conns){
+            		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        			List<IMetadataColumn> columns = metadata.getListColumns();
+            			int sizeColumns = columns.size();
+            			for (int j = 0; j < sizeColumns; j++) {
+            			IMetadataColumn column = columns.get(j);
+            			
+         %>
+         			
+         			<%=conn.getName() %>.<%=column.getLabel() %>=row<%=cid%>[<%=j%>];
+         <%
+            			}
+        			}
+           		}
+    		
+        	}
+    	}
+	}
+}
+%>
+
+
+
+

@@ -1,0 +1,710 @@
+<%@ jet
+imports="
+    	org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+	 	org.talend.commons.utils.generation.CodeGenerationUtils
+	 	org.talend.core.model.metadata.MetadataToolHelper
+		java.util.List
+		java.util.ArrayList
+		java.util.Map
+		java.util.HashMap
+		java.util.LinkedList
+"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String cid = node.getUniqueName();
+
+	String dbtable = null;
+	String dbschema = ElementParameterParser.getValue(node,"__ELT_SCHEMA_NAME__");
+	String uniqueNameConnection = null;
+	INode previousNode = null;
+
+	String differenttable = ElementParameterParser.getValue(node, "__DIFFERENT_TABLE_NAME__");
+	boolean useDifferentTable = "true".equals(ElementParameterParser.getValue(node, "__USE_DIFFERENT_TABLE__"));
+	boolean isTableNameVariable="true".equals(ElementParameterParser.getValue(node, "__IS_TABLE_NAME_VARIABLE__"));
+
+	%>
+	String select_query_<%=cid %> = null;
+	String tableName_<%=cid%> = null;
+	String query_<%=cid%> = null;
+	<%
+	List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+	if(connections != null && connections.size() > 0 && connections.get(0) != null) {
+	    IConnection connection = connections.get(0);
+	    previousNode = connection.getSource();
+	    String previousComponentName = previousNode.getUniqueName();
+		dbtable = connection.getName();
+		uniqueNameConnection = connection.getUniqueName();
+
+		%>
+		select_query_<%=cid %> = (String) globalMap.get("<%=previousComponentName%>"+"QUERY"+"<%=uniqueNameConnection%>");
+
+		<%
+	}
+	 String tableName=null;
+	 if(useDifferentTable){
+		  tableName=differenttable;
+	 }else{
+	 	  if(isTableNameVariable){
+	 	      tableName=dbtable;
+	 	  }else{
+	 	      tableName="\""+dbtable +"\"";
+	 	  }
+	 }
+	%>
+	String dbschema_<%=cid%> = <%=dbschema%>;
+	if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() > 0) {
+		tableName_<%=cid%> = <%=dbschema%> + "." + <%=tableName%>;
+	}else {
+		tableName_<%=cid%> = <%=tableName%>;
+	}
+	<%
+	String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+
+        String dbhost = null;
+        String dbport = null;
+        String dbname = null;
+        String dbuser = null;
+	    String connectionType = null;
+	    boolean useExistingConn = false;
+	    boolean dryRun = false;
+	    String dbproperties = null;
+        if(previousNode != null) {
+           dryRun = ("true").equals(ElementParameterParser.getValue(previousNode, "__DRY_RUN__"));
+           if(!dryRun){
+	        dbhost = ElementParameterParser.getValue(previousNode, "__HOST__");
+	        dbport = ElementParameterParser.getValue(previousNode, "__PORT__");
+	        dbname = ElementParameterParser.getValue(previousNode, "__DBNAME__");
+	        dbuser = ElementParameterParser.getValue(previousNode, "__USER__");
+	    	connectionType = ElementParameterParser.getValue(previousNode, "__CONNECTION_TYPE__");
+	    	useExistingConn = ("true").equals(ElementParameterParser.getValue(previousNode, "__USE_EXISTING_CONNECTION__"));
+	    	dbproperties = ElementParameterParser.getValue(previousNode, "__PROPERTIES__");
+           }
+        }
+
+        boolean useWhereTable = ("true").equals(ElementParameterParser.getValue(node, "__USE_WHERE_CONDITIONS_TABLE__"));
+		String whereClause = ElementParameterParser.getValue(node, "__WHERE_CLAUSE__");
+		List<Map<String, String>> whereConditions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__WHERE_CONDITIONS_TABLE__");
+%>
+
+
+<%
+if(!dryRun){
+if(useExistingConn) {
+    String connection = ElementParameterParser.getValue(previousNode, "__CONNECTION__");
+    String conn = "conn_" + connection;
+    %>
+    java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+    <%
+	log4jCodeGenerateUtil.useExistConnection(node);
+} else {
+    %>
+    String driverClass_<%=cid%> = "oracle.jdbc.driver.OracleDriver";
+    java.lang.Class.forName(driverClass_<%=cid%>);
+    <%
+    if(connectionType == null || ("ORACLE_SID").equals(connectionType)) {
+        %>
+        String url_<%=cid%> = "jdbc:oracle:thin:@" + <%=dbhost%> + ":" + <%=dbport%> + ":" + <%=dbname%>;
+        <%
+    } else if(("ORACLE_SERVICE_NAME").equals(connectionType)) {
+        %>
+        String url_<%=cid%> = "jdbc:oracle:thin:@(description=(address=(protocol=tcp)(host=" + <%=dbhost%> + ")(port=" + <%=dbport%> + "))(connect_data=(service_name=" + <%=dbname%> + ")))";
+        <%
+    } else if("ORACLE_RAC".equals(connectionType)) {
+    	String rac_url = ElementParameterParser.getValue(previousNode, "__RAC_URL__");
+        %>
+        String url_<%=cid%> = <%=rac_url%>;
+        <%
+    }
+    %>
+    String dbUser_<%=cid %> = <%=dbuser%>;
+
+    <%
+    String passwordFieldName = "__PASS__";
+    %>
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/eltpassword.javajet"%>
+
+    String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+<%
+	log4jCodeGenerateUtil.debugConnectionParams(node);
+	log4jCodeGenerateUtil.connect_begin();
+	if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+	java.sql.Connection conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+	} else {
+%>
+	java.util.Properties atnParamsPrope_<%=cid%> = new java.util.Properties();
+	atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid%>);
+	atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid%>);
+    if(<%= dbproperties %> != null && !"\"\"".equals(<%= dbproperties %>) && !"".equals(<%= dbproperties %>)){
+        atnParamsPrope_<%=cid%>.load(new java.io.ByteArrayInputStream(<%=dbproperties%>.replace("&", "\n").getBytes()));
+    }
+	java.sql.Connection conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, atnParamsPrope_<%=cid%>);
+<%
+	}
+	log4jCodeGenerateUtil.connect_end();
+%>
+
+<%
+	}
+}
+%>
+
+<%
+List<IMetadataColumn> columnList = null;
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+IMetadataTable metadata = null;
+if(metadatas !=null && metadatas.size()>0){
+	metadata = metadatas.get(0);
+	if(metadata != null){
+		columnList = metadata.getListColumns();
+	}
+}
+if(!dryRun){
+%>
+
+java.sql.PreparedStatement pstmt_<%=cid %> =null;
+
+<%
+}
+if(columnList != null && columnList.size()>0){
+
+class Column{
+
+	IMetadataColumn column;
+
+	String name;
+
+	String sqlStmt;
+
+	String value;
+
+	String validateName;
+
+	boolean addCol;
+
+	List<Column> replacement = new ArrayList<Column>();
+
+	public Column(IMetadataColumn column){
+		this.column = column;
+		String columname = column.getOriginalDbColumnName();
+		if(columname!=null && columname.trim().length()>0){
+			this.name = columname;
+		}else{
+			this.name = column.getLabel();
+		}
+		this.sqlStmt = "=?";
+		this.value = "?";
+		this.addCol =false;
+		this.validateName=MetadataToolHelper.validateValue(this.name);
+		if(!this.name.equals(this.validateName)){
+    		this.name = "\\\""+this.name+"\\\"";
+    	}
+	}
+
+	public boolean isReplaced(){
+		return replacement.size()>0;
+	}
+
+	public List<Column> getReplacement(){
+		return this.replacement;
+	}
+
+	public IMetadataColumn getColumn(){
+		return this.column;
+	}
+
+	public String getName(){
+		return this.name;
+	}
+
+	public boolean isAddCol(){
+		return this.addCol;
+	}
+
+	public String getSqlStmt(){
+		return this.sqlStmt;
+	}
+
+	public String getValue(){
+		return this.value;
+	}
+
+}
+
+StringBuilder insertColName = new StringBuilder();
+
+StringBuilder insertValueStmt = new StringBuilder();
+
+StringBuilder updateSetStmt = new StringBuilder();
+
+StringBuilder updateWhereStmt = new StringBuilder();
+
+StringBuilder mergeCondition = new StringBuilder ();
+
+List<Column> stmtStructure =  new LinkedList<Column>();
+
+for(IMetadataColumn column:columnList){
+
+	stmtStructure.add(new Column(column));
+
+}
+
+
+int counterOuter =0;
+boolean firstKey = true;
+boolean firstNoneKey = true;
+boolean isfirstKey = true;
+for(Column colStmt:stmtStructure){
+	String colName=colStmt.getName();
+	String suffix = ",";
+
+	if (colStmt.getColumn().isKey()){
+		if (isfirstKey) {
+			isfirstKey = false;
+		}else {
+			mergeCondition.append(" AND ");
+		}
+		mergeCondition.append("target." + colName + "=source." + colName);
+	}
+	if(colStmt.isReplaced()){
+		List<Column> replacedColumns = colStmt.getReplacement();
+		int counterReplace = 0;
+		if(counterOuter==(stmtStructure.size()-1) && counterReplace==(replacedColumns.size()-1) ){
+			suffix = "";
+		}
+		for(Column replacement:replacedColumns){
+			insertColName.append(replacement.getName()+suffix);
+			insertValueStmt.append(replacement.getSqlStmt()+suffix);
+			if(!colStmt.getColumn().isKey()){
+				if(!firstNoneKey){
+					updateSetStmt.append(",");
+				}else{
+					firstNoneKey = false;
+				}
+				updateSetStmt.append(replacement.getName());
+				updateSetStmt.append(replacement.getSqlStmt());
+			}else{
+				if(!firstKey){
+					updateWhereStmt.append(" AND ");
+				}else{
+					firstKey = false;
+				}
+				updateWhereStmt.append(replacement.getName());
+				updateWhereStmt.append(replacement.getSqlStmt());
+			}
+			counterReplace++;
+		}
+	}else{
+		if(counterOuter==(stmtStructure.size()-1)){
+			suffix = "";
+		}
+		if(colStmt.isAddCol()){
+			insertColName.append(colStmt.getName()+suffix);
+			insertValueStmt.append(colStmt.getSqlStmt()+suffix);
+			updateSetStmt.append(colStmt.getName());
+			updateSetStmt.append(colStmt.getSqlStmt()+suffix);
+		}else{
+			insertColName.append(colStmt.getName()+suffix);
+			insertValueStmt.append(colStmt.getValue()+suffix);
+			if(!colStmt.getColumn().isKey()){
+				if(!firstNoneKey){
+					updateSetStmt.append(",");
+				}else{
+					firstNoneKey = false;
+				}
+				updateSetStmt.append(colStmt.getName());
+				updateSetStmt.append(colStmt.getSqlStmt());
+			}else{
+				if(!firstKey){
+					updateWhereStmt.append(" AND ");
+				}else{
+					firstKey = false;
+				}
+				updateWhereStmt.append(colStmt.getName());
+				updateWhereStmt.append(colStmt.getSqlStmt());
+			}
+		}
+	}
+	counterOuter ++;
+}
+
+///// hint options/////
+boolean useHintOptions = ("true").equals(ElementParameterParser.getValue(node,"__USE_HINT_OPTIONS__"));
+Map<String, String> hintsValues = null;
+if (useHintOptions) {
+	List<Map<String, String>> hintOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HINT_OPTIONS__");
+	hintsValues = new HashMap<String, String>();
+	String hintValue = null;
+	boolean firstInsert = true;
+	boolean firstUpdate = true;
+	boolean firstDelete = true;
+	boolean firstTableName = true;
+	boolean firstMerge = true;
+	for(java.util.Map<String, String> option : hintOptions) {
+		//get
+		if(option.get("HINT").matches("\"/\\*NORMALIZED_HINT\\*/\"")) {
+			String id = cid.replace(node.getComponent().getName() + "_", "");
+			hintValue = "\"/*\"+" + dbtable + "+\".\" + "  + "\"" + option.get("SQL_STMT")+ ".\"" + "+" +  id   +  "+\"*/\" " ;
+		}else if (option.get("HINT").matches("\"/\\*+.*\\*/\"")) {
+			hintValue = option.get("HINT");
+		}
+		//set
+		if ("INSERT".equalsIgnoreCase(option.get("SQL_STMT"))){
+			if(firstInsert){
+				hintsValues.put("INSERT", hintValue) ;
+				firstInsert = false;
+			}else {
+				hintsValues.put("INSERT", hintsValues.get("INSERT") + "+" + hintValue) ;
+			}
+		}else if ("UPDATE".equalsIgnoreCase(option.get("SQL_STMT"))) {
+			if(firstUpdate){
+				hintsValues.put("UPDATE", hintValue) ;
+				firstUpdate = false;
+			}else {
+				hintsValues.put("UPDATE", hintsValues.get("UPDATE") + "+" + hintValue) ;
+			}
+		}else if ("DELETE".equalsIgnoreCase(option.get("SQL_STMT"))) {
+			if (firstDelete){
+				hintsValues.put("DELETE", hintValue) ;
+				firstDelete =false;
+			}else {
+				hintsValues.put("DELETE", hintsValues.get("DELETE") + "+" + hintValue) ;
+			}
+		}else if ("TABLE_NAME".equalsIgnoreCase(option.get("SQL_STMT"))){
+			if (firstTableName){
+				hintsValues.put("TABLE_NAME", hintValue) ;
+				firstTableName = false;
+			}else {
+				hintsValues.put("TABLE_NAME", hintsValues.get("TABLE_NAME") + "+" + hintValue) ;
+			}
+		}else if ("MERGE".equalsIgnoreCase(option.get("SQL_STMT"))) {
+			if (firstMerge){
+				hintsValues.put("MERGE", hintValue) ;
+				firstMerge = false;
+			}else {
+				hintsValues.put("MERGE", hintsValues.get("MERGE") + "+" + hintValue) ;
+			}
+		}
+	}
+}
+//// hint options end ////
+
+	if(("INSERT").equals(dataAction)){
+%>
+	String insertQuery_<%=cid %> = "INSERT INTO "+tableName_<%=cid%>+"(<%=insertColName.toString()%>) ("+select_query_<%=cid %>+")";
+<%
+		if (useHintOptions && hintsValues.get("INSERT") != null){
+%>
+	    StringBuffer insertStringBuffer_<%=cid%> = new StringBuffer(insertQuery_<%=cid %>);
+	    insertStringBuffer_<%=cid%>.insert(insertQuery_<%=cid %>.indexOf("INSERT")+ "INSERT".length() + 1 , <%=hintsValues.get("INSERT")%> + " ");
+	    insertQuery_<%=cid %> =insertStringBuffer_<%=cid%>.toString();
+<%
+		}
+%>
+        query_<%=cid %> = insertQuery_<%=cid %>.toString();
+<%
+if(!dryRun){
+%>
+	    pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(insertQuery_<%=cid %>);
+
+<%
+}
+	}else if (("UPDATE").equals(dataAction)){
+%>
+		StringBuffer updateQuery_<%=cid %> = new StringBuffer("UPDATE "+tableName_<%=cid%>+" SET (<%=insertColName.toString()%>) = ("+select_query_<%=cid %>+") ");
+<%
+		if(!useWhereTable) {
+			if(CodeGenerationUtils.hasAlphaNumericCharacter(whereClause)) {
+%>
+				updateQuery_<%=cid %>.append("  WHERE " + <%=CodeGenerationUtils.replaceAllCrBySpace(whereClause)%>);
+<%
+			}
+		} else {
+			if(whereConditions.size() > 0) {
+%>
+				updateQuery_<%=cid %>.append("  WHERE ");
+<%
+				String operator = "\"\"";
+				for(Map<String, String> whereCondition : whereConditions) {
+					String column_condition = whereCondition.get("COLUMN");
+					String function_condition = whereCondition.get("FUNCTION");
+					String value_condition = whereCondition.get("VALUE_SQL");
+%>
+					updateQuery_<%=cid %>.append(<%=operator %> + <%=column_condition %> + " " + <%=function_condition %> + " " + <%=value_condition %>);
+<%
+					operator = "\" AND \"";
+				}
+			}
+		}
+		if (useHintOptions && hintsValues.get("UPDATE") != null){
+%>
+		    updateQuery_<%=cid %>.insert(updateQuery_<%=cid %>.toString().indexOf("UPDATE")+ "UPDATE".length() +1 , <%=hintsValues.get("UPDATE")%>  + " ");
+<%
+		}
+%>
+        query_<%=cid %> = updateQuery_<%=cid %>.toString();
+<%
+if(!dryRun){
+%>
+		pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(updateQuery_<%=cid %>.toString());
+
+<%
+}
+	}else if (("DELETE").equals(dataAction)){
+	%>
+
+		StringBuffer deleteQuery_<%=cid %> = new StringBuffer("DELETE  FROM "+ tableName_<%=cid%>+" WHERE EXISTS ("+select_query_<%=cid %>+") ");
+<%		
+		if(!useWhereTable) {
+			if(CodeGenerationUtils.hasAlphaNumericCharacter(whereClause)) {
+%>
+				deleteQuery_<%=cid %>.append("  AND " + <%=CodeGenerationUtils.replaceAllCrBySpace(whereClause)%>);
+<%
+			}
+		} else {
+			if(whereConditions.size() > 0) {
+				for(Map<String, String> whereCondition : whereConditions) {
+					String column_condition = whereCondition.get("COLUMN");
+					String function_condition = whereCondition.get("FUNCTION");
+					String value_condition = whereCondition.get("VALUE_SQL");
+%>
+					deleteQuery_<%=cid %>.append("  AND " + <%=column_condition %> + " " + <%=function_condition %> + " " + <%=value_condition %>);
+<%
+				}
+			}
+		}
+		if(useHintOptions && hintsValues.get("DELETE") != null) {
+%>
+			deleteQuery_<%=cid %>.insert(deleteQuery_<%=cid %>.toString().indexOf("DELETE")+ "DELETE".length()+1 , <%=hintsValues.get("DELETE")%>  + " " );
+<%
+		}
+%>
+        query_<%=cid %> = deleteQuery_<%=cid %>.toString();
+<%
+        if(!dryRun){
+%>
+		pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(deleteQuery_<%=cid %>.toString());
+
+	<%
+	}
+	}else if ("MERGE".equals(dataAction)) {
+		// get parameter
+		boolean useMergeUpdate = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_MERGE_UPDATE__"));
+		boolean useMergeInsert = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_MERGE_INSERT__"));
+	
+		boolean useUpdateWhere =  "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_MERGE_UPDATE_WHERE__"));
+		boolean useUpdateDeleteWhere = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_MERGE_UPDATE_DELETE_WHERE__"));
+		boolean useInsertWhere = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_MERGE_INSERT_WHERE__"));
+	
+	
+	
+		List<Map<String, String>> updateColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMA_UPDATE__");
+		List<Map<String, String>> insertColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMA_INSERT__");
+	
+		StringBuilder mergeUpdate = new StringBuilder() ;
+		StringBuilder mergeInsertName = new StringBuilder() ;
+		StringBuilder mergeInsertValue = new StringBuilder() ;
+		%>
+		String mergeQuery_<%=cid %> = "MERGE INTO "+ tableName_<%=cid%> +" target"  + " USING (" + select_query_<%=cid %> + ") source ON (" +
+	
+			"<%=mergeCondition%>" + ")" ;
+
+		<%
+		if(!useMergeUpdate)
+			useUpdateWhere =false;
+		if (useMergeUpdate) {
+			boolean isfirstUpdateSet = true;
+			String keyColumnName=null;
+			for(Map<String, String> keyColumn:updateColumns){
+				if (keyColumn.get("UPDATE").equals("true")) {
+					if (isfirstUpdateSet) {
+					  	isfirstUpdateSet = false;
+					}else {
+						mergeUpdate.append(",");
+					}
+					keyColumnName=keyColumn.get("SCHEMA_COLUMN");
+					keyColumnName=new Column(metadata.getColumn(keyColumnName)).getName();
+					mergeUpdate.append("target."  + keyColumnName + "=source." + keyColumnName);
+				}
+			}
+		%>
+			mergeQuery_<%=cid %> += " WHEN MATCHED THEN UPDATE SET <%=mergeUpdate%> " ;
+			<%if (useUpdateWhere) {
+				String useUpdateWhereString = ElementParameterParser.getValue(node,"__MERGE_UPDATE_WHERE_STRING__");
+				if(useUpdateWhereString == null || useUpdateWhereString.length() == 0){
+
+			%>
+				mergeQuery_<%=cid %> += "WHERE " + "";
+			<%
+				}
+				else {%>
+					mergeQuery_<%=cid %> += "WHERE " + <%=useUpdateWhereString %>;
+			<%	}
+			}%>
+			<%if (useUpdateDeleteWhere) {
+				String useUpdateDeleteWhereString = ElementParameterParser.getValue(node,"__MERGE_UPDATE_DELETE_WHERE_STRING__");
+				if(useUpdateDeleteWhereString == null || useUpdateDeleteWhereString.length() == 0){
+			%>
+					mergeQuery_<%=cid %> += " DELETE WHERE " + "" ;
+			<%
+				}
+				else {%>
+					mergeQuery_<%=cid %> += " DELETE WHERE " + <%=useUpdateDeleteWhereString%> ;
+		  <%	}
+			}%>
+		<%
+		}%>
+		<%
+		if(!useMergeInsert)
+			useInsertWhere = false;
+		if (useMergeInsert) {
+		    boolean isfirstInsertWhere = true;
+		    String keyColumnName=null;
+			for(Map<String, String> keyColumn:insertColumns){
+				if (keyColumn.get("INSERT").equals("true")) {
+					if (isfirstInsertWhere) {
+	 			 		isfirstInsertWhere = false;
+					}else {
+						mergeInsertName.append(",");
+						mergeInsertValue.append(",");
+					}
+					keyColumnName=keyColumn.get("SCHEMA_COLUMN");
+					keyColumnName = new Column(metadata.getColumn(keyColumnName)).getName();
+					mergeInsertName.append(keyColumnName);
+					mergeInsertValue.append("source." + keyColumnName);
+				}
+			}
+			%>
+			mergeQuery_<%=cid %> += " WHEN NOT MATCHED THEN INSERT ( <%=mergeInsertName%>) VALUES ( <%=mergeInsertValue%>) ";
+		<%
+		}
+		if (useInsertWhere) {
+			String useInsertWhereString = ElementParameterParser.getValue(node,"__MERGE_INSERT_WHERE_STRING__");
+			if(useInsertWhereString == null || useInsertWhereString.length() == 0){
+			%>
+				mergeQuery_<%=cid %> += " WHERE " + "";
+			<%
+			} else {%>
+				mergeQuery_<%=cid %> += " WHERE " + <%=useInsertWhereString%> ;
+			<%
+		    }
+		}
+		%>
+<%
+		if (useHintOptions && hintsValues.get("MERGE") != null){
+%>
+	    StringBuffer mergeStringBuffer_<%=cid%> = new StringBuffer(mergeQuery_<%=cid %>);
+	    mergeStringBuffer_<%=cid%>.insert(mergeQuery_<%=cid %>.indexOf("MERGE")+ "MERGE".length() + 1 , <%=hintsValues.get("MERGE")%> + " ");
+	    mergeQuery_<%=cid %> =mergeStringBuffer_<%=cid%>.toString();
+<%
+		}
+%>
+        query_<%=cid %> = mergeQuery_<%=cid %>.toString();
+<%
+        if(!dryRun){
+%>
+		pstmt_<%=cid %> = conn_<%=cid%>.prepareStatement(mergeQuery_<%=cid %>);
+<%
+        }
+	}
+%>
+int nb_line_<%=cid%> = 0;
+int nb_line_updated_<%=cid%> = 0;
+int nb_line_inserted_<%=cid%> = 0;
+int nb_line_deleted_<%=cid%> = 0;
+int nb_line_merged_<%=cid%> = 0;
+	<%
+
+}
+
+if(dbtable != null && columnList != null){
+  if(!dryRun){
+	if(("INSERT").equals(dataAction)){
+	%>
+
+System.out.println("Inserting with : \n" + insertQuery_<%=cid %> + "\n");
+<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+insertQuery_"+ cid +"+\"");%>
+nb_line_inserted_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+System.out.println("--> " + nb_line_inserted_<%=cid%> + " rows inserted. \n");
+
+	<%
+	}else if(("UPDATE").equals(dataAction)){
+
+	%>
+System.out.println("Updating with : \n" + updateQuery_<%=cid %>.toString() +"\n");
+<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+updateQuery_"+ cid +"+\"");%>
+nb_line_updated_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+System.out.println("--> " + nb_line_updated_<%=cid%> + " rows updated. \n");
+	<%
+	}else if (("DELETE").equals(dataAction)){
+		%>
+		System.out.println("Deleting with : \n" + deleteQuery_<%=cid %>.toString() +"\n");
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+deleteQuery_"+ cid +"+\"");%>
+		nb_line_deleted_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+		System.out.println("--> " + nb_line_deleted_<%=cid%> + " rows deleted. \n");
+		<%
+	}else if (("MERGE").equals(dataAction)){
+	%>
+        System.out.println("Merge with : \n" + mergeQuery_<%=cid %> +"\n");
+        <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executing SQL:\"+mergeQuery_"+ cid +"+\"");%>
+	    nb_line_merged_<%=cid%> = pstmt_<%=cid %>.executeUpdate();
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Executed successfully.");%>
+		System.out.println("--> " + nb_line_merged_<%=cid%> + " rows merged. \n");
+	<%
+	}
+  }
+}
+// END
+if(!dryRun){
+%>
+
+pstmt_<%=cid %>.close();
+
+<%
+}
+if(!dryRun && !useExistingConn) {
+    %>
+    if(conn_<%=cid%> != null && !conn_<%=cid%>.isClosed()) {
+		<%log4jCodeGenerateUtil.close(node);%>
+    }
+    <%
+}
+%>
+nb_line_<%=cid%> = nb_line_updated_<%=cid%> + nb_line_inserted_<%=cid%> + nb_line_deleted_<%=cid%> + nb_line_merged_<%=cid%>;
+
+globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_UPDATED",nb_line_updated_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_INSERTED",nb_line_inserted_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_DELETED",nb_line_deleted_<%=cid%>);
+globalMap.put("<%=cid %>_NB_LINE_MERGED",nb_line_merged_<%=cid%>);
+globalMap.put("<%=cid %>_QUERY",query_<%=cid%>);
+<%
+if(!dryRun && isLog4jEnabled){
+	Map<String,String> actionMap=new java.util.HashMap<String,String>();
+	actionMap.put("INSERT","inserted");
+	actionMap.put("UPDATE","updated");
+	actionMap.put("DELETE","deleted");
+	actionMap.put("MERGE","merged");
+	%>
+	log.info("<%=cid%> - Has <%=actionMap.get(dataAction)%> records count: " + nb_line_<%=actionMap.get(dataAction)%>_<%=cid%> + ".");
+<%
+}
+%>

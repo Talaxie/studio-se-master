@@ -1,0 +1,133 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Map
+		java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String action = ElementParameterParser.getValue(node, "__ACTION__");
+	String region = ElementParameterParser.getValue(node, "__REGION__");
+	String cluster_id = ElementParameterParser.getValue(node, "__CLUSTER_ID__");
+	String group_name = ElementParameterParser.getValue(node, "__GROUP_NAME__");
+	String group_id = ElementParameterParser.getValue(node, "__GROUP_ID__");
+	
+	boolean request_spot = "true".equals(ElementParameterParser.getValue(node, "__REQUEST_SPOT__"));
+	String bid_price = ElementParameterParser.getValue(node, "__BID_PRICE__");
+	
+	String instance_count = ElementParameterParser.getValue(node, "__INSTANCE_COUNT__");
+	
+	String task_instance_type = ElementParameterParser.getValue(node, "__TASK_INSTANCE_TYPE__");
+		
+	boolean wait_for_cluster_ready = false;
+	
+%>
+	        
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Amazon/EMRClient.javajet"%>
+
+	boolean isTaskGroup_<%=cid %> = true;
+	
+	<%
+	if("ADD_TASK_INSTANCE_GROUP".equals(action)) {
+	%>	
+		com.amazonaws.services.elasticmapreduce.model.InstanceGroupConfig config_<%=cid %> = new com.amazonaws.services.elasticmapreduce.model.InstanceGroupConfig();
+		<%
+		if(request_spot) {				
+		%>
+			config_<%=cid %>.setMarket("SPOT");
+			config_<%=cid %>.setBidPrice(<%=bid_price %>);
+		<%
+		}
+		%>
+		
+		com.amazonaws.services.elasticmapreduce.model.AddInstanceGroupsRequest request_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.AddInstanceGroupsRequest()
+			.withJobFlowId(<%=cluster_id%>)
+			.withInstanceGroups(config_<%=cid %>
+				.withInstanceCount(<%=instance_count%>)
+				.withInstanceRole("TASK")
+				.withInstanceType(<%=task_instance_type%>)
+				.withName(<%=group_name%>)
+				)
+		;
+		
+ 	
+		com.amazonaws.services.elasticmapreduce.model.AddInstanceGroupsResult result_<%=cid%> = emr_<%=cid%>.addInstanceGroups(request_<%=cid%>);		
+		if(result_<%=cid%>.getInstanceGroupIds()!=null && result_<%=cid%>.getInstanceGroupIds().size()>0){
+			globalMap.put("<%=cid %>_TASK_GROUP_ID", result_<%=cid%>.getInstanceGroupIds().get(0));
+			globalMap.put("<%=cid %>_TASK_GROUP_NAME", <%=group_name%>);
+		}
+	<%
+	} else if ("RESIZE_TASK_INSTANCE_GROUP".equals(action)) {
+	%>
+	
+		//Validate if the instance group type is core
+		com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsRequest listRequest_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsRequest()
+			.withClusterId(<%=cluster_id%>);
+		
+		com.amazonaws.services.elasticmapreduce.model.ListInstanceGroupsResult listResult_<%=cid%> = emr_<%=cid%>.listInstanceGroups(listRequest_<%=cid%>);
+		 
+		List<com.amazonaws.services.elasticmapreduce.model.InstanceGroup> groupList_<%=cid%> = listResult_<%=cid%>.getInstanceGroups();
+	
+		java.util.Iterator<com.amazonaws.services.elasticmapreduce.model.InstanceGroup> iterator_<%=cid %> = groupList_<%=cid%>.iterator();
+	
+		com.amazonaws.services.elasticmapreduce.model.InstanceGroup instanceGroup_<%=cid %> = null;
+	
+		while (iterator_<%=cid %>.hasNext()) {
+
+			instanceGroup_<%=cid %> = iterator_<%=cid %>.next();
+			String instanceGroupId_<%=cid %> = instanceGroup_<%=cid %>.getId();
+			String instanceGroupType_<%=cid %> = instanceGroup_<%=cid %>.getInstanceGroupType();
+			if(!instanceGroupType_<%=cid %>.equalsIgnoreCase("TASK") && instanceGroupId_<%=cid %>.equals(<%=group_id%>)){
+				System.err.println("Not support resizing master or core instance group: " + (<%=group_id%>));
+				isTaskGroup_<%=cid %> = false;
+				break;
+			}
+		}
+	
+		//Resize instance group 
+		if(isTaskGroup_<%=cid %>){
+			com.amazonaws.services.elasticmapreduce.model.ModifyInstanceGroupsRequest request_<%=cid%> = new com.amazonaws.services.elasticmapreduce.model.ModifyInstanceGroupsRequest()
+				.withInstanceGroups(new com.amazonaws.services.elasticmapreduce.model.InstanceGroupModifyConfig()
+					.withInstanceCount(<%=instance_count%>)
+					.withInstanceGroupId(<%=group_id%>)
+					);	
+			emr_<%=cid%>.modifyInstanceGroups(request_<%=cid%>);				
+		}
+
+	<%
+	}
+	%>
+
+	<%
+	if(wait_for_cluster_ready) {
+	%>
+		if(isTaskGroup_<%=cid %>){
+			boolean clusterReady_<%=cid%> = false;
+			System.out.println("Wating for cluster to become available.");
+			while (!clusterReady_<%=cid%>) {
+				com.amazonaws.services.elasticmapreduce.model.DescribeClusterResult result2_<%=cid%> = emr_<%=cid%>.describeCluster(
+					new com.amazonaws.services.elasticmapreduce.model.DescribeClusterRequest()
+						.withClusterId(<%=cluster_id%>)
+				);
+				String status_<%=cid%> = result2_<%=cid%>.getCluster().getStatus().getState();
+				if ("WAITING".equalsIgnoreCase(status_<%=cid%>) || "RUNNING".equalsIgnoreCase(status_<%=cid%>)) {
+					clusterReady_<%=cid%> = true;
+				} else if("TERMINATED_WITH_ERRORS".equalsIgnoreCase(status_<%=cid%>) || "TERMINATED".equalsIgnoreCase(status_<%=cid%>)) {
+					clusterReady_<%=cid%> = true;
+					System.err.println("Fail to start the cluster.");
+				} else {
+					System.out.print(".");
+					Thread.sleep(2000);
+				}
+			}
+		}
+	<%
+	}
+	%>

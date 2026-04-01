@@ -1,0 +1,187 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    java.util.List
+" 
+%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean useExistingPipe = ElementParameterParser.getValue(node, "__USE_EXISTING_PIPE__").equals("true");
+String existingPipe = ElementParameterParser.getValue(node, "__PIPE__");
+String namedPipeName = ElementParameterParser.getValue(node, "__NAMEDPIPE_NAME__");
+String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+boolean csv = ElementParameterParser.getValue(node, "__CSV__").equals("true");
+String escapeChar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+String quoteChar = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+boolean quoteAllFields = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE_OPTION__").equals("ALL");
+boolean deleteIfExists = ElementParameterParser.getValue(node, "__DELETE_IF_EXISTS__").equals("true");
+String nullText = ElementParameterParser.getValue(node, "__NULL_TEXT__");
+String boolType = ElementParameterParser.getValue(node, "__BOOLEAN_TYPE__");
+
+if (nullText == null || "".equals(nullText)) {
+	nullText = "\"\"";
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+List<IMetadataColumn> columnList = null;
+if(metadatas != null && metadatas.size() > 0) {
+    IMetadataTable metadata = metadatas.get(0);
+    if(metadata != null) {
+        columnList = metadata.getListColumns();
+    }
+}
+List< ? extends IConnection> inputConns = node.getIncomingConnections();
+List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+boolean hasInputRow = false;
+boolean hasOutputRow = false;
+if (inputConns != null || inputConns.size() > 0) {
+	for(IConnection conn : inputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasInputRow)
+				hasInputRow = true;
+	}
+}
+if (outputConns != null || outputConns.size() > 0) {
+	for(IConnection conn : outputConns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+			if(!hasOutputRow)
+				hasOutputRow = true;
+	}
+}
+
+String inputRowName = (hasInputRow) ? inputConns.get(0).getName() : null;
+String outputRowName = (hasOutputRow) ? outputConns.get(0).getName() : null;
+%>
+
+<%
+if (hasInputRow && columnList != null) {
+	%>
+	StringBuilder sb_<%=cid%> = new StringBuilder(1000);
+	String null_<%=cid%> = <%=nullText%>;
+	<% if (csv) { %>
+		String temp_<%=cid%> = null;
+		String rowSepRepl_<%=cid%> = <%=escapeChar%> + <%=rowSeparator%>;
+		String escapeCharRepl_<%=cid%> = <%=escapeChar%> + <%=escapeChar%>;
+		String fieldSeparatorRepl_<%=cid%> = <%=escapeChar%> + <%=fieldSeparator%>;
+		String quoteCharRepl_<%=cid%> = <%=escapeChar%> + <%=quoteChar%>;
+	<% } %>
+	
+	<%
+	for (int i=0; i < columnList.size(); i++) {
+		IMetadataColumn column = columnList.get(i);
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+		boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType(javaType, column.isNullable());
+		String datePattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? "\"yyyy-MM-dd\"" : column.getPattern();
+		String length = (column.getLength() == null ? "1" : String.valueOf(column.getLength()));
+		String precision = (column.getPrecision() == null ? "6" : String.valueOf(column.getPrecision()));
+		
+		
+		if (!isPrimitive) {
+			%>
+			if (<%=inputRowName%>.<%=column.getLabel()%> == null)
+				sb_<%=cid%>.append(null_<%=cid%>);
+			else {
+			<%
+		}
+
+		if (csv && quoteAllFields){
+			%> sb_<%=cid %>.append(<%=quoteChar%>); <%
+		}
+
+		if (javaType == JavaTypesManager.DATE) {
+			%> sb_<%=cid %>.append(TalendDate.formatDate(<%=datePattern%>,<%=inputRowName%>.<%=column.getLabel()%>)); <%
+		} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT || javaType == JavaTypesManager.BIGDECIMAL) {
+			%> sb_<%=cid %>.append(String.format("%-<%=length%>.<%=precision%>f",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+		} else if (javaType == JavaTypesManager.LONG) {
+			%> sb_<%=cid %>.append(String.format("%-<%=length%>d",<%=inputRowName%>.<%=column.getLabel()%>)); <%
+		} else if (javaType == JavaTypesManager.INTEGER) {
+			%> sb_<%=cid %>.append(String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>)); <%
+		} else if (javaType == JavaTypesManager.BOOLEAN) {
+			if (boolType.equals("1_0")) {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+			} else if (boolType.equals("T_F")) {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "T" : "F")); <%
+			} else if (boolType.equals("Y_N")) {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "Y" : "N")); <%
+			} else if (boolType.equals("TRUE_FALSE")) {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "TRUE" : "FALSE")); <%
+			} else if (boolType.equals("YES_NO")) {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "YES" : "NO")); <%
+			} else {
+				%> sb_<%=cid %>.append((<%=inputRowName%>.<%=column.getLabel()%> ? "1" : "0")); <%
+			}
+		} else {
+			if (csv == false) {
+				%> sb_<%=cid %>.append(String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>)); <%
+			} else { // csv == true
+				%> 
+				temp_<%=cid%> = String.valueOf(<%=inputRowName%>.<%=column.getLabel()%>);
+				temp_<%=cid%> = temp_<%=cid%>.replace(<%=escapeChar%>,escapeCharRepl_<%=cid%>);
+				temp_<%=cid%> = temp_<%=cid%>.replace(<%=quoteChar%>,quoteCharRepl_<%=cid%>);
+				temp_<%=cid%> = temp_<%=cid%>.replace(<%=rowSeparator%>,rowSepRepl_<%=cid%>);
+				<% if (!quoteAllFields) { %>
+				sb_<%=cid %>.append(<%=quoteChar%> + temp_<%=cid%> + <%=quoteChar%>);
+				<% } else { %>
+				sb_<%=cid %>.append(temp_<%=cid%>);
+				<% } %>
+				temp_<%=cid%> = null;
+				<%
+			}
+		}
+
+		if (csv && quoteAllFields){
+			%> sb_<%=cid %>.append(<%=quoteChar%>); <%
+		}
+
+		if (!isPrimitive) {
+			%>
+			} // close if equals to null
+			<%
+		}
+			
+		if (i == (columnList.size() -1)) {
+			%>
+			sb_<%=cid%>.append(<%=rowSeparator%>);
+			<%
+		} else {
+			%>
+			sb_<%=cid%>.append(<%=fieldSeparator%>);
+			<%
+		}
+	}
+
+	// ------------------------------------------
+	// write the output to the outputstream
+	// -------------------------------------------
+	%>
+	outputStream_<%=cid%>.write(sb_<%=cid%>.toString().getBytes());
+	globalMap.put("<%=cid%>_NB_LINE", ++rowCout_<%=cid%>);
+	sb_<%=cid%> = null;
+	<%
+	
+	//----------------------------------------------
+	// assign output row to input row
+	//----------------------------------------------
+	if (hasOutputRow) {
+		for (IMetadataColumn column : columnList) {
+			%>
+			<%=outputRowName%>.<%=column.getLabel()%> = <%=inputRowName%>.<%=column.getLabel()%>;
+			<%
+		}
+	}
+	
+} // end of hasInputRow
+%>

@@ -1,0 +1,198 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.utils.TalendTextUtils
+    java.util.List
+    java.util.Map
+" 
+%>
+
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+List<String> connList = new java.util.ArrayList<String>();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null){
+	for(int i=0;i<conns.size();i++){
+		IConnection connTemp = conns.get(i);
+	    if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	   		connList.add(connTemp.getName());
+	    }
+	}
+}
+
+if (connList.size()>0) {//HSS_____0
+
+    List<Map<String, String>> schemas_o = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMAS__");
+	
+	List<Map<String, String>> schemas = new java.util.ArrayList<Map<String, String>>();
+	List<String> connections = new java.util.ArrayList<String>();
+    Map<String, List<IMetadataColumn>> connectionMapColumnList = new java.util.HashMap<String, List<IMetadataColumn>>();
+	
+	for(Map<String, String> schema_o : schemas_o){//HSS_____0_____1
+		Map<String, String> schema = new java.util.HashMap<String, String>();
+		schema.put("SCHEMA", TalendTextUtils.removeQuotes(schema_o.get("SCHEMA")));
+		schema.put("PARENT_ROW", TalendTextUtils.removeQuotes(schema_o.get("PARENT_ROW")));
+		schema.put("KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("KEY_COLUMN")));
+		schema.put("PARENT_KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("PARENT_KEY_COLUMN")));
+		schema.put("FIELD_SEPARATOR", TalendTextUtils.removeQuotes(schema_o.get("FIELD_SEPARATOR")));
+		if(("").equals(schema.get("PARENT_ROW"))){//put the root schema in the first place on list.
+			for(int i=0;i<conns.size();i++){//HSS_____0_____1_____1
+	    		IConnection connTemp = conns.get(i);
+	    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	    			IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+					if(tempMetadataTable.getTableName().equals(schema.get("SCHEMA"))){
+						schema.put("CONNECTION", connTemp.getName());
+		    			List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+		    			connections.add(0, connTemp.getName());
+		    			connectionMapColumnList.put(connTemp.getName(), listColumns);
+					}
+	    		}
+	    	}//HSS_____0_____1_____1
+			schemas.add(0, schema);
+		}else{
+			for(int i=0;i<conns.size();i++){//HSS_____0_____1_____1
+	    		IConnection connTemp = conns.get(i);
+	    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	    			IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+					if(tempMetadataTable.getTableName().equals(schema.get("SCHEMA"))){
+						schema.put("CONNECTION", connTemp.getName());
+		    			List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+		    			connections.add(connTemp.getName());
+		    			connectionMapColumnList.put(connTemp.getName(), listColumns);
+					}
+	    		}
+	    	}//HSS_____0_____1_____1
+			schemas.add(schema);
+		}
+	}//HSS_____0_____1
+
+
+String fileName = ElementParameterParser.getValue(node,"__FILENAME__");
+String separator = ElementParameterParser.getValue(node,"__ROWSEPARATOR__");
+String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+boolean isUseMultiSeparator = ("true").equals(ElementParameterParser.getValue(node, "__USEMULTISEPARATOR__"));
+String escapeChar = ("\"\"\"").equals(ElementParameterParser.getValue(node, "__ESCAPE_CHAR__"))?"\"\\\"\"":ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+String textEnclosure = ("\"\"\"").equals(ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__"))?"\"\\\"\"":ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+%>
+int nb_line_<%=cid %> = 0;
+String fileName_<%=cid%> = <%=fileName%>;
+java.io.File createFile<%=cid %> = new java.io.File(fileName_<%=cid %>);
+<%
+	if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+%>
+//create directory only if not exists
+java.io.File parentFile_<%=cid %> = createFile<%=cid%>.getParentFile();
+if(parentFile_<%=cid%> != null && !parentFile_<%=cid%>.exists()) {
+    parentFile_<%=cid %>.mkdirs();
+}
+
+<%	}%>
+
+<%
+if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {	
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>
+
+<%
+            String rowSeparator = ElementParameterParser.getValueWithUIFieldKey(
+                node,
+                "__ROWSEPARATOR__",
+                "ROWSEPARATOR"
+            );
+//            boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+%>
+    		
+final String OUT_DELIM_ROWSEP_<%=cid %> = <%=rowSeparator %>;
+    
+java.io.Writer out<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+	new java.io.FileOutputStream(fileName_<%=cid%>, false),<%=encoding %>));
+<%
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}else{// the following is the tFileOutputCSV component
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>
+
+<%
+        if(isUseMultiSeparator==false){
+%>
+String field_<%=cid %> = <%=fieldSeparator %>;
+if(field_<%=cid %>.length() <= 0){
+	throw new IllegalArgumentException("Field delimited must be assigned a char.");
+}
+<%		}%>
+com.talend.csv.CSVWriter out<%=cid %> = new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+    new java.io.FileOutputStream(fileName_<%=cid%>, false), <%=encoding%>)));
+out<%=cid %>.setSeparator(<%=isUseMultiSeparator==false?"field_"+cid+".charAt(0)":"\';\'" %>);
+ 
+<%
+        if(isUseMultiSeparator==false){
+%>
+String row_<%=cid %> = <%=separator %>;
+if(row_<%=cid %>.length() > 0){
+	out<%=cid %>.setLineEnd(""+row_<%=cid %>.charAt(0));
+}else{
+	throw new IllegalArgumentException("Row delimited must be assigned a char.");
+}
+
+String escapeChar_<%=cid %> = <%=escapeChar %>;
+if(escapeChar_<%=cid %>.length() <= 0){
+	throw new IllegalArgumentException("Escape Char must be assigned a char.");
+}
+
+String textEnclosure_<%=cid %> = <%=textEnclosure %>;
+if(textEnclosure_<%=cid %>.length() > 0){
+	out<%=cid %>.setQuoteChar(textEnclosure_<%=cid %>.charAt(0));
+}else{
+	throw new IllegalArgumentException("Text Enclosure must be assigned a char.");
+}
+
+if (("\\\\").equals(escapeChar_<%=cid %>)) {
+	out<%=cid %>.setEscapeChar('\\');
+} else if (escapeChar_<%=cid %>.equals(textEnclosure_<%=cid %>)) {
+	out<%=cid %>.setEscapeChar(textEnclosure_<%=cid %>.charAt(0));
+} else {
+	out<%=cid %>.setEscapeChar(textEnclosure_<%=cid %>.charAt(0));
+}
+out<%=cid %>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.FORCE);
+
+<%
+		}
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+// //////////////////////////////////////////////////////////////////////////////////////////////////////
+%>
+
+<%
+	for(int i=0; i < connections.size(); i++){//HSS_____0_____3
+		String conn = connections.get(i);
+		if(i==0){
+%>
+	java.util.List<<%=conn %>Struct> <%=conn %>List_<%=cid %> = new java.util.ArrayList<<%=conn %>Struct>();
+<% 
+		}else{
+%>
+	org.talend.commons.utils.data.map.MultiLazyValuesMap <%=conn %>Map_<%=cid %> = new org.talend.commons.utils.data.map.MultiLazyValuesMap(
+                    new java.util.HashMap()) {
+
+                public java.util.Collection instanciateNewCollection() {
+                    return new org.apache.commons.collections.list.GrowthList(3);
+                }
+
+            };
+   final <%=conn %>Struct[] EMPTY_ARRAY_<%=conn %>_<%=cid %> = new <%=conn %>Struct[0];
+<%
+		}
+    }//HSS_____0_____3
+    
+}//HSS_____0
+%>

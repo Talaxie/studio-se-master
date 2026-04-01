@@ -1,0 +1,56 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.EConnectionType
+		java.util.List 
+		" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+
+if (conns != null && !conns.isEmpty()) {
+
+	for (IConnection conn : conns) {
+
+		if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN) && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			List<IMetadataTable> metadatas = node.getMetadataList();
+			
+			if (metadatas != null && !metadatas.isEmpty()) {
+				// C_01 make old job works with out a migration
+				String sFieldName = "series";
+			    IMetadataTable metadata = metadatas.get(0);
+			    List<IMetadataColumn> columns = metadata.getListColumns();
+			    
+			    for (IMetadataColumn column : columns) {
+					
+					if ("serie".equals(column.getLabel())) {
+						sFieldName = "serie";
+						break;
+					}
+				}
+				// C_01
+				%>
+				String serieLabel<%=cid%> = <%=conn.getName()%>.<%=sFieldName%>;
+				org.jfree.data.xy.XYSeries serie<%=cid%>;
+	
+				if (series<%=cid%>.containsKey(serieLabel<%=cid%>)) {
+					serie<%=cid%> = series<%=cid%>.get(serieLabel<%=cid%>);
+				} else {
+					serie<%=cid%> = new org.jfree.data.xy.XYSeries(serieLabel<%=cid%>, true, false);
+					series<%=cid%>.put(serieLabel<%=cid%>, serie<%=cid%>);
+				}
+				serie<%=cid%>.add(<%=conn.getName()%>.x, <%=conn.getName()%>.y);
+			<%
+			}
+		}
+	}
+}
+%>

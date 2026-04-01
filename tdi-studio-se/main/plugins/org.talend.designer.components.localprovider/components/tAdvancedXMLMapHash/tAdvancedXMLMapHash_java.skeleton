@@ -1,0 +1,274 @@
+public class CLASS {
+
+	//get all nodes whose expression is editable;
+	void getAllLeaf(TreeNode node,List<TreeNode> result) {
+		EList<TreeNode> children = node.getChildren();
+		if(children==null || children.size() == 0) {
+			result.add(node);//leaf is editable
+		} else {
+			boolean editableAtExpression = true;
+			for(TreeNode child : children) {
+				if(child!=null) {
+					//attribute and namespace are not treat as subnode , so the expression of treeNode should be editable.
+					if(NodeType.ATTRIBUT != child.getNodeType() && NodeType.NAME_SPACE != child.getNodeType()) {
+						editableAtExpression = false;
+					}
+					getAllLeaf(child,result);
+				}
+			}
+			
+			if(editableAtExpression) {
+				result.add(node);
+			}
+		}
+	}
+	
+	void getAllLoopNodes(OutputTreeNode node,List<OutputTreeNode> result) {
+		if(node == null) {
+			return;
+		}
+		if(node.isLoop()){
+			result.add(node);
+			return;
+		}
+		for(TreeNode child : node.getChildren()){
+			getAllLoopNodes((OutputTreeNode)child,result);
+		}
+	}
+	
+	List<InputLoopNodesTable> getValidInputLoopNodesTables(List<InputLoopNodesTable> inputLoopNodesTablesWithUnValid) {
+    	List<InputLoopNodesTable> inputLoopNodesTables = new ArrayList<InputLoopNodesTable>();
+    	if(inputLoopNodesTablesWithUnValid == null) return inputLoopNodesTables;
+		for(InputLoopNodesTable inputLoopNodesTable : inputLoopNodesTablesWithUnValid) {
+			if(inputLoopNodesTable!=null && inputLoopNodesTable.getInputloopnodes()!=null && inputLoopNodesTable.getInputloopnodes().size()>0)
+				inputLoopNodesTables.add(inputLoopNodesTable);
+		}
+		return inputLoopNodesTables;
+    }
+	
+    public String generate(Object argument) {
+        return "";
+    }
+    
+    class LoopHelper {
+	
+		//all used input loops(if the input loop is no used in any output table,we treat as no loop node)
+		List<TreeNode> inputLoopsInAllOutputTables = new ArrayList<TreeNode>();
+		
+		//all output tables
+		List<OutputXmlTree> outputTables;
+		
+		//all input tables
+		List<InputXmlTree> inputTables;
+		
+		TreeNode inputRootOfMainInputTableDocument;
+		
+		public LoopHelper(TreeNode inputRoot,List<OutputXmlTree> outputTables,List<InputXmlTree> inputTables) {
+			this.inputRootOfMainInputTableDocument = inputRoot;
+			this.outputTables = outputTables;
+			this.inputTables = inputTables;
+			
+			for(OutputXmlTree outputTable : outputTables) {
+				List<InputLoopNodesTable> inputLoopNodesTables = getValidInputLoopNodesTables(outputTable.getInputLoopNodesTables());
+				for(InputLoopNodesTable inputLoopNodesTable : inputLoopNodesTables) {
+					List<TreeNode> inputLoopNodes = inputLoopNodesTable.getInputloopnodes();
+					for(TreeNode node : inputLoopNodes) {
+						if(!inputLoopsInAllOutputTables.contains(node)) {
+							inputLoopsInAllOutputTables.add(node);
+						}
+					}
+					
+				}
+			}
+		}
+		
+		//all input loops used by current output table
+		List<TreeNode> inputLoopsInCurrentOutputTable;
+		
+		//for output mapping belong to unique input loop
+		public Map<TreeNode,TreeNode> outputNodeToLoopNode;
+		
+		//need a var for lookup output mapping belong to input loop
+		
+		boolean parallelLoopExistInCurrentOutputTable;
+		
+		boolean nestedLoopExistInCurrentOutputTable;
+		
+		//set current output table and init
+		public void initForOneOutputTable(OutputXmlTree currentOutputTable) {
+			inputLoopsInCurrentOutputTable = new ArrayList<TreeNode>();
+			parallelLoopExistInCurrentOutputTable = false;
+			nestedLoopExistInCurrentOutputTable = false;
+			outputNodeToLoopNode = new HashMap<TreeNode,TreeNode>();
+			
+			List<InputLoopNodesTable> inputLoopNodesTables = getInputLoopNodesTables(currentOutputTable);
+			if(inputLoopNodesTables.size() > 1) {
+				parallelLoopExistInCurrentOutputTable = true;
+			}
+			for(InputLoopNodesTable inputLoopNodesTable : inputLoopNodesTables) {
+				List<TreeNode> inputLoopNodes = inputLoopNodesTable.getInputloopnodes();
+				if(inputLoopNodes.size() > 1) {
+					nestedLoopExistInCurrentOutputTable = true;
+				}
+				for(TreeNode inputLoopNode : inputLoopNodes) {
+					if(!inputLoopsInCurrentOutputTable.contains(inputLoopNode)) {
+						inputLoopsInCurrentOutputTable.add(inputLoopNode);
+					}
+				}
+			}
+			if(parallelLoopExistInCurrentOutputTable || nestedLoopExistInCurrentOutputTable) {
+				setLoopMapping();
+			}
+		}
+		
+		private List<InputLoopNodesTable> getInputLoopNodesTables(OutputXmlTree currentOutputTable) {
+			List<InputLoopNodesTable> result = new ArrayList<InputLoopNodesTable>();
+			
+			List<OutputTreeNode> loopNodes = new ArrayList<OutputTreeNode>();
+			boolean docExist = false;
+			for(OutputTreeNode currentNode : currentOutputTable.getNodes()) {
+				if("id_Document".equals(currentNode.getType())) {
+					getAllLoopNodes(currentNode,loopNodes);
+					docExist = true;
+				}
+			}
+			
+			if(docExist) {
+				for(OutputTreeNode loop : loopNodes) {
+					if(loop.getInputLoopNodesTable()!=null) {
+						result.add(loop.getInputLoopNodesTable());
+					}
+				}
+			} else {//only flat column exist
+				result.addAll(getValidInputLoopNodesTables(currentOutputTable.getInputLoopNodesTables()));
+			}
+			
+			return result;
+		}
+		
+		List<TreeNode> currentInputLoopNodes;
+		//filter for lookup table
+		List<TreeNode> noUsedInputLoopsForCurrentOutputTableLoop;
+		List<TreeNode> noUsedLookupNodesForAllLookupTableToCurrentOutputTableLoop;
+		//set current output loop of current output table  and init
+		public void initForOneOutputTableLoop(List<TreeNode> inputLoopNodes) {
+			noUsedInputLoopsForCurrentOutputTableLoop = new ArrayList<TreeNode>();
+			noUsedLookupNodesForAllLookupTableToCurrentOutputTableLoop = new ArrayList<TreeNode>();
+			currentInputLoopNodes = inputLoopNodes;
+			for(TreeNode inputLoopNode : inputLoopsInAllOutputTables) {
+				if(!currentInputLoopNodes.contains(inputLoopNode)) {
+					noUsedInputLoopsForCurrentOutputTableLoop.add(inputLoopNode);
+					insideOfLoop(inputLoopNode);
+				}
+			}
+		}
+		
+		private void insideOfLoop(TreeNode loopNode) {
+			if(asOutput(loopNode)) {
+				noUsedLookupNodesForAllLookupTableToCurrentOutputTableLoop.add(loopNode);
+			}
+			for(TreeNode childNode : loopNode.getChildren()) {
+				insideOfLoop(childNode);
+			}
+		}
+	
+		/**
+		 * used when parallel loop exist in current output table or  parallel relation exist between all output tables
+		 * @param nodeOfLookupTable
+		 * @return
+		 */
+		public boolean validLookupKey(TreeNode nodeOfLookupTable) {
+			List<LookupConnection> lookupIncomings = nodeOfLookupTable.getLookupIncomingConnections();
+			if(lookupIncomings.size()>0) {
+				LookupConnection lookupIncoming = lookupIncomings.get(0);
+				TreeNode source = (TreeNode)lookupIncoming.getSource();
+				return !noUsedLookupNodesForAllLookupTableToCurrentOutputTableLoop.contains(source);
+			}
+			return true;
+		}
+		
+		/**
+		 * for the output mapping
+		 */
+		private void setLoopMapping() {
+			for(TreeNode inputLoop : inputLoopsInCurrentOutputTable) {
+				initInsideOfLoop(inputLoop,inputLoop);
+			}
+			initOutsideOfLoops(this.inputRootOfMainInputTableDocument);
+		}
+		
+		private void initInsideOfLoop(TreeNode loopNode,TreeNode node) {
+			if(asOutput(node)) {
+				outputNodeToLoopNode.put(node, loopNode);
+			}
+			for(TreeNode childNode : node.getChildren()) {
+				initInsideOfLoop(loopNode,childNode);
+			}
+		}
+		
+		private void initOutsideOfLoops(TreeNode node) {
+			if(node.isLoop()) {
+				return;
+			}
+			if(asOutput(node)) {
+				outputNodeToLoopNode.put(node,null);
+			}
+			for(TreeNode childNode : node.getChildren()) {
+				initOutsideOfLoops(childNode);
+			}
+		}
+		
+		//for output mapping 
+		public boolean belongToCurrentLoop(TreeNode inputLoopNode,String xpath,boolean isMainInputLoopInNestLoop) {
+			if(parallelLoopExistInCurrentOutputTable || nestedLoopExistInCurrentOutputTable) {
+				for(Map.Entry<TreeNode, TreeNode> entry : outputNodeToLoopNode.entrySet()) {
+					TreeNode outputNode = entry.getKey();
+					TreeNode loopNode = entry.getValue();
+					if(xpath.equals(outputNode.getXpath())) {
+						if(isMainInputLoopInNestLoop) {
+							if(loopNode == null) {//outside of any input loop
+								return true;
+							}
+							return loopNode == inputLoopNode;
+						} else {
+							if(loopNode == null) {
+								return false;
+							}
+							return loopNode == inputLoopNode;
+						}
+					}
+				}
+			}
+			return true;
+		}
+		
+		private boolean asOutput(TreeNode currentNode) {
+			return currentNode.getOutgoingConnections().size()>0 || currentNode.getLookupOutgoingConnections().size()>0 || currentNode.getFilterOutGoingConnections().size()>0;
+		}
+		
+		private List<InputLoopNodesTable> getValidInputLoopNodesTables(List<InputLoopNodesTable> inputLoopNodesTablesWithUnValid) {
+	    	List<InputLoopNodesTable> inputLoopNodesTables = new ArrayList<InputLoopNodesTable>();
+	    	if(inputLoopNodesTablesWithUnValid == null) return inputLoopNodesTables;
+			for(InputLoopNodesTable inputLoopNodesTable : inputLoopNodesTablesWithUnValid) {
+				if(inputLoopNodesTable!=null && inputLoopNodesTable.getInputloopnodes()!=null && inputLoopNodesTable.getInputloopnodes().size()>0)
+					inputLoopNodesTables.add(inputLoopNodesTable);
+			}
+			return inputLoopNodesTables;
+	    }
+		
+		private void getAllLoopNodes(OutputTreeNode node,List<OutputTreeNode> result) {
+			if(node == null) {
+				return;
+			}
+			if(node.isLoop()){
+				result.add(node);
+				return;
+			}
+			for(TreeNode child : node.getChildren()){
+				getAllLoopNodes((OutputTreeNode)child,result);
+			}
+		}
+		
+	}
+    
+}

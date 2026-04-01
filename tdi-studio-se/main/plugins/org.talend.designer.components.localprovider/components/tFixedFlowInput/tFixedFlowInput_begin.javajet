@@ -1,0 +1,232 @@
+<%@ jet 
+imports="
+   org.talend.core.model.process.INode 
+   org.talend.core.model.process.ElementParameterParser 
+   org.talend.core.model.process.IConnection
+   org.talend.core.model.process.IConnectionCategory    
+   org.talend.designer.codegen.config.CodeGeneratorArgument
+   org.talend.core.model.metadata.IMetadataTable 
+   org.talend.core.model.metadata.IMetadataColumn
+   org.talend.core.model.metadata.types.JavaTypesManager
+   org.talend.core.model.metadata.types.JavaType
+   java.util.List
+   java.util.Map
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String nbRows = ElementParameterParser.getValue(node, "__NB_ROWS__");
+
+	List<Map<String, String>> tableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__VALUES__"
+    );
+    
+    boolean use_singleMode = ("true").equals(ElementParameterParser.getValue(node, "__USE_SINGLEMODE__"));
+    boolean use_inTable = ("true").equals(ElementParameterParser.getValue(node, "__USE_INTABLE__"));
+    boolean use_inlineContent = ("true").equals(ElementParameterParser.getValue(node, "__USE_INLINECONTENT__"));
+    
+	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+	String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+    
+	List<Map<String, String>> inTableValues =
+    (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+        node,
+        "__INTABLE__"
+    );
+    
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	IMetadataTable metadata = null;
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		metadata = metadatas.get(0);    
+    }
+    
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+	
+//************** the original part that get only one value for each column ********************
+	if(use_singleMode){
+		if(tableValues != null && tableValues.size() > 0 && conns != null && conns.size() > 0) {
+	    %>
+	    for (int i_<%=cid%> = 0 ; i_<%=cid%> < <%=nbRows%> ; i_<%=cid%>++) {
+	        <%
+	        String firstConnName = "";	
+    	    for(IConnection conn : conns) {
+    	        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    	        	firstConnName = conn.getName();
+    	        	break;
+    	        } // if(conn) end
+    	    } // for(conns) end
+    	    if (firstConnName !=null && !"".equals(firstConnName)) {
+	            for(Map<String, String> tableValue : tableValues) {
+	            	String lable = tableValue.get("SCHEMA_COLUMN");
+    	            String value = tableValue.get("VALUE");
+    	            if(value == null || value.length() == 0){ //use the default value
+    	            	IMetadataColumn column = metadata.getColumn(lable);
+	            		String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+	            		String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+	            		%>        	            	
+    	            		<%=firstConnName%>.<%=lable %> = <%=defaultValue %>;        	            	
+    	            	<%
+    	            }else{
+    	            	%>        	            	
+    	            		<%=firstConnName%>.<%=lable %> = <%=value %>;
+    	            	<%
+    	            }
+	            } // for (map) end
+    		} // if(firstConnName) end
+		}
+//***************************the original part end ***************************************
+	}else if(use_inTable){
+//******************the new part ---get several values for each column*********************
+		if(inTableValues != null && inTableValues.size() > 0 && conns != null && conns.size() > 0) {
+%>
+	int nb_line_<%=cid %> = 0;
+<%
+            String firstConnName = "";	
+            for(IConnection conn : conns) {
+                if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+             		firstConnName = conn.getName();
+             		break;
+                }
+            }
+    	    if(firstConnName!=null && !firstConnName.equals("")){//XXX
+%>
+	List<<%=firstConnName%>Struct> cacheList_<%=cid %> = new java.util.ArrayList<<%=firstConnName%>Struct>();
+<%    	        	
+    	            for(Map<String, String> tableValue : inTableValues) {
+%>
+	<%=firstConnName%> = new <%=firstConnName%>Struct();
+<%
+    	            	for(IMetadataColumn column: metadata.getListColumns()){
+    	            		String label = column.getLabel();
+	    	            	String value = tableValue.get(label);
+	        	            if(value == null || value.length() == 0){ //use the default value
+	    	            		String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+	    	            		String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+%>        	            	
+    <%=firstConnName%>.<%=label %> = <%=defaultValue %>;        	            	
+<%
+        	            	}else{
+%>        	            	
+	<%=firstConnName%>.<%=label %> = <%=value %>;
+<%
+        	            	}
+        	            }
+%>
+	cacheList_<%=cid %>.add(<%=firstConnName%>);
+<%
+    	            }
+    	     }
+%>
+	for (int i_<%=cid%> = 0 ; i_<%=cid%> < <%=nbRows%> ; i_<%=cid%>++) {
+<%
+			if(firstConnName!=null && !firstConnName.equals("")){
+%>	
+		for(<%=firstConnName%>Struct tmpRow_<%=cid %> : cacheList_<%=cid %>){
+<%
+			}
+%>
+			nb_line_<%=cid %> ++;
+<%
+			if(firstConnName!=null && !firstConnName.equals("")){
+%>		
+			<%=firstConnName%> = tmpRow_<%=cid %>;
+<%
+    	    }
+		}
+//********************the new part end*****************************************************
+	}else if(use_inlineContent){
+	
+	String fileContent = ElementParameterParser.getValue(node,"__INLINECONTENT__");
+	
+	String lineSeparator = "\r\n";
+	
+	String fileContentEnCodeStr = "";
+	try {
+		fileContentEnCodeStr = java.util.Base64.getMimeEncoder().encodeToString(fileContent.getBytes("UTF-8"));
+	} catch (java.io.UnsupportedEncodingException e) {
+		e.printStackTrace();
+	}	
+%>
+
+StringBuilder result_<%=cid %> = new StringBuilder();
+<%
+String[] arrayStr = fileContentEnCodeStr.split(lineSeparator);
+for(String item : arrayStr){
+%>
+	result_<%=cid %>.append("<%=item %>");
+<%}%>
+String originalFileContent_<%=cid %> = "";
+try {
+    originalFileContent_<%=cid %> = new String(java.util.Base64.getMimeDecoder().decode(result_<%=cid %>.toString()), utf8Charset);
+} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    e.printStackTrace();
+}
+
+int nb_line_<%=cid %> = 0;
+
+for (int i_<%=cid%> = 0 ; i_<%=cid%> < <%=nbRows%> ; i_<%=cid%>++) {	
+
+java.io.InputStream ins_<%=cid %> = new java.io.ByteArrayInputStream(originalFileContent_<%=cid %>.getBytes(utf8Charset));        
+org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(ins_<%=cid %>, utf8Charset,<%=fieldSeparator %>,<%=rowSeparator %>,true, 0, 0, -1, -1, false);
+
+while (fid_<%=cid %>.nextRecord()) {
+	nb_line_<%=cid %>++;
+<%
+    String firstConnName = "";	
+    for(IConnection conn : conns) {
+        if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+     		firstConnName = conn.getName();
+     		break;
+        }
+    }
+    
+    if(!firstConnName.equals("")){//XXX
+%>
+			<%=firstConnName %> = new <%=firstConnName %>Struct();
+<%
+        	List<IMetadataColumn> columns = metadata.getListColumns();
+        	int sizeListColumns = columns.size();
+
+			for (int i=0;i<sizeListColumns;i++) {//AAA
+					IMetadataColumn column=columns.get(i);
+					String label = column.getLabel();
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();					
+					String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+%>
+
+				if(<%=i %> < fid_<%=cid %>.getColumnsCountOfCurrentRow()){
+					String colContent = fid_<%=cid %>.get(<%=i %>);				
+                    <%if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {%>
+                    		<%=firstConnName %>.<%=label %> = (colContent == null || colContent.length() == 0) ? <%=defaultValue %>: colContent;
+                    <%}else if(javaType == JavaTypesManager.DATE){%>
+                    		<%=firstConnName %>.<%=label %> = (colContent == null || colContent.length() == 0) ? ParserUtils.parseTo_Date(<% if((defaultValue==null)||"".equals(defaultValue) || "null".equals(defaultValue)){%>(String)<%}%> <%=defaultValue %>, <%= patternValue %>) : ParserUtils.parseTo_Date(colContent, <%= patternValue %>);
+                    <%}else if(javaType == JavaTypesManager.BYTE_ARRAY){%>
+                    		<%=firstConnName %>.<%=label %> = (colContent == null || colContent.length() == 0) ? <%=defaultValue %> : colContent.getBytes();
+                    <%}else{%>
+                    		<%=firstConnName %>.<%=label %> = (colContent == null || colContent.trim().length() == 0) ? <%=defaultValue %> : ParserUtils.parseTo_<%= typeToGenerate %>(colContent);
+                    <%}%>			
+				} else { 
+				<%if(javaType != JavaTypesManager.DATE){%>	
+					<%=firstConnName %>.<%=label %> = <%=defaultValue %>;
+				<%}else {%>
+					<%=firstConnName %>.<%=label %> = ParserUtils.parseTo_Date(<% if(defaultValue==null||"".equals(defaultValue)|| "null".equals(defaultValue)){%>(String)<%}%><%=defaultValue %>, <%= patternValue %>);
+				<%}%>
+				}
+			
+			<%
+				}//AAA
+			%>
+<%
+	}//XXX
+//********************the use_inTable part end*****************************************************
+	}
+%>

@@ -1,0 +1,162 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.process.ElementParameterParser 
+		java.util.List
+		java.util.ArrayList
+		org.talend.core.model.process.IHashableInputConnections
+		org.talend.core.model.process.IHashConfiguration
+		org.talend.core.model.process.IHashableColumn
+		org.talend.core.model.process.IMatchingMode
+		org.talend.core.model.process.IDataConnection
+		org.talend.designer.mapper.external.data.ExternalMapperData
+		org.talend.designer.mapper.external.data.ExternalMapperTable
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    
+	if (connections != null && connections.size() > 0) {
+        for (IConnection connection : connections) {
+        	String connectionName = connection.getName();
+        	%>
+			   		// connection name:<%=connectionName%>
+			   		// source node:<%=connection.getSource()%> | target node:<%=connection.getTarget()%>
+			   		// linked node: <%=((IDataConnection) connection).getLinkNodeForHash()%>
+			   <%
+			INode validTarget = ((IDataConnection) connection).getLinkNodeForHash();
+
+			if(validTarget != null) {
+				List<IHashableColumn> hashableColumns = null;
+				IMatchingMode matchingMode = null;
+				String tempFolder = null;
+				String rowsBufferSize = null;
+				IHashConfiguration hashConfiguration = null;				
+				String matchingModeStr = null;
+				boolean bSortOnDisk = "true".equals(ElementParameterParser.getValue(node, "__SORT_ON_DISK__")); 
+				
+				boolean isOneOfReloadLookupMode = false;
+				
+			    if (validTarget instanceof IHashableInputConnections){
+					IHashableInputConnections target = (IHashableInputConnections) validTarget;
+					hashConfiguration = target.getHashConfiguration(connection.getName());
+					
+					if("tMap".equals(validTarget.getComponent().getName())) {
+						ExternalMapperData externalData = (ExternalMapperData) (validTarget.getExternalData());
+        				List<ExternalMapperTable> inputTables = externalData.getInputTables();
+						for (ExternalMapperTable inputTable : inputTables) {
+                			if (inputTable.getName().equals(connection.getName())) {
+                				boolean isReloadLookupMode = org.talend.designer.mapper.model.table.LOOKUP_MODE.RELOAD.name().equals(inputTable.getLookupMode());
+    							boolean isCacheOrReloadLookupMode = org.talend.designer.mapper.model.table.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(inputTable.getLookupMode());
+    							isOneOfReloadLookupMode = isReloadLookupMode || isCacheOrReloadLookupMode;
+                				break;
+                			}
+            			}
+					}
+				} else{
+				    List<java.util.Map<String, String>> listBlockings = (List<java.util.Map<String, String>>)ElementParameterParser.getObjectValue(node, "__BLOCKING_DEFINITION__");
+				  	matchingModeStr = (listBlockings == null || listBlockings.size() == 0) ? "ALL_ROWS" : "ALL_MATCHES";
+                    tempFolder = ElementParameterParser.getValue(node, "__TMP_DIRECTORY__");
+				  	rowsBufferSize = ElementParameterParser.getValue(node, "__ROWS_BUFFER_SIZE__");
+				}
+
+					if(hashConfiguration == null) {
+						hashableColumns = new ArrayList(0);
+						
+						//System.out.println(connectionName + " ### " + hashConfiguration + "IS NULL ##### " + validTarget + " " + validTarget.getClass());
+						
+					} else {
+						tempFolder = hashConfiguration.getTemporaryDataDirectory();
+						hashableColumns = hashConfiguration.getHashableColumns();
+						matchingMode = hashConfiguration.getMatchingMode();
+						rowsBufferSize = hashConfiguration.getRowsBufferSize();
+					}
+					
+					if (matchingModeStr == null){
+					  if(matchingMode == null) {
+						  if(hashableColumns.size() > 0) {
+							matchingModeStr = "UNIQUE_MATCH";
+						  } else {
+							matchingModeStr = "ALL_ROWS";
+						  }
+					  } else {
+						matchingModeStr = matchingMode.toString();
+					  }
+					}
+					
+					boolean isAllRows = "ALL_ROWS".equals(matchingModeStr);
+					
+					boolean includeParallelComps = false;
+					INode collectorNode = validTarget.getDesignSubjobStartNode();
+           			if ("tCollector".equals(collectorNode.getComponent().getName())) {
+        				includeParallelComps = true;
+        			}
+			   %>
+			   		org.talend.designer.components.lookup.common.ICommonLookup.MATCHING_MODE matchingModeEnum_<%=connectionName%> = 
+			   			org.talend.designer.components.lookup.common.ICommonLookup.MATCHING_MODE.<%= matchingModeStr %>;
+			   			
+			   <%if (includeParallelComps && !(hashConfiguration != null && hashConfiguration.isPersistent() || bSortOnDisk) && !isOneOfReloadLookupMode) {%>
+			   synchronized(this) {
+			   		try {  
+			   		if (globalMap.get("tHash_Lookup_<%=connectionName%>") == null) {
+			   		
+			   <%
+			   	}
+				if (hashConfiguration != null && hashConfiguration.isPersistent() || bSortOnDisk) {
+				%>
+					org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=connectionName%>Struct> tHash_Lookup_<%=connectionName%> = 
+	   					new org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=connectionName%>Struct>(matchingModeEnum_<%=connectionName%>, <%= tempFolder %> + "/"+ jobName +"_tMapData_" + pid +"_Lookup_<%=connectionName%>_"
+	   					, new org.talend.designer.components.persistent.IRowCreator() {
+	   						public <%=connectionName%>Struct createRowInstance() {
+	   							return new <%=connectionName%>Struct();
+	   						}
+	   					}
+	   					<% if(!isAllRows) { %>
+	   						, <%= rowsBufferSize %>
+	   					<% } %>
+	   					); 
+
+	   				tHash_Lookup_<%=connectionName%>.initPut();
+
+		   	   	   globalMap.put("tHash_Lookup_<%=connectionName%>", tHash_Lookup_<%=connectionName%>);
+		   	   	   
+	   			<%	
+	   			} else {
+	   				if (includeParallelComps && !isOneOfReloadLookupMode) {
+	   			%>
+	   			
+	   			org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=connectionName%>Struct> tHash_Lookup_<%=connectionName%> = 
+	   						org.talend.designer.components.lookup.memory.ConcurrentAdvancedMemoryLookup.
+	   							<<%=connectionName%>Struct>getLookup(matchingModeEnum_<%=connectionName%>);
+	   			<%
+	   				} else {
+	   			%>
+	   			org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=connectionName%>Struct> tHash_Lookup_<%=connectionName%> =org.talend.designer.components.lookup.memory.AdvancedMemoryLookup.
+	   						<<%=connectionName%>Struct>getLookup(matchingModeEnum_<%=connectionName%>);
+	   			<%
+	   				}
+	   			%>			   
+		   	   	   globalMap.put("tHash_Lookup_<%=connectionName%>", tHash_Lookup_<%=connectionName%>);
+		   	   	   
+				<%
+				}
+			} else {
+				%> 
+				/*
+				 * Valid target not found for connection "<%= connectionName%>"
+				 */ 
+				<%
+			}
+		}
+	}
+
+%>
+           

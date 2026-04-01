@@ -1,0 +1,126 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map
+		"
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	
+		public void beforeComponentProcess(INode node){
+			super.beforeComponentProcess(node);
+			cid = node.getUniqueName();
+%>
+		    java.util.Calendar calendar_<%=cid%> = java.util.Calendar.getInstance();
+		    calendar_<%=cid%>.set(0, 0, 0, 0, 0, 0);
+		    java.util.Date year0_<%=cid%> = calendar_<%=cid%>.getTime();
+<%
+	    }
+	    
+		public void setURL(INode node) {
+			String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			String jdbcURL = "jdbc:mysql";
+			if("MARIADB".equals(dbVersion)){
+				jdbcURL = "jdbc:mariadb";
+			}
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Mysql/jdbcurl4basic.javajet"%>
+<%
+		}
+		
+		public String getDirverClassName(INode node){
+			String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+			if("MARIADB".equals(dbVersion)){
+				return "org.mariadb.jdbc.Driver";
+			} else if ("MYSQL_8".equals(dbVersion)){
+				return "com.mysql.cj.jdbc.Driver";
+			} else {
+				return "com.mysql.jdbc.Driver";
+			}
+		}
+		
+		public void createStatement(INode node) {
+			super.createStatement(node);
+			String enableStream = ElementParameterParser.getValue(node, "__ENABLE_STREAM__");
+            boolean useExistMySQLConn = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+            String dbVersion = "";
+            if (useExistMySQLConn) {
+                List< ? extends INode> nodes =  node.getProcess().getNodesOfType("tMysqlConnection");
+                String connectionMySQL = ElementParameterParser.getValue(node,"__CONNECTION__");
+                for (INode ne : nodes) {
+                    if (connectionMySQL.equals(ne.getUniqueName())) {
+                        dbVersion = ElementParameterParser.getValue(ne, "__DB_VERSION__");
+                    }
+                }
+            } else {
+                dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+            }
+		    if(("true").equals(enableStream)&&(!"MARIADB".equals(dbVersion))&&(!"MYSQL_8".equals(dbVersion))) {
+%>
+		        if(stmt_<%=cid %> instanceof com.mysql.jdbc.Statement){
+				    ((com.mysql.jdbc.Statement)stmt_<%=cid %>).enableStreamingResults();
+				}else if(stmt_<%=cid %> instanceof com.mysql.jdbc.jdbc2.optional.JDBC4StatementWrapper){
+				    ((com.mysql.jdbc.jdbc2.optional.JDBC4StatementWrapper)stmt_<%=cid %>).enableStreamingResults();
+				}
+<%
+			} else if (("true").equals(enableStream) && ("MYSQL_8".equals(dbVersion))){
+%>
+				if(stmt_<%=cid %> instanceof com.mysql.cj.jdbc.StatementImpl){
+				    ((com.mysql.cj.jdbc.StatementImpl)stmt_<%=cid %>).enableStreamingResults();
+				}else if(stmt_<%=cid %> instanceof com.mysql.cj.jdbc.StatementWrapper){
+				    ((com.mysql.cj.jdbc.StatementWrapper)stmt_<%=cid %>).enableStreamingResults();
+				}
+<%
+			}
+		}
+		
+		public void generateYearResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+%>
+			//check if year is null in DB
+			String yearStringValue_<%=cid %> = rs_<%=cid%>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+			if (null != yearStringValue_<%=cid %>) {
+				Integer yearValue_<%=cid%> = rs_<%=cid%>.getInt(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+				calendar_<%=cid %>.set(yearValue_<%=cid%>, 0, 1);
+				<%=firstConnName%>.<%=column.getLabel()%> = calendar_<%=cid %>.getTime();
+			} else {
+				<%=firstConnName%>.<%=column.getLabel()%> = null;
+			}
+<%
+		}
+
+		//-----------according schema type to generate ResultSet
+	    public void generateTimestampResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+			if ("YEAR".equalsIgnoreCase(column.getType())) {
+				generateYearResultSet(firstConnName, column, currentColNo);
+			} else {
+%>
+				if(rs_<%=cid %>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) != null) {
+					String dateString_<%=cid%> = rs_<%=cid%>.getString(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+					if (!("0000-00-00").equals(dateString_<%=cid%>) && !("0000-00-00 00:00:00").equals(dateString_<%=cid%>)) {
+						<%=firstConnName%>.<%=column.getLabel()%> = rs_<%=cid%>.getTimestamp(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+					} else {
+						<%=firstConnName%>.<%=column.getLabel()%> = (java.util.Date) year0_<%=cid%>.clone();
+					}
+				} else {
+					<%=firstConnName%>.<%=column.getLabel()%> =  null;
+				}
+<%
+			}
+	    }
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>

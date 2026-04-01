@@ -1,0 +1,97 @@
+<%@ jet 
+imports="
+java.util.List
+java.util.Map
+org.talend.core.model.metadata.IMetadataColumn
+org.talend.core.model.metadata.IMetadataTable
+org.talend.core.model.process.ElementParameterParser
+org.talend.core.model.process.IConnection
+org.talend.core.model.process.IConnectionCategory
+org.talend.core.model.process.INode
+org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+log = new LogUtil(node);
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if (metadatas != null && metadatas.size() > 0) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata != null) {
+		%>
+		int nb_line_<%=cid%> = 0;
+		int nb_line_inserted_<%=cid%> = 0;
+		int nb_line_update_<%=cid%> = 0;
+		int nb_line_rejected_<%=cid%> = 0;
+		int updatedCount_<%=cid%>=0;
+		int insertedCount_<%=cid%>=0;
+		int rejectedCount_<%=cid%>=0;
+		boolean whetherReject_<%=cid%> = false;
+		<%
+		String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+		String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+		String connectionURL = "\"httpHost_conn_" + connection + "\"";
+		String connectionUsername = "\"username_conn_" + connection + "\"";
+		String connectionPassword = "\"password_conn_" + connection + "\"";
+		String httpHost = ElementParameterParser.getValue(node,"__SERVICENOWURL__");
+		String username = ElementParameterParser.getValue(node,"__USERNAME__");
+		%>
+		String <%=cid%>_domain = null;
+		String <%=cid%>_URL = null;
+
+//Connection method set
+		<%
+			if(!"true".equals(useExistingConn)) {
+                String passwordFieldName = "__PASSWORD__";
+                %>
+                
+                <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+				<%=cid%>_URL = StringHandling.EREPLACE(<%=httpHost%>, "(/$)", "");
+				<%=cid%>_domain = <%=cid%>_URL.replaceAll("https?://", "");
+				org.apache.http.auth.UsernamePasswordCredentials <%=cid%>_usernamePasswordCredentials = new org.apache.http.auth.UsernamePasswordCredentials(<%=username%>, decryptedPassword_<%=cid%>);
+				<%
+			} else {
+				%>
+				<%=cid%>_URL = ((String)globalMap.get(<%=connectionURL%>));
+					<%=cid%>_domain = <%=cid%>_URL.replaceAll("https?://", "");
+				org.apache.http.auth.UsernamePasswordCredentials <%=cid%>_usernamePasswordCredentials = new org.apache.http.auth.UsernamePasswordCredentials((String)globalMap.get(<%=connectionUsername%>), (String)globalMap.get(<%=connectionPassword%>));
+				<%
+			}
+			%>
+//Credential def
+			org.apache.http.client.CredentialsProvider <%=cid%>_credsProvider = new org.apache.http.impl.client.BasicCredentialsProvider();
+			<%=cid%>_credsProvider.setCredentials(
+				new org.apache.http.auth.AuthScope(new org.apache.http.HttpHost(<%=cid%>_domain)), new org.apache.http.auth.UsernamePasswordCredentials(
+					<%=cid%>_usernamePasswordCredentials.getUserName(), <%=cid%>_usernamePasswordCredentials.getPassword()
+					)
+				);
+			org.apache.http.impl.client.CloseableHttpClient <%=cid%>_httpclient = org.apache.http.impl.client.HttpClients.custom()
+			.setDefaultCredentialsProvider(<%=cid%>_credsProvider)
+			.useSystemProperties() 
+			.build();
+			resourceMap.put("<%=cid%>_httpclient", <%=cid%>_httpclient);
+//Set httpPut
+			org.apache.http.client.methods.HttpPut <%=cid%>_httpPut = new org.apache.http.client.methods.HttpPut(); 
+//Set httpPost
+			org.apache.http.client.methods.HttpPost <%=cid%>_httpPost = new org.apache.http.client.methods.HttpPost();
+//Set Cookie
+	//remove comment if the connection to sandbox is unreliable
+	//you will have to uncomment the setHeader in the main javajet  
+			//String <%=cid%>_cookie = "BIGipServerpool_sandbox=791923210.34366.0000; glide_user_route=glide.9965bccaa8dddc4d2c053eefc54fdcb3; JSESSIONID=55CBDCFB6E2B6A07EF4E023CC3F1627E; _gat=1; _ga=GA1.2.1976595674.1437483024; _gat_rollup=1; __CJ_g_startTime=%221437560900688%22";
+//Set entity
+			org.apache.http.HttpEntity <%=cid%>_entity = null;
+			org.apache.http.client.methods.CloseableHttpResponse <%=cid%>_response = null;
+// Set response
+			String <%=cid%>_responseBody = null;
+			int <%=cid%>_responseCode = 0;
+			org.json.JSONObject <%=cid%>_jsonResponse = new org.json.JSONObject();
+			<%
+		}
+	}
+	%>

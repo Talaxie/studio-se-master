@@ -1,0 +1,104 @@
+<%@ jet 
+imports="
+        org.talend.core.model.process.INode
+        org.talend.core.model.metadata.IMetadataTable 
+    	org.talend.core.model.process.ElementParameterParser        
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        java.util.List
+    " 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+boolean paging =("true").equals(ElementParameterParser.getValue(node, "__ISPAGING__"));
+boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)&&(metadatas.get(0) != null)) {
+%>
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Retrieving the record " + <%=cid%>_NB_LINE + ".");
+		<%}%>
+	}//a
+	
+<%if(paging){%>
+    // examine the response controls
+    javax.naming.ldap.Control[] responseControls_<%=cid%> = ctx_<%=cid%>.getResponseControls();
+    if (responseControls_<%=cid%> != null) {
+        for (int i_<%=cid%> = 0; i_<%=cid%> < responseControls_<%=cid%>.length; i_<%=cid%>++) {
+            if (responseControls_<%=cid%>[i_<%=cid%>] instanceof javax.naming.ldap.PagedResultsResponseControl) {
+                javax.naming.ldap.PagedResultsResponseControl prrc_<%=cid%> = (javax.naming.ldap.PagedResultsResponseControl) responseControls_<%=cid%>[i_<%=cid%>];               
+                cookie_<%=cid%> = prrc_<%=cid%>.getCookie();
+            }
+        }
+    }
+    // pass the cookie back to the server for the next page
+    ctx_<%=cid%>.setRequestControls(new javax.naming.ldap.Control[] { new javax.naming.ldap.PagedResultsControl(pageSize_<%=cid%>, cookie_<%=cid%>, javax.naming.ldap.Control.CRITICAL) });
+
+} while ((cookie_<%=cid%> != null) && (cookie_<%=cid%>.length != 0));
+<%}%>
+	}catch (java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+        if (dieOnError) {
+%>
+        	throw new java.lang.Exception(e);
+<%
+        } else {
+%>
+			<%if(isLog4jEnabled){%>
+				log.error("<%=cid%> - " + e.getMessage());
+			<%}%>
+           	 System.err.println(e.getMessage());
+<%
+		}
+%>
+	}finally{
+<%
+if(("false").equals(useExistingConn)){
+    String protocol=ElementParameterParser.getValue(node, "__PROTOCOL__");
+    
+    if("TLS".equals(protocol)){
+        if(isLog4jEnabled){
+%>
+	         log.info("<%=cid%> - Closing the TLS connection.");
+<%
+        }
+%>
+        javax.naming.ldap.StartTlsResponse tls_<%=cid%> =(javax.naming.ldap.StartTlsResponse)globalMap.get("tls_<%=cid%>");
+        if(tls_<%=cid%>!=null){
+            tls_<%=cid%>.close();
+        }
+
+<%
+        if(isLog4jEnabled){
+%>
+	         log.info("<%=cid%> - TLS connection closed.");
+<%
+        }
+    }
+%>  
+		if(ctx_<%=cid%>!=null){
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Closing the connection to the server.");
+			<%}%>
+			ctx_<%=cid%>.close();
+			<%if(isLog4jEnabled){%>
+				log.info("<%=cid%> - Connection to the server closed.");
+			<%}%>
+		}
+<%
+}
+%>
+	}
+globalMap.put("<%=cid%>_NB_LINE", <%=cid%>_NB_LINE);
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Retrieved records count: " + <%=cid%>_NB_LINE + " .");
+<%}%>
+
+<%
+ }
+%>

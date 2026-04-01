@@ -1,0 +1,96 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+        java.util.Map
+		"
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+	
+	System.setProperty("hsqldb.method_class_names", "net.ucanaccess.converters.*");
+	
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+		
+		String odbcJdbc = "";
+	    
+		public void setURL(INode node) {
+%>
+			String url_<%=cid %> = "jdbc:ucanaccess://" + <%=dbname%> + ";jackcessOpener=org.talend.ucanaccess.encrypt.CryptCodecOpener;singleConnection=true";
+<%
+		}
+		
+		public String getDirverClassName(INode node){
+			return "net.ucanaccess.jdbc.UcanaccessDriver";
+		}
+		
+		public void createConnection(INode node) {
+			cid = node.getUniqueName();
+			dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+			dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	    	dbport = ElementParameterParser.getValue(node, "__PORT__");
+	    	dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	    	dbuser = ElementParameterParser.getValue(node, "__USER__");
+%>
+			String driverClass_<%=cid%> = "<%=this.getDirverClassName(node) %>";
+			java.lang.Class.forName(driverClass_<%=cid%>);
+			<%this.setURL(node);%>
+	        String dbUser_<%=cid %> = <%=dbuser%>;
+	        
+    		<%
+    		String passwordFieldName = "__PASS__";
+    		%>
+    		
+    		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		   	
+	        String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+	        
+<%
+			log4jCodeGenerateUtil.debugConnectionParams(node);
+			log4jCodeGenerateUtil.connect_begin();
+			if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+<%
+			} else {
+%>
+			String atnParams_<%=cid%> = <%=dbproperties%>;
+			atnParams_<%=cid%> = atnParams_<%=cid%>.replaceAll("&", "\n");
+			java.util.Properties atnParamsPrope_<%=cid%> = new java.util.Properties();
+			atnParamsPrope_<%=cid%>.put("user",dbUser_<%=cid%>);
+			atnParamsPrope_<%=cid%>.put("password",dbPwd_<%=cid%>);
+			atnParamsPrope_<%=cid%>.load(new java.io.ByteArrayInputStream(atnParams_<%=cid%>.getBytes()));
+			conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>, atnParamsPrope_<%=cid%>);
+<%
+			}
+			log4jCodeGenerateUtil.connect_end();
+		}
+		
+		//-----------according schema type to generate ResultSet
+		
+		public void generateTimestampResultSet(String firstConnName, IMetadataColumn column, int currentColNo) {
+%>
+            java.sql.Timestamp timestamp_<%=cid%> = rs_<%=cid %>.getTimestamp(<%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>);
+            if(timestamp_<%=cid%> != null) {
+                <%=firstConnName%>.<%=column.getLabel()%> = new java.util.Date(timestamp_<%=cid%>.getTime());
+            } else {
+                <%=firstConnName%>.<%=column.getLabel()%> =  null;
+            }
+<%
+	    }  
+	    
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+

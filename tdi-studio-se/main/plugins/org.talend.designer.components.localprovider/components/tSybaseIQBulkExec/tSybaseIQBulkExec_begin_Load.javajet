@@ -1,0 +1,248 @@
+<%
+String lines_separator = ElementParameterParser.getValue(node, "__LINES_TERMINATED_BY__") ;
+String field_separator = ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__") ;
+boolean useEnclosed = ("true").equals(ElementParameterParser.getValue(node, "__ENCLOSED__"));
+boolean useFixedLength= ("true").equals(ElementParameterParser.getValue(node, "__FIXED_LENGTH__"));
+String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+boolean isLocal =  ("true").equals(ElementParameterParser.getValue(node, "__ISLOCAL__"));
+boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+String onFileError = ElementParameterParser.getValue(node,"__ON_FILE_ERROR__");
+String messageLog = ElementParameterParser.getValue(node,"__MESSAGE_LOG_LOAD__").trim();
+String rowLog = ElementParameterParser.getValue(node,"__ROW_LOG_LOAD__").trim();
+
+List<IMetadataColumn> columnList = getColumnList(node);
+
+if(useExistingConn) {
+	String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+	String conn = "conn_" + connection;
+	String schema = "dbschema_" + connection;
+	String user = "user_"+connection;
+%>
+	java.sql.Connection conn_<%=cid %> = (java.sql.Connection)globalMap.get("<%=conn %>");
+	String dbschema_<%=cid%>= (String)globalMap.get("<%=schema%>");
+	String dbUser_<%=cid%> = (String)globalMap.get("<%=user%>");
+<%
+	log4jCodeGenerateUtil.useExistConnection(node);
+}else{
+%>
+	String dbschema_<%=cid%> = <%=dbschema%>;
+	String dbUser_<%=cid%> = <%=userName %>;
+<%
+        if ("SYBSEIQ_16_SA".equals(dbVersion)) {
+                if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+                        String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + <%=host %> + ":" + <%=port %> + ";DatabaseName=" + <%=dbName %>; 
+<%
+                }
+                else{
+%>
+                        String url_<%=cid%> = "jdbc:sqlanywhere:Host=" + <%=host %> + ":" + <%=port %> + ";DatabaseName=" + <%=dbName %> + ";" + <%=dbproperties%>;
+<%
+                }
+%>
+                        String driverClass_<%=cid%> = "sap.jdbc4.sqlanywhere.IDriver";
+<%
+        }
+	else if ("SYBSEIQ_12_15".equals(dbVersion)||"SYBSEIQ_16".equals(dbVersion)) {//sybase IQ 12/16
+%>
+
+<%
+		if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+			String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=host %> + ":" + <%=port %> + "/" + <%=dbName %>;
+<%
+		} else {
+%>
+			String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=host %> + ":" + <%=port %> + "/" + <%=dbName %> + "?" + <%=dbproperties%>;
+<%
+		}
+        if("SYBSEIQ_12_15".equals(dbVersion)){
+%>
+         String driverClass_<%=cid%> = "com.sybase.jdbc3.jdbc.SybDriver";
+       <%}else{%>
+         String driverClass_<%=cid%> = "com.sybase.jdbc4.jdbc.SybDriver";
+<%
+         }
+	} else {//sybase IQ 15
+		if ("DSN".equals(ElementParameterParser.getValue(node,"__DATA_SOURCE__"))) {
+%>
+			String url_<%=cid %> = "jdbc:odbc:dsn="+<%=ElementParameterParser.getValue(node,"__DATA_SOURCE_NAME__")%>;
+<%
+		}else {//FileDSN
+%>
+			String url_<%=cid %> = "jdbc:odbc:FileDSN="+<%=ElementParameterParser.getValue(node,"__FILE_DATA_SOURCE_NAME__")%>;
+<%
+		}
+		//set database
+		if (0 != dbName.trim().length()) {
+%>
+			url_<%=cid %> +=";DatabaseName="+<%=dbName%>;
+<%
+		}
+%>
+		String driverClass_<%=cid%> = "ianywhere.ml.jdbcodbc.IDriver";
+<%
+	}//end sybase IQ 15
+%>
+
+    java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+   	<%if("SYBSEIQ_16".equals(dbVersion)){%>
+	jdbcclazz_<%=cid%>.newInstance();
+	<%}%>
+
+	<%
+	String passwordFieldName = "__PASS__";
+	%>
+
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+	java.sql.Connection conn_<%=cid %> = null;
+
+<%
+	log4jCodeGenerateUtil.debugConnectionParams(node);
+	log4jCodeGenerateUtil.connect(node);
+}
+%>
+
+	String tableName_<%=cid%> = dbUser_<%=cid%> + "." + <%=table%>;
+	if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() != 0) {
+		tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;
+	}
+<%
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+List<Column> stmtStructure = null;
+Manager manager = null;
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+    manager = getManager(dbmsId, cid);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+%>
+int deletedCount_<%=cid%> = 0;
+<%@ include file="../templates/_tableActionForBulk.javajet"%>
+<%
+}else{//TDI-29007
+    manager = getManager(dbmsId, cid);
+    manager.setNode(node);
+}
+%>
+
+		StringBuilder loadingCols_<%=cid%> = new StringBuilder();
+<%
+if(columnList != null && columnList.size() > 0) {
+%>
+    	loadingCols_<%=cid%>.append("(");
+<%
+	boolean blank_as_null = "true".equals(ElementParameterParser.getValue(node, "__BLANK_AS_NULL__"));
+	
+    int sizeColumns = columnList.size();
+    for (int i = 0; i < sizeColumns; i++) {
+        IMetadataColumn column = columnList.get(i);
+        
+        JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+        boolean blankAsNull = blank_as_null && ((javaType == JavaTypesManager.STRING) || (javaType == JavaTypesManager.CHARACTER)) && column.isNullable();
+%>
+        loadingCols_<%=cid%>.append("<%=column.getOriginalDbColumnName()%>" + " ");
+<%
+
+        if(i != sizeColumns - 1) {
+        	if(useFixedLength==true){
+%>
+		loadingCols_<%=cid%>.append("ASCII(" + <%=column.getLength()%> + "),");
+<%			}else{%>
+        loadingCols_<%=cid%>.append("'" + <%=field_separator.replaceAll("\\\\", "\\\\\\\\") %> + "' <%if(blankAsNull){%>NULL(BLANKS)<%}%>" + ",");
+<%        	}
+		}else{
+			if(useFixedLength==true){
+%>
+		loadingCols_<%=cid%>.append("ASCII(" + <%=column.getLength()%> + ")");
+<%			}else{ %>
+        	loadingCols_<%=cid%>.append("'" + <%=lines_separator.replaceAll("\\\\", "\\\\\\\\") %> + "' <%if(blankAsNull){%>NULL(BLANKS)<%}%>");
+<%			}
+      	}
+    }
+%>
+    loadingCols_<%=cid%>.append(")");
+<%
+}
+%>
+
+    java.sql.Statement stmt_<%=cid %>=conn_<%=cid %>.createStatement();
+    stmt_<%=cid %>.execute("SET TEMPORARY OPTION ESCAPE_CHARACTER='ON'");
+    stmt_<%=cid %>.execute("SET TEMPORARY OPTION LOAD_ZEROLENGTH_ASNULL='ON'");
+
+    //stmt_<%=cid %>.execute("SET TEMPORARY OPTION ALLOW_READ_CLIENT_FILE='ON'");//sybaseIQ 15 whether is set?
+
+    String strSQL_<%=cid%> = "LOAD TABLE " + tableName_<%=cid %> + loadingCols_<%=cid%>.toString() ;
+<%
+	if (("SYBSEIQ_12_15".equals(dbVersion) || "SYBSEIQ_16".equals(dbVersion) || "SYBSEIQ_16_SA".equals(dbVersion)) && !isLocal) {
+%>
+		strSQL_<%=cid%> +=" from '" + <%=fileName %> + "' ";
+<%
+    } else {
+%>
+		strSQL_<%=cid%> +=" USING CLIENT FILE '" + <%=fileName %> + "' ";
+<%
+    }
+%>
+
+<%if(useFixedLength==true){ %>
+     strSQL_<%=cid%> = strSQL_<%=cid%> + " row delimited by '" + <%=lines_separator.replaceAll("\\\\", "\\\\\\\\")%> + "'";
+	 strSQL_<%=cid%>=strSQL_<%=cid%> + " quotes off";
+<%}else{
+		if(useEnclosed){
+%>
+	strSQL_<%=cid%>=strSQL_<%=cid%> + " quotes on ";
+<%
+		}else{
+%>
+	strSQL_<%=cid%>=strSQL_<%=cid%> + " quotes off ";
+<%
+		}
+}
+%>
+    strSQL_<%=cid%> =strSQL_<%=cid%> + " escapes off ";
+    strSQL_<%=cid%> =strSQL_<%=cid%> + " on file error <%=onFileError%> ";
+
+<%
+	if (isIncludeHeader) {
+%>
+	strSQL_<%=cid%> =strSQL_<%=cid%> + " skip 1 ";
+<%
+	}
+
+	if(!"".equals(messageLog) && !"\"\"".equals(messageLog)){
+%>
+	strSQL_<%=cid%> =strSQL_<%=cid%> + " message log '"+<%=messageLog%>+"' ";
+		
+<%
+	}
+
+	if(!"".equals(rowLog) && !"\"\"".equals(rowLog)){
+%>
+		strSQL_<%=cid%> =strSQL_<%=cid%> + " row log '"+<%=rowLog%>+"' ";
+<%
+	}
+
+	if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Bulk load SQL:"+strSQL_<%=cid%>+".");
+		log.info("<%=cid%> - Bulk loading data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+	<%
+	}
+
+%>
+
+    stmt_<%=cid %>.execute(strSQL_<%=cid%>);
+
+<%
+    log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Bulk load has finished.");
+if(!useExistingConn){
+%>
+    if(conn_<%=cid%> != null && !conn_<%=cid%>.isClosed()) {
+        <%log4jCodeGenerateUtil.close(node);%>
+    }
+<%
+}
+%>

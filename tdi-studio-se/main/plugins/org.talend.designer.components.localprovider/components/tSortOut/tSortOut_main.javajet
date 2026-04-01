@@ -1,0 +1,69 @@
+<%@ jet 
+	imports="
+    	org.talend.core.model.process.INode  
+    	org.talend.designer.codegen.config.CodeGeneratorArgument
+    	org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+    	java.util.List
+	"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();	
+
+String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+String rowName= "";
+if ((node.getIncomingConnections()!=null)&&(node.getIncomingConnections().size()>0)) {
+	rowName = node.getIncomingConnections().get(0).getName();
+} else {
+	rowName="defaultRow";
+}
+
+String isExternalSort = ElementParameterParser.getValue(node, "__EXTERNAL__");
+
+%>
+
+<%
+if(("false").equals(isExternalSort)){
+%>
+
+	Comparable<%=rowName %>Struct arrayRow<%=cid %> = new Comparable<%=rowName %>Struct();
+
+<% 
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			for (IMetadataColumn column : metadata.getListColumns()) { 
+%>
+	arrayRow<%=cid %>.<%=column.getLabel() %> = <%=rowName %>.<%=column.getLabel() %><%if(("id_Dynamic").equals(column.getTalendType())){%>.clone()<%}%>;
+<%
+			}
+		}
+	}
+%>	
+	list_<%=cid %>.add(arrayRow<%=cid %>);
+<%
+}else{
+%>
+	<%=rowName %>StructILightSerializable current_<%=cid %> = new <%=rowName %>StructILightSerializable();
+<% 
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			for (IMetadataColumn column : metadata.getListColumns()) { 
+%>
+	current_<%=cid %>.<%=column.getLabel() %> = <%=rowName %>.<%=column.getLabel() %><%if(("id_Dynamic").equals(column.getTalendType())){%>.clone()<%}%>;
+<%
+			}
+		}
+	}
+%>	
+	iterator_<%=cid %>.put("", current_<%=cid %>);
+<%
+}
+%>

@@ -1,0 +1,90 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+        CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+        INode node = (INode)codeGenArgument.getArgument();
+        String cid = node.getUniqueName();
+        String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+        boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+        boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+        String useExistingConn = ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__");
+        boolean useBatch = "true".equals(ElementParameterParser.getValue(node,"__USE_BATCH__"));
+    	if(useBatch){
+	%>
+    		if(entries_<%=cid%>.size() > 0){
+    			sendMsgRequest_<%=cid%>.setEntries(entries_<%=cid%>);
+	<%
+				if(isLog4jEnabled){
+	%>
+					log.debug("Sending the message with batch request" );
+	<%
+				}
+	%>
+    			com.amazonaws.services.sqs.model.SendMessageBatchResult sendMsgResult_<%=cid%> = conn_<%=cid%>.sendMessageBatch(sendMsgRequest_<%=cid%>);
+    			resultSuccessEntries_<%=cid%> =  sendMsgResult_<%=cid%>.getSuccessful();
+    			resultErrorEntries_<%=cid%> =  sendMsgResult_<%=cid%>.getFailed();
+    			nb_success_<%=cid%> = nb_success_<%=cid%> + resultSuccessEntries_<%=cid%>.size();
+    			nb_reject_<%=cid%> = nb_reject_<%=cid%> + resultErrorEntries_<%=cid%>.size();
+	<%
+				if(isLog4jEnabled){
+	%>	
+        			log.debug("<%=cid%> - "+resultSuccessEntries_<%=cid%>.size()+" messages were sent successfully");
+        			for(com.amazonaws.services.sqs.model.SendMessageBatchResultEntry resultEntry_<%=cid%>:resultSuccessEntries_<%=cid%>){
+        				log.debug("<%=cid%> - Message Start: ");
+            			log.debug("<%=cid%> - MessageId: " + resultEntry_<%=cid%>.getMessageId());
+            			log.debug("<%=cid%> - MD5OfBody: " + resultEntry_<%=cid%>.getMD5OfMessageBody());
+            			log.debug("<%=cid%> - Message End ");
+            		}
+            		log.debug("<%=cid%> - "+resultErrorEntries_<%=cid%>.size()+" messages were sent failed");
+        			for(com.amazonaws.services.sqs.model.BatchResultErrorEntry resultErrorEntry_<%=cid%>:resultErrorEntries_<%=cid%>){
+        				log.debug("<%=cid%> - Error row number: " + resultErrorEntry_<%=cid%>.getId());
+            			log.debug("<%=cid%> - Error code: " + resultErrorEntry_<%=cid%>.getCode());
+            			log.debug("<%=cid%> - Error message: " + resultErrorEntry_<%=cid%>.getMessage());
+            		}
+	<%
+				}
+	%>
+			}
+	<%
+		}
+	%>
+
+	}catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		nb_reject_<%=cid%>++;
+		<%
+		if (dieOnError) {
+		%>
+			throw(e_<%=cid%>);
+		<%
+		} else {
+			if(isLog4jEnabled){
+			%>
+				log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+		System.err.println(e_<%=cid%>.getMessage());
+		<%
+		}
+		if(!("true").equals(useExistingConn)) {
+		%>
+	}finally{
+		if(conn_<%=cid%> !=null){
+			conn_<%=cid%>.shutdown();
+		}
+		<%
+		}
+		%>
+	}
+	
+	globalMap.put("<%=cid %>_NB_LINE", nbline_<%=cid%>);
+	globalMap.put("<%=cid %>_NB_LINE_SUCCESS", nb_success_<%=cid%>);
+	globalMap.put("<%=cid %>_NB_LINE_REJECTED", nb_reject_<%=cid%>);

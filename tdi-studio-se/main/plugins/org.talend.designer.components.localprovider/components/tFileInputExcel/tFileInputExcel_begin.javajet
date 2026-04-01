@@ -1,0 +1,1588 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		java.util.Map
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+	"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+final String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+		final boolean version07 = ("true").equals(ElementParameterParser.getValue(node,"__VERSION_2007__"));
+
+		String fileName = ElementParameterParser.getValue(node,"__FILENAME__");
+
+    	String header = ElementParameterParser.getValue(node, "__HEADER__");
+    	String limit = ElementParameterParser.getValue(node, "__LIMIT__");
+    	String footer = ElementParameterParser.getValue(node, "__FOOTER__");
+    	String firstColumn = ElementParameterParser.getValue(node, "__FIRST_COLUMN__");
+    	String lastColumn = ElementParameterParser.getValue(node, "__LAST_COLUMN__");
+    	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+		boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+		String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+		String allSheets = ElementParameterParser.getValue(node, "__ALL_SHEETS__");
+		boolean isAllSheets = (allSheets!=null&&!("").equals(allSheets))?("true").equals(allSheets):false;
+		List<Map<String, String>> sheetNameList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SHEETLIST__");
+
+		String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+		boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+		String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+		String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+
+		boolean affect = ("true").equals(ElementParameterParser.getValue(node,"__AFFECT_EACH_SHEET__"));
+		boolean stopOnEmptyRow = ("true").equals(ElementParameterParser.getValue(node,"__STOPREAD_ON_EMPTYROW__"));
+
+		List<Map<String, String>> trimSelects = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__TRIMSELECT__");
+		String isTrimAllStr = ElementParameterParser.getValue(node,"__TRIMALL__");
+		boolean isTrimAll = (isTrimAllStr!=null&&!("").equals(isTrimAllStr))?("true").equals(isTrimAllStr):true;
+
+		String mode = ElementParameterParser.getValue(node,"__GENERATION_MODE__");
+		final boolean eventMode = "EVENT_MODE".equals(mode);
+		
+		boolean configureRatio = ("true").equals(ElementParameterParser.getValue(node,"__CONFIGURE_INFLATION_RATIO__"));
+		String ratio = ElementParameterParser.getValue(node,"__INFLATION_RATIO__");
+
+        if (version07) {
+            String passwordFieldName = "__PASSWORD__";
+        %>
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+        String password_<%=cid%> = decryptedPassword_<%=cid%>;
+        if (password_<%=cid%>.isEmpty()){
+            password_<%=cid%> = null;
+        }
+        <%
+        }
+
+		boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		
+		int dynamic_index = -1;
+		boolean hasDynamic = false;
+		int dynamicColumnlength = 100;
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		String datePattern = "\"dd-MM-yyyy\"";
+		for(int i=0; columnList!=null && i< columnList.size(); i++) {
+	        if(columnList.get(i).getTalendType().equals("id_Dynamic")){
+	            dynamic_index = i+1;
+	            hasDynamic = true;
+	            datePattern= columnList.get(i).getPattern();
+	            if(columnList.get(i).getLength() != null){
+	                dynamicColumnlength = columnList.get(i).getLength();
+	            }
+	            break;
+	        }
+		}
+		
+		class GenerateCodeUtil{
+			public void generateCode(int dynamic_index,int colLen,boolean hasDynamic,int dynamicColumnlength){
+				if(hasDynamic){
+				%>
+					int dynamic_column_count_<%=cid%>=1;
+					if(isFirstCheckDyn_<%=cid %>){// for the header line
+						if(row_<%= cid %>==null 
+						<%if(!version07){%>
+							|| row_<%= cid %>.length == 0
+						<%}else if(!eventMode){%>
+							|| row_<%= cid %>.getLastCellNum() == 0
+						<%}else{%>
+							|| row_<%= cid %>.size() == 0
+						<%}%>){
+								continue;
+							}
+						int row_length_<%=cid %>;
+						<%
+						if(!version07){
+						%>
+							row_length_<%=cid %> = row_<%= cid %>.length;
+						<%
+						}else if(!eventMode){
+						%>
+							row_length_<%=cid %> = row_<%= cid %>.getLastCellNum();
+		    			<%
+		    			}else{
+		    			%>
+							row_length_<%=cid %> = row_<%= cid %>.size();
+		    			<%
+		    			}
+		    			%>
+		    			int temp_last_<%=cid %>=(end_column_<%=cid %> >= 0 && end_column_<%=cid %> < row_length_<%= cid %> ) ? end_column_<%=cid %> : row_length_<%= cid %>;
+		    			int colsLen_<%=cid %> = temp_last_<%=cid %>-start_column_<%= cid %>;
+		    			dynamic_column_count_<%=cid%> = colsLen_<%=cid %>-<%=colLen-1%>;
+		    			for (int i = <%=dynamic_index-1%> + start_column_<%= cid %>; i < colsLen_<%=cid %>-<%=colLen-dynamic_index%> + start_column_<%= cid %>; i++) {
+					    	routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = new routines.system.DynamicMetadata();
+							<%
+							if(!version07){
+							%>
+								String content_<%=cid%> = row_<%= cid %>[i].getContents();
+							<%
+							}else if(!eventMode){
+							%>
+			    				String content_<%=cid%> = row_<%= cid %>.getCell(i)==null?null:row_<%= cid %>.getCell(i).toString();
+			    			<%
+			    			}else{
+			    			%>
+			    				String content_<%=cid%> = row_<%= cid %>.get(i);
+			    			<%
+			    			}
+			    			%>
+			    			if(content_<%=cid%>!=null){
+					    		dynamicMetadata_<%=cid%>.setName(content_<%=cid%>.replaceAll("[ .-]+", "_"));
+					    	}
+					    	dynamicMetadata_<%=cid%>.setDbName(dynamicMetadata_<%=cid%>.getName());
+					    	dynamicMetadata_<%=cid%>.setType("id_String");
+					    	dynamicMetadata_<%=cid%>.setDbType("VARCHAR");
+					    	dynamicMetadata_<%=cid%>.setLength(<%=dynamicColumnlength%>);
+					    	dynamicMetadata_<%=cid%>.setPrecision(0);
+					    	dynamicMetadata_<%=cid%>.setNullable(true);
+					    	dynamicMetadata_<%=cid%>.setKey(false);
+					    	dynamicMetadata_<%=cid%>.setSourceType(routines.system.DynamicMetadata.sourceTypes.excelFile);
+					    	dynamicMetadata_<%=cid%>.setColumnPosition(i);
+					    	dynamic_<%=cid%>.metadatas.add(dynamicMetadata_<%=cid%>);
+					    }
+		    			isFirstCheckDyn_<%=cid %> = false;
+		    			
+		    			continue;
+					}
+					int tempRowLength_<%=cid%> = <%=colLen%>+dynamic_<%=cid %>.getColumnCount()-1;
+				<%
+				}else{
+				%>
+					int tempRowLength_<%=cid%> = <%=colLen%>;
+				<%
+				}
+				%>
+				int columnIndex_<%=cid%> = 0;
+			<%
+			}
+		}
+		GenerateCodeUtil generateCodeUtil = new GenerateCodeUtil();
+		if(hasDynamic){
+			%>
+			boolean isFirstCheckDyn_<%=cid %> = true;
+			routines.system.Dynamic dynamic_<%=cid %> = new routines.system.Dynamic();
+		<%
+		}
+		/* -------------------------- */
+		if(!version07){//version judgement
+			boolean bReadRealValue = ("true").equals(ElementParameterParser.getValue(node, "__READ_REAL_VALUE__"));
+			boolean notNeedValidateOnCell = !("false").equals(ElementParameterParser.getValue(node,"__NOVALIDATE_ON_CELL__"));//make wizard work
+			boolean suppressWarn = !("false").equals(ElementParameterParser.getValue(node,"__SUPPRESS_WARN__"));//make wizard work
+%>
+
+			class RegexUtil_<%=cid %> {
+
+		    	public java.util.List<jxl.Sheet> getSheets(jxl.Workbook workbook, String oneSheetName, boolean useRegex) {
+
+			        java.util.List<jxl.Sheet> list = new java.util.ArrayList<jxl.Sheet>();
+
+			        if(useRegex){//this part process the regex issue
+
+				        jxl.Sheet[] sheets = workbook.getSheets();
+				        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(oneSheetName);
+				        for (int i = 0; i < sheets.length; i++) {
+				            String sheetName = sheets[i].getName();
+				            java.util.regex.Matcher matcher = pattern.matcher(sheetName);
+				            if (matcher.matches()) {
+				            	jxl.Sheet sheet = workbook.getSheet(sheetName);
+				            	if(sheet != null){
+				                	list.add(sheet);
+				                }
+				            }
+				        }
+
+			        }else{
+			        	jxl.Sheet sheet = workbook.getSheet(oneSheetName);
+		            	if(sheet != null){
+		                	list.add(sheet);
+		                }
+
+			        }
+
+			        return list;
+			    }
+
+			    public java.util.List<jxl.Sheet> getSheets(jxl.Workbook workbook, int index, boolean useRegex) {
+			    	java.util.List<jxl.Sheet> list =  new java.util.ArrayList<jxl.Sheet>();
+			    	jxl.Sheet sheet = workbook.getSheet(index);
+	            	if(sheet != null){
+	                	list.add(sheet);
+	                }
+			    	return list;
+			    }
+
+			}
+
+
+		RegexUtil_<%=cid %> regexUtil_<%=cid %> = new RegexUtil_<%=cid %>();
+		final jxl.WorkbookSettings workbookSettings_<%= cid %> = new jxl.WorkbookSettings();
+		workbookSettings_<%= cid %>.setDrawingsDisabled(true);
+<%
+		if(notNeedValidateOnCell==true){
+%>
+		workbookSettings_<%= cid %>.setCellValidationDisabled(true);
+<%
+		}
+		if(suppressWarn ==true){
+%>
+		workbookSettings_<%= cid %>.setSuppressWarnings(true);
+<%
+		}
+%>
+        workbookSettings_<%= cid %>.setEncoding(<%=encoding %>);
+
+        Object source_<%=cid %> =<%=fileName%>;
+        final jxl.Workbook workbook_<%= cid %>;
+
+        java.io.InputStream toClose_<%=cid%> = null;
+        java.io.BufferedInputStream buffIStream<%= cid %> = null;
+        try {
+            if(source_<%=cid %> instanceof java.io.InputStream){
+        		toClose_<%=cid%> = (java.io.InputStream)source_<%=cid %>;
+        		buffIStream<%= cid %> = new java.io.BufferedInputStream(toClose_<%=cid%>);
+        		workbook_<%= cid %> = jxl.Workbook.getWorkbook(buffIStream<%= cid %>, workbookSettings_<%= cid %>);
+            }else if(source_<%=cid %> instanceof String){
+        		toClose_<%=cid%> = new java.io.FileInputStream(source_<%=cid %>.toString());
+        		buffIStream<%= cid %> = new java.io.BufferedInputStream(toClose_<%=cid%>);
+        		workbook_<%= cid %> = jxl.Workbook.getWorkbook(buffIStream<%= cid %>, workbookSettings_<%= cid %>);
+            }else{
+            	workbook_<%= cid %> = null;
+            	throw new java.lang.Exception("The data source should be specified as Inputstream or File Path!");
+            }
+        } finally {
+			try{
+			   if(buffIStream<%= cid %> != null){
+			   	  buffIStream<%= cid %>.close();
+			   }
+			}catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			}
+        }
+        try {
+<%
+		if(isAllSheets){
+%>
+		java.util.List<jxl.Sheet> sheetList_<%= cid %> = java.util.Arrays.<jxl.Sheet> asList(workbook_<%= cid %>.getSheets());
+<%
+		}else{
+%>
+		java.util.List<jxl.Sheet> sheetList_<%= cid %> = new java.util.ArrayList<jxl.Sheet>();
+<%
+			for(Map<String, String> tmp:sheetNameList){
+%>
+        sheetList_<%= cid %>.addAll(regexUtil_<%=cid %>.getSheets(workbook_<%= cid %>, <%=tmp.get("SHEETNAME")%>, <%=(tmp.get("USE_REGEX")!=null&&!"".equals(tmp.get("USE_REGEX")))?"true".equals(tmp.get("USE_REGEX")):false%>));
+<%
+			}
+		}
+%>
+        if(sheetList_<%= cid %>.size() <= 0){
+        	throw new RuntimeException("Special sheets not exist!");
+        }
+
+        java.util.List<jxl.Sheet> sheet_FilterNullList_<%= cid %> = new java.util.ArrayList<jxl.Sheet>();
+        for(jxl.Sheet sheet_FilterNull_<%=cid%> : sheetList_<%= cid %>){
+        	if(sheet_FilterNull_<%=cid%>.getRows()>0){
+        		sheet_FilterNullList_<%= cid %>.add(sheet_FilterNull_<%=cid%>);
+        	}
+        }
+		sheetList_<%= cid %> = sheet_FilterNullList_<%= cid %>;
+        int nb_line_<%= cid %> = 0;
+	if(sheetList_<%= cid %>.size()>0){
+
+        int begin_line_<%= cid %> = <%if(("").equals(header.trim())){%>0<%}else{%><%= header %><%}%>;
+
+        int footer_input_<%= cid %> = <%if(("").equals(footer.trim())){%>0<%}else{%><%=footer%><%}%>;
+
+        int end_line_<%= cid %>=0;
+        for(jxl.Sheet sheet_<%=cid%>:sheetList_<%= cid %>){
+        	end_line_<%= cid %>+=sheet_<%=cid%>.getRows();
+        }
+        end_line_<%= cid %> -= footer_input_<%= cid %>;
+        int limit_<%= cid %> = <%if(("").equals(limit.trim())){%>-1<%}else{%><%=limit%><%}%>;
+        int start_column_<%= cid %> = <%if(("").equals(firstColumn.trim())){%>0<%}else{%><%=firstColumn%>-1<%}%>;
+        int end_column_<%= cid %> = sheetList_<%= cid %>.get(0).getColumns();
+        <%if(lastColumn!=null && !("").equals(lastColumn.trim())){%>
+        Integer lastColumn_<%=cid %> = <%=lastColumn%>;
+        if(lastColumn_<%=cid %>!=null){
+        	end_column_<%= cid %> = lastColumn_<%=cid %>.intValue();
+        }
+        <%}%>
+        jxl.Cell[] row_<%= cid %> = null;
+        jxl.Sheet sheet_<%= cid %> = sheetList_<%= cid %>.get(0);
+        int rowCount_<%= cid %> = 0;
+        int sheetIndex_<%= cid %> = 0;
+        int currentRows_<%= cid %> = sheetList_<%= cid %>.get(0).getRows();
+
+        //for the number format
+        java.text.DecimalFormat df_<%=cid %> = new java.text.DecimalFormat("#.####################################");
+		char separatorChar_<%=cid %> = df_<%=cid %>.getDecimalFormatSymbols().getDecimalSeparator();
+		<%
+		if(hasDynamic){
+		%>
+			if(begin_line_<%=cid%> > 0){
+				begin_line_<%=cid%> = begin_line_<%=cid%> - 1;
+			}
+			boolean isFirstRow_<%=cid%>=true;
+		<%
+		}
+		%>
+		<%log4jFileUtil.startRetriveDataInfo();%>
+		
+        for(int i_<%= cid %> = begin_line_<%= cid %>; i_<%= cid %> < end_line_<%= cid %>; i_<%= cid %>++){
+
+        	int emptyColumnCount_<%= cid %> = 0;
+
+        	if (limit_<%= cid %> != -1 && nb_line_<%= cid %> >= limit_<%= cid %>) {
+        		break;
+        	}
+
+            while (i_<%= cid %> >= rowCount_<%= cid %> + currentRows_<%= cid %>) {
+                rowCount_<%= cid %> += currentRows_<%= cid %>;
+                sheet_<%= cid %> = sheetList_<%= cid %>.get(++sheetIndex_<%= cid %>);
+                currentRows_<%= cid %> = sheet_<%= cid %>.getRows();
+            }
+<%
+	if(!affect){
+%>
+            if (rowCount_<%= cid %> <= i_<%= cid %>) {
+                row_<%= cid %> = sheet_<%= cid %>.getRow(i_<%= cid %> - rowCount_<%= cid %>);
+            }
+<%
+	}else{
+%>
+            if (rowCount_<%= cid %> <= i_<%= cid %> && i_<%= cid %> - rowCount_<%= cid %> >= (<%if(!hasDynamic){%>begin_line_<%= cid %><%}else{%>isFirstRow_<%=cid%>?begin_line_<%= cid %>:(begin_line_<%= cid %>+1)<%}%>)
+            	&& currentRows_<%= cid %> - footer_input_<%= cid %> > i_<%= cid %> - rowCount_<%= cid %>) {
+                row_<%= cid %> = sheet_<%= cid %>.getRow(i_<%= cid %> - rowCount_<%= cid %>);
+            }else{
+            	continue;
+            }
+<%
+    }
+    	if(hasDynamic){
+%>
+			isFirstRow_<%=cid%> = false;
+		<%
+		}
+		%>
+        	globalMap.put("<%=cid %>_CURRENT_SHEET",sheet_<%=cid %>.getName());
+<%
+//begin
+//
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+
+    String rejectConnName = "";
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+    List<IMetadataColumn> rejectColumnList = null;
+    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    if(metadataTable != null) {
+        rejectColumnList = metadataTable.getListColumns();
+    }
+
+    	if (conns!=null) {
+    		if (conns.size()>0) {
+    			for (int i=0;i<conns.size();i++) {
+    				IConnection connTemp = conns.get(i);
+    				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+    		<%=connTemp.getName() %> = null;
+<%
+    				}
+    			}
+    		}
+    	}
+
+		String firstConnName = "";
+		if (conns!=null) {
+			if (conns.size()>0) {
+				IConnection conn = conns.get(0);
+				firstConnName = conn.getName();
+				List<IMetadataColumn> listColumns = metadata.getListColumns();
+				int size = listColumns.size();
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+				 	generateCodeUtil.generateCode(dynamic_index,size,hasDynamic, dynamicColumnlength);
+					%>
+//
+//end%>
+			
+			String[] temp_row_<%= cid %> = new String[tempRowLength_<%=cid%>];
+			int actual_end_column_<%= cid %> = end_column_<%= cid %> >	row_<%= cid %>.length ? row_<%= cid %>.length : end_column_<%= cid %>;
+
+				java.util.TimeZone zone_<%= cid %> = java.util.TimeZone.getTimeZone("GMT");
+                java.text.SimpleDateFormat sdf_<%= cid %> = new java.text.SimpleDateFormat(<%=datePattern%>);
+                sdf_<%= cid %>.setTimeZone(zone_<%= cid %>);
+                
+
+			for(int i=0;i<tempRowLength_<%=cid%>;i++){
+
+				if(i + start_column_<%= cid %> < actual_end_column_<%= cid %>){
+
+				  jxl.Cell cell_<%=cid%> = row_<%= cid %>[i + start_column_<%= cid %>];
+<%
+                    if(bReadRealValue){
+%>
+                        if (jxl.CellType.NUMBER == cell_<%=cid%>.getType()||jxl.CellType.NUMBER_FORMULA == cell_<%=cid%>.getType()){
+                            double doubleCell_<%=cid%> = ((jxl.NumberCell)cell_<%=cid%>).getValue();
+                            temp_row_<%=cid%>[i] = String.valueOf(doubleCell_<%=cid%>);
+                            if(temp_row_<%=cid%>[i]!=null) {
+                                temp_row_<%=cid%>[i] = df_<%=cid %>.format(doubleCell_<%=cid%>);
+                            }
+                        } else
+<%                  } %>
+                        if(jxl.CellType.DATE== cell_<%=cid%>.getType()||jxl.CellType.DATE_FORMULA== cell_<%=cid%>.getType()){
+
+                            jxl.DateCell dc_<%= cid %> = (jxl.DateCell)cell_<%=cid%>;
+                            java.util.Date date_<%= cid %> = dc_<%= cid %>.getDate();
+                            temp_row_<%= cid %>[i] = sdf_<%= cid %>.format(date_<%= cid %>);
+
+                        } else{
+                            temp_row_<%= cid %>[i] = cell_<%=cid%>.getContents();
+                        }
+                }else{
+                     temp_row_<%= cid %>[i]="";
+                }
+			}
+
+			boolean whetherReject_<%=cid %> = false;
+			<%=firstConnName %> = new <%=conn.getName() %>Struct();
+			int curColNum_<%=cid %> = -1;
+			String curColName_<%=cid %> = "";
+			try {
+<%
+//start
+//
+					for (int i=0; i<size; i++) {
+						IMetadataColumn column = listColumns.get(i);
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						if(metadata.isDynamicSchema()){
+						%>
+							columnIndex_<%=cid%> = <%=i-1%>+dynamic_column_count_<%=cid%>;
+						<%
+						}else{
+						%>
+							columnIndex_<%=cid%> = <%=i%>;
+						<%
+						}
+//
+//end
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			if( temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() > 0) {
+<%
+		}
+%>
+				curColNum_<%=cid %>=columnIndex_<%=cid%> + start_column_<%= cid %> + 1;
+				curColName_<%=cid %> = "<%=column.getLabel() %>";
+<%
+//start
+//
+
+						if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+//
+//end%>
+			<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>;
+<%
+//start
+			} else if(javaType == JavaTypesManager.DATE) {
+//
+//end%>
+			if(<%= i%><actual_end_column_<%= cid %>){
+				try{
+					java.util.Date dateGMT_<%=cid %> = ((jxl.DateCell)row_<%= cid %>[columnIndex_<%=cid%> + start_column_<%= cid %>]).getDate();
+					<%=firstConnName %>.<%=column.getLabel() %> = new java.util.Date(dateGMT_<%=cid %>.getTime() - java.util.TimeZone.getDefault().getOffset(dateGMT_<%=cid %>.getTime()));
+				}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+					<% // for bug TDI-19404 %>
+					throw new RuntimeException("The cell format is not Date in ( Row. "+(nb_line_<%= cid %>+1)+ " and ColumnNum. " + curColNum_<%=cid %> + " )");
+				}
+			}
+<%
+//start
+			}else if(advancedSeparator && JavaTypesManager.isNumberType(javaType)) {
+%>
+		<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+	%>
+			<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.getBytes(<%=encoding %>);
+	<%
+			}else if(column.getTalendType().equals("id_Dynamic")){
+				dynamic_index = i;
+			%>
+				dynamic_<%=cid %>.clearColumnValues();
+				int fieldCount_<%=cid %> = row_<%= cid %>.length;
+				dynamic_column_count_<%=cid%> = dynamic_<%=cid %>.getColumnCount();
+				for (int i = 0; i < dynamic_column_count_<%=cid%> ; i++) {
+					if ((<%=dynamic_index%>+i) <= fieldCount_<%=cid %>){
+						if(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() < 1){
+							emptyColumnCount_<%= cid %>++;
+						}
+						dynamic_<%=cid %>.addColumnValue(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+					}
+					else{
+						dynamic_<%=cid %>.addColumnValue("");
+						emptyColumnCount_<%= cid %>++;
+					}
+				}
+				<%=firstConnName %>.<%=column.getLabel() %> =dynamic_<%=cid %>;
+			<%
+			} else {
+//
+//end%>
+			<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+<%
+//start
+//
+						}
+//
+//end
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			}else {
+<%
+//start
+//
+						String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+						if(defaultValue == null) {
+//
+//end%>
+				throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=firstConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+//start
+//
+						} else {
+//
+//end%>
+				<%=firstConnName %>.<%=column.getLabel() %> = <%=defaultValue%>;
+				emptyColumnCount_<%= cid %>++;
+<%
+//start
+//
+						}
+//
+//end%>
+		}
+<%
+//start
+//
+		}
+					}%>
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>
+
+<%
+	if(stopOnEmptyRow){
+%>
+        if(emptyColumnCount_<%= cid %> >= <%=size %><%if(hasDynamic){%>+dynamic_column_count_<%=cid%>-1<%}%>){
+        	break; //if meet the empty row, there will break the iterate.
+        }
+<%
+	}
+%>
+			nb_line_<%=cid%>++;
+			<%log4jFileUtil.debugRetriveData(node);%>
+    } catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        whetherReject_<%=cid%> = true;
+        <%
+        if (dieOnError) {
+            %>
+            throw(e);
+            <%
+        } else {
+            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+
+                %>
+                    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+                <%
+                for(IMetadataColumn column : metadata.getListColumns()) {
+                    %>
+                    <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+                    <%
+                }
+                %>
+                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+                <%=firstConnName %> = null;
+                <%
+            } else if(("").equals(rejectConnName)){
+                %>
+                System.err.println(e.getMessage());
+                <%=firstConnName %> = null;
+                <%
+            } else if(rejectConnName.equals(firstConnName)){%>
+            	<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+            <%}
+        }
+        %>
+    }
+
+					<%
+				}
+			}
+		if (conns.size()>0) {
+			boolean isFirstEnter = true;
+			for (int i=0;i<conns.size();i++) {
+				IConnection conn = conns.get(i);
+				if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>
+             if(<%=conn.getName() %> == null){
+            	 <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+             }
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+	    	 <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;
+<%
+				 	}
+				}
+			}
+%>
+		<% if(!isFirstEnter) {%> } <% } %>
+<%
+		}
+		}
+%>
+<%
+		} else if(!eventMode) {//version judgement /***excel 2007 xlsx and usermodel mode*****/
+%>
+			class RegexUtil_<%=cid %> {
+
+		    	public java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> getSheets(org.apache.poi.xssf.usermodel.XSSFWorkbook workbook, String oneSheetName, boolean useRegex) {
+
+			        java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> list = new java.util.ArrayList<org.apache.poi.xssf.usermodel.XSSFSheet>();
+
+			        if(useRegex){//this part process the regex issue
+
+				        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(oneSheetName);
+				        for (org.apache.poi.ss.usermodel.Sheet sheet : workbook) {
+				            String sheetName = sheet.getSheetName();
+				            java.util.regex.Matcher matcher = pattern.matcher(sheetName);
+				            if (matcher.matches()) {
+				            	if(sheet != null){
+				                	list.add((org.apache.poi.xssf.usermodel.XSSFSheet) sheet);
+				                }
+				            }
+				        }
+
+			        }else{
+			        	org.apache.poi.xssf.usermodel.XSSFSheet sheet = (org.apache.poi.xssf.usermodel.XSSFSheet) workbook.getSheet(oneSheetName);
+		            	if(sheet != null){
+		                	list.add(sheet);
+		                }
+
+			        }
+
+			        return list;
+			    }
+
+			    public java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> getSheets(org.apache.poi.xssf.usermodel.XSSFWorkbook workbook, int index, boolean useRegex) {
+			    	java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> list =  new java.util.ArrayList<org.apache.poi.xssf.usermodel.XSSFSheet>();
+			    	org.apache.poi.xssf.usermodel.XSSFSheet sheet = (org.apache.poi.xssf.usermodel.XSSFSheet) workbook.getSheetAt(index);
+	            	if(sheet != null){
+	                	list.add(sheet);
+	                }
+			    	return list;
+			    }
+
+			}
+		RegexUtil_<%=cid %> regexUtil_<%=cid %> = new RegexUtil_<%=cid %>();
+
+		Object source_<%=cid %> = <%=fileName%>;
+		org.apache.poi.xssf.usermodel.XSSFWorkbook workbook_<%=cid%> = null;
+		<%
+		if(configureRatio && !("").equals(ratio)) {
+		%>
+			org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(<%=ratio %>);
+		<%
+		}
+		%>
+		if(source_<%=cid %> instanceof String){
+			workbook_<%=cid%> = (org.apache.poi.xssf.usermodel.XSSFWorkbook) org.apache.poi.ss.usermodel.WorkbookFactory.create(new java.io.File((String)source_<%=cid %>), password_<%=cid%>, true);
+		} else if(source_<%=cid %> instanceof java.io.InputStream) {
+     		workbook_<%=cid%> = (org.apache.poi.xssf.usermodel.XSSFWorkbook) org.apache.poi.ss.usermodel.WorkbookFactory.create((java.io.InputStream)source_<%=cid %>, password_<%=cid%>);
+		} else{
+			workbook_<%=cid%> = null;
+			throw new java.lang.Exception("The data source should be specified as Inputstream or File Path!");
+		}
+		try {
+
+<%
+		if(isAllSheets){
+%>
+    	java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> sheetList_<%= cid %> = new java.util.ArrayList<org.apache.poi.xssf.usermodel.XSSFSheet>();
+    	for(org.apache.poi.ss.usermodel.Sheet sheet_<%=cid%> : workbook_<%=cid%>){
+   			sheetList_<%= cid %>.add((org.apache.poi.xssf.usermodel.XSSFSheet) sheet_<%=cid%>);
+    	}
+<%
+		}else{
+%>
+		java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> sheetList_<%= cid %> = new java.util.ArrayList<org.apache.poi.xssf.usermodel.XSSFSheet>();
+<%
+			for(Map<String, String> tmp:sheetNameList){
+%>
+        sheetList_<%= cid %>.addAll(regexUtil_<%=cid %>.getSheets(workbook_<%= cid %>, <%=tmp.get("SHEETNAME")%>, <%=(tmp.get("USE_REGEX")!=null&&!"".equals(tmp.get("USE_REGEX")))?"true".equals(tmp.get("USE_REGEX")):false%>));
+<%
+			}
+		}
+%>
+    	if(sheetList_<%= cid %>.size() <= 0){
+            throw new RuntimeException("Special sheets not exist!");
+        }
+
+		java.util.List<org.apache.poi.xssf.usermodel.XSSFSheet> sheetList_FilterNull_<%=cid%> = new java.util.ArrayList<org.apache.poi.xssf.usermodel.XSSFSheet>();
+		for (org.apache.poi.xssf.usermodel.XSSFSheet sheet_FilterNull_<%=cid%> : sheetList_<%=cid%>) {
+			if(sheet_FilterNull_<%=cid%>!=null && sheetList_FilterNull_<%=cid%>.iterator()!=null && sheet_FilterNull_<%=cid%>.iterator().hasNext()){
+				sheetList_FilterNull_<%=cid%>.add(sheet_FilterNull_<%=cid%>);
+			}
+		}
+		sheetList_<%=cid%> = sheetList_FilterNull_<%=cid%>;
+		int nb_line_<%= cid %> = 0;
+	if(sheetList_<%= cid %>.size()>0){
+
+        int begin_line_<%= cid %> = <%if(("").equals(header.trim())){%>0<%}else{%><%= header %><%}%>;
+
+        int footer_input_<%= cid %> = <%if(("").equals(footer.trim())){%>0<%}else{%><%=footer%><%}%>;
+
+        int end_line_<%= cid %>=0;
+        for(org.apache.poi.xssf.usermodel.XSSFSheet sheet_<%=cid%>:sheetList_<%= cid %>){
+			end_line_<%= cid %>+=(sheet_<%=cid%>.getLastRowNum()+1);
+        }
+        end_line_<%= cid %> -= footer_input_<%= cid %>;
+        int limit_<%= cid %> = <%if(("").equals(limit.trim())){%>-1<%}else{%><%=limit%><%}%>;
+        int start_column_<%= cid %> = <%if(("").equals(firstColumn.trim())){%>0<%}else{%><%=firstColumn%>-1<%}%>;
+        int end_column_<%= cid %> = -1;
+        <%if(lastColumn!=null && !("").equals(lastColumn.trim())){%>
+        Integer lastColumn_<%=cid %> = <%=lastColumn%>;
+        if(lastColumn_<%=cid %>!=null){
+        	end_column_<%= cid %> = lastColumn_<%=cid %>.intValue();
+        }
+        <%}%>
+
+        org.apache.poi.xssf.usermodel.XSSFRow row_<%= cid %> = null;
+        org.apache.poi.xssf.usermodel.XSSFSheet sheet_<%= cid %> = sheetList_<%= cid %>.get(0);
+        int rowCount_<%= cid %> = 0;
+        int sheetIndex_<%= cid %> = 0;
+        int currentRows_<%= cid %> = (sheetList_<%= cid %>.get(0).getLastRowNum()+1);
+
+		//for the number format
+        java.text.DecimalFormat df_<%=cid %> = new java.text.DecimalFormat("#.####################################");
+        char decimalChar_<%=cid %> = df_<%=cid %>.getDecimalFormatSymbols().getDecimalSeparator();
+        <%
+		if(hasDynamic){
+		%>
+			if(begin_line_<%=cid%> > 0){
+				begin_line_<%=cid%> = begin_line_<%=cid%> - 1;
+			}
+			boolean isFirstRow_<%=cid%>=true;
+		<%
+		}
+		%>
+		<%log4jFileUtil.startRetriveDataInfo();%>
+        for(int i_<%= cid %> = begin_line_<%= cid %>; i_<%= cid %> < end_line_<%= cid %>; i_<%= cid %>++){
+
+        	int emptyColumnCount_<%= cid %> = 0;
+
+        	if (limit_<%= cid %> != -1 && nb_line_<%= cid %> >= limit_<%= cid %>) {
+        		break;
+        	}
+
+            while (i_<%= cid %> >= rowCount_<%= cid %> + currentRows_<%= cid %>) {
+                rowCount_<%= cid %> += currentRows_<%= cid %>;
+                sheet_<%= cid %> = sheetList_<%= cid %>.get(++sheetIndex_<%= cid %>);
+                currentRows_<%= cid %> = (sheet_<%= cid %>.getLastRowNum()+1);
+            }
+            globalMap.put("<%=cid %>_CURRENT_SHEET",sheet_<%=cid %>.getSheetName());
+<%
+	if(!affect){
+%>
+            if (rowCount_<%= cid %> <= i_<%= cid %>) {
+                row_<%= cid %> = sheet_<%= cid %>.getRow(i_<%= cid %> - rowCount_<%= cid %>);
+            }
+<%
+	}else{
+%>
+            if (rowCount_<%= cid %> <= i_<%= cid %> && i_<%= cid %> - rowCount_<%= cid %> >= (<%if(!hasDynamic){%>begin_line_<%= cid %><%}else{%>isFirstRow_<%=cid%>?begin_line_<%= cid %>:(begin_line_<%= cid %>+1)<%}%>)
+            	&& currentRows_<%= cid %> - footer_input_<%= cid %> > i_<%= cid %> - rowCount_<%= cid %>) {
+                row_<%= cid %> = sheet_<%= cid %>.getRow(i_<%= cid %> - rowCount_<%= cid %>);
+            }else{
+            	continue;
+            }
+<%
+    }
+    	if(hasDynamic){
+	%>
+			isFirstRow_<%=cid%> = false;
+		<%
+		}
+		List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		String rejectConnName = "";
+		List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+		if(rejectConns != null && rejectConns.size() > 0) {
+			IConnection rejectConn = rejectConns.get(0);
+			rejectConnName = rejectConn.getName();
+		}
+		List<IMetadataColumn> rejectColumnList = null;
+		IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+		if(metadataTable != null) {
+			 rejectColumnList = metadataTable.getListColumns();
+		}
+		if (conns!=null) {
+			if (conns.size()>0) {
+		    	for (int i=0;i<conns.size();i++) {
+		    		IConnection connTemp = conns.get(i);
+		    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+		    <%=connTemp.getName() %> = null;
+<%
+		    		}
+		    	}
+		    }
+		}
+		List<Map<String, String>> dateSelect = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DATESELECT__");
+		boolean converDatetoString = ("true").equals(ElementParameterParser.getValue(node, "__CONVERTDATETOSTRING__"));
+		String firstConnName = "";
+		if (conns!=null) {//3
+			if (conns.size()>0) {//4
+				IConnection conn = conns.get(0);
+				firstConnName = conn.getName();
+				List<IMetadataColumn> listColumns = metadata.getListColumns();
+				int size = listColumns.size();
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//5
+					generateCodeUtil.generateCode(dynamic_index,size,hasDynamic,dynamicColumnlength);
+					%>
+			String[] temp_row_<%= cid %> = new String[tempRowLength_<%=cid%>];
+<%
+			if(converDatetoString){
+%>
+				List<Boolean> datelist_<%=cid%> = new java.util.ArrayList<Boolean>();
+				List<String> patternlist_<%=cid%> = new java.util.ArrayList<String>();
+<%
+				for(IMetadataColumn column:listColumns){
+					for(Map<String, String> line:dateSelect){// search in the date table
+						String columnName = line.get("SCHEMA_COLUMN");
+						if(column.getLabel().equals(columnName)){
+%>
+							datelist_<%=cid%>.add(<%=line.get("CONVERTDATE")%>);
+							patternlist_<%=cid%>.add(<%=line.get("PATTERN")%>);
+<%
+						}
+					}
+				}
+			}
+%>
+			int excel_end_column_<%=cid%>;
+			if(row_<%= cid %>==null){
+				excel_end_column_<%=cid%>=0;
+			}else{
+				excel_end_column_<%=cid%>=row_<%= cid %>.getLastCellNum();
+			}
+			int actual_end_column_<%= cid %>;
+			if(end_column_<%=cid%> == -1){
+				actual_end_column_<%= cid %> = excel_end_column_<%=cid%>;
+			}
+			else{
+				actual_end_column_<%= cid %> = end_column_<%= cid %> >	excel_end_column_<%=cid%> ? excel_end_column_<%=cid%> : end_column_<%= cid %>;
+			}
+			org.apache.poi.ss.formula.eval.NumberEval ne_<%=cid%> = null;
+			for(int i=0;i<tempRowLength_<%=cid%>;i++){
+				if(i + start_column_<%= cid %> < actual_end_column_<%= cid %>){
+					org.apache.poi.ss.usermodel.Cell cell_<%=cid%> = row_<%= cid %>.getCell(i + start_column_<%= cid %>);
+					if(cell_<%=cid%>!=null){
+					switch (cell_<%=cid%>.getCellType()) {
+                        case STRING:
+                            temp_row_<%= cid %>[i] = cell_<%=cid%>.getRichStringCellValue().getString();
+                            break;
+                        case NUMERIC:
+                            if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell_<%=cid%>)) {
+<%
+                            	if(hasDynamic){
+%>
+	                            	if(i>=<%=dynamic_index-1%> && i<(<%=dynamic_index-1%> + dynamic_<%=cid%>.getColumnCount())){
+	                            		temp_row_<%= cid %>[i] = FormatterUtils.format_Date(cell_<%=cid%>.getDateCellValue(),<%=datePattern%>);
+	                            	}else{
+<%
+		                     	}
+								if(converDatetoString){
+%>
+									int dateColIndex_<%= cid %> = i;
+<%
+									if(hasDynamic){
+%>
+										if(i><%=dynamic_index-1%>){
+											dateColIndex_<%= cid %> = i-dynamic_<%=cid%>.getColumnCount()+1;
+										}
+<%
+									}
+%>
+                    	        	if(datelist_<%=cid%>.get(dateColIndex_<%= cid %>)){
+                        	        	temp_row_<%= cid %>[i] = FormatterUtils.format_Date(cell_<%=cid%>.getDateCellValue(),patternlist_<%=cid%>.get(dateColIndex_<%= cid %>));
+                            	   	} else{
+                                		temp_row_<%= cid %>[i] = cell_<%=cid%>.getDateCellValue().toString();
+                                	}
+<%
+								}else{
+%>
+									temp_row_<%= cid %>[i] =cell_<%=cid%>.getDateCellValue().toString();
+<%
+								}
+                            	if(hasDynamic){
+%>
+                            		}
+<%
+                            	}
+%>
+                            } else {
+                                temp_row_<%= cid %>[i] = df_<%=cid %>.format(cell_<%=cid%>.getNumericCellValue());
+                            }
+                            break;
+                        case BOOLEAN:
+                            temp_row_<%= cid %>[i] =String.valueOf(cell_<%=cid%>.getBooleanCellValue());
+                            break;
+                        case FORMULA:
+        					switch (cell_<%=cid%>.getCachedFormulaResultType()) {
+                                case STRING:
+                                    temp_row_<%= cid %>[i] = cell_<%=cid%>.getRichStringCellValue().getString();
+                                    break;
+                                case NUMERIC:
+                                    if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell_<%=cid%>)) {
+<%
+                            			if(hasDynamic){
+%>
+			                            	if(i>=<%=dynamic_index-1%> && i<(<%=dynamic_index-1%> + dynamic_<%=cid%>.getColumnCount())){
+			                            		temp_row_<%= cid %>[i] = FormatterUtils.format_Date(cell_<%=cid%>.getDateCellValue(),<%=datePattern%>);
+			                            	}else{
+<%
+		                     			}
+										if(converDatetoString){
+%>
+											int dateColIndex_<%= cid %> = i;
+<%
+											if(hasDynamic){
+%>
+												if(i><%=dynamic_index-1%>){
+													dateColIndex_<%= cid %> = i-dynamic_<%=cid%>.getColumnCount()+1;
+												}
+<%
+											}
+%>
+                    	        			if(datelist_<%=cid%>.get(dateColIndex_<%= cid %>)){
+                        	        			temp_row_<%= cid %>[i] = FormatterUtils.format_Date(cell_<%=cid%>.getDateCellValue(),patternlist_<%=cid%>.get(dateColIndex_<%= cid %>));
+                            	   			} else{
+                                				temp_row_<%= cid %>[i] =cell_<%=cid%>.getDateCellValue().toString();
+                                			}
+<%
+										}else{
+%>
+											temp_row_<%= cid %>[i] =cell_<%=cid%>.getDateCellValue().toString();
+<%
+										}
+                            			if(hasDynamic){
+%>
+                            				}
+<%
+										}
+%>
+                                    } else {
+	                                    ne_<%=cid %> = new org.apache.poi.ss.formula.eval.NumberEval(cell_<%=cid%>.getNumericCellValue());
+										temp_row_<%= cid %>[i] = ne_<%=cid%>.getStringValue();
+                                    }
+                                    break;
+                                case BOOLEAN:
+                                    temp_row_<%= cid %>[i] =String.valueOf(cell_<%=cid%>.getBooleanCellValue());
+                                    break;
+                                default:
+                            		temp_row_<%= cid %>[i] = "";
+                            }
+                            break;
+                        default:
+                            temp_row_<%= cid %>[i] = "";
+                        }
+                	}
+                	else{
+                		temp_row_<%=cid%>[i]="";
+                	}
+
+				}else{
+					temp_row_<%= cid %>[i]="";
+				}
+			}
+			boolean whetherReject_<%=cid %> = false;
+			<%=firstConnName%> = new <%=conn.getName()%>Struct();
+			int curColNum_<%=cid %> = -1;
+			String curColName_<%=cid %> = "";
+			try{
+<%
+					for (int i=0; i<size; i++) {//5
+						IMetadataColumn column = listColumns.get(i);
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						if(metadata.isDynamicSchema()){
+						%>
+							columnIndex_<%=cid%> = <%=i-1%>+dynamic_column_count_<%=cid%>;
+						<%
+						}else{
+						%>
+							columnIndex_<%=cid%> = <%=i%>;
+						<%
+						}
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			if( temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() > 0) {
+<%
+		}
+%>
+				curColNum_<%=cid %>=columnIndex_<%=cid%> + start_column_<%= cid %> + 1;
+				curColName_<%=cid %> = "<%=column.getLabel() %>";
+
+<%
+						if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>;
+<%
+						} else if(javaType == JavaTypesManager.DATE) {
+%>
+				if(<%= i%><actual_end_column_<%= cid %>){
+					try{
+						if(row_<%= cid %>.getCell(columnIndex_<%=cid%>+ start_column_<%= cid %>).getCellType() == org.apache.poi.ss.usermodel.CellType.NUMERIC && org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(row_<%= cid %>.getCell(columnIndex_<%=cid%>+ start_column_<%= cid %>))){
+							<%=firstConnName %>.<%=column.getLabel() %> = row_<%= cid %>.getCell(columnIndex_<%=cid%>+ start_column_<%= cid %>).getDateCellValue();
+						}
+						else{
+                            java.util.Date tempDate_<%=cid%> = ParserUtils.parseTo_Date(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, <%= patternValue %>);
+                            if(tempDate_<%=cid%>.after((new SimpleDateFormat("yyyy/MM/dd hh:mm:ss.SSS")).parse("9999/12/31 23:59:59.999"))||tempDate_<%=cid%>.before((new SimpleDateFormat("yyyy/MM/dd")).parse("1900/01/01"))){
+                                throw new RuntimeException("The cell format is not Date in ( Row. "+(nb_line_<%= cid %>+1)+ " and ColumnNum. " + curColNum_<%=cid %> + " )");
+                            }else{
+                                <%=firstConnName %>.<%=column.getLabel() %> = tempDate_<%=cid%>;
+                            }
+						}
+					}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+						<% // for bug TDI-19404 %>
+						throw new RuntimeException("The cell format is not Date in ( Row. "+(nb_line_<%= cid %>+1)+ " and ColumnNum. " + curColNum_<%=cid %> + " )");
+					}
+				}
+
+<%
+						}else if(JavaTypesManager.isNumberType(javaType)) {
+							if(advancedSeparator) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+							} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, null, '.'==decimalChar_<%=cid %> ? null : decimalChar_<%=cid %>));
+<%
+							}
+						} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.getBytes(<%=encoding %>);
+<%
+						}else if(column.getTalendType().equals("id_Dynamic")){
+							dynamic_index = i;
+							%>
+							dynamic_<%=cid %>.clearColumnValues();
+							dynamic_column_count_<%=cid%> = dynamic_<%=cid %>.getColumnCount();
+							for (int i = 0; i < dynamic_column_count_<%=cid%> ; i++) {
+								if(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() < 1){
+									emptyColumnCount_<%= cid %>++;
+								}
+								dynamic_<%=cid %>.addColumnValue(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+							}
+							<%=firstConnName %>.<%=column.getLabel() %> =dynamic_<%=cid %>;
+						<%
+						} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+<%
+						}
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			}else{
+<%
+						String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+						if(defaultValue == null) {
+%>
+					throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=firstConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+						} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = <%=defaultValue%>;
+				emptyColumnCount_<%= cid %>++;
+<%
+						}
+%>
+			}
+<%
+		}
+					}
+%>
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>
+
+<%
+	if(stopOnEmptyRow){
+%>
+        if(emptyColumnCount_<%= cid %> >= <%=size %><%if(hasDynamic){%>+dynamic_column_count_<%=cid%>-1<%}%>){
+        	break; //if meet the empty row, there will break the iterate.
+        }
+<%
+	}
+%>
+				nb_line_<%=cid%>++;
+				<%log4jFileUtil.debugRetriveData(node);%>
+			}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			whetherReject_<%=cid%> = true;
+<%
+		        if (dieOnError) {
+%>
+	            throw(e);
+<%
+		        }
+		        else{
+					if(isLog4jEnabled){%>
+						log.error("<%=cid%> - " + e.getMessage());
+					<%}
+					if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {//15
+%>
+					<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+						for(IMetadataColumn column : metadata.getListColumns()) {//16
+%>
+					<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+					    }//16
+%>
+					<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+					<%=firstConnName %> = null;
+<%
+					} else if(("").equals(rejectConnName)){
+%>
+					 System.err.println(e.getMessage());
+					 <%=firstConnName %> = null;
+<%
+					} else if(rejectConnName.equals(firstConnName)){
+%>
+					<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+<%
+					}//15
+				}
+%>
+			}
+
+
+<%
+				}
+			}
+		if (conns.size()>0) {
+			boolean isFirstEnter = true;
+			for (int i=0;i<conns.size();i++) {
+				IConnection conn = conns.get(i);
+				if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>
+             if(<%=conn.getName() %> == null){
+            	 <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+             }
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+	    	 <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;
+<%
+				 	}
+				}
+			}
+%>
+		<% if(!isFirstEnter) {%> } <% } %>
+<%
+		}
+		}
+%>
+<%
+		} else {//version judgement /***excel 2007 xlsx and event mode*****/
+		    boolean includePhoneticRuns = "true".equals(ElementParameterParser.getValue(node,"__INCLUDE_PHONETICRUNS__"));
+%>
+		Object source_<%=cid %> = <%=fileName%>;
+		com.talend.excel.xssf.event.ExcelReader excelReader_<%=cid%> = null;
+
+<%
+		if(configureRatio && !("").equals(ratio)) {
+%>
+			org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(<%=ratio %>);
+<%
+		}
+%>
+		
+		if(source_<%=cid %> instanceof java.io.InputStream || source_<%=cid %> instanceof String){
+			excelReader_<%=cid%> = new com.talend.excel.xssf.event.ExcelReader();
+			excelReader_<%=cid%>.setIncludePhoneticRuns(<%=includePhoneticRuns%>);
+		}else{
+			throw new java.lang.Exception("The data source should be specified as Inputstream or File Path!");
+		}
+
+		try {
+<%
+			if(isAllSheets){
+%>
+		excelReader_<%=cid%>.addSheetName(".*",true);
+<%
+			} else {
+				for(Map<String, String> tmp:sheetNameList){
+%>
+		excelReader_<%=cid%>.addSheetName(<%=tmp.get("SHEETNAME")%>, <%=(tmp.get("USE_REGEX")!=null&&!"".equals(tmp.get("USE_REGEX")))?"true".equals(tmp.get("USE_REGEX")):false%>);
+<%
+				}
+			}
+%>
+		int start_column_<%= cid %> = <%if(("").equals(firstColumn.trim())){%>0<%}else{%><%=firstColumn%>-1<%}%>;
+		int end_column_<%= cid %> = <%if(("").equals(lastColumn.trim())){%>-1<%}else{%><%=lastColumn%>-1<%}%>;
+		if(start_column_<%= cid %> >=0) {//follow start column
+			<%
+			if(hasDynamic){
+				if(("").equals(lastColumn.trim())){
+				%>
+					end_column_<%= cid %> = 16384;
+				<%
+				}else{
+				%>
+					end_column_<%= cid %> = <%=lastColumn%>-1;
+				<%
+				}
+			}else{
+			%>
+				end_column_<%= cid %> = start_column_<%= cid %> + <%=metadata.getListColumns().size()%> - 1;
+			<%
+			}
+			%>
+		} else if(end_column_<%= cid %> >= 0) {//follow end column
+			start_column_<%= cid %> = end_column_<%= cid %> - <%=metadata.getListColumns().size()%> + 1;
+		}
+
+		if(end_column_<%= cid %><0 || start_column_<%= cid %><0) {
+			throw new RuntimeException("Error start column and end column.");
+		}
+		int actual_end_column_<%= cid %> = end_column_<%= cid %> ;
+
+		int header_<%=cid%> = <%if(("").equals(header.trim())){%>0<%}else{%><%=header%><%}%>;
+		int limit_<%=cid%> = <%if(("").equals(limit.trim())){%>-1<%}else{%><%=limit%><%}%>;
+
+		int nb_line_<%= cid %> = 0;
+
+		//for the number format
+        java.text.DecimalFormat df_<%=cid %> = new java.text.DecimalFormat("#.####################################");
+        char decimalChar_<%=cid %> = df_<%=cid %>.getDecimalFormatSymbols().getDecimalSeparator();
+
+<%
+		for(int i=0; columnList!=null && i< columnList.size(); i++) {
+			if ("id_Date".equals(columnList.get(i).getTalendType())) {
+		       // it's input component. we should avoid data rounding here. for dynamic schema we have another algo
+%>
+		excelReader_<%=cid%>.addDateFormat(<%=i%> + start_column_<%= cid %>,new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"));
+<%
+			}
+		}
+%>
+
+		if(source_<%=cid %> instanceof String){
+			excelReader_<%=cid%>.parse((String)source_<%=cid %>,<%=encoding %>, password_<%=cid%>);
+		} else if(source_<%=cid %> instanceof java.io.InputStream) {
+			excelReader_<%=cid%>.parse((java.io.InputStream)source_<%=cid %>,<%=encoding %>, password_<%=cid%>);
+		}
+		<%
+		if(hasDynamic){
+		%>
+			if(header_<%=cid%> > 0){
+				header_<%=cid%> = header_<%=cid%> - 1;
+			}
+		<%
+		}
+		%>
+
+
+		while((header_<%=cid%>--)>0 && excelReader_<%=cid%>.hasNext()) {//skip the header
+			excelReader_<%=cid%>.next();
+		}
+
+		<%log4jFileUtil.startRetriveDataInfo();%>
+		while(excelReader_<%=cid%>.hasNext()) {
+			int emptyColumnCount_<%= cid %> = 0;
+
+			if (limit_<%= cid %> != -1 && nb_line_<%= cid %> >= limit_<%= cid %>) {
+				excelReader_<%=cid%>.stopRead();
+        		break;
+        	}
+
+        	java.util.List<String> row_<%=cid%> = excelReader_<%=cid%>.next();
+<%
+			List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+
+			String rejectConnName = "";
+			List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    		if(rejectConns != null && rejectConns.size() > 0) {
+    			IConnection rejectConn = rejectConns.get(0);
+    			rejectConnName = rejectConn.getName();
+    		}
+    		List<IMetadataColumn> rejectColumnList = null;
+    		IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    		if(metadataTable != null) {
+    			 rejectColumnList = metadataTable.getListColumns();
+    		}
+
+    		if (conns!=null) {
+    			if (conns.size()>0) {
+    		    	for (int i=0;i<conns.size();i++) {
+    		    		IConnection connTemp = conns.get(i);
+    		    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+		<%=connTemp.getName() %> = null;
+<%
+    		    		}
+    		    	}
+    		    }
+			}
+
+			String firstConnName = "";
+			if (conns!=null) {//TD1024
+				if (conns.size()>0) {//TD528
+					IConnection conn = conns.get(0);
+    				firstConnName = conn.getName();
+    				List<IMetadataColumn> listColumns = metadata.getListColumns();
+    				int size = listColumns.size();
+    				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//TD256
+						generateCodeUtil.generateCode(dynamic_index,size,hasDynamic,dynamicColumnlength);
+						%>
+					
+		String[] temp_row_<%= cid %> = new String[tempRowLength_<%=cid%>];
+		<%
+		if(hasDynamic && ("").equals(lastColumn.trim())){
+		%>
+			actual_end_column_<%= cid %> = end_column_<%= cid %>+dynamic_<%=cid %>.getColumnCount()-1;
+		<%
+		}
+		%>
+		for(int i_<%=cid%>=0;i_<%=cid%> < tempRowLength_<%=cid%>;i_<%=cid%>++){
+			int current_<%=cid%> = i_<%=cid%> + start_column_<%= cid %>;
+			if(current_<%=cid%> <= actual_end_column_<%= cid %>){
+				if(current_<%=cid%> < row_<%=cid%>.size()){
+					String column_<%=cid%> = row_<%=cid%>.get(current_<%=cid%>);
+					if(column_<%=cid%>!=null) {
+						temp_row_<%= cid %>[i_<%=cid%>] = column_<%=cid%>;
+					} else {
+						temp_row_<%= cid %>[i_<%=cid%>]="";
+					}
+				} else {
+					temp_row_<%= cid %>[i_<%=cid%>]="";
+				}
+			} else {
+				temp_row_<%= cid %>[i_<%=cid%>]="";
+			}
+		}
+
+		boolean whetherReject_<%=cid %> = false;
+		<%=firstConnName%> = new <%=conn.getName()%>Struct();
+		int curColNum_<%=cid %> = -1;
+		String curColName_<%=cid %> = "";
+
+		try{
+<%
+                		for (int i=0; i<size; i++) {//TD128
+						IMetadataColumn column = listColumns.get(i);
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						// it's input component. we should avoid data rounding here. it would be nice to avoid transformation from date to string and back
+						String patternValue = "\"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\"";
+						if(metadata.isDynamicSchema()){
+						%>
+							columnIndex_<%=cid%> = <%=i-1%>+dynamic_column_count_<%=cid%>;
+						<%
+						}else{
+						%>
+							columnIndex_<%=cid%> = <%=i%>;
+						<%
+						}
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			if( temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() > 0) {
+<%
+		}
+%>
+				curColNum_<%=cid %>=columnIndex_<%=cid%> + start_column_<%= cid %> + 1;
+				curColName_<%=cid %> = "<%=column.getLabel() %>";
+
+<%
+						if (javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>;
+<%
+						} else if(javaType == JavaTypesManager.DATE) {
+%>
+				try{
+					<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, <%= patternValue %>);
+					if(excelReader_<%=cid%>.isDate1904()){
+				        <%=firstConnName %>.<%=column.getLabel() %> = com.talend.excel.xssf.event.ColumnUtil.convert_Date1904(<%=firstConnName %>.<%=column.getLabel() %>);
+				    }
+				}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+					<% // for bug TDI-19404 %>
+					throw new RuntimeException("The cell format is not Date in ( Row. "+(nb_line_<%= cid %>+1)+ " and ColumnNum. " + curColNum_<%=cid %> + " )");
+				}
+
+<%
+						}else if(JavaTypesManager.isNumberType(javaType)) {
+							if(advancedSeparator) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+<%
+							} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>, null, '.'==decimalChar_<%=cid %> ? null : decimalChar_<%=cid %>));
+<%
+							}
+						} else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.getBytes(<%=encoding %>);
+<%
+						}else if(column.getTalendType().equals("id_Dynamic")){
+							dynamic_index = i;
+			%>
+							dynamic_<%=cid %>.clearColumnValues();
+							int fieldCount_<%=cid %> = row_<%= cid %>.size();
+							dynamic_column_count_<%=cid%> = dynamic_<%=cid %>.getColumnCount();
+							for (int i = 0; i < dynamic_column_count_<%=cid%> ; i++) {
+								if ((<%=dynamic_index%>+i) <= fieldCount_<%=cid %>){
+									if(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>.length() < 1){
+										emptyColumnCount_<%= cid %>++;
+									}
+									dynamic_<%=cid %>.addColumnValue(temp_row_<%= cid %>[<%=dynamic_index%>+i]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+								}
+								else{
+									dynamic_<%=cid %>.addColumnValue("");
+									emptyColumnCount_<%= cid %>++;
+								}
+							}
+							<%=firstConnName %>.<%=column.getLabel() %> =dynamic_<%=cid %>;
+						<%
+						} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp_row_<%=cid %>[columnIndex_<%=cid%>]<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))?".trim()":"" %>);
+<%
+						}
+		if(!column.getTalendType().equals("id_Dynamic")){
+%>
+			}else{
+<%
+						String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+						if(defaultValue == null) {
+%>
+					throw new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=firstConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+<%
+						} else {
+%>
+				<%=firstConnName %>.<%=column.getLabel() %> = <%=defaultValue%>;
+				emptyColumnCount_<%= cid %>++;
+<%
+						}
+%>
+			}
+<%
+		}
+					}//TD128
+%>
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>
+			nb_line_<%=cid%>++;
+			<%log4jFileUtil.debugRetriveData(node);%>
+		} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			whetherReject_<%=cid%> = true;
+<%
+		        if (dieOnError) {
+%>
+	            throw(e);
+<%
+		        }
+		        else{
+					if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {//15
+%>
+					<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+						for(IMetadataColumn column : metadata.getListColumns()) {//16
+%>
+					<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+					    }//16
+%>
+					<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+					<%=firstConnName %> = null;
+<%
+					} else if(("").equals(rejectConnName)){
+%>
+					 System.err.println(e.getMessage());
+					 <%=firstConnName %> = null;
+<%
+					} else if(rejectConnName.equals(firstConnName)){
+%>
+					<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>+ " column: " + curColName_<%=cid %> + " (No. " + curColNum_<%=cid %> + ")";
+<%
+					}//15
+				}
+%>
+			}
+
+<%
+    				}//TD256
+				}//TD528
+
+        		if (conns.size()>0) {//TD64
+        			boolean isFirstEnter = true;
+        			for (int i=0;i<conns.size();i++) {
+        				IConnection conn = conns.get(i);
+        				if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+        		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>
+                     if(<%=conn.getName() %> == null){
+                    	 <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+                     }
+<%
+        			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+        	    	 <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;
+<%
+        				 	}
+        				}
+        			}
+%>
+        		<% if(!isFirstEnter) {%> } <% } %>
+<%
+        		}//TD64
+
+			}//TD1024
+%>
+
+<%
+		}//end version judgement
+%>
+
+<%
+	}
+}
+//
+//end%>
+

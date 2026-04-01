@@ -1,0 +1,705 @@
+/**
+ * add by xzhang
+ */
+public class CLASS {
+
+    static class XMLNode {
+
+        // table parameter of component
+        public String name = null;
+
+        public String path = null;
+
+        public String type = null;
+        
+        public String sourceName=null;
+
+        public String column = null;
+        
+        public String defaultValue = null;
+        
+        public int order = 0;
+        
+        public boolean hasDefaultValue = false;
+
+        // special node
+        public int special = 0; // 1 is subtree root, 2 is subtree root parent, 4 is main
+
+        // column
+        public IMetadataColumn relatedColumn = null;
+
+        public List<IMetadataColumn> childrenColumnList = new ArrayList<IMetadataColumn>();
+
+        // tree variable
+        public XMLNode parent = null;
+
+        public List<XMLNode> attributes = new LinkedList<XMLNode>();
+
+        public List<XMLNode> namespaces = new LinkedList<XMLNode>();
+        
+        public List<XMLNode> branches = new LinkedList<XMLNode>();
+
+        public List<XMLNode> elements = new LinkedList<XMLNode>(); // the main element is the last element
+
+        public XMLNode(String path, String type, XMLNode parent, String column, String value,int order) {
+        	this.order = order;
+            this.path = path;
+            this.parent = parent;
+            this.type = type;
+            this.column = column;
+            this.defaultValue = value;
+            
+            if (column.indexOf(":") >= 0) {
+                this.column = column.substring(column.indexOf(":") + 1);
+                this.sourceName = column.substring(0, column.indexOf(":"));
+            }else{
+            	this.sourceName = column;
+            } 
+            if ("ELEMENT".equals(type)) {
+                this.name = path.substring(path.lastIndexOf("/") + 1);
+            } else if("ATTRIBUTE".equals(type)) {
+            	this.name = path;
+            	this.path = parent.path + "/@" + path;
+            } else {
+                this.name = path;
+            }
+        }
+        
+        public boolean isMainNode(){
+            return 4 == (special & 4);
+        }
+        
+        public boolean isSubTreeRoot(){
+            return 1 == (special & 1);
+        }
+        
+        public boolean isSubTreeParent(){
+            return 2 == (special & 2);
+        }
+        
+        public List<XMLNode> getNextSiblings() {
+        	List<XMLNode> result = new ArrayList<XMLNode>();
+        	if(parent!=null && parent.elements!=null){
+        		for(XMLNode sibing : parent.elements){
+        			if(order < sibing.order){
+        				result.add(sibing);
+        			}
+        		}
+        	}
+        	return result;
+        }
+        
+    }
+
+    public XMLNode getInsertNode(XMLNode root, List<XMLNode> mainNode, List<String> listPreConns) {
+        XMLNode returnNode = null;
+
+        String[] existConns = root.sourceName.split("=");
+        List<String> listExistConns = java.util.Arrays.asList(existConns);
+        boolean isContains = false;
+        if (listExistConns.contains(mainNode.get(0).sourceName)) {
+            for (int i = 0; i < listPreConns.size(); i++) {
+                if (listExistConns.contains(listPreConns.get(i))) {
+                    isContains = true;
+                    break;
+                }
+            }
+        }
+
+        if (isContains) {
+            for (XMLNode node : root.elements) {
+            	if(!node.isMainNode()) {
+            		continue;
+            	}
+                returnNode = getInsertNode(node, mainNode, listPreConns);
+                if (returnNode != null) {
+                    break;
+                }
+            }
+        }
+
+        if (isContains && returnNode == null) {
+            returnNode = root;
+        }
+
+        return returnNode;
+    }
+
+    // return [0] is root(XMLNode), [1] is groups(List<XMLNode>), [2] loop(XMLNode)
+    public XMLNode getRootTree(List<Map<String, String>> rootTable) {
+
+        XMLNode root = null;
+        XMLNode tmpParent = null;
+
+        List<Map<String, String>> tmpTable = new ArrayList<Map<String, String>>();
+
+        Map<String, String> currMainMap = null; // used to save the current Main Map in tmpTable
+        Map<String, String> currMainRootMap = null; // used to save the current main map in rootTable
+        String sourceName;
+        for (int i = 0; i < rootTable.size(); i++) {
+            if (rootTable.get(i).get("COLUMN").indexOf(":") >= 0) {
+                sourceName = rootTable.get(i).get("COLUMN").substring(0, rootTable.get(i).get("COLUMN").indexOf(":"));
+            } else {
+                sourceName = rootTable.get(i).get("COLUMN");
+            }
+            if (rootTable.get(i).get("ATTRIBUTE").equals("main") == true
+                    || rootTable.get(i).get("ATTRIBUTE").equals("branch") == true) {
+                currMainRootMap = rootTable.get(i);
+            }
+            if (i == 0) {
+                Map<String, String> tmpMap = new HashMap<String, String>();
+                tmpMap.put("PATH", rootTable.get(i).get("PATH"));
+                tmpMap.put("COLUMN", rootTable.get(i).get("COLUMN"));
+                tmpMap.put("VALUE", rootTable.get(i).get("VALUE"));
+                tmpMap.put("ATTRIBUTE", rootTable.get(i).get("ATTRIBUTE"));
+                tmpMap.put("ORDER", rootTable.get(i).get("ORDER"));
+                tmpMap.put("SOURCE", sourceName);
+                tmpTable.add(tmpMap);
+            } else {
+                int j = 0;
+                for (j = 0; j < tmpTable.size(); j++) {
+                    if (tmpTable.get(j).get("ATTRIBUTE").equals("main") == true
+                            || tmpTable.get(j).get("ATTRIBUTE").equals("branch") == true) {
+                        currMainMap = tmpTable.get(j); // save the current main node
+                    }
+                    if (currMainMap.get("PATH").equals(currMainRootMap.get("PATH"))) {
+                        if (tmpTable.get(j).get("PATH").equals(rootTable.get(i).get("PATH"))) {
+                            // use the character = to separate the source connection
+                            tmpTable.get(j).put("SOURCE", tmpTable.get(j).get("SOURCE") + "=" + sourceName);
+                        } else {
+                            // add the attributes or namespaces of the node
+                            Map<String, String> tmpMap = new HashMap<String, String>();
+                            tmpMap.put("PATH", rootTable.get(i).get("PATH"));
+                            tmpMap.put("COLUMN", rootTable.get(i).get("COLUMN"));
+                            tmpMap.put("VALUE", rootTable.get(i).get("VALUE"));
+                            tmpMap.put("ATTRIBUTE", rootTable.get(i).get("ATTRIBUTE"));
+                            tmpMap.put("ORDER", rootTable.get(i).get("ORDER"));
+                            tmpMap.put("SOURCE", sourceName);
+                            tmpTable.add(tmpMap);
+                        }
+                        break;
+                    } else {
+                        // nothing to do
+                    }
+                }
+
+                if (j >= tmpTable.size()) {// doesn't find the node in the tmpTable, then it is a new node
+                    Map<String, String> tmpMap = new HashMap<String, String>();
+                    tmpMap.put("PATH", rootTable.get(i).get("PATH"));
+                    tmpMap.put("COLUMN", rootTable.get(i).get("COLUMN"));
+                    tmpMap.put("VALUE", rootTable.get(i).get("VALUE"));
+                    tmpMap.put("ATTRIBUTE", rootTable.get(i).get("ATTRIBUTE"));
+                    tmpMap.put("ORDER", rootTable.get(i).get("ORDER"));
+                    tmpMap.put("SOURCE", sourceName);
+                    tmpTable.add(tmpMap);
+                }
+
+            }
+        }
+
+        if (tmpTable != null && tmpTable.size() > 0) {
+            for (Map<String, String> tmpMap : tmpTable) {
+                XMLNode tmpNew = null;
+                
+                int currOrder = 0;
+                if(tmpMap.get("ORDER")!=null && !"".equals(tmpMap.get("ORDER").trim())){
+            		currOrder = Integer.parseInt(tmpMap.get("ORDER"));
+            	}
+            	
+                if (tmpMap.get("ATTRIBUTE").equals("attri")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "ATTRIBUTE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                    tmpNew.sourceName = tmpMap.get("SOURCE");
+                    tmpParent.attributes.add(tmpNew);
+                } else if (tmpMap.get("ATTRIBUTE").equals("ns")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "NAMESPACE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                    tmpNew.sourceName = tmpMap.get("SOURCE");
+                    tmpParent.namespaces.add(tmpNew);
+                } else {
+                    if (tmpParent == null) {
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                        tmpNew.sourceName = tmpMap.get("SOURCE");
+                        //tmpNew.special |= 1;
+                        root = tmpNew;
+                    } else {
+                        String tmpParentPath = tmpMap.get("PATH").substring(0, tmpMap.get("PATH").lastIndexOf("/"));
+
+                        while (tmpParent != null && !tmpParentPath.equals(tmpParent.path)) {
+                            tmpParent = tmpParent.parent;
+                        }
+
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                        tmpNew.sourceName = tmpMap.get("SOURCE");
+
+                        tmpParent.elements.add(tmpNew);
+                    }
+                    if (tmpMap.get("ATTRIBUTE").equals("main")) {
+                        tmpNew.special |= 4;
+                    }
+                    tmpParent = tmpNew;
+                }
+            }
+            return root;
+        }
+        return null;
+    }
+    
+  /**
+     * 
+     * distinguish the xml tags from different source node
+     * 
+     * @param rootTable
+     * @param groupTable
+     * @param loopTable
+     * @param sourceNode
+     * @return
+     * @author wliu
+     */
+    public List<List<Map<String, String>>> getTables(List<Map<String, String>> rootTable, List<Map<String, String>> groupTable,
+            List<Map<String, String>> loopTable, String sourceNode) {
+
+        List<List<Map<String, String>>> tables = new ArrayList<List<Map<String, String>>>();
+
+        tables.add(rootTable);
+        tables.add(groupTable);
+        tables.add(loopTable);
+
+        List<Map<String, String>> resultRoot = new ArrayList<Map<String, String>>();
+        List<Map<String, String>> resultGroup = new ArrayList<Map<String, String>>();
+        List<Map<String, String>> resultLoop = new ArrayList<Map<String, String>>();
+
+        List<List<Map<String, String>>> result = new ArrayList<List<Map<String, String>>>();
+        result.add(resultRoot);
+        result.add(resultGroup);
+        result.add(resultLoop);
+
+        for (int i = 0; i < tables.size(); i++) {
+
+            if (rootTable != null && tables.get(i).size() > 0) {
+                // find and save the root tag from the source node to the resultRoot List
+                for (Map<String, String> map : tables.get(i)) {
+
+                    boolean b_exit = map.get("COLUMN").equals(sourceNode) || (map.get("COLUMN").indexOf(":")>0 && map.get("COLUMN").substring(0, map.get("COLUMN").indexOf(":")).equals(sourceNode));
+                    if (b_exit ) {
+                        result.get(i).add(map);
+                    }
+                }
+            }
+        }
+
+        return result;
+        
+    }
+    
+   	
+    public boolean allOrderValid(List<Map<String, String>> rootTable, List<Map<String, String>> groupTable,
+            List<Map<String, String>> loopTable) {
+    	List<List<Map<String, String>>> tables = new ArrayList<List<Map<String, String>>>();
+        tables.add(rootTable);
+        tables.add(groupTable);
+        tables.add(loopTable);
+        
+        for (List<Map<String, String>> table : tables) {
+        	for (Map<String, String> row : table) {
+        		if(row.get("ORDER")==null || "".equals(row.get("ORDER").trim())) {
+        			return false;
+        		}
+        	}
+        }
+        
+        return true;
+    
+    }
+    
+    // return [0] is root(XMLNode), [1] is groups(List<XMLNode>), [2] loop(XMLNode)
+    public Object[] getTree(List<Map<String, String>> rootTable, List<Map<String, String>> groupTable,
+            List<Map<String, String>> loopTable, List<IMetadataColumn> colList) {
+        List<List<Map<String, String>>> tables = new ArrayList<List<Map<String, String>>>();
+        tables.add(rootTable);
+        tables.add(groupTable);
+        tables.add(loopTable);
+
+        XMLNode root = null;
+        List<XMLNode> mains = new ArrayList<XMLNode>();
+        List<XMLNode> groups = new ArrayList<XMLNode>();
+        XMLNode loop = null;
+        
+        XMLNode tmpParent = null;
+        XMLNode tmpMainNode = null;
+        if (loopTable == null || loopTable.size() == 0) {
+            return null;
+        }
+        String mainPath = loopTable.get(0).get("PATH");
+        for (List<Map<String, String>> tmpTable : tables) {
+            tmpParent = tmpMainNode;
+            for (Map<String, String> tmpMap : tmpTable) {
+                XMLNode tmpNew = null;
+                
+                int currOrder = 0;
+                if(tmpMap.get("ORDER")!=null && !"".equals(tmpMap.get("ORDER").trim())){
+            		currOrder = Integer.parseInt(tmpMap.get("ORDER"));
+            	}
+                
+                if (tmpMap.get("ATTRIBUTE").equals("attri")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "ATTRIBUTE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                    tmpParent.attributes.add(tmpNew);
+                } else if (tmpMap.get("ATTRIBUTE").equals("ns")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "NAMESPACE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                    tmpParent.namespaces.add(tmpNew);
+                } else {
+                    if (tmpParent == null) {
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                        //tmpNew.special |= 1;
+                        root = tmpNew;
+                        mains.add(root);
+                    } else {
+                        String tmpParentPath = tmpMap.get("PATH").substring(0, tmpMap.get("PATH").lastIndexOf("/"));
+                        while (tmpParent != null && !tmpParentPath.equals(tmpParent.path)) {
+                            tmpParent = tmpParent.parent;
+                        }
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"),currOrder);
+                        tmpParent.elements.add(tmpNew);
+                        if (tmpMap.get("ATTRIBUTE").equals("main")) {
+                            if (tmpTable == groupTable) {
+                                tmpNew.special |= 1;
+                                tmpParent.special |= 2;
+                                groups.add(tmpNew);
+                            } else if (tmpTable == loopTable) {
+                                tmpNew.special |= 1;
+                                tmpParent.special |= 2;
+                                loop = tmpNew;
+                            }else if (tmpTable == rootTable){
+                                mains.add(tmpNew);
+                            }
+                        }
+                    }
+                    if (tmpMap.get("ATTRIBUTE").equals("main")) {
+                        tmpMainNode = tmpNew;
+                        tmpNew.special |= 4;
+                    }
+                    tmpParent = tmpNew;
+                }
+                setIMetadataColumn(tmpNew, colList);
+                setDefaultValues(tmpNew);//add by wliu
+            }
+        }
+        return new Object[] { mains, groups, loop };
+    }
+    
+    private void setDefaultValues(XMLNode node){
+    	if(node.defaultValue != null && !"".equals(node.defaultValue)){
+    		XMLNode tmp = node;
+    		while(tmp !=null){
+    			tmp.hasDefaultValue = true;
+    			if(tmp.isMainNode()){
+    				break;
+    			}
+    			tmp = tmp.parent;
+    		}
+    	}
+    }
+    
+    private void setIMetadataColumn(XMLNode node, List<IMetadataColumn> colList) {
+        String value = null;
+        JavaType javaType = null;
+        if (node.column != null && node.column.length() > 0) {
+            for (IMetadataColumn column : colList) {
+                if (column.getLabel().equals(node.column)) {
+                    node.relatedColumn = column;
+                    XMLNode tmp = node;
+                    while (tmp != null) {
+                        if (!tmp.childrenColumnList.contains(column)) {
+                            tmp.childrenColumnList.add(column);
+                        }
+                        if(tmp.isMainNode()){
+                            break;
+                        }
+                        tmp = tmp.parent;
+                    }
+                }
+            }
+        }
+    }
+
+    public List<XMLNode> getGroupByNodeList(XMLNode group) {
+        List<XMLNode> list = new ArrayList<XMLNode>();
+        for (XMLNode attri : group.attributes) {
+            if ((attri.column != null && attri.column.length() != 0) || 
+            	(attri.defaultValue != null && !"".equals(attri.defaultValue)) ) {
+                list.add(attri);
+            }
+        }
+        if (group.relatedColumn != null || (group.defaultValue != null && !"".equals(group.defaultValue)) ) {
+            list.add(group);
+        } else {
+            for (XMLNode element : group.elements) {
+                if (!element.isMainNode()) {
+                    list.addAll(getGroupByNodeList(element));
+                }
+            }
+        }
+        return list;
+    }
+
+    public XMLNode removeEmptyElement(XMLNode root) {
+        List<XMLNode> removeNodes = new LinkedList<XMLNode>();
+        for (XMLNode attri : root.attributes) {
+            if ((attri.column == null || attri.column.length() == 0) && 
+            		(attri.defaultValue == null || "".equals(attri.defaultValue)) ) {
+                attri.parent = null;
+                removeNodes.add(attri);
+            }
+        }
+        root.attributes.removeAll(removeNodes);
+
+        removeNodes.clear();
+        for (XMLNode ns : root.namespaces) {
+            if ( (ns.column == null || ns.column.length() == 0)
+            		&& (ns.defaultValue == null || "".equals(ns.defaultValue)) ) {
+                ns.parent = null;
+                removeNodes.add(ns);
+            }
+        }
+        root.namespaces.removeAll(removeNodes);
+
+        removeNodes.clear();
+        for (XMLNode child : root.elements) {
+            removeNodes.add(removeEmptyElement(child));
+        }
+        root.elements.removeAll(removeNodes);
+
+        if (root.attributes.size() == 0 && root.namespaces.size() == 0 && root.elements.size() == 0
+                && (root.column == null || root.column.length() == 0)
+                && (root.defaultValue == null || "".equals(root.defaultValue)) ) {
+            return root;
+        } else {
+            return null;
+        }
+    }
+    
+    //support namespace helper
+    //we need to set namespace or qname where there is select action
+    class NamespaceHelper{
+		
+		int defaultPrefixCount = 0;
+		
+		XMLNode currentGroupNode = null;
+		
+		String currentFinalGroupXpath = null;
+		
+		Map<String,String> prefixToUriForNamespace = new HashMap<String,String>();
+		
+		Map<String,String> xpathToPrefixForDefaultNamespace = new HashMap<String,String>();
+		
+		Map<String,String> uriToPrefixForDefaultNamespace = new HashMap<String,String>();
+		
+		String prefix = null;
+		
+		String uri = null;
+		
+		String localname = null;
+		
+		public void lookupNamespace(XMLNode node) {
+			String name = node.name;
+			String xpath = node.path;
+			int idx = name.indexOf(":");
+			if(idx == -1) {
+				String defualtPrefix = xpathToPrefixForDefaultNamespace.get(xpath);
+				uri = prefixToUriForNamespace.get(defualtPrefix);
+				prefix = "";
+				localname = name;
+			} else {
+				prefix = name.substring(0,idx);
+				uri = prefixToUriForNamespace.get(prefix);
+				localname = (uri == null ? name : name.substring(idx + 1));
+			}
+		}
+		
+		public String getPrefix() {
+			return prefix;
+		}
+		
+		public String getUri() {
+			return uri;
+		}
+		
+		public String getLocalName() {
+			return localname;
+		}
+
+		List<XMLNode> currentGroupDeclaredNamespaces = null;
+		
+		public NamespaceHelper(XMLNode rootNode){
+			collectionNS(rootNode,null);
+		}
+		
+		//init method for one group node in UI.
+		public void setGroupNode(XMLNode currentGroup) {
+			currentGroupNode = currentGroup;
+			currentGroupDeclaredNamespaces = currentGroup.namespaces;
+			currentFinalGroupXpath = buildXPathWithPrefix(currentGroup);
+		}
+		
+		public String buildCurrentGroupDeclaredNamespacesMapping(String name) {
+			StringBuilder sb = new StringBuilder();
+			
+			if(currentGroupDeclaredNamespaces.size() > 0) {
+				sb.append(name + " = new java.util.HashMap<String,String>();");
+			}
+			
+			for(XMLNode namespace : currentGroupDeclaredNamespaces) {
+				if(namespace.name != null && !"".equals(namespace.name)){
+					sb.append(name+".put(\""+namespace.name+"\",\""+namespace.defaultValue+"\");"); 
+				}else{//default namespace
+					sb.append(name+".put(\"\",\""+namespace.defaultValue+"\");"); 
+				}
+			}
+			
+			return sb.toString();
+		}
+		
+		public void buildInfoForNamespace(XMLNode node, String[] arrNames ,List<String> prefixs, List<String> uris){
+			String groupNodeXPath = currentGroupNode.path;
+			String currentNodeXPath = node.path;
+			int idx = 0;
+			//cache current node prefix and uri of namespace
+			idx = node.name.indexOf(":");
+			if(idx!=-1) {//not default namespace
+				String prefix = node.name.substring(0,idx);
+				prefixs.add(prefix);
+				uris.add(prefixToUriForNamespace.get(prefix));
+			} else {//default namespace
+				prefixs.add(null);
+				String defaultPrefix = xpathToPrefixForDefaultNamespace.get(currentNodeXPath);
+				uris.add(prefixToUriForNamespace.get(defaultPrefix));
+			}
+			
+			//cache sub nodes prefix and uri of namespace
+			String xpath = groupNodeXPath;
+			for(int i=1; i<arrNames.length; i++){
+				String arrName = arrNames[i];
+				xpath = xpath + "/" + arrName;
+				
+				idx = arrName.indexOf(":");
+				if(idx!=-1) {//not default namespace
+					String prefix = node.name.substring(0,idx);
+					prefixs.add(prefix);
+					uris.add(prefixToUriForNamespace.get(prefix));
+				} else {//default namespace
+					prefixs.add(null);
+					String defaultPrefix = xpathToPrefixForDefaultNamespace.get(xpath);
+					uris.add(prefixToUriForNamespace.get(defaultPrefix));
+				}
+				
+				//change to localname
+				if(arrName!=null) {
+					idx = arrName.indexOf(":");
+					if(idx!=-1) {
+						arrNames[i] = arrName.substring(idx + 1);
+					}
+				}
+			}
+					
+		}
+		
+		private String buildXPathWithPrefix(XMLNode node){
+			String xpath = node.path;
+			StringBuilder finalXPath = new StringBuilder();
+			return buildXPathWithPrefix(finalXPath, xpath);
+		}
+		
+		private String buildXPathWithPrefix(StringBuilder finalXPath, String xpath){
+			List<String> nodePaths = new ArrayList<String>();
+			
+			while(xpath.lastIndexOf("/") != -1){
+				nodePaths.add(xpath);
+				xpath = xpath.substring(0,xpath.lastIndexOf("/"));
+			}
+			
+			for(int i=nodePaths.size()-1; i>=0; i--){
+				String nodePath = nodePaths.get(i);
+				String prefix = xpathToPrefixForDefaultNamespace.get(nodePath);
+				String nodeName = nodePath.substring(nodePath.lastIndexOf("/")+1);
+				
+				finalXPath.append("/");
+				if(prefix != null && !"".equals(prefix)){
+					finalXPath.append(prefix);
+					finalXPath.append(":");
+					finalXPath.append(nodeName);
+				}else{
+					finalXPath.append(nodeName);
+				}
+			}
+			
+			return finalXPath.toString();
+		}
+		
+		public String buildUriToPrefixForDefaultNamespaceMapping(String name){
+			StringBuilder sb = new StringBuilder();
+			for (Object key : uriToPrefixForDefaultNamespace.keySet()) { 
+			    Object val = uriToPrefixForDefaultNamespace.get(key);
+			    sb.append(name+".put(\""+key+"\",\""+val+"\");"); 
+			} 
+			return sb.toString();
+		}
+		
+		public String buildPrefixToUriForNamespaceMapping(String name){
+			StringBuilder sb = new StringBuilder();
+			for (Object key : prefixToUriForNamespace.keySet()) { 
+			    Object val = prefixToUriForNamespace.get(key);
+			    sb.append(name+".put(\""+key+"\",\""+val+"\");"); 
+			} 
+			return sb.toString();
+		}
+		
+		public String getCurrentFinalGroupXpath() {
+			return currentFinalGroupXpath;
+		}
+		
+		private void collectionNS(XMLNode currentNode, String parentDefaultPrefix){
+			for(XMLNode namespace : currentNode.namespaces){
+				if(namespace.name != null && !"".equals(namespace.name)){
+					prefixToUriForNamespace.put(namespace.name,namespace.defaultValue);
+				}else{//default namespace setting
+					//when default namespace,for the same uri,we need to make sure that default prefix is the same
+					String defaultPrefix = uriToPrefixForDefaultNamespace.get(namespace.defaultValue);
+					if(defaultPrefix == null) {
+						defaultPrefix = findVaildDefaultPrefix();
+					}
+					prefixToUriForNamespace.put(defaultPrefix,namespace.defaultValue);
+					parentDefaultPrefix = defaultPrefix;
+				}
+			}
+			
+			if(!currentNode.name.contains(":")){
+				if(parentDefaultPrefix != null && !"".equals(parentDefaultPrefix)){
+					xpathToPrefixForDefaultNamespace.put(currentNode.path,parentDefaultPrefix);
+					uriToPrefixForDefaultNamespace.put(prefixToUriForNamespace.get(parentDefaultPrefix),parentDefaultPrefix);
+				}
+			}
+			
+			for(XMLNode attribute : currentNode.attributes){
+				collectionNS(attribute, parentDefaultPrefix);
+			}
+			
+			for(XMLNode element : currentNode.elements){
+				collectionNS(element, parentDefaultPrefix);
+			}
+			
+		}
+		
+		private String findVaildDefaultPrefix(){
+			String prefix = "TPrefix"+defaultPrefixCount;
+			defaultPrefixCount++;
+			if(prefixToUriForNamespace.get(prefix)==null || "".equals(prefixToUriForNamespace.get(prefix))){
+				return prefix;
+			}else{
+				return findVaildDefaultPrefix();
+			}
+		}
+		
+	}
+
+    public String generate(Object argument) {
+        return "";
+    }
+}

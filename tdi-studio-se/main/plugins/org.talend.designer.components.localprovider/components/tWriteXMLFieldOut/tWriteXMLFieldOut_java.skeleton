@@ -1,0 +1,265 @@
+/**
+ * add by xzhang
+ */
+public class CLASS {
+
+    static class XMLNode {
+
+        // table parameter of component
+        public String name = null;
+
+        public String path = null;
+
+        public String type = null;
+
+        public String column = null;
+        
+        public String defaultValue = null;
+        
+        public int order = 0;
+        
+        public boolean hasDefaultValue = false;
+
+        // special node
+        public int special = 0; // 1 is subtree root, 2 is subtree root parent, 4 is main
+
+        // column
+        public IMetadataColumn relatedColumn = null;
+
+        public List<IMetadataColumn> childrenColumnList = new ArrayList<IMetadataColumn>();
+
+        // tree variable
+        public XMLNode parent = null;
+
+        public List<XMLNode> attributes = new LinkedList<XMLNode>();
+
+        public List<XMLNode> namespaces = new LinkedList<XMLNode>();
+
+        public List<XMLNode> elements = new LinkedList<XMLNode>(); // the main element is the last element
+
+        public XMLNode(String path, String type, XMLNode parent, String column, String value, int order) {
+        	this.order = order;
+            this.path = path;
+            this.parent = parent;
+            this.type = type;
+            this.column = column;
+            this.defaultValue = value;
+            if (type.equals("ELEMENT")) {
+                this.name = path.substring(path.lastIndexOf("/") + 1);
+            } else {
+                this.name = path;
+            }
+        }
+        
+        public boolean isMainNode(){
+            return 4 == (special & 4);
+        }
+        
+        public boolean isSubTreeRoot(){
+            return 1 == (special & 1);
+        }
+        
+        public boolean isSubTreeParent(){
+            return 2 == (special & 2);
+        }
+    
+        public int getNodeInsertIndex(){
+        	int insertIndex =0;
+        	if(5==(special & 5)){//group and loop main node
+        		if(parent!=null && parent.elements!=null){
+            		for(XMLNode tmpNode: parent.elements){
+            			if(order <= tmpNode.order){
+            				break;
+            			}
+            			insertIndex++;
+            		}
+        		}
+        	}
+        	return insertIndex;
+        }
+        
+        public int getCurrGroupPos(){
+        	int currPos =0;
+        	if(5==(special & 5)){//group and loop main node
+    			XMLNode tmpNode = parent;
+    			while(tmpNode!=null && (5==(tmpNode.special & 5))){
+    				currPos++;
+    				tmpNode = tmpNode.parent;
+    			}
+        	}
+        	return currPos;
+        }
+    }
+
+    
+    // return [0] is root(XMLNode), [1] is groups(List<XMLNode>), [2] loop(XMLNode)
+    public Object[] getTree(List<Map<String, String>> rootTable, List<Map<String, String>> groupTable,
+            List<Map<String, String>> loopTable, List<IMetadataColumn> colList) {
+        List<List<Map<String, String>>> tables = new ArrayList<List<Map<String, String>>>();
+        tables.add(rootTable);
+        tables.add(groupTable);
+        tables.add(loopTable);
+
+        XMLNode root = null;
+        List<XMLNode> mains = new ArrayList<XMLNode>();
+        List<XMLNode> groups = new ArrayList<XMLNode>();
+        XMLNode loop = null;
+
+        XMLNode tmpParent = null;
+        XMLNode tmpMainNode = null;
+        if (loopTable == null || loopTable.size() == 0) {
+            return null;
+        }
+        int index =0;
+        int currOrder = 0;
+        String mainPath = loopTable.get(0).get("PATH");
+        for (List<Map<String, String>> tmpTable : tables) {
+            tmpParent = tmpMainNode;
+            for (Map<String, String> tmpMap : tmpTable) {
+            	index++;
+            	if(tmpMap.get("ORDER")!=null && !"".equals(tmpMap.get("ORDER").trim())){
+            		currOrder = Integer.parseInt(tmpMap.get("ORDER"));
+            	}else{
+            		currOrder = index;
+            	}
+                XMLNode tmpNew = null;
+                if (tmpMap.get("ATTRIBUTE").equals("attri")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "ATTRIBUTE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"), currOrder);
+                    tmpParent.attributes.add(tmpNew);
+                } else if (tmpMap.get("ATTRIBUTE").equals("ns")) {
+                    tmpNew = new XMLNode(tmpMap.get("PATH"), "NAMESPACE", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"), currOrder);
+                    tmpParent.namespaces.add(tmpNew);
+                } else {
+                    if (tmpParent == null) {
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"), currOrder);
+//                        tmpNew.special |= 1;
+                        root = tmpNew;
+                        mains.add(root);
+                    } else {
+                        String tmpParentPath = tmpMap.get("PATH").substring(0, tmpMap.get("PATH").lastIndexOf("/"));
+                        while (tmpParent != null && !tmpParentPath.equals(tmpParent.path)) {
+                            tmpParent = tmpParent.parent;
+                        }
+                        tmpNew = new XMLNode(tmpMap.get("PATH"), "ELEMENT", tmpParent, tmpMap.get("COLUMN"), tmpMap.get("VALUE"), currOrder);
+                        tmpParent.elements.add(tmpNew);
+                        if (tmpMap.get("ATTRIBUTE").equals("main")) {
+                            if (tmpTable == groupTable) {
+                                tmpNew.special |= 1;
+                                tmpParent.special |= 2;
+                                groups.add(tmpNew);
+                            } else if (tmpTable == loopTable) {
+                                tmpNew.special |= 1;
+                                tmpParent.special |= 2;
+                                loop = tmpNew;
+                            }else if (tmpTable == rootTable){
+                                mains.add(tmpNew);
+                            }
+                        }
+                    }
+                    if (tmpMap.get("ATTRIBUTE").equals("main")) {
+                        tmpMainNode = tmpNew;
+                        tmpNew.special |= 4;
+                    }
+                    tmpParent = tmpNew;
+                }
+                setIMetadataColumn(tmpNew, colList);
+                setDefaultValues(tmpNew);//add by wliu
+            }
+        }
+        return new Object[] { mains, groups, loop };
+    }
+    
+    private void setDefaultValues(XMLNode node){
+    	if(node.defaultValue != null && !"".equals(node.defaultValue)){
+    		XMLNode tmp = node;
+    		while(tmp !=null){
+    			tmp.hasDefaultValue = true;
+    			if(tmp.isMainNode()){
+    				break;
+    			}
+    			tmp = tmp.parent;
+    		}
+    	}
+    }
+
+    private void setIMetadataColumn(XMLNode node, List<IMetadataColumn> colList) {
+        String value = null;
+        JavaType javaType = null;
+        if (node.column != null && node.column.length() > 0) {
+            for (IMetadataColumn column : colList) {
+                if (column.getLabel().equals(node.column)) {
+                    node.relatedColumn = column;
+                    XMLNode tmp = node;
+                    while (tmp != null) {
+                        if (!tmp.childrenColumnList.contains(column)) {
+                            tmp.childrenColumnList.add(column);
+                        }
+                        if(tmp.isMainNode()){
+                            break;
+                        }
+                        tmp = tmp.parent;
+                    }
+                }
+            }
+        }
+    }
+
+    public List<XMLNode> getGroupByNodeList(XMLNode group) {
+        List<XMLNode> list = new ArrayList<XMLNode>();
+        for (XMLNode attri : group.attributes) {
+            if (attri.column != null && attri.column.length() != 0) {
+                list.add(attri);
+            }
+        }
+        if (group.relatedColumn != null) {
+            list.add(group);
+        } else {
+            for (XMLNode element : group.elements) {
+                if (!element.isMainNode()) {
+                    list.addAll(getGroupByNodeList(element));
+                }
+            }
+        }
+        return list;
+    }
+
+    public XMLNode removeEmptyElement(XMLNode root) {
+        List<XMLNode> removeNodes = new LinkedList<XMLNode>();
+        for (XMLNode attri : root.attributes) {
+            if ((attri.column == null || attri.column.length() == 0) && 
+            		(attri.defaultValue == null || "".equals(attri.defaultValue)) ) {
+                attri.parent = null;
+                removeNodes.add(attri);
+            }
+        }
+        root.attributes.removeAll(removeNodes);
+
+        removeNodes.clear();
+        for (XMLNode ns : root.namespaces) {
+            if ( (ns.column == null || ns.column.length() == 0)
+            		&& (ns.defaultValue == null || "".equals(ns.defaultValue)) ) {
+                ns.parent = null;
+                removeNodes.add(ns);
+            }
+        }
+        root.namespaces.removeAll(removeNodes);
+
+        removeNodes.clear();
+        for (XMLNode child : root.elements) {
+            removeNodes.add(removeEmptyElement(child));
+        }
+        root.elements.removeAll(removeNodes);
+
+        if (root.attributes.size() == 0 && root.namespaces.size() == 0 && root.elements.size() == 0
+                && (root.column == null || root.column.length() == 0)
+                && (root.defaultValue == null || "".equals(root.defaultValue)) ) {
+            return root;
+        } else {
+            return null;
+        }
+    }
+
+    public String generate(Object argument) {
+        return "";
+    }
+}

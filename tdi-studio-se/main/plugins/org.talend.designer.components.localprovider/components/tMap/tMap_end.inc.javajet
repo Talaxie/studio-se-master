@@ -1,0 +1,169 @@
+<%@ jet 
+	imports="
+	java.util.ArrayList
+	java.util.List
+	org.talend.designer.mapper.external.data.ExternalMapperData 
+	org.talend.designer.mapper.external.data.ExternalMapperTable
+	org.talend.designer.mapper.external.data.ExternalMapperTableEntry
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.designer.mapper.MapperComponent
+	org.talend.core.model.process.IElementParameter
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.IConnection
+	java.util.HashMap
+	java.util.Map
+    org.talend.core.model.process.ElementParameterParser
+	" 
+	skeleton="tMap_commons.skeleton"
+%>
+
+<% 
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	MapperComponent node = (MapperComponent) codeGenArgument.getArgument();
+	boolean stats = codeGenArgument.isStatistics();
+	
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    ExternalMapperData data = (ExternalMapperData) node.getExternalData();
+
+	String componentName = node.getUniqueName();
+	boolean isVirtualIn = componentName.endsWith("TMAP_IN");
+	boolean isVirtualOut = componentName.endsWith("TMAP_OUT");
+
+    List<IConnection> inputConnections = (List<IConnection>) node.getIncomingConnections();
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+	String uniqueNameComponent = componentName.replaceAll("_TMAP_IN", "");
+	uniqueNameComponent = uniqueNameComponent.replaceAll("_TMAP_OUT", "");
+	
+	if(isVirtualIn) {
+		String searchedComponentName = componentName.replaceAll("TMAP_IN", "TMAP_OUT");
+		List<? extends INode> generatedNodes = node.getProcess().getGeneratingNodes();
+		for(INode loopNode : generatedNodes) {
+			if(loopNode.getUniqueName().equals(searchedComponentName)) {
+				inputConnections = (List<IConnection>) loopNode.getIncomingConnections();
+				break;
+			}
+		}
+	}
+	
+
+		// Bug partially fixed, see bug:785	
+		// Bug partially fixed, see bug:3966	
+		
+		boolean hasIterate = hasIterateConnectionBefore(inputConnections, node.getProcess().getGraphicalNodes());
+        
+        
+%>
+// ###############################
+// # Lookup hashes releasing
+<%
+
+		if(!isVirtualOut) {
+
+	        HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+        	for (IConnection connection : inputConnections) {
+	            hNameToConnection.put(connection.getName(), connection);
+        	}
+
+	        List<ExternalMapperTable> inputTablesList = new ArrayList<ExternalMapperTable>(data.getInputTables());
+	        int lstSizeInputs = inputTablesList.size();
+	        
+	        if(lstSizeInputs > 1) {
+	        	String mainTableName = inputTablesList.get(0).getName();
+	    
+	    		int joinedTableIndex = 0;    	
+	    		int tmpJoinedTableIndex = 0;    	
+	    		boolean hasPersistentLookup = false;
+		        for (int i = 0; i < lstSizeInputs; i++) {
+		            ExternalMapperTable inputTable = (ExternalMapperTable) inputTablesList.get(i);
+
+					if(hNameToConnection.get(inputTable.getName()) != null) {
+	        			if(inputTable.isPersistent() 
+		        			&& !"ALL_ROWS".equals(inputTable.getMatchingMode()) 
+	        			) {
+		        			joinedTableIndex = tmpJoinedTableIndex;
+	        				hasPersistentLookup = true;
+	        			}
+
+	        			tmpJoinedTableIndex++;
+	        		}
+
+	        	}
+
+	        	if(hasPersistentLookup) {
+				%>
+					fsi_<%=uniqueNameComponent%>_<%=joinedTableIndex%>.endGet();
+				<%
+	        	}
+	        	
+	        }
+	        
+	        for (int i = 1; i < lstSizeInputs; i++) {
+	            ExternalMapperTable inputTable = (ExternalMapperTable) inputTablesList.get(i);
+
+
+	            List<ExternalMapperTableEntry> tableEntries = inputTable.getMetadataTableEntries();
+	            if (tableEntries == null) {
+	                continue;
+	            }
+	            String tableName = inputTable.getName();
+	            IConnection connection = hNameToConnection.get(tableName);
+	            if(connection == null) {
+	            	continue;
+	            }
+
+				String lookupMode = inputTable.getLookupMode();
+				boolean isCacheOrReload = org.talend.designer.mapper.model.table.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(lookupMode);
+
+				if(!hasIterate) {
+				%>
+					if(tHash_Lookup_<%=tableName%> != null) {
+						tHash_Lookup_<%=tableName%>.endGet();
+					}
+					globalMap.remove( "tHash_Lookup_<%=tableName%>" );
+
+					<%					
+					if(isCacheOrReload) {
+					%>
+
+						tHash_Lookup_Cache_<%=tableName%>.endGet();
+						tHash_Lookup_Cache_<%=tableName%> = null;
+						tHash_Lookup_Real_<%=tableName%> = null;
+
+					<%					
+					}
+					%>
+					
+				<%
+				}
+	        }
+		}
+%>
+// ###############################      
+<%
+	List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+	for (IConnection connection : outputConnections) {
+		nameToOutputConnection.put(connection.getName(), connection);
+	}
+
+	List<ExternalMapperTable> outputTables = data.getOutputTables();
+	for(ExternalMapperTable outputTable : outputTables){
+		String outputTableName = outputTable.getName();
+		List<ExternalMapperTableEntry> tableEntries = outputTable.getMetadataTableEntries();
+		if (tableEntries == null || nameToOutputConnection.get(outputTable.getName()) == null) {
+			continue;
+		}
+	
+		if(isLog4jEnabled){
+			if(!isVirtualOut) {
+%>
+				log.debug("<%=uniqueNameComponent%> - Written records count in the table '<%=outputTableName%>': " + count_<%=outputTableName%>_<%=uniqueNameComponent%> + ".");
+<%
+			}
+		}
+	}
+%>

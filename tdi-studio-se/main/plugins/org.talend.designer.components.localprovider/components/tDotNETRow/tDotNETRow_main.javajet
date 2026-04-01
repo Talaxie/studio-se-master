@@ -1,0 +1,166 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List 
+    	java.util.Map	
+	" 
+%>
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String dllLoad = ElementParameterParser.getValue(node,"__LIBRARY__");    
+    String clazz = ElementParameterParser.getValue(node,"__CLASS_NAME__");
+    boolean useExistingConnection = "true".equals((String)ElementParameterParser.getValue(node,"__USE_EXISTING_INSTANCE__"));
+    boolean useStatic = "true".equals(ElementParameterParser.getValue(node,"__USE_STATIC_METHOD__"));    
+    List<Map<String,String>> values = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__PARAMETERS__");
+    boolean onRow = "true".equals(ElementParameterParser.getValue(node,"__INSTANTIATE_ON_ROW__"));
+    String instance = ElementParameterParser.getValue(node,"__INSTANCE__");
+    List<Map<String,String>> parameters = 
+    	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__METHOD_PARAMETERS__");
+    List<Map<String,String>> customParameters = 
+    	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__ADD_PARAMS__");
+    boolean returnsDotNetObj = "true".equals(ElementParameterParser.getValue(node,"__IS_RETURN_NET_OBJ__"));
+    boolean isVoid = "true".equals(ElementParameterParser.getValue(node,"__IS_VOID_METHOD__"));
+    String methodName = ElementParameterParser.getValue(node,"__METHOD_NAME__");
+    String outputCol = ElementParameterParser.getValue(node,"__OUTPUT_COLUMN__");
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    for (int i = 0; i < metadatas.size(); i++) {
+    %>
+    //i = <%=i%>
+    <%
+    }
+    IMetadataTable metadata = metadatas.get(0);
+    List<? extends IConnection> connsout = node.getOutgoingConnections();
+    boolean storeResult = "true".equals(ElementParameterParser.getValue(node,"__STORE_RETURNED_INSTANCE__"));
+    boolean propagateData = "true".equals(ElementParameterParser.getValue(node,"__PASS_EXISTING_DATA__"));
+    String connName = null;
+    if (node.getIncomingConnections().size() == 1) {
+        IConnection conn = node.getIncomingConnections().get(0);
+        connName = conn.getName();
+    }
+    List<IMetadataColumn> columnsout = metadata.getListColumns();
+    String outName = null;
+     if (connsout != null) {
+        for (int i = 0; i < connsout.size(); i++) {
+            IConnection connout = connsout.get(i);
+            if (connout.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+               outName = connout.getName();
+               if (propagateData) {
+               for (int j = 0; j < columnsout.size(); j++) {
+                    IMetadataColumn columnout = columnsout.get(j); 
+                    if (!columnout.getLabel().equals(outputCol) ) {                       
+    %>
+                        <%=outName%>.<%=columnout.getLabel()%> = <%=connName%>.<%=columnout.getLabel()%>;
+<%
+					}
+                }
+                }
+            }
+        }
+    }
+    
+    if (node.getIncomingConnections().size() == 0 && outName != null) {
+    %>
+    <%=outName%> = new <%=outName%>Struct();
+    <%
+    }    
+    
+    String call = "";
+    String args = "";
+    if (useStatic) {
+       call = "org.talend.net.Object.invokeStatic";
+       args = dllLoad+","+clazz+",";
+    } else {
+       call = "instance_"+cid+".invoke";
+    }
+    args += methodName+", parameters_"+cid;
+    if (!returnsDotNetObj) {
+       call += "Generic";
+    }
+    if (!isVoid && !storeResult) {
+    call = "Object rc_"+cid+" = "+call+"("+args+");\nglobalMap.put(\""+cid+"_CALL_RESULT\",rc_"+cid+");\nnew TypeConverter_"+cid+"().doConversion(rc_"+cid+","+outName+",\""+outputCol+"\");";
+    %>
+    class TypeConverter_<%=cid%> {
+       void doConversion(Object val, Object targetStruct, String colName) {
+            try {
+       			java.lang.reflect.Field f = targetStruct.getClass().getField(colName);
+       			f.setAccessible(true);
+       			f.set(targetStruct,val);
+       		} catch (java.lang.Exception ex) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+       			throw new RuntimeException("Can not convert value of type: "+val.getClass().getName()+" to target column");
+       		}
+       }
+    }
+    <%
+    } else {
+    call = call+"("+args+");";
+    	if (storeResult) {
+    		call = "Object rc_"+cid+" = "+call+"\nglobalMap.put(\""+cid+"_INSTANCE\",rc_"+cid+");";
+    	}
+    }
+    %>
+    Object[] parameters_<%=cid%> = new Object[] {
+   <%   
+     for (int i = 0; i < parameters.size(); i++) {
+         Map<String,String> parameter = parameters.get(i); 
+         
+   %>
+       <%=parameter.get("PREV_COL").replaceAll("input_row",connName).replaceAll("output_row",outName)%>
+   <%
+       if (i < parameters.size() - 1) {
+       %>
+       ,
+       <%
+       }
+     
+   }
+   %>
+   }; 
+    <%
+    if (onRow && !useExistingConnection && !useStatic) {
+String cCall = "org.talend.net.Object.createInstance("+dllLoad+","+clazz+")";
+        if (values.size() > 0) {
+            cCall = "org.talend.net.Object.createInstance("+dllLoad+","+clazz+",parameterList_"+cid+")";
+%>
+   Object[] parameterList_<%=cid%> = new Object[] {
+   <%
+     for (int i = 0; i < values.size(); i++) {
+         Map<String,String> line = values.get(i);
+     %>
+     <%=line.get("PARAMETER") %>
+     <%
+        if (i < values.size() - 1) {
+        %>
+        ,
+        <%
+        }
+     }
+   %>   
+   };
+   <% } %>
+   org.talend.net.Object netObject_<%=cid%> = <%=cCall%>;
+   globalMap.put("<%=cid%>_INSTANCE",netObject_<%=cid%>);
+  
+   <%
+   } else if (!onRow && useExistingConnection && !useStatic) {
+   %>
+       globalMap.put("<%=cid%>_INSTANCE",globalMap.get("<%=instance%>_INSTANCE"));
+   <%
+   } 
+
+   if (!useStatic) {    
+   %>
+   org.talend.net.Object instance_<%=cid%> = (org.talend.net.Object)globalMap.get("<%=cid%>_INSTANCE");
+   <%
+   }
+   %>
+   <%=call%> 
+   

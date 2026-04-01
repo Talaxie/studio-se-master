@@ -1,0 +1,92 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.EConnectionType
+    org.talend.core.model.process.IConnectionCategory
+    java.util.List
+    org.talend.core.model.utils.NodeUtil
+"
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String incomingName = (String)codeGenArgument.getIncomingName();
+    
+    String cid = node.getUniqueName();
+    
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {//b
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {//a	
+%>
+//////////
+
+<%
+	    //get the right input connection and the previous input node and metadatas
+	    
+    	List< ? extends IConnection> incomingConns = node.getIncomingConnections();
+    	
+    	//Notice here: only for the code viewer, because when click the tUnite component, it doesn't know which is the right input connection. 
+    	if (incomingName == null && incomingConns.size() > 0) 
+    	{ 
+    	   incomingName = incomingConns.get(0).getName(); 
+    	}
+    	
+    	IConnection incomingConn = null;
+    	INode preNode = null;
+    	IMetadataTable preMetadata = null;
+    	for (IConnection conn : incomingConns) {//3
+    		if ( conn.getLineStyle().equals(EConnectionType.FLOW_MERGE) && conn.getName().equals(incomingName) ) {//4
+				
+				incomingConn = conn;
+				preNode = incomingConn.getSource();
+				preMetadata = incomingConn.getMetadataTable();
+    		    break;	
+    		}//4
+    	}//3	
+	
+%> 
+
+// for output
+<%
+
+	
+	List< ? extends IConnection> conns = NodeUtil.getOutgoingConnections(node, IConnectionCategory.MAIN);
+	String firstConnName = "";
+	if (conns!=null) {//1
+		if (conns.size()>0) {//2
+			IConnection conn = conns.get(0); //the first connection
+			firstConnName = conn.getName();
+			%>
+			<%=firstConnName %> = new <%=firstConnName %>Struct();
+			<%
+			List<IMetadataColumn> columns = metadata.getListColumns();
+			int columnSize = columns.size();
+			
+			List<IMetadataColumn> preColumns = preMetadata.getListColumns();
+			int preColumnSize = preColumns.size();
+			int minSize = Math.min(columnSize, preColumnSize);
+			for (int i=0; i<minSize; i++) {//3
+					IMetadataColumn column = columns.get(i);
+					IMetadataColumn preColumn = preColumns.get(i);
+%>					
+			<%=conn.getName() %>.<%=column.getLabel() %> = <%=incomingConn.getName() %>.<%=preColumn.getLabel() %>;			
+<%			
+			} //3
+	}//2
+	
+}//1
+
+%>
+
+			nb_line_<%=cid%>++;
+
+//////////
+<%
+  }
+ }	
+%>

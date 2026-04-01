@@ -1,0 +1,98 @@
+<%@ jet
+imports="
+       org.talend.core.model.metadata.IMetadataColumn
+       org.talend.core.model.metadata.IMetadataTable
+       org.talend.core.model.metadata.types.JavaType
+       org.talend.core.model.metadata.types.JavaTypesManager
+       org.talend.core.model.process.EConnectionType
+       org.talend.core.model.process.IConnection
+       org.talend.core.model.process.INode
+       org.talend.designer.codegen.config.CodeGeneratorArgument
+
+       java.util.List;
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();	
+	String cid = node.getUniqueName();
+	
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas != null) && (metadatas.size() > 0)) {//b
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata != null) {//a	
+%>
+
+<%
+
+    String incomingName = "";
+        
+  	List<? extends IConnection> inputConns = node.getIncomingConnections(EConnectionType.FLOW_MAIN);
+  	if ((inputConns!=null)&&(inputConns.size()>0)) {
+  		IConnection incomingConn = inputConns.get(0); 
+  		incomingName = incomingConn.getName();
+
+  	}else{
+  		return "";
+  	}
+	
+	List<IMetadataColumn> columns = metadata.getListColumns();
+	int columnSize = columns.size();
+%>
+
+String[] row_<%=cid %>=new String[]{<%for(int j=0;j<columnSize;j++){%>"",<%}%>};		
+<%
+for (int i = 0; i < columnSize; i++) {
+	IMetadataColumn column = columns.get(i);
+	String label = column.getLabel();
+	JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+	String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+	if(JavaTypesManager.isJavaPrimitiveType( column.getTalendType(), column.isNullable())){
+	    %>
+	    row_<%=cid %>[<%=i %>] = String.valueOf(<%=incomingName %>.<%=label %>); 
+	    <%
+	}else {
+	    %>
+	    if(<%=incomingName %>.<%=label %> != null){
+	        <%					
+	        if(javaType == JavaTypesManager.STRING ){
+	        %>
+	            row_<%=cid %>[<%=i %>] = <%=incomingName %>.<%=label %>;
+	        <%
+	        }else if(javaType == JavaTypesManager.DATE && pattern != null){
+	        %>
+	            row_<%=cid %>[<%=i %>] = FormatterUtils.format_Date(<%=incomingName %>.<%=label %>, <%= pattern %>);
+	        <%
+	        }else if(javaType == JavaTypesManager.BIGDECIMAL){
+	        %>
+	            row_<%=cid %>[<%=i %>] = String.valueOf(<%=column.getPrecision() == null? incomingName + "." + column.getLabel() : incomingName + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>);
+	        <%
+	        }else if(javaType == JavaTypesManager.BYTE_ARRAY){
+	        %>
+	            row_<%=cid %>[<%=i %>] = java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=incomingName %>.<%=label %>)).toString();
+	        <%
+	        }else if(javaType == JavaTypesManager.LIST){
+	        %>
+	            row_<%=cid %>[<%=i %>] = ParserUtils.parseTo_String(<%=incomingName %>.<%=label %>,",");
+	        <%
+	        }else{
+	        %>
+	            row_<%=cid %>[<%=i %>] = String.valueOf(<%=incomingName %>.<%=label %>);
+	        <%
+	        }
+	        %>                			    
+	    }else{
+	    	row_<%=cid %>[<%=i %>] = null;
+	    }
+<% 
+	}
+}
+
+%>
+	globalBuffer.add(row_<%=cid %>);	
+	
+<%
+  	}//b
+ }//a	
+%>

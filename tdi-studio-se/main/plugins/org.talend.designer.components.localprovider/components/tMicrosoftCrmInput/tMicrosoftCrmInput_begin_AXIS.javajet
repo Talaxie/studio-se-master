@@ -1,0 +1,520 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.Map
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+		"
+%>
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+	IMetadataTable metadata = metadatas.get(0);
+
+	if (metadata != null) {
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		int nbSchemaColumns = columnList.size();
+		List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+
+		// if output columns are defined
+		if(nbSchemaColumns > 0 && outgoingConns != null && outgoingConns.size() > 0){
+			String authType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+			String endpointURL = ElementParameterParser.getValue(node, "__ENDPOINTURL__");
+			String orgName = ElementParameterParser.getValue(node, "__ORGNAME__");
+			String username = ElementParameterParser.getValue(node, "__USERNAME__");
+
+			String domain = ElementParameterParser.getValue(node, "__DOMAIN__");
+			String host = ElementParameterParser.getValue(node, "__HOST__");
+			String port = ElementParameterParser.getValue(node, "__PORT__");
+			String timeoutSecTemp = ElementParameterParser.getValue(node, "__TIMEOUT__");
+			String timeoutSec = (timeoutSecTemp!=null&&!("").equals(timeoutSecTemp))?timeoutSecTemp:"2";
+			int timeout = (int)(Double.valueOf(timeoutSec) * 1000);
+			boolean reuseHttpClient = ("true").equals(ElementParameterParser.getValue(node,"__REUSE_HTTP_CLIENT__"));
+			boolean debug = ("true").equals(ElementParameterParser.getValue(node,"__DEBUG__"));
+			boolean isAPI2011 = ("API_2011").equals(ElementParameterParser.getValue(node,"__API_VERSION__"));
+			String discWSDL = ElementParameterParser.getValue(node, "__DISC_WSDL__");
+			String applicationId = ElementParameterParser.getValue(node, "__APPLICATION_ID__");
+			String authority = ElementParameterParser.getValue(node, "__AUTHORITY__");
+			if(debug){%>
+			System.setProperty("org.apache.commons.logging.Log", "org.apache.commons.logging.impl.SimpleLog");
+		    System.setProperty("org.apache.commons.logging.simplelog.showdatetime", "true");
+		    System.setProperty("org.apache.commons.logging.simplelog.log.httpclient.wire", "debug");
+		    System.setProperty("org.apache.commons.logging.simplelog.log.org.apache.commons.httpclient", "debug");
+			<%}else{%>
+			System.setProperty("org.apache.commons.logging.Log", "org.apache.commons.logging.impl.NoOpLog");
+			<%}
+
+			String passwordFieldName = "__PASSWORD__";
+			%>
+
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+
+			<%
+			if(!isAPI2011 || ("ON_PREMISE").equals(authType)){
+				if(("ON_PREMISE").equals(authType)){%>
+					org.apache.commons.httpclient.auth.AuthPolicy.registerAuthScheme(org.apache.commons.httpclient.auth.AuthPolicy.NTLM, org.talend.mscrm.login.ntlm.JCIFS_NTLMScheme.class);
+
+					com.microsoft.crm4.webserviceTest.CrmServiceStub service_<%=cid%> = new com.microsoft.crm4.webserviceTest.CrmServiceStub(<%=endpointURL%>);
+					org.apache.axis2.client.Options options_<%=cid%> = service_<%=cid%>._getServiceClient().getOptions();
+					org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator auth_<%=cid%> = new org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator();
+
+					List<String> authSchemes_<%=cid%> = new java.util.ArrayList<String>();
+					authSchemes_<%=cid%>.add(org.apache.axis2.transport.http.impl.httpclient4.HttpTransportPropertiesImpl.Authenticator.NTLM);
+					auth_<%=cid%> .setAuthSchemes(authSchemes_<%=cid%>);
+
+		            auth_<%=cid%> .setUsername(<%=username%>);
+		            auth_<%=cid%> .setPassword(decryptedPassword_<%=cid%>);
+		            auth_<%=cid%> .setHost(<%=host%>);
+		            auth_<%=cid%> .setPort(<%=port%>);
+		            auth_<%=cid%> .setDomain(<%=domain%>);
+		            auth_<%=cid%> .setPreemptiveAuthentication(false);
+
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.AUTHENTICATE, auth_<%=cid%>);
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.REUSE_HTTP_CLIENT, "<%=reuseHttpClient%>");
+
+
+		            options_<%=cid%> .setUserName(<%=username%>);
+		            options_<%=cid%> .setPassword(decryptedPassword_<%=cid%>);
+		            options_<%=cid%> .setTimeOutInMilliSeconds(Long.valueOf(<%=timeout%>));
+
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.SO_TIMEOUT,new Integer(<%=timeout%>));
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.CONNECTION_TIMEOUT, new Integer(<%=timeout%>));
+
+		            com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument catd_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument.Factory.newInstance();
+		            com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken token_<%=cid%> = com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken.Factory.newInstance();
+		            token_<%=cid%>.setAuthenticationType(0);
+		            token_<%=cid%>.setOrganizationName(<%=orgName%>);
+		            catd_<%=cid%>.setCrmAuthenticationToken(token_<%=cid%>);
+		        <%}else if(("ONLINE").equals(authType)){%>
+		        	com.microsoft.crm4.webserviceTest.CrmServiceStub service_<%=cid%> = new com.microsoft.crm4.webserviceTest.CrmServiceStub("https://" + <%=host%> + "/MSCrmServices/2007/CrmService.asmx");
+					org.apache.axis2.client.Options options_<%=cid%> = service_<%=cid%>._getServiceClient().getOptions();
+		        	org.talend.mscrm.login.passport.MsDynamicsWrapper msDynamicsWrapper_<%=cid%> = new org.talend.mscrm.login.passport.MsDynamicsWrapper(<%=host%>,<%=orgName%>,<%=username%>,decryptedPassword_<%=cid%>);
+					msDynamicsWrapper_<%=cid%>.connect();
+					String crmTicket_<%=cid%> = msDynamicsWrapper_<%=cid%>.getCrmTicket();
+
+		        	options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.REUSE_HTTP_CLIENT, "<%=reuseHttpClient%>");
+		        	options_<%=cid%> .setTimeOutInMilliSeconds(Long.valueOf(<%=timeout%>));
+
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.SO_TIMEOUT,new Integer(<%=timeout%>));
+		            options_<%=cid%> .setProperty(org.apache.axis2.kernel.http.HTTPConstants.CONNECTION_TIMEOUT, new Integer(<%=timeout%>));
+
+		        	com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument catd_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.CrmAuthenticationTokenDocument.Factory.newInstance();
+		            com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken token_<%=cid%> = com.microsoft.schemas.crm._2007.coretypes.CrmAuthenticationToken.Factory.newInstance();
+		            token_<%=cid%>.setAuthenticationType(1);
+		            token_<%=cid%>.setOrganizationName(<%=orgName%>);
+		            token_<%=cid%>.setCrmTicket(crmTicket_<%=cid%>);
+		            catd_<%=cid%>.setCrmAuthenticationToken(token_<%=cid%>);
+		        <%}%>
+
+	     		<%
+	     		String entityname = ElementParameterParser.getValue(node, "__ENTITYNAME__").trim();
+	     		String customEntityname = ElementParameterParser.getValue(node, "__CUSTOM_ENTITY_NAME__");
+	     		if("CustomEntity".equals(entityname)){
+					entityname = customEntityname.replaceAll("\"","");
+				}
+	     		String entitynamealllower = entityname.toLowerCase();
+	     		String logical = ElementParameterParser.getValue(node,"__LOGICAL_OP__");
+	     		List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONDITIONS__");
+	     		%>
+	        	com.microsoft.schemas.crm._2006.query.QueryExpression query_<%=cid%> = com.microsoft.schemas.crm._2006.query.QueryExpression.Factory.newInstance();
+	        	com.microsoft.schemas.crm._2006.query.ColumnSet cols_<%=cid%> = com.microsoft.schemas.crm._2006.query.ColumnSet.Factory.newInstance();
+	        	com.microsoft.schemas.crm._2006.query.ArrayOfString aos_<%=cid%> = com.microsoft.schemas.crm._2006.query.ArrayOfString.Factory.newInstance();
+	       		<%
+	        	if(keyColumns.size()>0 ){
+	            	StringBuffer conditionList = new StringBuffer("");
+	            	int nbCondition = 0;
+	            	for(Map<String, String> keyColumn:keyColumns){
+	            		nbCondition++;
+	            		String conditionID = cid + "_" + String.valueOf(nbCondition);
+	        			%>
+	            		com.microsoft.schemas.crm._2006.query.ConditionExpression condition_<%=conditionID%> = com.microsoft.schemas.crm._2006.query.ConditionExpression.Factory.newInstance();
+	            		condition_<%=conditionID%>.setAttributeName("<%=keyColumn.get("INPUT_COLUMN")%>");
+	            		condition_<%=conditionID%>.setOperator(com.microsoft.schemas.crm._2006.query.ConditionOperator.Enum.forString("<%=keyColumn.get("OPERATOR")%>"));
+	        			<%
+	        			if(!("").equals(keyColumn.get("RVALUE"))){
+	        			%>
+	            			com.microsoft.schemas.crm._2006.query.ArrayOfAnyType values_<%=conditionID%> = com.microsoft.schemas.crm._2006.query.ArrayOfAnyType.Factory.newInstance();
+	            			org.xmlsoap.schemas.soap.encoding.String StringValue_<%=conditionID%> = org.xmlsoap.schemas.soap.encoding.String.Factory.newInstance();
+	            			StringValue_<%=conditionID%>.setStringValue(<%=keyColumn.get("RVALUE")%>);
+	            			values_<%=conditionID%>.setValueArray(new org.xmlsoap.schemas.soap.encoding.String[] { StringValue_<%=conditionID%> });
+	            			condition_<%=conditionID%>.setValues(values_<%=conditionID%>);
+	       				<%
+	            		}
+	            		conditionList.append("condition_"+conditionID+",");
+	        		}
+	        		conditionList.deleteCharAt(conditionList.lastIndexOf(","));
+	        		%>
+	        		com.microsoft.schemas.crm._2006.query.ArrayOfConditionExpression conditions_<%=cid%> = com.microsoft.schemas.crm._2006.query.ArrayOfConditionExpression.Factory.newInstance();
+	        		conditions_<%=cid%>.setConditionArray(new com.microsoft.schemas.crm._2006.query.ConditionExpression[] { <%=conditionList%> });
+	        		<%
+	        		if(!("").equals(logical)){
+	        		%>
+	        			com.microsoft.schemas.crm._2006.query.FilterExpression filter_<%=cid%> = com.microsoft.schemas.crm._2006.query.FilterExpression.Factory.newInstance();
+	        			filter_<%=cid%>.setFilterOperator(com.microsoft.schemas.crm._2006.query.LogicalOperator.Enum.forString("<%=logical%>"));
+	        			filter_<%=cid%>.setConditions(conditions_<%=cid%>);
+	        			query_<%=cid%>.setCriteria(filter_<%=cid%>);
+	       			<%
+	        		}
+	        	}
+	        	%>
+
+	        	<%
+	        	StringBuilder sb = new StringBuilder("");
+	        	for(IMetadataColumn column: columnList){
+	  				sb.append("\"");
+	  				sb.append(column.getLabel());
+	  				sb.append("\",");
+	        	}
+	        	sb.deleteCharAt(sb.lastIndexOf(","));
+	        	IConnection outgoingConn = outgoingConns.get(0);
+				if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	        	%>
+	        	aos_<%=cid%>.setAttributeArray(new String[]{<%=sb%>});
+	        	cols_<%=cid%>.setAttributes(aos_<%=cid%>);
+	        	query_<%=cid%>.setColumnSet(cols_<%=cid%>);
+	        	query_<%=cid%>.setEntityName("<%=entitynamealllower%>");
+
+	        	com.microsoft.schemas.crm._2006.query.PagingInfo pagingInfo_<%=cid%> = com.microsoft.schemas.crm._2006.query.PagingInfo.Factory.newInstance();
+	        	int pageNumber_<%=cid%> = 1;
+	        	pagingInfo_<%=cid%>.setPageNumber(pageNumber_<%=cid%>);
+	        	<%boolean debugPaging=false;
+	        	if(debugPaging){%>
+	        	pagingInfo_<%=cid%>.setCount(5);
+	        	<%}%>
+	        	query_<%=cid%>.setPageInfo(pagingInfo_<%=cid%>);
+
+	        	com.microsoft.schemas.crm._2007.webservices.RetrieveMultipleRequest rmr_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.RetrieveMultipleRequest.Factory.newInstance();
+	        	com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Execute execute_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Execute.Factory.newInstance();
+	        	com.microsoft.schemas.crm._2007.webservices.ExecuteDocument executeDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Factory.newInstance();
+	        	rmr_<%=cid%>.setReturnDynamicEntities(true);
+	        	rmr_<%=cid%>.setQuery(query_<%=cid%>);
+	        	execute_<%=cid%>.setRequest(rmr_<%=cid%>);
+	        	executeDoc_<%=cid%>.setExecute(execute_<%=cid%>);
+	        	executeDoc_<%=cid%> = com.microsoft.schemas.crm._2007.webservices.ExecuteDocument.Factory.parse(executeDoc_<%=cid%>.toString());
+	        	com.microsoft.schemas.crm._2007.webservices.ExecuteResponseDocument result_<%=cid%>;
+	        	boolean fetchMore_<%=cid%> = true;
+	        	while (fetchMore_<%=cid%>) {
+	        		result_<%=cid%> = service_<%=cid%>.execute(executeDoc_<%=cid%>, catd_<%=cid%>, null, null);
+	        		com.microsoft.schemas.crm._2007.webservices.ExecuteResponseDocument.ExecuteResponse executeResponse_<%=cid%> =  result_<%=cid%>.getExecuteResponse();
+	           		com.microsoft.schemas.crm._2007.webservices.Response response_<%=cid%> = executeResponse_<%=cid%>.getResponse();
+	        		com.microsoft.schemas.crm._2007.webservices.RetrieveMultipleResponse rmp_<%=cid%> = (com.microsoft.schemas.crm._2007.webservices.RetrieveMultipleResponse)response_<%=cid%>;
+	        		com.microsoft.schemas.crm._2006.webservices.BusinessEntityCollection bec_<%=cid%> = rmp_<%=cid%>.getBusinessEntityCollection();
+	        		String pagingCookie_<%=cid%> = bec_<%=cid%>.getPagingCookie();
+	        		fetchMore_<%=cid%> = bec_<%=cid%>.getMoreRecords();
+	        		com.microsoft.schemas.crm._2006.webservices.ArrayOfBusinessEntity aobe_<%=cid%> = bec_<%=cid%>.getBusinessEntities();
+	        		com.microsoft.schemas.crm._2006.webservices.BusinessEntity[] entities_<%=cid%> = aobe_<%=cid%>.getBusinessEntityArray();
+
+	        		for (int i_<%=cid%> = 0; i_<%=cid%> < entities_<%=cid%>.length; i_<%=cid%>++) {
+	                    com.microsoft.schemas.crm._2006.webservices.DynamicEntity dynamicEntity_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.DynamicEntity)entities_<%=cid%>[i_<%=cid%>];
+	                    com.microsoft.schemas.crm._2006.webservices.DynamicEntity.Properties properties_<%=cid%> = dynamicEntity_<%=cid%>.getProperties();
+	                    com.microsoft.schemas.crm._2006.webservices.Property[] propertyArray_<%=cid%> = properties_<%=cid%>.getPropertyArray();
+	                   	nb_line_<%=cid%> ++;
+	                    String[] propertyValue_<%=cid%> = new String[propertyArray_<%=cid%>.length];
+	                    String propertyType_<%=cid%>;
+	                    java.util.Map<String,String> propertyMap_<%=cid%> = new java.util.HashMap<String,String>();
+
+	                    for(int j_<%=cid%> = 0; j_<%=cid%> < propertyArray_<%=cid%>.length; j_<%=cid%>++){
+
+	                    	propertyType_<%=cid%> = propertyArray_<%=cid%>[j_<%=cid%>].schemaType().getShortJavaName();
+	                    	if("CrmBooleanProperty".equals(propertyType_<%=cid%>)){
+	                    		com.microsoft.schemas.crm._2006.webservices.CrmBooleanProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmBooleanProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+	                    		propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+	                    		propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+	                    	}else if("CrmDateTimeProperty".equals(propertyType_<%=cid%>)){
+	                    		com.microsoft.schemas.crm._2006.webservices.CrmDateTimeProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmDateTimeProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								String tempDateString_<%=cid%> = tempProperty_<%=cid%>.getValue().getStringValue();
+								<%//2009-04-14T10:09:42-07:00 ---> 2009-04-14T10:09:42-0700%>
+								tempDateString_<%=cid%> = tempDateString_<%=cid%>.substring(0, tempDateString_<%=cid%>.lastIndexOf(":")) + tempDateString_<%=cid%>.substring(tempDateString_<%=cid%>.lastIndexOf(":") + 1);
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempDateString_<%=cid%>;
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+	                    	}else if("CrmDecimalProperty".equals(propertyType_<%=cid%>)){
+	                    		com.microsoft.schemas.crm._2006.webservices.CrmDecimalProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmDecimalProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+	                    	}else if("CrmFloatProperty".equals(propertyType_<%=cid%>)){
+	                    		com.microsoft.schemas.crm._2006.webservices.CrmFloatProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmFloatProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+	                    	}else if("CrmMoneyProperty".equals(propertyType_<%=cid%>)){
+	                    		com.microsoft.schemas.crm._2006.webservices.CrmMoneyProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmMoneyProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("CrmNumberProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.CrmNumberProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CrmNumberProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("CustomerProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.CustomerProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.CustomerProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("KeyProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.KeyProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.KeyProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("LookupProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.LookupProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.LookupProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("OwnerProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.OwnerProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.OwnerProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("PicklistProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.PicklistProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.PicklistProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("StateProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.StateProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.StateProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("StatusProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.StatusProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.StatusProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("StringProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.StringProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.StringProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}else if("UniqueIdentifierProperty".equals(propertyType_<%=cid%>)){
+								com.microsoft.schemas.crm._2006.webservices.UniqueIdentifierProperty tempProperty_<%=cid%> = (com.microsoft.schemas.crm._2006.webservices.UniqueIdentifierProperty)propertyArray_<%=cid%>[j_<%=cid%>];
+								propertyValue_<%=cid%>[j_<%=cid%>] = tempProperty_<%=cid%>.getValue().getStringValue();
+								propertyMap_<%=cid%>.put(tempProperty_<%=cid%>.getName(),propertyValue_<%=cid%>[j_<%=cid%>]);
+							}
+	                    }
+	                   		<%
+							for( int i = 0; i < columnList.size(); i++) {
+
+								IMetadataColumn column = columnList.get(i);
+
+								String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+								JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+
+								String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+								%>
+
+								if(propertyMap_<%=cid%>.get("<%=column.getLabel()%>")!=null){
+	        					<%
+	        						if (javaType == JavaTypesManager.STRING) {
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = propertyMap_<%=cid%>.get("<%=column.getLabel()%>");
+	        					<%
+	        						} else if(javaType == JavaTypesManager.DATE) { // Date
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Date(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"), <%= patternValue %>);
+	        					<%
+	        						} else if(javaType == JavaTypesManager.DOUBLE) { // Double
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Double(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						} else if(javaType == JavaTypesManager.BIGDECIMAL) { // BigDecimal
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_BigDecimal(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						} else if(javaType == JavaTypesManager.FLOAT) { // Float
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Float(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						} else if(javaType == JavaTypesManager.INTEGER) { // Integer
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Integer(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						} else if(javaType == JavaTypesManager.BOOLEAN) { // Boolean
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Boolean(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						} else if(javaType == JavaTypesManager.OBJECT) { // OBJECT
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = propertyMap_<%=cid%>.get("<%=column.getLabel()%>");
+	        					<%
+	        						} else  { // other
+	        					%>
+	        							<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_<%= typeToGenerate %>(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        						}
+	        					%>
+	        					}else{
+	        						<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+	        					}
+	        				<%
+							}
+							%>
+
+
+				<%
+				}
+
+			}else{//api 2011
+			%>
+				org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+		                        .buildOAuthNativeClientConfiguration(<%=applicationId%>, <%=username%>, decryptedPassword_<%=cid%>, <%=authority%>);
+				clientConfig_<%=cid%>.setTimeout(<%=timeout%>);
+				clientConfig_<%=cid%>.setReuseHttpClient(<%=reuseHttpClient%>);
+				clientConfig_<%=cid%>.setMaxRetry(reConnMaxNum_<%=cid%>,<%=attemptsInterval%>);
+				org.talend.ms.crm.MSCRMClient client_<%=cid%> = new org.talend.ms.crm.MSCRMClient(clientConfig_<%=cid%>, <%=orgName%>,<%=discWSDL%> );
+
+				com.microsoft.schemas.xrm._2011.contracts.OrganizationServiceStub serviceStub_<%=cid%> = client_<%=cid%>.getOnlineConnection();
+				<%
+	     		String entityname = ElementParameterParser.getValue(node, "__ENTITYNAME__").trim();
+	     		String customEntityname = ElementParameterParser.getValue(node, "__CUSTOM_ENTITY_NAME__");
+	     		if("CustomEntity".equals(entityname)){
+					entityname = customEntityname.replaceAll("\"","");
+				}
+	     		String entitynamealllower = entityname.toLowerCase();
+	     		String logical = ElementParameterParser.getValue(node,"__LOGICAL_OP__");
+	     		List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONDITIONS__");
+	     		%>
+	        	com.microsoft.schemas.xrm._2011.contracts.QueryExpression query_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.QueryExpression.Factory.newInstance();
+	        	com.microsoft.schemas.xrm._2011.contracts.ColumnSet cols_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.ColumnSet.Factory.newInstance();
+	        	com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfstring aos_<%=cid%> = com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfstring.Factory.newInstance();
+	       		<%
+	        	if(keyColumns.size()>0 ){
+				%>
+	        		com.microsoft.schemas.xrm._2011.contracts.ArrayOfConditionExpression conditions_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.ArrayOfConditionExpression.Factory.newInstance();
+	        		com.microsoft.schemas.xrm._2011.contracts.ConditionExpression condition_<%=cid%> = null;
+	        		com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfanyType values_<%=cid%> = null;
+	        		org.apache.xmlbeans.XmlString conditionValue_<%=cid%> = null;
+	            	<%
+	            	for(Map<String, String> keyColumn:keyColumns){
+	        		%>
+		            		condition_<%=cid%> = conditions_<%=cid%>.addNewConditionExpression();
+		            		condition_<%=cid%>.setAttributeName("<%=keyColumn.get("INPUT_COLUMN")%>");
+		            		condition_<%=cid%>.setOperator(com.microsoft.schemas.xrm._2011.contracts.ConditionOperator.Enum.forString("<%=keyColumn.get("OPERATOR")%>"));
+						<%
+	        			if(!("").equals(keyColumn.get("RVALUE"))){
+	        			%>
+	            			values_<%=cid%> = com.microsoft.schemas._2003._10.serialization.arrays.ArrayOfanyType.Factory.newInstance();
+	            			conditionValue_<%=cid%> = org.apache.xmlbeans.XmlString.Factory.newInstance();
+	            			conditionValue_<%=cid%>.setStringValue(<%=keyColumn.get("RVALUE")%>);
+	            			values_<%=cid%>.setAnyTypeArray(new org.apache.xmlbeans.XmlString[]{conditionValue_<%=cid%>});
+	            			condition_<%=cid%>.setValues(values_<%=cid%>);
+	       				<%
+	            		}
+	        		}
+	        		%>
+	        		<%
+	        		if(!("").equals(logical)){
+	        		%>
+	        			com.microsoft.schemas.xrm._2011.contracts.FilterExpression filter_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.FilterExpression.Factory.newInstance();
+	        			filter_<%=cid%>.setFilterOperator(com.microsoft.schemas.xrm._2011.contracts.LogicalOperator.Enum.forString("<%=logical%>"));
+	        			filter_<%=cid%>.setConditions(conditions_<%=cid%>);
+	        			query_<%=cid%>.setCriteria(filter_<%=cid%>);
+	       			<%
+	        		}
+	        	}
+	        	%>
+
+	        	<%
+	        	StringBuilder sb = new StringBuilder("");
+	        	for(IMetadataColumn column: columnList){
+	  				sb.append("\"");
+	  				sb.append(column.getLabel());
+	  				sb.append("\",");
+	        	}
+	        	sb.deleteCharAt(sb.lastIndexOf(","));
+	        	IConnection outgoingConn = outgoingConns.get(0);
+				if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	        	%>
+	        	aos_<%=cid%>.setStringArray(new String[]{<%=sb%>});
+	        	cols_<%=cid%>.setColumns(aos_<%=cid%>);
+	        	query_<%=cid%>.setColumnSet(cols_<%=cid%>);
+	        	query_<%=cid%>.setEntityName("<%=entitynamealllower%>");
+
+	        	com.microsoft.schemas.xrm._2011.contracts.PagingInfo pagingInfo_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.PagingInfo.Factory.newInstance();
+	        	int pageNumber_<%=cid%> = 1;
+	        	pagingInfo_<%=cid%>.setPageNumber(pageNumber_<%=cid%>);
+	        	<%boolean debugPaging=false;
+	        	if(debugPaging){%>
+	        	pagingInfo_<%=cid%>.setCount(5);
+	        	<%}%>
+	        	query_<%=cid%>.setPageInfo(pagingInfo_<%=cid%>);
+
+	        	com.microsoft.schemas.xrm._2011.contracts.services.RetrieveMultipleDocument.RetrieveMultiple rmr_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.RetrieveMultipleDocument.RetrieveMultiple.Factory.newInstance();
+	        	com.microsoft.schemas.xrm._2011.contracts.services.RetrieveMultipleResponseDocument.RetrieveMultipleResponse retrieveMultipleResp_<%=cid%> = null;
+	        	while(true){
+	        		rmr_<%=cid%>.setQuery(query_<%=cid%>);
+	        		com.microsoft.schemas.xrm._2011.contracts.services.RetrieveMultipleDocument rmrdoc_<%=cid%> = com.microsoft.schemas.xrm._2011.contracts.services.RetrieveMultipleDocument.Factory.newInstance();
+	        		rmrdoc_<%=cid%>.setRetrieveMultiple(rmr_<%=cid%>);
+	        		try{
+	        			retrieveMultipleResp_<%=cid%> = serviceStub_<%=cid%>.retrieveMultiple(rmrdoc_<%=cid%>).getRetrieveMultipleResponse();
+	        		}catch(com.microsoft.schemas.xrm._2011.contracts.IOrganizationService_RetrieveMultiple_OrganizationServiceFaultFault_FaultMessage ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+	        			throw new Exception(ex_<%=cid%>.getFaultMessage().getOrganizationServiceFault().getMessage());
+	        		}
+	        		com.microsoft.schemas.xrm._2011.contracts.EntityCollection retrieveMultipleResult_<%=cid%> = retrieveMultipleResp_<%=cid%>.getRetrieveMultipleResult();
+	        		com.microsoft.schemas.xrm._2011.contracts.Entity[] entities_<%=cid%> = retrieveMultipleResult_<%=cid%>.getEntities().getEntityArray();
+	        		for(com.microsoft.schemas.xrm._2011.contracts.Entity entity_<%=cid%> : entities_<%=cid%>){
+	                   	nb_line_<%=cid%>++;
+	                    org.datacontract.schemas._2004._07.system_collections_generic.KeyValuePairOfstringanyType[] properties_<%=cid%> = entity_<%=cid%>.getAttributes().getKeyValuePairOfstringanyTypeArray();
+
+	                    java.util.Map<String, String> propertyMap_<%=cid%> = new java.util.HashMap<String, String>();
+	                    String propertyValue_<%=cid%> = null;
+	                    org.apache.xmlbeans.XmlObject tempPropertyValue_<%=cid%> = null;
+	                    for(org.datacontract.schemas._2004._07.system_collections_generic.KeyValuePairOfstringanyType property_<%=cid%> : properties_<%=cid%>){
+	                    	tempPropertyValue_<%=cid%> = property_<%=cid%>.getValue();
+	                    	if(tempPropertyValue_<%=cid%> instanceof org.apache.xmlbeans.XmlAnySimpleType){
+	                    		propertyValue_<%=cid%> = ((org.apache.xmlbeans.XmlAnySimpleType)tempPropertyValue_<%=cid%>).getStringValue();
+	                    	}else if(tempPropertyValue_<%=cid%> instanceof com.microsoft.schemas.xrm._2011.contracts.OptionSetValue){
+	                    		propertyValue_<%=cid%> = ((com.microsoft.schemas.xrm._2011.contracts.OptionSetValue)tempPropertyValue_<%=cid%>).xgetValue().getStringValue();
+	                    	}else if(tempPropertyValue_<%=cid%> instanceof com.microsoft.schemas.xrm._2011.contracts.Money){
+	                    		propertyValue_<%=cid%> = ((com.microsoft.schemas.xrm._2011.contracts.Money)tempPropertyValue_<%=cid%>).xgetValue().getStringValue();
+	                    	}else if(tempPropertyValue_<%=cid%> instanceof com.microsoft.schemas.xrm._2011.contracts.EntityReference){
+	                    		com.microsoft.schemas.xrm._2011.contracts.EntityReference entityReference_<%=cid%> = (com.microsoft.schemas.xrm._2011.contracts.EntityReference)tempPropertyValue_<%=cid%>;
+                        		propertyValue_<%=cid%> = "{\"id\":\""+entityReference_<%=cid%>.getId() + "\",\"logicalName\":\"" + entityReference_<%=cid%>.getLogicalName() + "\",\"name\":\"" + entityReference_<%=cid%>.getName() + "\"}";
+	                    	}else if(tempPropertyValue_<%=cid%> instanceof com.microsoft.schemas.xrm._2011.contracts.BooleanManagedProperty){
+	                    		com.microsoft.schemas.xrm._2011.contracts.BooleanManagedProperty booleanManagedProperty_<%=cid%> = (com.microsoft.schemas.xrm._2011.contracts.BooleanManagedProperty)tempPropertyValue_<%=cid%>;
+	                    		propertyValue_<%=cid%> = "{\"canBeChanged\":\""+booleanManagedProperty_<%=cid%>.getCanBeChanged() + "\",\"logicalName\":\"" + booleanManagedProperty_<%=cid%>.getManagedPropertyLogicalName() + "\",\"value\":\"" + booleanManagedProperty_<%=cid%>.getValue() + "\"}";
+	                    	}else{
+	                    		System.err.println("don't support the type of " + property_<%=cid%>);
+	                    		propertyValue_<%=cid%> = null;
+	                    	}
+                    		propertyMap_<%=cid%>.put(property_<%=cid%>.getKey(), propertyValue_<%=cid%>);
+	                    }
+                   		<%
+						for(int i = 0; i < columnList.size(); i++){//for begin
+
+							IMetadataColumn column = columnList.get(i);
+
+							String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+							JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+
+							String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+							%>
+
+							if(propertyMap_<%=cid%>.get("<%=column.getLabel()%>")!=null){
+	        					<%
+	       						if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+	        					%>
+	        						<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = propertyMap_<%=cid%>.get("<%=column.getLabel()%>");
+	        					<%
+	        					}else if(javaType == JavaTypesManager.DATE){ // Date
+	        					%>
+	        						<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_Date(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"), <%= patternValue %>);
+	        					<%
+	        					}else{ // other
+	        					%>
+	        						<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = ParserUtils.parseTo_<%=typeToGenerate%>(propertyMap_<%=cid%>.get("<%=column.getLabel()%>"));
+	        					<%
+	        					}
+	        					%>
+        					}else{
+        						<%=outgoingConn.getName()%>.<%=columnList.get(i).getLabel()%> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+        					}
+        				<%
+						}//for end
+						%>
+				<%
+				}
+			}
+		}
+	}
+}
+%>

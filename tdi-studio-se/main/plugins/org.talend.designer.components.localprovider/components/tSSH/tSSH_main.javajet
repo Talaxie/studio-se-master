@@ -1,0 +1,231 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.BlockCode
+    java.util.List
+	java.util.Map
+	org.talend.core.model.process.IConnectionCategory
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+boolean stats = codeGenArgument.isStatistics();
+String standardOutput = ElementParameterParser.getValue(node, "__STANDARDOUTPUT__");
+String errorOutput = ElementParameterParser.getValue(node, "__ERROROUTPUT__");
+String authMethod = ElementParameterParser.getValue(node, "__AUTH_METHOD__");
+boolean pty = "true".equals(ElementParameterParser.getValue(node, "__PTY__"));
+List<IMetadataTable> metadatas = node.getMetadataList();
+String cid = node.getUniqueName();
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        List<IMetadataColumn> columns = metadata.getListColumns();
+        List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+       	String commandSeparator = ElementParameterParser.getValue(node,"__COMMANDSEPARATOR__");
+        List<Map<String, String>> commands =(List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__COMMANDS__");
+		
+		String port = ElementParameterParser.getValue( node,"__PORT__");
+		String useTimeout = ElementParameterParser.getValue( node,"__USE_TIMEOUT__");
+        String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+%>
+		/* open a session */
+
+			<%if(isLog4jEnabled){%>
+			    log.info("<%=cid%> - Open up a session.");
+		    <%}%>
+		
+			session_<%=cid%> = client_<%=cid%>.connect(username_<%=cid%>, hostname_<%=cid%>, Integer.parseInt(<%=port %>+"")).verify(<%=("true").equals(useTimeout)?timeout + "  * 1000L":""%>).getClientSession();
+			<%	
+            if (("PUBLICKEY").equals(authMethod)) {	
+            %>
+			session_<%=cid%>.addPublicKeyIdentity(kp_<%=cid%>);
+			<%}%>
+	    try {
+            session_<%=cid%>.auth().verify();
+        }catch (org.apache.sshd.common.SshException se_<%=cid%>){
+		    globalMap.put("<%=cid %>_EXIT_CODE",se_<%=cid%>.getDisconnectCode());
+            if(14 == se_<%=cid%>.getDisconnectCode()){
+                throw new IllegalArgumentException("Authentication failed.");
+            }else{
+                throw se_<%=cid%>;
+            }
+        }
+		    
+
+		org.apache.sshd.client.channel.ClientChannel channel_<%=cid %> = null;
+			
+<%
+        if (pty) {
+%>
+			channel_<%=cid%> = session_<%=cid%>.createShellChannel();
+			StringBuilder cmd_<%=cid%> = new StringBuilder();
+<%
+        	if(commands.size() > 0){
+        		for(java.util.Map<String, String> map : commands){
+        			String cmd = map.get("COMMAND");
+%>
+					cmd_<%=cid%>.append(<%=cmd%>).append('\n');
+<%
+				}
+			}
+%>
+            cmd_<%=cid%>.append("exit\n");
+            channel_<%=cid%>.open().verify(<%=("true").equals(useTimeout)?timeout + "  * 1000L":""%>);
+
+			final java.io.OutputStream invertedIn_<%=cid%> = channel_<%=cid%>.getInvertedIn();
+			invertedIn_<%=cid%>.write(cmd_<%=cid%>.toString().getBytes());
+	        invertedIn_<%=cid%>.flush();
+	        invertedIn_<%=cid%>.close();
+<%
+		}else{
+        	if(commands.size() > 0){
+%>
+        		StringBuilder command_<%=cid %> = new StringBuilder();
+<%  
+				for(java.util.Map<String, String> map : commands){
+%>
+	                if(command_<%=cid %>.length() > 0){
+	                	command_<%=cid %>.append(<%=commandSeparator%>);
+	                }
+	                <%String cmd = map.get("COMMAND");%>
+	       		    command_<%=cid %>.append(<%=cmd %>);
+<% 
+				}
+        	}
+%>
+            channel_<%=cid %> = session_<%=cid %>.createExecChannel((command_<%=cid %>).toString());
+            channel_<%=cid%>.open();
+			
+			
+
+
+
+<%
+		}
+		if(("NORMAL_OUTPUT").equals(errorOutput) || ("NORMAL_OUTPUT").equals(standardOutput)){
+%>
+			output_<%=cid%>.removeAllElements();
+<%
+		}
+%>
+
+
+
+        
+		
+		java.util.Set<org.apache.sshd.client.channel.ClientChannelEvent> clientChannelEvents_<%=cid %> = 
+		channel_<%=cid%>.waitFor(java.util.EnumSet.of(
+		org.apache.sshd.client.channel.ClientChannelEvent.CLOSED,org.apache.sshd.client.channel.ClientChannelEvent.EXIT_STATUS), 0L);
+		exit_code_<%=cid%> = channel_<%=cid%>.getExitStatus();
+
+		<%if(isLog4jEnabled){%>
+			log.debug("Channel Events: "+ java.util.Arrays.toString(clientChannelEvents_<%=cid %>.toArray()));
+		<%}%>
+		
+        final java.io.InputStream invertedOut_<%=cid%> = channel_<%=cid%>.getInvertedOut();
+        final List<String> outLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedOut_<%=cid%>);
+		
+        final java.io.InputStream invertedErr_<%=cid%> = channel_<%=cid%>.getInvertedErr();
+        final List<String> errorLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedErr_<%=cid%>);
+        
+        
+		stringStdout_<%=cid%>.append(outLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+		stringStderr_<%=cid%>.append(errorLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+        
+		channel_<%=cid%>.close();
+		session_<%=cid%>.close();
+
+		if(stringStdout_<%=cid%>.length() >0 && stringStdout_<%=cid%>.charAt(stringStdout_<%=cid%>.length()-1) == '\n'){
+		    stringStdout_<%=cid%>.deleteCharAt(stringStdout_<%=cid%>.length()-1);
+		}
+		out_content_<%=cid%> = stringStdout_<%=cid%>.toString();
+		err_content_<%=cid%> = stringStderr_<%=cid%>.toString();
+		
+
+		
+		<%if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Command line standard result: " + out_content_<%=cid%>);
+			log.debug("<%=cid%> - Command line error result: " + err_content_<%=cid%>);
+		<%}%>
+<%
+		//-----begin to handle output
+		if(("TO_GLOBAL_VARIABLE").equals(standardOutput)){
+%>
+			globalMap.put("<%=cid %>_STDOUT", out_content_<%=cid%>);
+<%
+		}else if(("TO_CONSOLE_AND_GLOBAL_VARIABLE").equals(standardOutput)){
+%>
+			globalMap.put("<%=cid %>_STDOUT", out_content_<%=cid%>);
+<%
+		}else if(("NORMAL_OUTPUT").equals(standardOutput)){
+%>
+			output_<%=cid%>.add(out_content_<%=cid%>);
+			stringStdout_<%=cid%>.delete(0,stringStdout_<%=cid%>.length());
+<%
+		}
+		if(("TO_GLOBAL_VARIABLE").equals(errorOutput)){
+%>
+			globalMap.put("<%=cid %>_STDERR", err_content_<%=cid%>);
+<%		
+		}else if(("TO_CONSOLE_AND_GLOBAL_VARIABLE").equals(errorOutput)){
+%>
+			globalMap.put("<%=cid %>_STDERR", err_content_<%=cid%>);
+<%		
+		}else if(("NORMAL_OUTPUT").equals(errorOutput)){
+%>
+			output_<%=cid%>.add(err_content_<%=cid%>);
+			stringStderr_<%=cid%>.delete(0, stringStderr_<%=cid%>.length());
+<%		
+		}
+		if(("NORMAL_OUTPUT").equals(errorOutput) || ("NORMAL_OUTPUT").equals(standardOutput)){
+			if (conns!=null && conns.size()>0) {
+			  IConnection conn = conns.get(0);
+			  if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+%>
+				for(String tmp_<%=cid %>:output_<%=cid%>){ // C_01
+<%
+				for(IMetadataColumn column:columns) {
+					if("outputline".equals(column.getLabel())){
+%>
+						<%=conn.getName()%>.outputline = tmp_<%=cid %>;
+<%
+					}
+				}
+				// the following part is used to set the close block
+				List<BlockCode> blockCodes = new java.util.ArrayList<BlockCode>(1);
+  				blockCodes.add(new BlockCode("C_01"));
+  				((org.talend.core.model.process.AbstractNode) node).setBlocksCodeToClose(blockCodes);
+  			  }
+			}
+		}
+		//-----end handle output
+		if (conns!=null && conns.size()>0) {
+		  IConnection conn = conns.get(0);
+		  if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+			String inputConnName = null;
+			if (node.getIncomingConnections()!=null) {
+				for (IConnection incomingConn : node.getIncomingConnections()) {
+					if (incomingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+						inputConnName = incomingConn.getName();
+						IMetadataTable inputMetadataTable = incomingConn.getMetadataTable();
+						for (IMetadataColumn inputCol : inputMetadataTable.getListColumns()) {
+%>	
+							<%=conn.getName()%>.<%=inputCol.getLabel() %> = <%=inputConnName %>.<%=inputCol.getLabel() %>;
+<%
+						}
+					}
+				}
+			}
+		  }
+		}	
+    }
+}
+%>

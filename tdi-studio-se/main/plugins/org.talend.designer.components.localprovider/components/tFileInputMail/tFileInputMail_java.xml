@@ -1,0 +1,107 @@
+<COMPONENT>
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20050320A"
+    STARTABLE="true"
+    LOG4J_ENABLED="true"
+  >
+    <SIGNATURE />
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>File/Input</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL />
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK" />
+    <CONNECTOR CTYPE="COMPONENT_ERROR" />
+    <CONNECTOR CTYPE="RUN_IF" />
+  </CONNECTORS>
+
+  <PARAMETERS>
+    <PARAMETER NAME="FILENAME" FIELD="FILE" NUM_ROW="1" REQUIRED="true">
+      <DEFAULT>"__COMP_DEFAULT_FILE_DIR__/01234.mail"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="2"/>
+    <PARAMETER NAME="MAIL_TYPE" FIELD="CLOSED_LIST" REQUIRED="true" NUM_ROW="10" >
+    	<ITEMS DEFAULT="MIME">
+			<ITEM NAME="MIME" VALUE="MIME" />
+			<ITEM NAME="MSG" VALUE="MSG" />
+		</ITEMS>
+    </PARAMETER>
+	<PARAMETER NAME="ATTACHMENT_PATH" FIELD="DIRECTORY" REQUIRED="true" NUM_ROW="15">
+	<DEFAULT>"__COMP_DEFAULT_FILE_DIR__/"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER NAME="MAIL_PARTS" FIELD="TABLE" REQUIRED="true" NUM_ROW="20" NB_LINES="5" SHOW_IF="(MAIL_TYPE == 'MIME')">
+      <ITEMS BASED_ON_SCHEMA="true">
+        <ITEM NAME="MAIL_PART" />
+        <ITEM NAME="MULTI_VALUE" FIELD="CHECK" VALUE="false"/>
+        <ITEM NAME="PART_SEPARATOR" VALUE='""'/>
+      </ITEMS>
+    </PARAMETER>
+    <PARAMETER NAME="MSG_MAIL_PARTS" FIELD="TABLE" REQUIRED="true" NUM_ROW="20" NB_LINES="5" SHOW_IF="(MAIL_TYPE == 'MSG')">
+      <ITEMS BASED_ON_SCHEMA="true">
+        <ITEM NAME="MAIL_PART" FIELD="CLOSED_LIST">
+        	 <ITEMS DEFAULT="FROM">
+        	 	<ITEM NAME="FROM" VALUE="From" />
+        	 	<ITEM NAME="TO" VALUE="To" />
+        	 	<ITEM NAME="CC" VALUE="CC" />
+        	 	<ITEM NAME="BCC" VALUE="BCC" />
+        	 	<ITEM NAME="SUBJECT" VALUE="Subject" />
+        	 	<ITEM NAME="BODY" VALUE="Body" />
+        	 	<ITEM NAME="CONVERSATION_TOPIC" VALUE="ConversationTopic" />
+        	 	<ITEM NAME="HTML_BODY" VALUE="HtmlBody" />
+        	 	<ITEM NAME="MESSAGE_DATE" VALUE="MessageDate" />
+        	 	<ITEM NAME="RECIPIENT_ADDRESS" VALUE="RecipientAddress" />
+        	 	<ITEM NAME="RECIPIENT_ADDRESS_LIST" VALUE="RecipientAddressList" />
+        	 	<ITEM NAME="RECIPIENT_NAMES" VALUE="RecipientNames" />
+        	 	<ITEM NAME="RECIPIENT_NAMES_LIST" VALUE="RecipientNamesList" />
+        	 	<ITEM NAME="RTF_BODY" VALUE="RtfBody" />
+        	 </ITEMS>
+        </ITEM>
+      </ITEMS>
+    </PARAMETER>
+
+	<PARAMETER NAME="DIE_ON_ERROR" FIELD="CHECK" NUM_ROW="50">
+		<DEFAULT>true</DEFAULT>
+	</PARAMETER>
+  </PARAMETERS>
+
+  <CODEGENERATION>
+    <IMPORTS>
+      <IMPORT NAME="jakartaMail" MODULE="jakarta.mail-1.6.7.jar" MVN="mvn:com.sun.mail/jakarta.mail/1.6.7"  REQUIRED_IF="(MAIL_TYPE == 'MIME')" />
+      <IMPORT NAME="JAF" MODULE="activation-1.1.jar" MVN="mvn:javax.activation/activation/1.1/jar"   REQUIRED_IF="(MAIL_TYPE == 'MIME')" />
+
+      <IMPORT NAME="poi" MODULE="poi-4.1.2-20200903124306_modified_talend.jar" MVN="mvn:org.apache.poi/poi/4.1.2-20200903124306_modified_talend" UrlPath="platform:/plugin/org.talend.libraries.excel/lib/poi-4.1.2-20200903124306_modified_talend.jar" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="SparseBitSet" MODULE="SparseBitSet-1.2.jar" MVN="mvn:com.zaxxer/SparseBitSet/1.2" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar" MVN="mvn:commons-codec/commons-codec/1.14"  REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="commons-collections4" MODULE="commons-collections4-4.4.jar" MVN="mvn:org.apache.commons/commons-collections4/4.4" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="commons-math3" MODULE="commons-math3-3.6.1.jar" MVN="mvn:org.apache.commons/commons-math3/3.6.1" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+
+      <IMPORT NAME="poi-scratchpad" MODULE="poi-scratchpad-5.2.2.jar" MVN="mvn:org.apache.poi/poi-scratchpad/5.2.2" UrlPath="platform:/plugin/org.talend.libraries.excel/lib/poi-scratchpad-5.2.2.jar" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="commons-io-2.8.0" MODULE="commons-io-2.8.0.jar" MVN="mvn:commons-io/commons-io/2.8.0" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      
+      <IMPORT NAME="talendMsgMailUtil" MODULE="talendMsgMailUtil-1.2-20201022.jar" MVN="mvn:org.talend.components/talendMsgMailUtil/1.2-20201022" UrlPath="platform:/plugin/org.talend.libraries.excel/lib/talendMsgMailUtil-1.2-20201022.jar" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+      <IMPORT NAME="reload4j-1.2.22" MODULE="reload4j-1.2.22.jar" MVN="mvn:ch.qos.reload4j/reload4j/1.2.22" REQUIRED_IF="(MAIL_TYPE == 'MSG')" />
+    </IMPORTS>
+  </CODEGENERATION>
+<RETURNS>
+      <RETURN NAME="EXPORTED_FILE_PATH" TYPE="id_String" AVAILABILITY="FLOW"/>
+ </RETURNS>
+</COMPONENT>

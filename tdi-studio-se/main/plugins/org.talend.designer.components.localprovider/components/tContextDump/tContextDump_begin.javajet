@@ -1,0 +1,79 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.metadata.IMetadataTable 
+        org.talend.core.model.metadata.IMetadataColumn 
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.IContextParameter
+		java.util.List
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	List<IContextParameter> params = node.getProcess().getContextManager().getDefaultContext().getContextParameterList();
+	boolean hidePassword = ("true").equals(ElementParameterParser.getValue(node,"__HIDE_PASSWORD__"));
+	String cid = node.getUniqueName();
+    List<IMetadataColumn> columnList = null;
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if(metadatas != null && metadatas.size() > 0) {
+        IMetadataTable metadata = metadatas.get(0);
+        if(metadata != null) {
+            columnList = metadata.getListColumns();
+        }
+    }
+    List< ? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    if(columnList != null && columnList.size() > 0 && outgoingConns != null && outgoingConns.size() > 0) {
+        %>
+        int nb_line_<%=cid %> = 0;
+        java.util.List<String> assignList_<%=cid %> = new java.util.ArrayList<String>();
+        <%if(isLog4jEnabled){%>
+        	log.info("<%=cid%> - Dumping context.");
+        <%}%>
+		
+		
+        for( java.util.Enumeration<?> en_<%=cid %> = context.propertyNames() ; en_<%=cid %>.hasMoreElements() ; ) {        
+            nb_line_<%=cid %>++;
+            Object key_<%=cid %> = en_<%=cid %>.nextElement();
+            Object value_<%=cid %> = context.getProperty(key_<%=cid %>.toString());
+            if(NULL_VALUE_EXPRESSION_IN_COMMAND_STRING_FOR_CHILD_JOB_ONLY.equals(value_<%=cid %>)) {
+            	value_<%=cid %> = "";//keep the same result for parent and child job
+            }
+            <%
+            for(IConnection outgoingConn : outgoingConns) {
+                if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                    %>
+                    <%=outgoingConn.getName()%>.<%=columnList.get(0).getLabel()%> = key_<%=cid %>.toString();
+					<%
+					if (hidePassword) {
+					%>
+						if (("id_Password").equals(context.getContextType(key_<%=cid %>.toString()))) {
+							<%=outgoingConn.getName()%>.<%=columnList.get(1).getLabel()%> = value_<%=cid %>.toString().replaceAll(".","*");
+						}
+						else 
+					<%
+					}
+					%>		
+						<%=outgoingConn.getName()%>.<%=columnList.get(1).getLabel()%> = value_<%=cid %>.toString();
+                    <%for (IContextParameter param :params){
+	                  	 if(("id_Date").equals(param.getType())){
+							String str = param.getName();
+						%>
+							if(("<%=str%>").equals(key_<%=cid %>.toString())){
+								if(value_<%=cid %>.toString().indexOf(";")>-1){
+			                    	<%=outgoingConn.getName()%>.<%=columnList.get(1).getLabel()%> = value_<%=cid %>.toString().substring(value_<%=cid %>.toString().indexOf(";")+1);
+			                    }
+			                }
+						<%
+						}
+						%>
+					<%}%>
+<%
+                }
+            }
+    }
+%>

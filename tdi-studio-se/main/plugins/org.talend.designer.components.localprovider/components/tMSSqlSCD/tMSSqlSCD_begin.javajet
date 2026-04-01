@@ -1,0 +1,974 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.metadata.MetadataTalendType
+    org.talend.core.model.metadata.MappingTypeRetriever    
+    org.talend.core.model.utils.NodeUtil
+    java.util.ArrayList
+    java.util.Map
+    java.util.HashMap
+"
+skeleton="../templates/slowly_change_dimension.skeleton"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode) codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+dbLog = new DBLogUtil(node); 
+
+List<IMetadataColumn> inputSchema = getInputSchema(node);
+List<IMetadataColumn> outputSchema = getOutputSchema(node);
+
+String rejectConnName = null;
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+    IConnection rejectConn = rejectConns.get(0);
+    rejectConnName = rejectConn.getName();
+}
+List<IMetadataColumn> rejectColumnList = null;
+IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+if(metadataTable != null) {
+    rejectColumnList = metadataTable.getListColumns();      
+}
+
+String incomingConnName = null;
+IConnection inConn=null;
+List<? extends IConnection> incomingConnections = node.getIncomingConnections();
+if(incomingConnections != null && incomingConnections.size() > 0) {
+    for(IConnection incomingConnection : incomingConnections) {
+        if(incomingConnection.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        	inConn=incomingConnection;
+            incomingConnName = incomingConnection.getName();
+            break;
+        }
+    }
+}
+
+if(inputSchema != null && inputSchema.size() > 0 && outputSchema != null && outputSchema.size() > 0) {
+    String dbhost = ElementParameterParser.getValue(node, "__SERVER__");
+    String dbport = ElementParameterParser.getValue(node, "__PORT__");
+    String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+    String dbschema = ElementParameterParser.getValue(node, "__DB_SCHEMA__");
+    String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+    String dbuser = ElementParameterParser.getValue(node, "__USER__");
+
+    String dbtable = ElementParameterParser.getValue(node, "__TABLE__");
+    boolean debug = ("true").equals(ElementParameterParser.getValue(node, "__DEBUG__"));
+    boolean isEnableSaveMemMode = ("true").equals(ElementParameterParser.getValue(node, "__USE_SAVE_MEM_MODE__"));
+    boolean isSourceKeyIncNull = ("true").equals(ElementParameterParser.getValue(node, "__SOURCE_KEY_INC_NULL__"));
+    String dbType = MSSQL;
+    SCDConfiger scdConfiger = getSCDConfiger(node);
+    SCDManager scdManager = getSCDManager(cid, dbType);
+    List<Column> sourceKeys = scdConfiger.getSourceKeys();
+    List<Column> insertionColumnList = getInsertionColumnList(scdConfiger);
+    String surrogateKeyField = scdConfiger.getSurrogateKeyField();
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+    boolean useActiveDirectoryAuth = "true".equals(ElementParameterParser.getValue(node, "__ACTIVE_DIR_AUTH__"));
+    
+    int schemaOptNum=100;
+	String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+	if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+		schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+	}
+	boolean isOptimizeCode = false;
+	if(schemaOptNum < inputSchema.size() || schemaOptNum < outputSchema.size()){
+		isOptimizeCode = true;
+	}
+    %>
+    <%
+    if(!isEnableSaveMemMode) {    
+        %>
+        <%=genSourceKeyClass(scdConfiger, cid)%>
+        <%
+    }
+    %>
+    <%=genDimensionAttributeClass(scdConfiger, cid)%>
+    int nb_line_update_<%=cid%> = 0;
+    int nb_line_inserted_<%=cid%> = 0;
+    int nb_line_rejected_<%=cid%> = 0;
+    String tableName_<%=cid%> = null;
+	String dbschema_<%=cid%> = null;
+    <%
+	if(isOptimizeCode){
+%>
+	class MssqlSCD_Util_<%=cid%>{
+<%
+		if(isEnableSaveMemMode) {//EnableSaveMemMode
+			int paramIndex = 1;
+			int indexMult= 0;
+	        for(Column sourceKey : sourceKeys) {
+	        	if(indexMult%schemaOptNum==0){
+%>
+			public void genSearchSetStatment_<%=indexMult/schemaOptNum%>(java.sql.PreparedStatement searchingStmt_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{
+<%
+				}
+%>
+            <%=scdManager.genSetStatement("searchingStmt_" + cid, incomingConnName + "." + sourceKey.getLabelName(), paramIndex, sourceKey.getJavaType(),isSourceKeyIncNull)%>
+<%
+				if((indexMult+1)%schemaOptNum==0){
+%>
+			}
+<%
+				}
+				if(isSourceKeyIncNull){
+	            	paramIndex=paramIndex+2;
+	            }else{
+	            	paramIndex++;
+	            }
+	            indexMult= isSourceKeyIncNull?paramIndex/2:paramIndex-1;
+	        }
+			if(indexMult>0&&(indexMult%schemaOptNum)>0){
+%>
+			}
+<%
+			}
+			List<Column> searchingColumns = getSearchingColumnList(scdConfiger);
+			int index = sourceKeys.size()+1;
+		    for(Column searchingColumn : searchingColumns) {
+		    	if((index-sourceKeys.size()-1)%schemaOptNum==0){
+%>
+			public void getSearchResult_<%=(index-sourceKeys.size()-1)/schemaOptNum%>(java.sql.ResultSet searchingResult_<%=cid%>,SCDStruct_<%=cid%> lookUpValue_<%=cid%>,String tmpValue_<%=cid%>,org.talend.designer.components.util.mssql.MSSqlGenerateTimestampUtil mssqlGTU_<%=cid%>)throws Exception{
+<%
+				}
+		        String generatedType = searchingColumn.getJavaType();
+		        if(("byte[]").equals(generatedType)) {
+		            generatedType = "Bytes";
+		        } else if(("java.util.Date").equals(generatedType)) {
+		            generatedType = "Timestamp";
+		        } else if(("Integer").equals(generatedType)) {
+		            generatedType = "Int";
+		        } else {
+		            generatedType = generatedType.substring(0, 1).toUpperCase() + generatedType.substring(1);
+		        }
+		        if(("Char").equals(generatedType) || ("Character").equals(generatedType)) {
+%>
+            tmpValue_<%=cid%> = searchingResult_<%=cid%>.getString(<%=index%>);
+            if (tmpValue_<%=cid%> != null && tmpValue_<%=cid%>.length() > 0) {
+                lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = tmpValue_<%=cid%>.charAt(0);
+            } else {
+<%
+	                if(("Character").equals(generatedType)) {
+%>
+                    if(tmpValue_<%=cid%> == null) {
+                        lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = null;
+                    } else {
+                        lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = '\0';
+                    }
+<%
+	                } else {
+%>
+                    if(("").equals(tmpValue_<%=cid%>)) {
+                        lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = '\0';
+                    } else {
+                        throw new RuntimeException("Value is empty for column : '<%=searchingColumn.getColumnName()%>' in '<%=incomingConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+                    }
+<%
+	                }
+%>
+            }
+<%
+		        } else if(("Timestamp").equals(generatedType)) {
+%>
+             lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = mssqlGTU_<%=cid%>.getDate(searchingResult_<%=cid %>.getMetaData(), searchingResult_<%=cid %>, <%=index%>);
+<%
+		        } else {
+%>
+            if(searchingResult_<%=cid %>.getObject(<%=index%>) != null) {
+                lookUpValue_<%=cid%>.<%=searchingColumn.getColumnName()%> = searchingResult_<%=cid %>.get<%=generatedType%>(<%=index%>);
+            }
+<%
+		        }
+				if((index-sourceKeys.size())% schemaOptNum==0){
+%>
+			}
+<%
+				}
+		        index++;
+		    }
+			if((index-sourceKeys.size()-1)>0&&((index-sourceKeys.size()-1)%schemaOptNum)>0){
+%>
+			}
+<%
+			}
+		}else{//EnableSaveMemMode
+			List<Column> searchColumns = getSearchColumnList(scdConfiger);
+			int index = 1;
+            for(Column searchColumn : searchColumns) {
+		    	if((index-1)%schemaOptNum==0){
+%>
+			public void getSearchResult_<%=(index-1)/schemaOptNum%>(java.sql.ResultSet resultSet_<%=cid%>,SCDSK_<%=cid%> sk_<%=cid%>,SCDStruct_<%=cid%> row_<%=cid%>,String tmpValue_<%=cid%>,org.talend.designer.components.util.mssql.MSSqlGenerateTimestampUtil mssqlGTU_<%=cid%>)throws Exception{
+<%
+				}
+                boolean isSourceKey = false;
+                for(Column sourceKey : sourceKeys) {
+                    if(searchColumn.getColumnName().equals(sourceKey.getColumnName())) {
+                        isSourceKey = true;
+                        break;
+                    }
+                }
+                String generatedType = searchColumn.getJavaType();
+                String struct = (isSourceKey ? "sk_" : "row_") + cid;
+                if(("byte[]").equals(generatedType)) {
+                    generatedType = "Bytes";
+                } else if(("java.util.Date").equals(generatedType)) {
+                    generatedType = "Timestamp";
+                } else if(("Integer").equals(generatedType)) {
+                    generatedType = "Int";
+                } else {
+                    generatedType = generatedType.substring(0, 1).toUpperCase() + generatedType.substring(1);
+                }
+                if(("Char").equals(generatedType) || ("Character").equals(generatedType)) {
+                    %>
+                    tmpValue_<%=cid%> = resultSet_<%=cid%>.getString(<%=index%>);
+                    if (tmpValue_<%=cid%> != null && tmpValue_<%=cid%>.length() > 0) {
+                        <%=struct%>.<%=searchColumn.getColumnName()%> = tmpValue_<%=cid%>.charAt(0);
+                    } else {
+                        <%
+                        if(("Character").equals(generatedType)) {
+                            %>
+                            if(tmpValue_<%=cid%> == null) {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = null;
+                            } else {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = '\0';
+                            }
+                            <%
+                        } else {
+                            %>
+                            if(("").equals(tmpValue_<%=cid%>)) {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = '\0';
+                            } else {
+                                throw new RuntimeException("Value is empty for column : '<%=searchColumn.getColumnName()%>' in '<%=incomingConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+                            }
+                            <%
+                        }
+                        %>
+                    }
+                    <%
+                } else if(("Timestamp").equals(generatedType)) {
+                    %>
+                     <%=struct%>.<%=searchColumn.getColumnName()%> = mssqlGTU_<%=cid%>.getDate(resultSet_<%=cid %>.getMetaData(), resultSet_<%=cid %>, <%=index%>);
+                    <%
+                } else {
+                    %>
+                    if(resultSet_<%=cid %>.getObject(<%=index%>) != null) {
+                        <%=struct%>.<%=searchColumn.getColumnName()%> = resultSet_<%=cid %>.get<%=generatedType%>(<%=index%>);
+                    }
+                    <%
+                }
+				if(index % schemaOptNum==0){
+%>
+			}
+<%
+				}
+                index++;
+            }
+			if((index-1)>0&&((index-1)%schemaOptNum)>0){
+%>
+			}
+<%
+			}
+		}//not EnableSaveMemMode
+		
+		//generate inert SetStatement
+		int paramIndex = 1;
+		boolean isReturnValue = false;
+        for(Column insertionColumn : insertionColumnList) {
+        	if((paramIndex - 1)%schemaOptNum==0){
+%>
+			public <%if(insertionColumn.getColumnName().equals(surrogateKeyField) && ("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())){%>int<%}else{%>void<%}%>  genInsertSetStatment_<%=(paramIndex - 1)/schemaOptNum%>(
+				java.sql.PreparedStatement insertionStatement_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%><%if(insertionColumn.getColumnName().equals(surrogateKeyField) && ("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())){%>,
+				<%=scdConfiger.getSurrogateKeyFieldType()%> nextSurrogateKey_<%=cid%><%}%>)throws Exception{
+<%
+        	}
+            if(insertionColumn.getColumnName().equals(surrogateKeyField)) {
+                if(("INPUT_FIELD").equals(scdConfiger.getSurrogateKeyValueType())) {
+                    %>
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + scdConfiger.getSurrogateKeyInputField(), paramIndex, insertionColumn.getJavaType())%>
+                    <%
+                } else if(("ROUTINE").equals(scdConfiger.getSurrogateKeyValueType())) {
+                    %>
+                    <%=scdConfiger.getSurrogateKeyFieldType()%> skRoutine_<%=cid%> = <%=scdConfiger.getSurrogateKeyRoutine()%>;
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, "skRoutine_" + cid, paramIndex, insertionColumn.getJavaType())%>
+                    <%
+                } else if(("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())) {
+                	isReturnValue = true;
+                    %>                    
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, "nextSurrogateKey_" + cid, paramIndex, insertionColumn.getJavaType())%>
+                    nextSurrogateKey_<%=cid%>++;
+                    <%
+                }
+            } else if(insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getStartDateField())) {
+                if(("INPUT_FIELD").equals(scdConfiger.getDimensionType2Configer().getStartDateValueType())) {
+                    %>
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + scdConfiger.getDimensionType2Configer().getStartDateValue(), paramIndex, insertionColumn.getJavaType())%>
+                    <%
+                }
+            } else if(insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getVersionField())) {
+                %>
+                <%=scdConfiger.getDimensionType2Configer().getVersionFieldType()%> version_<%=cid%> = 1;
+                <%=scdManager.genSetStatement("insertionStatement_" + cid, "version_" + cid, paramIndex, scdConfiger.getDimensionType2Configer().getVersionFieldType())%>
+                <%
+            } else {
+                if(!insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getEndDateField())) {
+                    %>
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + insertionColumn.getLabelName(), paramIndex, insertionColumn.getJavaType())%>
+                    <%
+                }
+            }
+	        if(paramIndex % schemaOptNum == 0){
+				if(isReturnValue){
+%>
+					return nextSurrogateKey_<%=cid%>;
+<%
+					isReturnValue=false;
+				}
+%>
+			}
+<%
+			}
+            paramIndex++;
+        }
+        if((paramIndex - 1) > 0 && ((paramIndex - 1)%schemaOptNum) > 0){
+			if(isReturnValue){
+%>
+					return nextSurrogateKey_<%=cid%>;
+<%
+				isReturnValue=false;
+			}
+%>
+			}
+<%
+		}
+		
+		if(scdConfiger.isEnableType1()) {//Type1 generate condition string
+			List<Column> dimensionAttrbites = scdConfiger.getDimensionType1Configer().getDimensionAttributes();
+            StringBuilder condition = null;
+            boolean isFirstColumn = true;
+            int desAttrbiteCountNo=0;
+            for(Column dimensionAttrbite : dimensionAttrbites) {
+            	if(desAttrbiteCountNo%schemaOptNum==0){
+            		condition = new StringBuilder();
+%>
+		public boolean genType1Condition_<%=desAttrbiteCountNo/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>){
+<%
+            	}
+                if(isFirstColumn) {
+                    isFirstColumn = false;
+                } else {
+                    condition.append(" || ");
+                }
+                String generatedType = dimensionAttrbite.getJavaType();
+                if (("BigDecimal").equals(generatedType)) {
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "!= null) || ");
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "== null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + ".compareTo(" + incomingConnName + "." + dimensionAttrbite.getLabelName() + ")!= 0)");
+                 } else if(("java.util.Date").equals(generatedType) || ("Object").equals(generatedType) 
+                	|| ("String").equals(generatedType) || dimensionAttrbite.isNullable()) {
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "!= null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && !lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + ".equals(" + incomingConnName + "." + dimensionAttrbite.getLabelName() + "))");
+                } else {
+                    condition.append("lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != " + incomingConnName + "." + dimensionAttrbite.getLabelName());
+                }
+               	if((desAttrbiteCountNo + 1) % schemaOptNum == 0){
+               		isFirstColumn = true;
+%>
+			return <%=condition.toString()%>;
+		}
+<%
+				}
+                desAttrbiteCountNo++;
+            }
+            if(desAttrbiteCountNo > 0 && (desAttrbiteCountNo % schemaOptNum) > 0){
+%>
+			return <%=condition.toString()%>;
+		}
+<%
+			}
+			int index = 1;
+			int columnIndex = 0;
+            for(Column dimensionAttrbite : dimensionAttrbites) {
+            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType1SetStatment_<%=columnIndex/schemaOptNum%>(java.sql.PreparedStatement updateForType1_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            	}
+                %>
+                <%=scdManager.genSetStatement("updateForType1_" + cid, incomingConnName + "." + dimensionAttrbite.getLabelName(), index, dimensionAttrbite.getJavaType())%>
+                <%
+                index++;
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+                columnIndex++;
+                
+            }
+            for(Column sourceKey : sourceKeys) {
+            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType1SetStatment_<%=columnIndex/schemaOptNum%>(java.sql.PreparedStatement updateForType1_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            	}
+                %>
+                <%=scdManager.genSetStatement("updateForType1_" + cid, incomingConnName + "." + sourceKey.getLabelName(), index, sourceKey.getJavaType(),isSourceKeyIncNull)%>
+                <%
+                if(isSourceKeyIncNull){
+                	index=index+2;
+                }else{
+                   	index++;
+                }
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+                columnIndex++;
+            }
+            if(columnIndex > 0 && (columnIndex % schemaOptNum) > 0){
+%>
+			}
+<%
+            }
+		}
+
+		if(scdConfiger.isEnableType2()) {//Type2 generate condition string
+			List<Column> dimensionAttrbites = scdConfiger.getDimensionType2Configer().getDimensionAttributes();
+            StringBuilder condition = null;
+            boolean isFirstColumn = true;
+            int desAttrbiteCountNo=0;
+            for(Column dimensionAttrbite : dimensionAttrbites) {
+            	if(desAttrbiteCountNo%schemaOptNum==0){
+            		condition = new StringBuilder();
+%>
+		public boolean genType2Condition_<%=desAttrbiteCountNo/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>){
+<%
+            	}
+                if(isFirstColumn) {
+                    isFirstColumn = false;
+                } else {
+                    condition.append(" || ");
+                }
+                String generatedType = dimensionAttrbite.getJavaType();
+                if (("BigDecimal").equals(generatedType)) {
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "!= null) || ");
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "== null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + ".compareTo(" + incomingConnName + "." + dimensionAttrbite.getLabelName() + ")!= 0)");
+                 } else if(("java.util.Date").equals(generatedType) || ("Object").equals(generatedType) 
+                	|| ("String").equals(generatedType) || dimensionAttrbite.isNullable()) {
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getLabelName() + "!= null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != null && !lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + ".equals(" + incomingConnName + "." + dimensionAttrbite.getLabelName() + "))");
+                } else {
+                    condition.append("lookUpValue_" + cid + "." + dimensionAttrbite.getColumnName() + " != " + incomingConnName + "." + dimensionAttrbite.getLabelName());
+                }
+               	if((desAttrbiteCountNo + 1) % schemaOptNum == 0){
+               		isFirstColumn = true;
+%>
+			return <%=condition.toString()%>;
+		}
+<%
+				}
+                desAttrbiteCountNo++;
+            }
+            if(desAttrbiteCountNo > 0 && (desAttrbiteCountNo % schemaOptNum) > 0){
+%>
+			return <%=condition.toString()%>;
+		}
+<%
+			}
+ 			int index = 1;
+ 			int columnIndex = 0;
+            if(("INPUT_FIELD").equals(scdConfiger.getDimensionType2Configer().getStartDateValueType())) {                    
+%>
+			public void genUpdateType2SetStatment_0(java.sql.PreparedStatement updateForType2_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{
+            	<%=scdManager.genSetStatement("updateForType2_" + cid, incomingConnName + "." + scdConfiger.getDimensionType2Configer().getStartDateValue(), index, "java.util.Date")%>
+<%
+            	index++;
+            	columnIndex++;
+            } else {
+                index = 2;
+            }
+ 			for(Column sourceKey : sourceKeys) {
+            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType2SetStatment_<%=columnIndex/schemaOptNum%>(java.sql.PreparedStatement updateForType2_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            	}
+%>
+            	<%=scdManager.genSetStatement("updateForType2_" + cid, incomingConnName + "." + sourceKey.getLabelName(), index, sourceKey.getJavaType(),isSourceKeyIncNull)%>
+<%
+                if(isSourceKeyIncNull){
+                	index=index+2;
+                }else{
+                   	index++;
+                }
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+            	columnIndex++;
+          	}
+          	if(columnIndex > 0 && (columnIndex % schemaOptNum) > 0){
+%>
+			}
+<%
+            }
+            
+           	paramIndex = 1;
+            for(Column insertionColumn : insertionColumnList) {
+            	if((paramIndex - 1) % schemaOptNum==0){
+%>
+			public <%if(insertionColumn.getColumnName().equals(surrogateKeyField) && ("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())){%>int<%}else{%>void<%}%> genInsertType2SetStatment_<%=(paramIndex - 1)/schemaOptNum%>(java.sql.PreparedStatement insertionStatement_<%=cid%>,
+				<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%><%if(insertionColumn.getColumnName().equals(surrogateKeyField) && ("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())){%>,<%=scdConfiger.getSurrogateKeyFieldType()%> nextSurrogateKey_<%=cid%><%}%>
+					,SCDStruct_<%=cid%> lookUpValue_<%=cid%>)throws Exception{	
+<%
+            	}
+                if(insertionColumn.getColumnName().equals(surrogateKeyField)) {
+                    if(("INPUT_FIELD").equals(scdConfiger.getSurrogateKeyValueType())) {
+                        %>
+                        <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + scdConfiger.getSurrogateKeyInputField(), paramIndex, insertionColumn.getJavaType())%>
+                        <%
+                    } else if(("ROUTINE").equals(scdConfiger.getSurrogateKeyValueType())) {
+                        %>
+                        <%=scdConfiger.getSurrogateKeyFieldType()%> skRoutine_<%=cid%> = <%=scdConfiger.getSurrogateKeyRoutine()%>;
+                        <%=scdManager.genSetStatement("insertionStatement_" + cid, "skRoutine_" + cid, paramIndex, insertionColumn.getJavaType())%>
+                        <%
+                    } else if(("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())) {
+                    	isReturnValue=true;
+                        %>                    
+                        <%=scdManager.genSetStatement("insertionStatement_" + cid, "nextSurrogateKey_" + cid, paramIndex, insertionColumn.getJavaType())%>
+                        nextSurrogateKey_<%=cid%>++;
+                        <%
+                    }
+                } else if(insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getStartDateField())) {
+                    if(("INPUT_FIELD").equals(scdConfiger.getDimensionType2Configer().getStartDateValueType())) {
+                        %>
+                        <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + scdConfiger.getDimensionType2Configer().getStartDateValue(), paramIndex, insertionColumn.getJavaType())%>
+                        <%
+                    }
+                } else if(insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getVersionField())) {
+                    %>
+                    <%=scdConfiger.getDimensionType2Configer().getVersionFieldType()%> maxVersion_<%=cid%> = lookUpValue_<%=cid%>.<%=scdConfiger.getDimensionType2Configer().getVersionField()%> + 1;
+                    <%
+                    if(!isEnableSaveMemMode) {
+                        %>
+                        lookUpValue_<%=cid%>.<%=scdConfiger.getDimensionType2Configer().getVersionField()%> = lookUpValue_<%=cid%>.<%=scdConfiger.getDimensionType2Configer().getVersionField()%> + 1;                            
+                        <%
+                    }
+                    %>
+                    <%=scdManager.genSetStatement("insertionStatement_" + cid, "maxVersion_" + cid, paramIndex, scdConfiger.getDimensionType2Configer().getVersionFieldType())%>
+                    <%
+                } else {
+                    if(!insertionColumn.getColumnName().equals(scdConfiger.getDimensionType2Configer().getEndDateField())) {
+                        %>
+                        <%=scdManager.genSetStatement("insertionStatement_" + cid, incomingConnName + "." + insertionColumn.getLabelName(), paramIndex, insertionColumn.getJavaType())%>
+                        <%
+                    }
+                }
+ 				if(paramIndex % schemaOptNum == 0){
+					if(isReturnValue){
+%>
+					return nextSurrogateKey_<%=cid%>;
+<%
+						isReturnValue=false;
+					}
+%>
+			}
+<%
+                }
+                paramIndex++;
+            }
+           	if((paramIndex - 1) > 0 && ((paramIndex - 1) % schemaOptNum) > 0){
+				if(isReturnValue){
+%>
+					return nextSurrogateKey_<%=cid%>;
+<%
+					isReturnValue=false;
+				}
+%>
+			}
+<%
+            }
+		}
+		if(scdConfiger.isEnableType3()) {
+			List<DimensionType3Attribute> dimensionAttrbites = scdConfiger.getDimensionType3Configer().getDimensionAttributes();
+            StringBuilder condition = null;
+            boolean isFirstColumn = true;
+            int desAttrbiteCountNo=0;
+            for(DimensionType3Attribute dimensionAttrbite : dimensionAttrbites) {
+				if(desAttrbiteCountNo%schemaOptNum==0){
+            		condition = new StringBuilder();
+%>
+			public boolean genType3Condition_<%=desAttrbiteCountNo/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>){
+<%
+            	}
+                if(isFirstColumn) {
+                    isFirstColumn = false;
+                } else {
+                    condition.append(" || ");
+                }
+                String generatedType = dimensionAttrbite.getCurrentColumn().getJavaType();
+                if (("BigDecimal").equals(generatedType)) {
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "!= null) || ");
+                 	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "== null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + ".compareTo(" + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + ")!= 0)");
+                } else if(("java.util.Date").equals(generatedType) || ("Object").equals(generatedType) 
+                	|| ("String").equals(generatedType) || dimensionAttrbite.getCurrentColumn().isNullable()) {
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "!= null) || ");
+                    condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && !lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + ".equals(" + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "))");
+                } else {
+                    condition.append("lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName());
+                } 
+               	if((desAttrbiteCountNo + 1) % schemaOptNum == 0){
+               		isFirstColumn = true;
+%>
+				return <%=condition.toString()%>;
+			}
+<%
+				}
+                desAttrbiteCountNo++;
+            }
+            if(desAttrbiteCountNo > 0 && (desAttrbiteCountNo % schemaOptNum) > 0){
+%>
+				return <%=condition.toString()%>;
+			}
+<%
+			}
+			
+			int index = 1;
+			int columnIndex = 0;
+            for(DimensionType3Attribute dimensionAttrbite : dimensionAttrbites) {
+            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType3SetStatment_<%=columnIndex/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,java.sql.PreparedStatement updateForType3_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            	}
+%>
+                <%=scdManager.genSetStatement("updateForType3_" + cid, incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName(), index, dimensionAttrbite.getCurrentColumn().getJavaType())%>
+<%
+                index++;
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+                columnIndex++;
+                if (dimensionAttrbites.size() > 1) {
+	                condition = new StringBuilder();
+	                String generatedType = dimensionAttrbite.getCurrentColumn().getJavaType();
+					if (("BigDecimal").equals(generatedType)) {
+	             		condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "!= null) || ");
+	             		condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "== null) || ");
+	                	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + ".compareTo(" + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + ")!= 0)");
+	             	} else if(("java.util.Date").equals(generatedType) || ("Object").equals(generatedType) 
+	                	|| ("String").equals(generatedType) || dimensionAttrbite.getCurrentColumn().isNullable()) {
+	                	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " == null && " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "!= null) || ");
+	                	condition.append("(lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != null && !lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + ".equals(" + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName() + "))");
+	                } else {
+	                    condition.append("lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName() + " != " + incomingConnName + "." + dimensionAttrbite.getCurrentColumn().getLabelName());
+	                }
+	            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType3SetStatment_<%=columnIndex/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,java.sql.PreparedStatement updateForType3_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            		}
+%>
+                if (<%=condition.toString()%>) {
+                <%=scdManager.genSetStatement("updateForType3_" + cid,  "lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName(), index, dimensionAttrbite.getPrevColumn().getJavaType())%>
+               	} else {
+               	<%=scdManager.genSetStatement("updateForType3_" + cid,  "lookUpValue_" + cid + "." + dimensionAttrbite.getPrevColumn().getColumnName(), index, dimensionAttrbite.getPrevColumn().getJavaType())%>
+               	}
+<%				
+				} else {
+%>
+               	<%=scdManager.genSetStatement("updateForType3_" + cid,  "lookUpValue_" + cid + "." + dimensionAttrbite.getCurrentColumn().getColumnName(), index, dimensionAttrbite.getPrevColumn().getJavaType())%>
+<%
+               	}
+                index++;
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+                columnIndex++;
+            }
+            for(Column sourceKey : sourceKeys) {
+            	if(columnIndex%schemaOptNum==0){
+%>
+			public void genUpdateType3SetStatment_<%=columnIndex/schemaOptNum%>(SCDStruct_<%=cid%> lookUpValue_<%=cid%>,java.sql.PreparedStatement updateForType3_<%=cid%>,<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>)throws Exception{	
+<%
+            	}
+%>
+                <%=scdManager.genSetStatement("updateForType3_" + cid,  incomingConnName + "." + sourceKey.getLabelName(), index, sourceKey.getJavaType(),isSourceKeyIncNull)%>
+<%
+                if(isSourceKeyIncNull){
+                	index=index+2;
+                }else{
+                   	index++;
+                }
+                if((columnIndex + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+                }
+                columnIndex++;
+            }
+            if(columnIndex > 0 && (columnIndex % schemaOptNum) > 0){
+%>
+			}
+<%
+            }
+		}
+		if (!dieOnError && rejectConnName != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+        	int columnNo=0;
+			for(IMetadataColumn inColumn : inputSchema) {
+            	if(columnNo % schemaOptNum==0){
+%>
+			public void putFlowValueToReject_<%=columnNo/schemaOptNum%>(<%=NodeUtil.getPrivateConnClassName(inConn)%>Struct <%=incomingConnName%>, <%=rejectConnName%>Struct <%=rejectConnName%>){	
+<%
+        		}
+            	 for(IMetadataColumn outColumn : outputSchema) {
+            	 	if (inColumn.getLabel().equals(outColumn.getLabel())) {
+%>
+                    <%=rejectConnName%>.<%=inColumn.getLabel()%> = <%=incomingConnName%>.<%=inColumn.getLabel()%>;
+<%
+            		}
+            	}
+            	if((columnNo + 1) % schemaOptNum == 0){
+%>
+			}
+<%
+           		}
+            	columnNo++;
+            }
+        	if(columnNo > 0 && (columnNo % schemaOptNum) > 0){
+%>
+			}
+<%
+        	}
+		}
+%>
+	}
+	MssqlSCD_Util_<%=cid%> mssqlSCD_Util_<%=cid%>=new MssqlSCD_Util_<%=cid%>();
+<%
+	}
+%>
+    <%@ include file="../templates/tMSSql/_tMSSqlConnection.javajet"%>
+
+    if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
+        tableName_<%=cid%> = <%=dbtable%>;
+    } else {
+        tableName_<%=cid%> = dbschema_<%=cid%> + "].[" + <%=dbtable%>;
+    }
+	org.talend.designer.components.util.mssql.MSSqlGenerateTimestampUtil mssqlGTU_<%=cid%> = org.talend.designer.components.util.mssql.MSSqlUtilFactory.getMSSqlGenerateTimestampUtil();	
+    String tmpValue_<%=cid%> = null;    
+    <%
+    if(isEnableSaveMemMode) {
+        %>
+        String searching_<%=cid%> = "<%=scdManager.createSearchingSQL(scdConfiger,isSourceKeyIncNull)%>";
+        java.sql.PreparedStatement searchingStmt_<%=cid%> = conn_<%=cid%>.prepareStatement(searching_<%=cid%>);
+        java.sql.ResultSet searchingResult_<%=cid%> = null;
+        <%
+    } else {
+        List<Column> searchColumns = getSearchColumnList(scdConfiger);
+        %>
+        String search_<%=cid%> = "<%=scdManager.createSelectionSQL(scdConfiger)%>";
+        java.sql.Statement statement_<%=cid%> = conn_<%=cid%>.createStatement();
+        java.sql.ResultSet resultSet_<%=cid%> = statement_<%=cid%>.executeQuery(search_<%=cid %>);
+        java.util.Map<SCDSK_<%=cid%>, SCDStruct_<%=cid%>> cache_<%=cid%> = new java.util.HashMap<SCDSK_<%=cid%>, SCDStruct_<%=cid%>>();
+        while(resultSet_<%=cid%>.next()) {
+            SCDSK_<%=cid%> sk_<%=cid%> = new SCDSK_<%=cid%>();
+            SCDStruct_<%=cid%> row_<%=cid%> = new SCDStruct_<%=cid%>();
+            <%
+            int index = 1;
+            for(Column searchColumn : searchColumns) {
+              if(!isOptimizeCode){
+                boolean isSourceKey = false;
+                for(Column sourceKey : sourceKeys) {
+                    if(searchColumn.getColumnName().equals(sourceKey.getColumnName())) {
+                        isSourceKey = true;
+                        break;
+                    }
+                }
+                String generatedType = searchColumn.getJavaType();
+                String struct = (isSourceKey ? "sk_" : "row_") + cid;
+                if(("byte[]").equals(generatedType)) {
+                    generatedType = "Bytes";
+                } else if(("java.util.Date").equals(generatedType)) {
+                    generatedType = "Timestamp";
+                } else if(("Integer").equals(generatedType)) {
+                    generatedType = "Int";
+                } else {
+                    generatedType = generatedType.substring(0, 1).toUpperCase() + generatedType.substring(1);
+                }
+                if(("Char").equals(generatedType) || ("Character").equals(generatedType)) {
+                    %>
+                    tmpValue_<%=cid%> = resultSet_<%=cid%>.getString(<%=index%>);
+                    if (tmpValue_<%=cid%> != null && tmpValue_<%=cid%>.length() > 0) {
+                        <%=struct%>.<%=searchColumn.getColumnName()%> = tmpValue_<%=cid%>.charAt(0);
+                    } else {
+                        <%
+                        if(("Character").equals(generatedType)) {
+                            %>
+                            if(tmpValue_<%=cid%> == null) {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = null;
+                            } else {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = '\0';
+                            }
+                            <%
+                        } else {
+                            %>
+                            if(("").equals(tmpValue_<%=cid%>)) {
+                                <%=struct%>.<%=searchColumn.getColumnName()%> = '\0';
+                            } else {
+                                throw new RuntimeException("Value is empty for column : '<%=searchColumn.getColumnName()%>' in '<%=incomingConnName%>' connection, value is invalid or this column should be nullable or have a default value.");
+                            }
+                            <%
+                        }
+                        %>
+                    }
+                    <%
+                } else if(("Timestamp").equals(generatedType)) {
+                    %>
+                     <%=struct%>.<%=searchColumn.getColumnName()%> = mssqlGTU_<%=cid%>.getDate(resultSet_<%=cid %>.getMetaData(), resultSet_<%=cid %>, <%=index%>);
+                    <%
+                } else {
+                    %>
+                    if(resultSet_<%=cid %>.getObject(<%=index%>) != null) {
+                        <%=struct%>.<%=searchColumn.getColumnName()%> = resultSet_<%=cid %>.get<%=generatedType%>(<%=index%>);
+                    }
+                    <%
+                }
+              }else{
+		    	  if((index-1)%schemaOptNum==0){
+%>
+			 mssqlSCD_Util_<%=cid%>.getSearchResult_<%=(index-1)/schemaOptNum%>(resultSet_<%=cid%>, sk_<%=cid%>, row_<%=cid%>, tmpValue_<%=cid%>, mssqlGTU_<%=cid%>);
+<%
+				  }
+              }
+                index++;
+            }
+            %>
+            cache_<%=cid%>.put(sk_<%=cid%>, row_<%=cid%>);
+        }
+        resultSet_<%=cid%>.close();
+        statement_<%=cid%>.close();
+        <%
+        if(debug) {
+            %>
+            System.out.println("[<%=cid%>] comparison cache loaded");
+            <%
+        }        
+    }
+    if(("TABLE_MAX").equals(scdConfiger.getSurrogateKeyValueType())) {
+        %>
+        <%=scdConfiger.getSurrogateKeyFieldType()%> nextSurrogateKey_<%=cid%> = 1;
+        <%
+        if(!isEnableSaveMemMode) {
+            %>
+            if(cache_<%=cid%>.size() > 0) {
+            <%
+        }
+        %>
+        String tmpQuery_<%=cid%> = "SELECT MAX([<%=scdConfiger.getSurrogateKeyField()%>]) FROM [" + tableName_<%=cid%> + "]";
+        java.sql.Statement tmpStmt_<%=cid%> = conn_<%=cid%>.createStatement();
+        java.sql.ResultSet tmpRS_<%=cid%> = tmpStmt_<%=cid%>.executeQuery(tmpQuery_<%=cid%>);
+        <%
+        String tmpType = null;        
+        if(("Integer").equals(scdConfiger.getSurrogateKeyFieldType())) {
+            tmpType = "Int";
+        } else {
+            tmpType = scdConfiger.getSurrogateKeyFieldType().substring(0, 1).toUpperCase() + scdConfiger.getSurrogateKeyFieldType().substring(1);
+        }
+        %>
+        if(tmpRS_<%=cid%>.next() && tmpRS_<%=cid%>.getObject(1) != null) {
+            nextSurrogateKey_<%=cid%> = tmpRS_<%=cid%>.get<%=tmpType%>(1) + 1;
+        }
+        tmpRS_<%=cid%>.close();
+        tmpStmt_<%=cid%>.close();
+        <%
+        if(!isEnableSaveMemMode) {
+            %>
+            }            
+            <%
+        }
+    }
+    %>
+    String insertionSQL_<%=cid%> = "<%=scdManager.createInsertionSQL(scdConfiger)%>";
+    java.sql.PreparedStatement insertionStatement_<%=cid%> = conn_<%=cid%>.prepareStatement(insertionSQL_<%=cid%>);
+    <%
+    if(scdConfiger.isEnableType2()) {
+        int paramIndex = 0;
+        if(scdConfiger.isEnableType3()) {
+            paramIndex = insertionColumnList.size() - scdConfiger.getDimensionType3Configer().getDimensionAttributes().size() - 1;
+        } else {
+            paramIndex = insertionColumnList.size() - 1;
+        }       
+        if(("JOB_START_TIME").equals(scdConfiger.getDimensionType2Configer().getStartDateValueType())) {
+            %>
+            insertionStatement_<%=cid%>.setTimestamp(<%=paramIndex%>, new java.sql.Timestamp(start_Hash.get("<%=cid%>")));
+            <%
+        }
+        if(("NULL_VALUE").equals(scdConfiger.getDimensionType2Configer().getEndDateValueType())) {
+            %>
+            insertionStatement_<%=cid%>.setNull(<%=paramIndex + 1%>, java.sql.Types.DATE);
+            <%
+        } else {
+        	String endDateTimeString = ElementParameterParser.getValue(node, "__L2_ENDDATE_TIME_DETAILS__");
+            %>
+            String endDateTimeDetail_<%=cid%> = <%=endDateTimeString.length()>0?endDateTimeString:"\"\""%>;
+            String datePattern_<%=cid%> = "yyyy-MM-dd";
+            if(endDateTimeDetail_<%=cid%>.length()>0){
+            	endDateTimeDetail_<%=cid%> = " "+endDateTimeDetail_<%=cid%>;
+            	datePattern_<%=cid%> = "yyyy-MM-dd HH:mm:ss";
+            }
+            insertionStatement_<%=cid%>.setTimestamp(<%=paramIndex + 1%>, new java.sql.Timestamp(new java.text.SimpleDateFormat(datePattern_<%=cid%>).parse(<%=scdConfiger.getDimensionType2Configer().getEndDateValue()%> + "-01-01"+endDateTimeDetail_<%=cid%>).getTime()));
+            <%
+        }
+    }
+    if(scdConfiger.isEnableType1()) {
+        %>
+        String updateSQLForType1_<%=cid%> = "<%=scdManager.createUpdateSQLForType1(scdConfiger,isSourceKeyIncNull)%>";
+        java.sql.PreparedStatement updateForType1_<%=cid%> = conn_<%=cid%>.prepareStatement(updateSQLForType1_<%=cid%>);        
+        <%
+    }
+    if(scdConfiger.isEnableType2()) {
+        %>
+        String updateSQLForType2_<%=cid%> = "<%=scdManager.createUpdateSQLForType2(scdConfiger,isSourceKeyIncNull)%>";
+        java.sql.PreparedStatement updateForType2_<%=cid%> = conn_<%=cid%>.prepareStatement(updateSQLForType2_<%=cid%>);
+        <%
+        if(("JOB_START_TIME").equals(scdConfiger.getDimensionType2Configer().getStartDateValueType())) {
+            %>
+            updateForType2_<%=cid%>.setTimestamp(1, new java.sql.Timestamp(start_Hash.get("<%=cid%>")));
+            <%
+        }
+    }
+    if(scdConfiger.isEnableType3()) {
+        %>
+        String updateSQLForType3_<%=cid%> = "<%=scdManager.createUpdateSQLForType3(scdConfiger,isSourceKeyIncNull)%>";
+        java.sql.PreparedStatement updateForType3_<%=cid%> = conn_<%=cid%>.prepareStatement(updateSQLForType3_<%=cid%>);
+        <%
+    }
+    %>
+    
+    <%
+    if(!isEnableSaveMemMode) {
+        %>
+        SCDSK_<%=cid%> lookUpKey_<%=cid%> = null;        
+        <%
+    }
+    %>
+    SCDStruct_<%=cid%> lookUpValue_<%=cid%> = null;
+<%
+}
+%>

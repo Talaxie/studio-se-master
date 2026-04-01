@@ -1,0 +1,128 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String filename = ElementParameterParser.getValue(
+    node,
+    "__FILENAME__"
+);
+
+String rowSeparator = ElementParameterParser.getValue(
+    node,
+    "__ROWSEPARATOR__"
+);
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+log4jFileUtil.componentStartInfo(node);
+%>
+String tmp_<%=cid%> = <%=filename%>;
+int emptyLineCount_<%=cid%> = 0;
+if (tmp_<%=cid%>.toLowerCase().endsWith(".xlsx")) throw new RuntimeException("not support excel 2007");  
+int lineCount_<%=cid %> = 0;
+if (tmp_<%=cid%>.toLowerCase().endsWith(".xls")){
+  final jxl.WorkbookSettings wbs_<%=cid%> = new jxl.WorkbookSettings();
+  wbs_<%=cid%>.setEncoding(<%=encoding%>);
+  final jxl.Workbook wb_<%=cid%> = jxl.Workbook.getWorkbook(
+      new java.io.BufferedInputStream(
+          new java.io.FileInputStream(<%=filename%>)), wbs_<%=cid%>);
+
+  java.util.List<jxl.Sheet> sheets_<%=cid%> = new java.util.ArrayList<jxl.Sheet>();;
+  sheets_<%=cid%> = java.util.Arrays.<jxl.Sheet> asList(wb_<%=cid%>.getSheets());
+  
+  if (sheets_<%=cid%>.size() <= 0){
+    wb_<%=cid%>.close();
+    throw new RuntimeException("Special sheets not exist!");
+  } 
+ 
+  for (jxl.Sheet sheet_<%=cid%> : sheets_<%=cid%>) {
+    int one_sheet_rows = sheet_<%=cid%>.getRows();
+    lineCount_<%=cid %> += one_sheet_rows;
+  
+    for (int i_<%=cid%> = 0; i_<%=cid%> < one_sheet_rows; i_<%=cid%>++){
+      jxl.Cell[] sheet_row = sheet_<%=cid%>.getRow(i_<%=cid%>);
+    
+      boolean bIsEmptyRow = true;
+      for (jxl.Cell cell: sheet_row){
+        if (cell.getContents() != null){
+          bIsEmptyRow = false;
+          break;
+        }
+      }
+      emptyLineCount_<%=cid%> += bIsEmptyRow ? 1 : 0;
+    }
+  }  
+  wb_<%=cid%>.close();
+  
+} else{        					
+  java.io.BufferedReader br_<%=cid %> = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(<%=filename %>), <%=encoding%>));			
+  String rowSeparator_<%=cid %> = <%=rowSeparator %>;
+  byte[] bytes_<%=cid %> = rowSeparator_<%=cid %>.getBytes();
+  int index_<%=cid %> = 0, oneChar_<%=cid %> = 0, tipEmptyLineCount_<%=cid %> = 0; 
+  boolean bTipEmptyFlagOpen_<%=cid %> = true, bReadyEOF_<%=cid%> = false;
+		
+  if(bytes_<%=cid %>.length > 0) {
+    while ((oneChar_<%=cid %> = br_<%=cid %>.read()) != -1) {
+      if (oneChar_<%=cid %> == bytes_<%=cid %>[index_<%=cid %>]) {
+      
+        if (index_<%=cid %> < bytes_<%=cid %>.length - 1){
+          index_<%=cid %> ++ ;
+          continue; // match next char
+        }
+        
+        if (index_<%=cid %> == bytes_<%=cid %>.length - 1) {                  
+          lineCount_<%=cid %>++;
+          if(bTipEmptyFlagOpen_<%=cid %>) {
+            tipEmptyLineCount_<%=cid %> ++;
+            emptyLineCount_<%=cid%> ++;
+          }
+          bReadyEOF_<%=cid%> = false; // next row must be have char(or EOF flag)
+          bTipEmptyFlagOpen_<%=cid %> = true; 
+          index_<%=cid %> = 0;
+        }
+        
+      }else{      
+        bReadyEOF_<%=cid%> = true;
+        bTipEmptyFlagOpen_<%=cid %> = false;
+        tipEmptyLineCount_<%=cid %> = 0;
+        index_<%=cid %> = 0;        
+      }
+    }
+    
+    if (bReadyEOF_<%=cid%>) lineCount_<%=cid %> ++ ; // add last row if not end by row separator
+    
+    if (bTipEmptyFlagOpen_<%=cid %>) {
+      lineCount_<%=cid %> -= tipEmptyLineCount_<%=cid %>;
+      emptyLineCount_<%=cid%> -= tipEmptyLineCount_<%=cid %>;
+    }          
+  }
+  br_<%=cid %>.close();
+} 
+<%
+if ("true".equals(ElementParameterParser.getValue(node, "__IGNORE_EMPTY_ROW__")) ){
+%>
+  lineCount_<%=cid %> -= emptyLineCount_<%=cid%>;
+<%}%>   
+
+  globalMap.put("<%=cid %>_COUNT",lineCount_<%=cid %>);
+  
+<%
+if(isLog4jEnabled) {
+%>
+    log.info("<%=cid%> - File : " + <%=filename%> + " row count is " + lineCount_<%=cid %>);
+<%
+}
+%> 
+

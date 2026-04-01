@@ -1,0 +1,68 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.List
+		java.util.Map
+" 
+%>
+<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+  <%
+   	 CodeGeneratorArgument codeGenArgumentX = (CodeGeneratorArgument) argument;
+	 INode nodeX = (INode)codeGenArgumentX.getArgument();
+  %>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+	    
+		public void setURL(INode node) {
+			%>
+			String dbProperties_<%=cid%> = <%=dbproperties%>;
+			<%
+			boolean isTeradataFastExport = node.isVirtualGenerateNode() && cid.matches("^.*?tTeradataFastExport_\\d+_In$");
+			if(isTeradataFastExport)  {//need to correct the jdbc parameters for jdbc url as TYPE=FASTEXPORT is necessary for isTeradataFastExport component
+%>
+				final String necessaryParam_<%=cid%> = "TYPE=FASTEXPORT";
+				if(dbProperties_<%=cid%> == null || dbProperties_<%=cid%>.trim().length() == 0) {
+					dbProperties_<%=cid%> = necessaryParam_<%=cid%>;
+				} else if(!routines.system.StringUtils.containsIgnoreCase(dbProperties_<%=cid%>, necessaryParam_<%=cid%>)) {
+					dbProperties_<%=cid%> = dbProperties_<%=cid%> + "," + necessaryParam_<%=cid%>;
+				}
+				
+				String url_<%=cid%> = "jdbc:teradata://" + <%=dbhost%> + "/DATABASE=" + <%=dbname%> + "," + dbProperties_<%=cid%>;
+<%
+				return;
+			}
+%>
+			String url_<%=cid%> = null;
+			if(dbProperties_<%=cid%> == null || dbProperties_<%=cid%>.trim().length() == 0) {
+				url_<%=cid %> = "jdbc:teradata://" + <%=dbhost%> + "/DATABASE=" + <%=dbname%>;    
+			} else {
+			    url_<%=cid%> = "jdbc:teradata://" + <%=dbhost%> + "/DATABASE=" + <%=dbname%> + "," + <%=dbproperties%>;
+			}       
+<%
+		}
+		public void createStatement(INode node) {
+			super.createStatement(node);
+%>
+                stmt_<%=cid %>.setFetchSize(200000);
+<%
+        }
+		public String getDirverClassName(INode node){
+			return "com.teradata.jdbc.TeraDriver";
+		}
+		
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+
+

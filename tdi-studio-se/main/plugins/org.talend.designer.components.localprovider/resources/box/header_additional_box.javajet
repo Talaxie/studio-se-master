@@ -1,0 +1,275 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators.common"
+	imports="
+		java.util.List
+		java.util.Vector
+		
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IProcess
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	"	
+	class="Header_additional" 
+%>
+	
+<%
+boolean hasBox = false;
+boolean hasBoxPut = false;
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess)v.get(0);
+
+List<? extends INode> tBoxCreateList = process.getNodesOfType("tBoxCreate");
+List<? extends INode> tBoxGetList = process.getNodesOfType("tBoxGet");
+List<? extends INode> tBoxListList = process.getNodesOfType("tBoxList");
+List<? extends INode> tBoxCopyList = process.getNodesOfType("tBoxCopy");
+List<? extends INode> tBoxUploadList = process.getNodesOfType("tBoxPut");
+List<? extends INode> tBoxDeleteList = process.getNodesOfType("tBoxDelete");
+
+if (tBoxUploadList != null && tBoxUploadList.size() > 0)
+{
+	hasBoxPut = true;
+}
+
+if((tBoxCreateList != null && tBoxCreateList.size() > 0) || (tBoxGetList != null && tBoxGetList.size() > 0)
+	|| (tBoxListList != null && tBoxListList.size() > 0) || (tBoxCopyList != null && tBoxCopyList.size() > 0)
+	|| hasBoxPut || (tBoxDeleteList != null && tBoxDeleteList.size() > 0)){
+	hasBox = true;
+}
+
+
+if(hasBox){
+%>	
+	
+	public com.box.boxjavalibv2.dao.BoxFolder searchFolder(com.box.boxjavalibv2.BoxClient client, String path, String name) throws Exception
+	{
+		com.box.boxjavalibv2.dao.BoxFolder boxFolder = null;
+		if (name.equals("All Files") || path.equals("All Files"))
+		{
+			return client.getFoldersManager().getFolder("0", null);
+		}
+		com.box.boxjavalibv2.dao.BoxCollection searchResults = client.getSearchManager().search(name, null);
+		for (com.box.boxjavalibv2.dao.BoxTypedObject entry : searchResults.getEntries())
+		{
+			if (entry instanceof com.box.boxjavalibv2.dao.BoxFolder && ((com.box.boxjavalibv2.dao.BoxFolder) entry).getName().equals(name))
+			{
+				if (path == null || path.isEmpty())
+				{
+					return ((com.box.boxjavalibv2.dao.BoxFolder) entry);
+				}
+				java.lang.StringBuilder sBuilder = new java.lang.StringBuilder();
+				for (com.box.boxjavalibv2.dao.BoxTypedObject obj : ((com.box.boxjavalibv2.dao.BoxFolder) entry).getPathCollection().getEntries())
+				{
+					sBuilder.append(obj.getValue("name") + "/");
+				}
+				sBuilder.append(((com.box.boxjavalibv2.dao.BoxFolder) entry).getName());
+				if (sBuilder.toString().equals(path))
+				{
+					boxFolder = (com.box.boxjavalibv2.dao.BoxFolder) entry;
+					return boxFolder;
+				}
+			}
+		}
+		return null;
+	}
+	
+	public com.box.boxjavalibv2.dao.BoxFile searchFile(com.box.boxjavalibv2.BoxClient client, String path, String name) throws Exception
+	{
+		com.box.boxjavalibv2.dao.BoxFile boxFile = null;
+		com.box.boxjavalibv2.dao.BoxCollection searchResults = client.getSearchManager().search(name, null);
+		for (com.box.boxjavalibv2.dao.BoxTypedObject entry : searchResults.getEntries())
+		{
+			if (entry instanceof com.box.boxjavalibv2.dao.BoxFile && ((com.box.boxjavalibv2.dao.BoxFile) entry).getName().equals(name))
+			{
+				if (path == null || path.isEmpty())
+				{
+					return ((com.box.boxjavalibv2.dao.BoxFile) entry);
+				}
+				java.lang.StringBuilder sBuilder = new java.lang.StringBuilder();
+				for (com.box.boxjavalibv2.dao.BoxTypedObject obj : ((com.box.boxjavalibv2.dao.BoxFile) entry).getPathCollection().getEntries())
+				{
+					sBuilder.append(obj.getValue("name") + "/");
+				}
+				sBuilder.append(((com.box.boxjavalibv2.dao.BoxFile) entry).getName());
+				if (sBuilder.toString().equals(path))
+				{
+					boxFile = (com.box.boxjavalibv2.dao.BoxFile) entry;
+					return boxFile;
+				}
+			}
+		}
+		return null;
+	}
+	
+	private String getBoxItemPath(com.box.boxjavalibv2.dao.BoxItem item)
+    {
+    	if (item == null)
+    		return "";
+    	java.lang.StringBuilder itemPath = new java.lang.StringBuilder();
+    	for (com.box.boxjavalibv2.dao.BoxTypedObject obj : item.getPathCollection().getEntries())
+    		itemPath.append(obj.getValue("name") + "/");
+    	return itemPath.toString();
+    }
+	
+	private static String normalizePath(String path)
+	{
+		if (path == null)
+		{
+			return null;
+		}
+		path = path.replace('\\', '/');
+		if (path.startsWith("/"))
+		{
+			path = path.substring(1);
+		}
+		if (path.endsWith("/"))
+			path = path.substring(0, path.length() - 1);
+		return path;
+	}
+	
+	private static String getFolderFromPath(String path)
+	{
+		if (path != null && !path.isEmpty())
+		{
+			String[] parts = path.split("/");
+			String folder = null;
+			if (parts.length > 1)
+				folder = parts[parts.length - 1];
+			else
+				folder = parts[0];
+			return folder;
+		}
+		return null;
+	}
+	
+    private static com.box.boxjavalibv2.dao.BoxFolder getBoxFolderRecursively(List<String> paths,
+            com.box.boxjavalibv2.dao.BoxFolder folder, com.box.boxjavalibv2.BoxClient client) throws Exception {
+
+        if (paths.size() > 1) {
+            paths.remove(0);
+        } else {
+            return folder;
+        }
+
+        for (com.box.boxjavalibv2.dao.BoxTypedObject obj : folder.getItemCollection().getEntries()) {
+            if (obj.getValue("name").equals(paths.get(0))) {
+                return getBoxFolderRecursively(paths, client.getFoldersManager().getFolder(obj.getId(), null), client);
+            }
+        }
+
+        return folder;
+    }
+
+	private static com.box.boxjavalibv2.dao.BoxItem getBoxItemRecursively(List<String> pathItems, com.box.boxjavalibv2.dao.BoxItem item, com.box.boxjavalibv2.BoxClient client) throws Exception {
+		if (pathItems.isEmpty()) {
+			return item;
+		} else {
+			String itemName = pathItems.remove(0);
+			com.box.boxjavalibv2.dao.BoxFolder folder = (com.box.boxjavalibv2.dao.BoxFolder) item;
+			for (com.box.boxjavalibv2.dao.BoxTypedObject obj : folder.getItemCollection().getEntries()) {
+				if (obj.getValue("name").equals(itemName)) {
+					return getBoxItemRecursively(pathItems, client.getBoxItemsManager().getItem(obj.getId(), null, com.box.boxjavalibv2.dao.BoxResourceType.valueOf(obj.getType().toUpperCase())), client);
+				}
+			}
+			throw new Exception("The item " + itemName + " was not found in the directory " + folder.getName());
+		}
+	}
+	
+	private java.util.List<com.box.boxjavalibv2.dao.BoxItem> getChildrenRecursively(com.box.boxjavalibv2.BoxClient client, com.box.boxjavalibv2.dao.BoxFolder folder,
+					 java.util.List<com.box.boxjavalibv2.dao.BoxItem> list, boolean withFolders, boolean withFiles) throws Exception
+	{
+		if (folder != null)
+		{
+			for (com.box.boxjavalibv2.dao.BoxTypedObject obj : folder.getItemCollection().getEntries())
+			{
+				if (withFolders && withFiles)
+				{
+					if(obj.getType().equals("folder"))
+					{
+						com.box.boxjavalibv2.dao.BoxFolder boxFolder = client.getFoldersManager().getFolder(obj.getId(), null);
+						list.add(boxFolder);
+						getChildrenRecursively(client, boxFolder, list, withFolders, withFiles);
+					}
+					if (obj.getType().equals("file"))
+					{
+						com.box.boxjavalibv2.dao.BoxFile file = client.getFilesManager().getFile(obj.getId(), null);
+						list.add(file);
+					}
+				}
+				else if (withFolders)
+				{
+					if(obj.getType().equals("folder"))
+					{
+						com.box.boxjavalibv2.dao.BoxFolder boxFolder = client.getFoldersManager().getFolder(obj.getId(), null);
+						list.add(boxFolder);
+						getChildrenRecursively(client, boxFolder, list, withFolders, withFiles);
+					}
+				}
+				else if (withFiles)
+				{
+					if(obj.getType().equals("folder"))
+					{
+						com.box.boxjavalibv2.dao.BoxFolder boxFolder = client.getFoldersManager().getFolder(obj.getId(), null);
+						getChildrenRecursively(client, boxFolder, list, withFolders, withFiles);
+					}
+					if (obj.getType().equals("file"))
+					{
+						com.box.boxjavalibv2.dao.BoxFile file = client.getFilesManager().getFile(obj.getId(), null);
+						list.add(file);
+					}
+				}
+			}
+		}
+		return list;
+	}
+	
+	public static com.box.boxjavalibv2.dao.BoxItem searchItem(com.box.boxjavalibv2.BoxClient client, String name) throws Exception
+	{
+		com.box.boxjavalibv2.dao.BoxItem boxItem = null;
+		com.box.boxjavalibv2.dao.BoxCollection searchResults = client.getSearchManager().search(name, null);
+		for (com.box.boxjavalibv2.dao.BoxTypedObject entry : searchResults.getEntries())
+		{
+			if (((com.box.boxjavalibv2.dao.BoxItem) entry).getName().equals(name))
+			{
+				boxItem = (com.box.boxjavalibv2.dao.BoxItem) entry;
+				return boxItem;
+			}
+		}
+		return null;
+	}
+
+<%
+}
+%>
+<%if(hasBoxPut)
+{%>
+	private com.box.boxjavalibv2.dao.BoxFolder createSubDirectories(com.box.boxjavalibv2.BoxClient client, com.box.boxjavalibv2.dao.BoxFolder folder, String path) throws Exception
+	{
+		com.box.boxjavalibv2.dao.BoxFolder destinationFolder = folder;
+		if (path != null && !path.isEmpty())
+		{
+			String[] parts = path.split("/");
+			if (parts.length > 0)
+			{
+				boolean exists = false;
+				for (com.box.boxjavalibv2.dao.BoxTypedObject obj : folder.getItemCollection().getEntries())
+				{
+					if (obj.getValue("name").equals(parts[0]))
+					{
+						exists = true;
+						destinationFolder = client.getFoldersManager().getFolder(obj.getId(), null);
+						if (parts.length > 1)
+							destinationFolder = createSubDirectories(client, destinationFolder, path.substring(parts[0].length() + 1, path.length()));
+					}
+				}
+				if(!exists)
+				{
+					com.box.boxjavalibv2.requests.requestobjects.BoxFolderRequestObject folderRequestObj = com.box.boxjavalibv2.requests.requestobjects.BoxFolderRequestObject.createFolderRequestObject(parts[0], folder.getId());
+					destinationFolder = client.getFoldersManager().createFolder(folderRequestObj);
+					if (parts.length > 1)
+						destinationFolder = createSubDirectories(client, destinationFolder, path.substring(parts[0].length() + 1, path.length()));
+				}
+			}
+		}
+		return destinationFolder;
+	}
+<%}%>

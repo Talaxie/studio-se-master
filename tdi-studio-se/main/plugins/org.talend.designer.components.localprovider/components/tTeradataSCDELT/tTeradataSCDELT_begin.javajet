@@ -1,0 +1,238 @@
+<%@ jet
+imports="
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.MetadataTalendType
+    org.talend.core.model.metadata.MappingTypeRetriever
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.commons.utils.StringUtils
+    java.util.Map
+    java.util.List
+    java.util.HashMap
+    java.util.ArrayList
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument)argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+       dbLog = new DBLogUtil(node);
+
+boolean reuseConn = "true".equals(ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__"));
+
+String dbname= ElementParameterParser.getValue(node, "__DBNAME__");
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbuser= ElementParameterParser.getValue(node, "__USER__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String reusedConn = null;
+if(reuseConn){
+    reusedConn = ElementParameterParser.getValue(node,"__CONNECTION__");
+    INode reusedNode = NodeUtil.getNodeByUniqueName(node.getProcess(), reusedConn);
+    dbname = ElementParameterParser.getValue(reusedNode,"__DBNAME__");
+    dbuser = ElementParameterParser.getValue(reusedNode,"__USER__");
+}
+
+boolean isDynamic = false;
+
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+Manager manager = getManager(dbmsId, cid, node);
+
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String srcTable = ElementParameterParser.getValue(node, "__TABLE_SRC__");
+String tableAction = ElementParameterParser.getValue(node, "__TABLE_ACTION__");
+String surrogateKey = ElementParameterParser.getValue(node,"__SURROGATE_KEY__");
+String surrogateKeyType = ElementParameterParser.getValue(node,"__SK_CREATION__");
+String sequenceName = ElementParameterParser.getValue(node,"__SK_DB_SEQUENCE__");
+
+%>
+    String dbUser_<%=cid %> = <%= dbuser %>;
+    String dbschema_<%=cid%> = <%= dbname %>;
+    String tableName_<%=cid%> = <%= table %>;
+    String sourceTable_<%=cid%> = dbschema_<%=cid%> + "." + <%= srcTable %>;
+<%
+List<IMetadataColumn> columnList = getColumnList(node);
+if(columnList != null && columnList.size() > 0) {//Tag_A
+    List<Column> stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null, true, surrogateKey, 1, 1);
+    List<Map<String, String>> sourceKeys = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__SOURCE_KEYS__");
+    boolean scdType1Enabled = "true".equals(ElementParameterParser.getValue(node, "__USE_L1__"));
+    List<Map<String, String>> type1Attributes = new ArrayList<Map<String, String>>();
+    if(scdType1Enabled) {
+        type1Attributes = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__L1_FIELDS__");
+    }
+    boolean scdType2Enabled = "true".equals(ElementParameterParser.getValue(node, "__USE_L2__"));
+    List<Map<String, String>> type2Attributes = new ArrayList<Map<String, String>>();
+    if(scdType2Enabled) {
+        type2Attributes = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__L2_FIELDS__");
+    }
+    boolean fieldValueHasNull = "true".equals(ElementParameterParser.getValue(node, "__FIELD_VALUE_INC_NULL__"));
+    if (reuseConn) {
+        String connectionName = "conn_" + reusedConn;
+        %>
+        java.sql.Connection conn_<%=cid%> = (java.sql.Connection) globalMap.get("<%=connectionName%>");
+        <%
+    } else {
+        %>
+        java.lang.Class.forName("com.teradata.jdbc.TeraDriver");
+<%
+        if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+        String url_<%=cid %> = "jdbc:teradata://" + <%=dbhost%> + "/DATABASE=" + <%=dbname%>;
+<%
+        } else {
+%>
+        String url_<%=cid%> = "jdbc:teradata://" + <%=dbhost%> + "/DATABASE=" + <%=dbname%> + "," + <%=dbproperties%>;
+<%
+        }
+%>
+        <%
+        String passwordFieldName = "__PASS__";
+        %>
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+        String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+
+        java.sql.Connection conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid %>, dbUser_<%=cid%>, dbPwd_<%=cid%>);
+        <%
+    }
+    %>
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_tableActionForOutput.javajet"%>
+
+    <%
+    boolean isEqualWithSK = false;
+    for(Map<String, String> sk : sourceKeys) {
+        if(surrogateKey.equals(sk.get("NAME"))) {
+            isEqualWithSK = true;
+            break;
+        }
+    }
+    String selectColumnString = "";
+    String columnNameString = "";
+    List<String> joinClause = new ArrayList<String>();
+    List<String> updateJoinClause = new ArrayList<String>();
+    for(Map<String, String> sk : sourceKeys) {
+        joinClause.add(" d." + sk.get("NAME") + " = t." + sk.get("NAME"));
+        updateJoinClause.add("\" + tableName_" + cid + " + \"." + sk.get("NAME") + " = t." + sk.get("NAME"));
+    }
+    String joinClauseString = StringUtils.join(joinClause.toArray(), " AND ");
+    String updateJoinClauseString = StringUtils.join(updateJoinClause.toArray(), " AND ");
+    if(scdType1Enabled) {
+        List<String> columnNames = new ArrayList<String>();
+        List<String> setColumns = new ArrayList<String>();
+        List<String> whereClause = new ArrayList<String>();
+        for(Map<String, String> sk : sourceKeys) {
+            if(isEqualWithSK) {
+                if(!sk.get("NAME").equals(surrogateKey)) {
+                    columnNames.add(sk.get("NAME"));
+                }
+            } else {
+                columnNames.add(sk.get("NAME"));
+            }
+        }
+        for(Map<String, String> type1Attribute : type1Attributes) {
+            columnNames.add(type1Attribute.get("NAME"));
+            setColumns.add(type1Attribute.get("NAME") + " = t." + type1Attribute.get("NAME"));
+            if(fieldValueHasNull){
+                whereClause.add("(\" + tableName_" + cid + " + \"." + type1Attribute.get("NAME") + " is null AND t." + type1Attribute.get("NAME")+" is not null )");
+                whereClause.add("(\" + tableName_" + cid + " + \"." + type1Attribute.get("NAME") + " is not null AND t." + type1Attribute.get("NAME")+" is null )");
+            }
+            whereClause.add("(\" + tableName_" + cid + " + \"." + type1Attribute.get("NAME") + " <> t." + type1Attribute.get("NAME")+")");
+        }
+        selectColumnString = StringUtils.join(columnNames.toArray(), ", t.");
+        columnNameString = StringUtils.join(columnNames.toArray(), ", ");
+        String setColumnsString = StringUtils.join(setColumns.toArray(), ", ");
+        String whereClauseString = StringUtils.join(whereClause.toArray(), " OR ");
+        %>
+        String updateForType1_<%=cid%> = "UPDATE " + tableName_<%=cid%> +" FROM "+ sourceTable_<%=cid%> + " t SET <%=setColumnsString%> WHERE <%=updateJoinClauseString%> AND (<%=whereClauseString%>)";
+        java.sql.Statement stmtType1Update_<%=cid%> = conn_<%=cid%>.createStatement();
+        stmtType1Update_<%=cid%>.executeUpdate(updateForType1_<%=cid%>);
+        stmtType1Update_<%=cid%>.close();
+        <%
+    }
+    String startDateField = ElementParameterParser.getValue(node,"__L2_STARTDATE_FIELD__");
+    String endDateField = ElementParameterParser.getValue(node,"__L2_ENDDATE_FIELD__");
+    boolean isEnableActive = "true".equals(ElementParameterParser.getValue(node,"__USE_L2_ACTIVE__"));
+    String activeField = ElementParameterParser.getValue(node,"__L2_ACTIVE_FIELD__");
+    boolean isEnableVersion = "true".equals(ElementParameterParser.getValue(node,"__USE_L2_VERSION__"));
+    String versionField = ElementParameterParser.getValue(node,"__L2_VERSION_FIELD__");
+    if(scdType2Enabled) {
+        List<String> whereClause = new ArrayList<String>();
+        List<String> updateWhereClause = new ArrayList<String>();
+        for (Map<String, String> type2Attribute : type2Attributes) {
+            if(fieldValueHasNull){
+                whereClause.add("(d." + type2Attribute.get("NAME") + " is null AND t." + type2Attribute.get("NAME")+" is not null )");
+                whereClause.add("(d." + type2Attribute.get("NAME") + " is not null AND t." + type2Attribute.get("NAME")+" is null )");
+                updateWhereClause.add("(\" + tableName_" + cid + " + \"." + type2Attribute.get("NAME") + " is null AND t." + type2Attribute.get("NAME")+" is not null )");
+                updateWhereClause.add("(\" + tableName_" + cid + " + \"." + type2Attribute.get("NAME") + " is not null AND t." + type2Attribute.get("NAME")+" is null )");
+            }
+            whereClause.add("(d." + type2Attribute.get("NAME") + " <> t." + type2Attribute.get("NAME")+")");
+            updateWhereClause.add("(\" + tableName_" + cid + " + \"." + type2Attribute.get("NAME") + " <> t." + type2Attribute.get("NAME")+")");
+        }
+        String whereClauseString = StringUtils.join(whereClause.toArray(), " OR ");
+        String updateWhereClauseString = StringUtils.join(updateWhereClause.toArray(), " OR ");
+        %>
+        String updateForType2_<%=cid%> = "UPDATE " + tableName_<%=cid%>
+                                        + " FROM " + sourceTable_<%=cid%> + " t"
+                                        + " SET <%=endDateField%> = cast('" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>")))
+                                        + "' as timestamp format 'YYYY-MM-DDBHH:MI:SS.S(F)')<%if(isEnableActive) {%>, <%=activeField%> = 0<%}%> "
+                                        + " WHERE <%=updateJoinClauseString%> AND (<%=updateWhereClauseString%>) AND " + tableName_<%=cid%> + ".<%=endDateField%> IS NULL";
+        java.sql.Statement stmtType2Update_<%=cid%> = conn_<%=cid%>.createStatement();
+        stmtType2Update_<%=cid%>.executeUpdate(updateForType2_<%=cid%>);
+        stmtType2Update_<%=cid%>.close();
+        <%
+        List<String> columnNames = new ArrayList<String>();
+        for(Map<String, String> sourceKey : sourceKeys) {
+            if(isEqualWithSK) {
+                if(!sourceKey.get("NAME").equals(surrogateKey)) {
+                    columnNames.add(sourceKey.get("NAME"));
+                }
+            } else {
+                columnNames.add(sourceKey.get("NAME"));
+            }
+        }
+        for(Map<String, String> type1Attribute : type1Attributes) {
+            columnNames.add(type1Attribute.get("NAME"));
+        }
+        for(Map<String, String> type2Attribute : type2Attributes) {
+            columnNames.add(type2Attribute.get("NAME"));
+        }
+        selectColumnString = StringUtils.join(columnNames.toArray(), ", t.");
+        columnNames.add(startDateField);
+        columnNames.add(endDateField);
+        if(isEnableActive) {
+            columnNames.add(activeField);
+        }
+        if(isEnableVersion) {
+            columnNames.add(versionField);
+        }
+        columnNameString = StringUtils.join(columnNames.toArray(), ", ");
+        %>
+        String insertForType2_<%=cid%> = "INSERT INTO " + tableName_<%=cid%> + "(<%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%><%=surrogateKey%>, <%}%><%=columnNameString%>) SELECT <%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>" + <%=sequenceName%> + ".NEXTVAL, <%}%>t.<%=selectColumnString%>, cast('" +
+        (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "' as timestamp format 'YYYY-MM-DDBHH:MI:SS.S(F)'), NULL<%if(isEnableActive) {%>, 1<%}%><%if(isEnableVersion) {%>, d.<%=versionField%> + 1<%}%> FROM " +
+        sourceTable_<%=cid%> + " t, " + tableName_<%=cid%> + " d WHERE <%=joinClauseString%> AND (<%=whereClauseString%>) AND d.<%=endDateField%> = cast('" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "' as timestamp format 'YYYY-MM-DDBHH:MI:SS.S(F)')";
+        java.sql.Statement stmtType2Insert_<%=cid%> = conn_<%=cid%>.createStatement();
+        stmtType2Insert_<%=cid%>.executeUpdate(insertForType2_<%=cid%>);
+        stmtType2Insert_<%=cid%>.close();
+        <%
+    }
+
+    List<String> outerWhereClause = new ArrayList<String>();
+    for (Map<String, String> sk : sourceKeys) {
+        outerWhereClause.add(" d." + sk.get("NAME") + " IS NULL");
+    }
+    String outerWhereClauseString = StringUtils.join(outerWhereClause.toArray(), " AND ");
+    %>
+    String insert_<%=cid%> = "INSERT INTO " + tableName_<%=cid%> + "(<%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%><%=surrogateKey%>, <%}%><%=columnNameString%>) SELECT <%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>" + <%=sequenceName%> + ".NEXTVAL, <%}%>t.<%=selectColumnString%>"<%if(scdType2Enabled) {%> + ", cast('" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "' as timestamp format 'YYYY-MM-DDBHH:MI:SS.S(F)'), NULL"<%}%>
+    + "<%if(scdType2Enabled && isEnableActive) {%>, 1<%}%><%if(scdType2Enabled && isEnableVersion) {%>, 1<%}%> FROM " +
+    sourceTable_<%=cid%> + " t LEFT JOIN " + tableName_<%=cid%> + " d ON <%=joinClauseString%> WHERE (<%=outerWhereClauseString%>)";
+    java.sql.Statement stmtInsert_<%=cid%> = conn_<%=cid%>.createStatement();
+    stmtInsert_<%=cid%>.executeUpdate(insert_<%=cid%>);
+    stmtInsert_<%=cid%>.close();
+    <%
+}//TagA
+%>

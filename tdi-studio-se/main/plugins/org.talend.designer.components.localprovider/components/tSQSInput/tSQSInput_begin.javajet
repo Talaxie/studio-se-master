@@ -1,0 +1,51 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+    boolean visibilityTimeout = "true".equals(ElementParameterParser.getValue(node,"__VISIBILITY_TIMEOUT__"));
+    boolean isCustomeWaitTime = "true".equals(ElementParameterParser.getValue(node,"__CUSTOM_WAIT_TIME__"));
+    boolean deleteMessages = "true".equals(ElementParameterParser.getValue(node,"__DELETE_MESSAGE__"));
+    boolean readAllMessages = "true".equals(ElementParameterParser.getValue(node,"__READ_ALL_MESSAGE__"));
+    boolean getAttributes = "true".equals(ElementParameterParser.getValue(node,"__GET_ATTRIBUTES__"));
+    boolean getMessageAttributes = "true".equals(ElementParameterParser.getValue(node,"__GET_MESSAGE_ATTRIBUTES__"));
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+    
+    String visibilityTimeoutValue = ElementParameterParser.getValue(node,"__VISIBILITY_TIMEOUT_VALUE__");
+    String waitTime = ElementParameterParser.getValue(node,"__WAIT_TIME__");
+    String maxNumerMessages = ElementParameterParser.getValue(node,"__MAX_NUMBER_MESSAGES__");
+	%>
+	<%@ include file="../tSQSConnection/SQSClient.javajet" %>
+	
+	int nbline_<%=cid %> = 0;
+	
+	try{
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Receiving messages from :" + <%=queueUrl%>);
+		<%
+		}
+		%>
+		com.amazonaws.services.sqs.model.ReceiveMessageRequest <%=cid%>_receiveMessageRequest = new com.amazonaws.services.sqs.model.ReceiveMessageRequest(<%=queueUrl%>)
+		<% if (visibilityTimeout){ %>.withVisibilityTimeout(<%=visibilityTimeoutValue%>)<% } %>
+		<% if (isCustomeWaitTime){ %>.withWaitTimeSeconds(<%=waitTime%>)<% } %>
+		<% if (getAttributes){ %>.withAttributeNames("All")<% } %>
+		<% if (getMessageAttributes){ %>.withMessageAttributeNames("All")<% } %>.withMaxNumberOfMessages(<%=maxNumerMessages%>);
+		
+		List<com.amazonaws.services.sqs.model.Message> <%=cid%>_messages = null;
+		boolean isContinueReceive_<%=cid%> = true;
+		while (isContinueReceive_<%=cid%>) {
+			<%=cid%>_messages = conn_<%=cid%>.receiveMessage(<%=cid%>_receiveMessageRequest).getMessages();
+ 			for (com.amazonaws.services.sqs.model.Message <%=cid%>_message : <%=cid%>_messages) {
+ 				nbline_<%=cid %>++;
+		

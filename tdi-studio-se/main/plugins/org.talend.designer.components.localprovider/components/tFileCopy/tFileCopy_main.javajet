@@ -1,0 +1,274 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+
+	INode node = (INode)codeGenArgument.getArgument();
+
+	String cid = node.getUniqueName();
+
+	String fileName = ElementParameterParser.getValue(node, "__FILENAME__");	
+
+	String destination  = ElementParameterParser.getValue(node, "__DESTINATION__");
+	
+	boolean rename = ("true").equals(ElementParameterParser.getValue(node, "__RENAME__"));
+	
+	String destination_filename  = ElementParameterParser.getValue(node, "__DESTINATION_RENAME__");
+
+	boolean isCopyADir = ("true").equals(ElementParameterParser.getValue(node, "__ENABLE_COPY_DIRECTORY__"));
+	
+	boolean reFile = ("true").equals(ElementParameterParser.getValue(node, "__REMOVE_FILE__"));
+
+	boolean rpFile = ("true").equals(ElementParameterParser.getValue(node,"__REPLACE_FILE__"));
+
+	boolean creatDir = ("true").equals(ElementParameterParser.getValue(node,"__CREATE_DIRECTORY__"));
+	
+	boolean failOn = ("true").equals(ElementParameterParser.getValue(node,"__FAILON__"));
+	
+	boolean forceCopyAndDelete = ("true").equals(ElementParameterParser.getValue(node,"__FORCE_COPY_DELETE__")) && reFile;
+
+	boolean preserveModifiedTime = ("true").equals(ElementParameterParser.getValue(node,"__PRESERVE_LAST_MODIFIED_TIME__"));
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	log4jFileUtil.componentStartInfo(node);
+	
+	if (isCopyADir){ // copy a directory
+%>     
+        String srcFileFolderPath_<%=cid %> = <%=ElementParameterParser.getValue(node, "__SOURCE_DERECTORY__")%>;
+
+        String desFileFolderPath_<%=cid %> = <%=ElementParameterParser.getValue(node, "__DESTINATION__")%>;
+		
+		java.io.File srcFileFolder_<%=cid %> = new java.io.File(srcFileFolderPath_<%=cid %>);
+
+		java.io.File desFileFolder_<%=cid %> = new java.io.File(desFileFolderPath_<%=cid %>);
+
+		int srcFilePathLength_<%=cid %> = srcFileFolder_<%=cid %>.getPath().length();
+
+		String srcFolderName_<%=cid %> = srcFileFolder_<%=cid %>.getName();
+
+		java.io.File newDesFileFolder_<%=cid %> = new java.io.File(desFileFolder_<%=cid %>, srcFolderName_<%=cid %>);
+      
+		class CopyDirectory_<%=cid %> {		
+
+			public void copyAllFiles(java.io.File rootFolder, int pathLength, java.io.File newDesFileFolder) {
+
+				java.io.File[] fileList = rootFolder.listFiles();
+				if(fileList!=null){
+					if (fileList.length > 0) {
+					
+						for (java.io.File file : fileList) {
+	
+							if (file.isDirectory()) {
+								copyAllFiles(file, pathLength, newDesFileFolder);
+							} else {
+							
+								String srcFilePath = file.getPath();
+	
+								String temFileName = srcFilePath.substring(pathLength);
+	
+								java.io.File desFile = new java.io.File(newDesFileFolder, temFileName);
+	
+								String desFilePath = desFile.getPath();
+	
+								java.io.File parentFile = desFile.getParentFile();
+	
+								if (!parentFile.exists()) {
+									parentFile.mkdirs();
+								}
+	
+								try	{				
+									org.talend.FileCopy.copyFile(srcFilePath, desFilePath, false, <%=preserveModifiedTime%>);
+								} catch (java.lang.Exception e){ 
+                                   globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+									if (failOn) {
+%>
+										throw new RuntimeException("<%=cid%> - " + e.getMessage());
+<%
+									} else if(isLog4jEnabled) {
+%>
+										log.error("<%=cid%> - " + e.getMessage());
+<%
+									} else {
+%>
+										System.err.println("<%=cid%> - " + e.getMessage());
+<%
+									}
+%>
+								}
+							}
+	
+						}
+					} else{ //it is an empty folder.
+	        
+						String srcFolderPath = rootFolder.getPath();
+	
+						String temFolderName = srcFolderPath.substring(pathLength);
+	
+						java.io.File desFolder = new java.io.File(newDesFileFolder, temFolderName);
+						desFolder.mkdirs();
+					} 
+        		}else{
+					String errorMessageInputOutputErrorOccurs_<%=cid %> = String.format("Path name \"%s\" does not denote a directory, or if an I/O error occurs.", rootFolder.getPath());
+<%
+					if (failOn) {
+%>
+						throw new RuntimeException(errorMessageInputOutputErrorOccurs_<%=cid %>);
+<%
+					} else if(isLog4jEnabled) {
+%>
+						log.error("<%=cid%>" +  errorMessageInputOutputErrorOccurs_<%=cid %>);
+						globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageInputOutputErrorOccurs_<%=cid %>);
+<%
+					} else {
+%>
+						System.err.println(errorMessageInputOutputErrorOccurs_<%=cid %>);
+						globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageInputOutputErrorOccurs_<%=cid %>);
+<%
+					}
+%>
+        		}
+			}
+		}
+    
+		CopyDirectory_<%=cid %> copyDir_<%=cid %> = new CopyDirectory_<%=cid %>();	  
+		copyDir_<%=cid %>.copyAllFiles(srcFileFolder_<%=cid %>, srcFilePathLength_<%=cid %>,newDesFileFolder_<%=cid %>);
+
+		globalMap.put("<%=cid %>_SOURCE_DIRECTORY", srcFileFolderPath_<%=cid %>);
+		globalMap.put("<%=cid %>_DESTINATION_DIRECTORY", desFileFolderPath_<%=cid %>);
+
+<% 
+	} else { //copy a file
+%>
+
+        String srcFileName_<%=cid %> = <%=fileName %>;
+
+		java.io.File srcFile_<%=cid %> = new java.io.File(srcFileName_<%=cid %>);
+
+		// here need check first, before mkdirs().
+		if (!srcFile_<%=cid %>.exists() || !srcFile_<%=cid %>.isFile()) {
+			String errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%> = String.format("The source File \"%s\" does not exist or is not a file.", srcFileName_<%=cid %>);
+<%
+			if (failOn) {
+%>
+				throw new RuntimeException(errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%>);
+<%
+			} else if (isLog4jEnabled) {
+%>
+				log.error(errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%>);
+				globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%>);
+<%
+			} else {
+%>
+				System.err.println(errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%>);
+				globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageFileDoesnotExistsOrIsNotAFile_<%=cid%>);
+<%
+			}
+%>
+		}
+        String desDirName_<%=cid %> = <%=destination %>;
+
+		String desFileName_<%=cid %> = <%if(rename){%> <%=destination_filename %> <%}else{%> srcFile_<%=cid %>.getName() <%}%>;
+
+		if (desFileName_<%=cid %> != null && ("").equals(desFileName_<%=cid %>.trim())){
+			desFileName_<%=cid %> = "NewName.temp";
+		}
+
+		java.io.File desFile_<%=cid %> = new java.io.File(desDirName_<%=cid %>, desFileName_<%=cid %>);
+
+		if (!srcFile_<%=cid %>.getPath().equals(desFile_<%=cid %>.getPath()) <%if (!rpFile){%> && !desFile_<%=cid %>.exists() <%}%> ) {
+<%
+			if (creatDir){
+%>
+				java.io.File parentFile_<%=cid %> = desFile_<%=cid %>.getParentFile();
+
+				if (parentFile_<%=cid %> != null && !parentFile_<%=cid %>.exists()) {
+					parentFile_<%=cid %>.mkdirs();
+				}
+<%
+			}
+			if (!failOn) {
+%>           
+				try {
+<%
+			}
+			if(!forceCopyAndDelete) {
+%>
+					org.talend.FileCopy.copyFile(srcFile_<%=cid %>.getPath(), desFile_<%=cid %>.getPath(), <%=reFile %>, <%=preserveModifiedTime%>);
+<%
+			} else {
+%>
+					org.talend.FileCopy.forceCopyAndDelete(srcFile_<%=cid %>.getPath(), desFile_<%=cid %>.getPath(),<%=preserveModifiedTime%>);
+<%
+			}
+			if (!failOn) {
+%>
+				} catch (Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+<%
+					if (isLog4jEnabled) {
+%>
+						log.error("<%=cid %> " + e.getMessage());
+<%
+					} else {
+%>
+						System.err.println("<%=cid %> " + e.getMessage());
+<%
+					}
+%>
+				}
+<%
+			}
+			if(reFile) {
+%>
+				java.io.File isRemoved_<%=cid %> = new java.io.File(<%=fileName%>);
+				if(isRemoved_<%=cid %>.exists()) {
+					String errorMessageCouldNotRemoveFile_<%=cid%> = String.format("<%=cid%> - The source file \"%s\" could not be removed from the folder because it is open or you only have read-only rights.", srcFileName_<%=cid %>);
+<%
+					if (failOn) {
+%>
+						throw new RuntimeException(errorMessageCouldNotRemoveFile_<%=cid%>);
+<%
+					} else if(isLog4jEnabled) {
+%>
+						log.error(errorMessageCouldNotRemoveFile_<%=cid%>);
+						globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageCouldNotRemoveFile_<%=cid%>);
+<%
+					} else {
+%>
+						System.err.println(errorMessageCouldNotRemoveFile_<%=cid%> + "\n");
+						globalMap.put("<%=cid %>_ERROR_MESSAGE", errorMessageCouldNotRemoveFile_<%=cid%>);
+<%
+					}
+%>
+				} 
+<%
+				if(isLog4jEnabled) {
+%>
+				else {
+					log.info("<%=cid%> - The source file \"" + srcFileName_<%=cid %> + "\" is deleted.");
+				}
+<%
+				}
+			}
+%>
+
+		}
+		globalMap.put("<%=cid %>_DESTINATION_FILEPATH",desFile_<%=cid %>.getPath()); 
+		globalMap.put("<%=cid %>_DESTINATION_FILENAME",desFile_<%=cid %>.getName()); 
+
+		globalMap.put("<%=cid %>_SOURCE_DIRECTORY", srcFile_<%=cid %>.getParent());
+		globalMap.put("<%=cid %>_DESTINATION_DIRECTORY", desFile_<%=cid %>.getParent());
+<%
+	}
+	
+%>

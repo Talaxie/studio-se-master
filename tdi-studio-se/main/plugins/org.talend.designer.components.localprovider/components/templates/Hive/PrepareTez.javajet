@@ -1,0 +1,114 @@
+<%@ jet %>
+
+<%
+class PrepareTez{
+	public void invoke(INode node, String cid){
+        String hiveDistribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+        String hiveVersion = ElementParameterParser.getValue(node, "__HIVE_VERSION__");
+
+        org.talend.hadoop.distribution.component.HiveComponent hiveDistrib = null;
+        try {
+            hiveDistrib = (org.talend.hadoop.distribution.component.HiveComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(hiveDistribution, hiveVersion);
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+        }
+
+        boolean isCustom = hiveDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+
+        boolean changePathSeparator = !hiveDistrib.isExecutedThroughWebHCat();
+
+        String connectionMode = ElementParameterParser.getValue(node, "__CONNECTION_MODE__");
+        List<Map<String, String>> advProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_PROPERTIES__");
+        String dbuser = ElementParameterParser.getValue(node, "__USER__");
+        
+        boolean useTez = "tez".equals(ElementParameterParser.getValue(node, "__EXECUTION_ENGINE__"));
+    	boolean supportTez = (isCustom || hiveDistrib.doSupportTezForHive()) && "EMBEDDED".equals(connectionMode);
+    	if(supportTez && useTez){
+    	%>
+    		init_<%=cid%>.execute("SET hive.execution.engine=tez");
+            <%
+            if(advProps != null){
+                for(Map<String, String> item : advProps){
+                    if("\"tez.lib.uris\"".equals(item.get("PROPERTY"))){
+                    %>
+                        System.err.println("Please set the path of Tez lib in 'Tez lib path'!");
+                    <%  
+                    }
+                }
+            }
+            boolean installTez = "INSTALL".equals(ElementParameterParser.getValue(node, "__TEZ_LIB__"));
+            if(installTez){
+                //prepare the folder
+                %>
+                <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Hive/GetFileSystem.javajet"%>
+                <%  
+                (new GetFileSystem()).invoke(node, cid);
+                String tezLibFolder = ElementParameterParser.getValue(node, "__TEZ_LIB_FOLDER__");
+                boolean useDefaultTezLibFolder = "\"/tmp/{USERNAME}/talend_tez_libs/{custom|HIVE_VERSION}\"".equals(tezLibFolder);
+                if(useDefaultTezLibFolder){
+                %>
+                    String hdfsUserName_<%=cid%> = (<%=dbuser%> != null && !"".equals(<%=dbuser%>)) ? <%=dbuser%> : System.getProperty("user.name");
+                    String tezLibPath_<%=cid%> = "/tmp/" + hdfsUserName_<%=cid%> + "/talend_tez_libs/<%=isCustom?"custom":hiveVersion%>";
+                <%
+                }else{
+                %>
+                    String tezLibPath_<%=cid%> = <%=tezLibFolder%>;
+                <%
+                }
+                %>
+                fs_<%=cid%>.mkdirs(new org.apache.hadoop.fs.Path(tezLibPath_<%=cid%>));
+                <%
+                List<String> tezLibJarsName = new java.util.ArrayList<String>();
+                if(isCustom){
+                    List<Map<String,String>> tezLibJarsNameValue = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__TEZ_LIB_NAME__");
+                    for(Map<String, String> tezLibJarsNameV : tezLibJarsNameValue){
+                        tezLibJarsName.add(tezLibJarsNameV.get("JAR_NAME"));
+                    }
+                }else{
+                    String tezLibJarsNameValue = ElementParameterParser.getValue(node, "__TEZ_JARS_NAME__");
+                    if(tezLibJarsNameValue != null && !"".equals(tezLibJarsNameValue)){
+                        tezLibJarsName = java.util.Arrays.asList(tezLibJarsNameValue.split(","));
+                    }
+                }
+                %>
+                String[] classPaths_<%=cid%> = System.getProperty("java.class.path").split(<%if(changePathSeparator){%>String.valueOf(globalMap.get("current_client_path_separator"))<%}else{%>System.getProperty("path.separator")<%}%>);
+                String tezLibLocalPath_<%=cid%> = null;
+                for(String classPath_<%=cid%> : classPaths_<%=cid%>){
+                    <%
+                    for(String jarName : tezLibJarsName){
+                    %>
+                        if(classPath_<%=cid%>.endsWith("<%=jarName%>")){
+                            org.apache.hadoop.fs.Path tezJarPath_<%=cid%> = new org.apache.hadoop.fs.Path(tezLibPath_<%=cid%> + "/<%=jarName%>");
+                            if(!fs_<%=cid%>.exists(tezJarPath_<%=cid%>)){
+                                fs_<%=cid%>.copyFromLocalFile(false, false, new org.apache.hadoop.fs.Path(classPath_<%=cid%>), tezJarPath_<%=cid%>);
+                            }
+                        }
+                    <%
+                    }
+                    %>
+                }
+            <%
+            }else{
+            %>
+                String tezLibPath_<%=cid%> = <%=ElementParameterParser.getValue(node, "__TEZ_LIB_PATH__")%>;
+            <%
+            }
+            //define the location of tez lib    
+            %>
+			StringBuilder script_<%=cid%> = new StringBuilder();
+			String[] tezLibPaths_<%=cid%> = tezLibPath_<%=cid%>.split(",");
+			script_<%=cid%>.append("SET tez.lib.uris=");
+			int tezLibPathCount_<%=cid%> = 1;
+			for(String tezLibPathKey_<%=cid%> : tezLibPaths_<%=cid%>){
+				 script_<%=cid%>.append(<%=ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__")%> + "/" + tezLibPathKey_<%=cid%>);
+				 if(tezLibPathCount_<%=cid%> < tezLibPaths_<%=cid%>.length){
+				 	script_<%=cid%>.append(",");
+				 }
+				 tezLibPathCount_<%=cid%>++;
+			}
+			init_<%=cid%>.execute(script_<%=cid%>.toString());
+		<%
+    	}
+    }
+}
+%>

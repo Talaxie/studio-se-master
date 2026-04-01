@@ -1,0 +1,51 @@
+<%@ jet 
+%>
+
+<%
+	//withSystemPropertyDerivedIdentityMaterial() and withSystemPropertyDerivedTrustMaterial() method can append the system property ssl setting for current tsetkeystore, 
+	//but now don't want to promise that as not sure user need it as user can use this mode always for all tsetkeystore
+%>
+final routines.system.SingletonHolder singletonHolder_<%=cid%> = routines.system.SingletonHolder.getInstance();
+synchronized(singletonHolder_<%=cid%>) {
+	nl.altindag.ssl.SSLFactory.Builder sslFactoryBuilder_<%=cid%> = nl.altindag.ssl.SSLFactory.Builder.class.cast(singletonHolder_<%=cid%>.get("sslFactoryBuilder"));
+	if(sslFactoryBuilder_<%=cid%> == null) {
+		sslFactoryBuilder_<%=cid%> = nl.altindag.ssl.SSLFactory.builder()
+		.withDefaultTrustMaterial()
+		.withSystemTrustMaterial();
+	}
+	
+<%
+	String passwordFieldName = "__SSL_TRUSTSERVER_PASSWORD__";
+%>
+	<%if(set_truststore){%>	
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		
+		if(!singletonHolder_<%=cid%>.containsKey(<%=trustStorePath %>)) { 
+			sslFactoryBuilder_<%=cid%>.withTrustMaterial(java.nio.file.Paths.get(<%=trustStorePath %>), decryptedPassword_<%=cid%>==null ? null : decryptedPassword_<%=cid%>.toCharArray(), "<%=trustStoreType %>");
+			singletonHolder_<%=cid%>.put(<%=trustStorePath %>, true);
+		}
+	<%}%>
+	
+	<%
+	if(needClientAuth){
+		passwordFieldName = "__SSL_KEYSTORE_PASSWORD__";
+	%>
+		<%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+		String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+		<%} else {%>
+		String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+		<%}%>
+		
+		if(!singletonHolder_<%=cid%>.containsKey(<%=keyStorePath %>)) {
+			sslFactoryBuilder_<%=cid%>.withIdentityMaterial(java.nio.file.Paths.get(<%=keyStorePath %>), decryptedPwd_<%=cid%>==null ? null : decryptedPwd_<%=cid%>.toCharArray(), "<%=keyStoreType %>");
+			singletonHolder_<%=cid%>.put(<%=keyStorePath %>, true);
+		}
+	<%}%>
+	
+	final nl.altindag.ssl.SSLFactory sslFactory_<%=cid%> = sslFactoryBuilder_<%=cid%>.build();
+	
+	singletonHolder_<%=cid%>.put("sslFactoryBuilder", sslFactoryBuilder_<%=cid%>);
+	
+	javax.net.ssl.SSLContext.setDefault(sslFactory_<%=cid%>.getSslContext());
+	javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sslFactory_<%=cid%>.getSslContext().getSocketFactory());
+}

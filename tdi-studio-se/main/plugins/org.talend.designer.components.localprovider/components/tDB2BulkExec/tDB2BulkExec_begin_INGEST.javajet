@@ -1,0 +1,598 @@
+<%@ jet %>
+class FileFinder{
+    public String getFilePathJoinedWithComma(java.io.File targetFolder, String globPattern, boolean willRecurse){
+        boolean useGlobPattern = (globPattern != null && !"".equals(globPattern));
+        if(!targetFolder.isDirectory()){
+            throw new RuntimeException(targetFolder.getAbsolutePath() + "is not a folder.");
+        }
+        java.util.Collection<java.io.File> collection = org.apache.commons.io.FileUtils.listFiles(targetFolder, null, willRecurse);
+        StringBuilder strBuilder = new StringBuilder();
+        boolean runOnWindows = "\\".equals(System.getProperty("file.separator"));
+        int counter = 0;
+        if(useGlobPattern){
+            java.nio.file.PathMatcher matcher = java.nio.file.FileSystems.getDefault().getPathMatcher("glob:" + globPattern);
+        for(java.io.File file: collection){
+                if(file.isDirectory()){
+                   continue;
+                }
+            if(matcher.matches(new java.io.File(file.getName()).toPath())){
+                    if(counter != 0){
+                        strBuilder.append(", ");
+                    }
+                    String fileAbsPath = file.getAbsolutePath();
+                    if(runOnWindows){
+                           fileAbsPath = fileAbsPath.replace("/","\\");
+                    }
+                        strBuilder.append(fileAbsPath);
+                        counter ++;
+                    }
+            }
+        }else{
+            for(java.io.File file: collection){
+                if(file.isDirectory()){
+                   continue;
+                }
+                if(counter != 0){
+                    strBuilder.append(", ");
+                }
+                String fileAbsPath = file.getAbsolutePath();
+                if(runOnWindows){
+                       fileAbsPath = fileAbsPath.replace("/","\\");
+                }
+                    strBuilder.append(fileAbsPath);
+                    counter ++;
+                }
+        }
+        return strBuilder.toString();
+    }
+}
+String runtimeFileSep_<%= cid %> = System.getProperty("file.separator");
+boolean runOnWindows_<%= cid %> = "\\".equals(runtimeFileSep_<%= cid %>);
+java.util.Map<String,String> fileSeparatorMapping_<%= cid %> = new java.util.HashMap<>();
+fileSeparatorMapping_<%= cid %>.put("\\", "/");
+fileSeparatorMapping_<%= cid %>.put("/", "\\");
+<%
+class IMetadataColumnEnhance{
+    private IMetadataColumn iMetadataColumn;
+    private boolean isTableColumn;
+    private String startPosition;
+    private String endPosition;
+    private String expression = null;
+    public IMetadataColumnEnhance(IMetadataColumn iMetadataColumn, boolean isTableColumn, String startPosition, String endPosition, String expression){
+        this.iMetadataColumn = iMetadataColumn;
+        this.isTableColumn = isTableColumn;
+        this.startPosition = startPosition;
+        this.endPosition = endPosition;
+        this.expression = expression;
+    }
+    public String getExpression(){
+        return this.expression;
+    }
+
+    public IMetadataColumn getIMetadataColumn(){
+        return this.iMetadataColumn;
+    }
+
+    public boolean isTableColumn(){
+        return this.isTableColumn;
+    }
+
+    public String getStartPosition(){
+        return this.startPosition;
+    }
+
+    public String getEndPosition(){
+        return this.endPosition;
+    }
+}
+
+Map<String,String> ingestDataTypeMapping = new HashMap<String, String>();
+ingestDataTypeMapping.put("BIGINT", "BIGINT");
+ingestDataTypeMapping.put("BLOB", "UNSUPPORTED");
+ingestDataTypeMapping.put("CHAR", "CHAR");
+ingestDataTypeMapping.put("CHARACTER", "CHARACTER");
+ingestDataTypeMapping.put("CLOB", "UNSUPPORTED");
+ingestDataTypeMapping.put("DATE", "DATE");
+ingestDataTypeMapping.put("DECIMAL", "DECIMAL");
+ingestDataTypeMapping.put("DOUBLE", "DOUBLE");
+ingestDataTypeMapping.put("FLOAT", "FLOAT");
+ingestDataTypeMapping.put("GRAPHIC", "UNSUPPORTED");
+ingestDataTypeMapping.put("INTEGER", "INTEGER");
+ingestDataTypeMapping.put("LONG VARCHAR", "CHARACTER");
+ingestDataTypeMapping.put("NUMERIC", "DECIMAL");
+ingestDataTypeMapping.put("SMALLINT", "SMALLINT");
+ingestDataTypeMapping.put("TIME", "TIME");
+ingestDataTypeMapping.put("TIMESTAMP", "TIMESTAMP");
+ingestDataTypeMapping.put("VARCHAR", "CHARACTER");
+ingestDataTypeMapping.put("VARGRAPHIC", "UNSUPPORTED");
+ingestDataTypeMapping.put("XML", "UNSUPPORTED");
+if(columnList != null && columnList.size()>0){
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+    %>
+       <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_tableActionForBulk.javajet"%>
+    <%
+}
+List<IMetadataTable> metadataList = node.getMetadataList();
+String operationType = ElementParameterParser.getValue(node, "__DATA_ACTION_TYPE__");
+boolean generateValStatement = true;
+boolean generateFieldDefinition = true;
+String loadFrom = ElementParameterParser.getValue(node, "__LOAD_FROM__");
+if("folder".equals(loadFrom)){
+%>
+   FileFinder fileFinder_<%= cid %> = new FileFinder();
+<%
+}
+boolean addExternal4Numeric = "false".equals(ElementParameterParser.getValue(node, "__NUMERIC_REPRESENT_IN_BINARY__"));
+String pipeName = ElementParameterParser.getValue(node, "__PIPE_NAME__");
+String targetLoadFile = ElementParameterParser.getValue(node, "__DATA__");
+String targetFolder = ElementParameterParser.getValue(node, "__TARGET_FOLDER__");
+String filePattern = ElementParameterParser.getValue(node, "__FILE_INCLUDE_FILTER__");
+       if(filePattern == null || "".equals(filePattern)){
+            filePattern = null;
+       }
+boolean willRecurse = "true".equals(ElementParameterParser.getValue(node, "__RECURSE_DIRECTORY__"));
+String optionallyEnclosedBy = ElementParameterParser.getValue(node, "__OPTIONALLY_ENCLOSED_BY__");
+boolean applyOptionallyEnclosedBy = false;
+String contentFormat = ElementParameterParser.getValue(node, "__CONTENT_FORMAT__");
+String fieldDelimitedBy = ElementParameterParser.getValue(node, "__FIELD_DELIMITED_BY__");
+String recordLgth = ElementParameterParser.getValue(node, "__RECORDLEN__");
+String codePage = ElementParameterParser.getValue(node, "__INPUT_CODE_PAGE__");
+String loadTable = ElementParameterParser.getValue(node, "__TABLE__");
+boolean customInsertValuesClause = "true".equals(ElementParameterParser.getValue(node, "__CUSTOM_INSERT_VALUES_CLAUSE__"));
+String insertValsClause = ElementParameterParser.getValue(node, "__INSERT_VALUES_CLAUSE__");
+boolean customSetMapping = "true".equals(ElementParameterParser.getValue(node, "__CUSTOM_SET_MAPPING__"));
+    if(useExistingConnection){
+        String reusedConn = ElementParameterParser.getValue(node,"__CONNECTION__");
+        INode nodeY = NodeUtil.getNodeByUniqueName(node.getProcess(), reusedConn);
+        dbschema = ElementParameterParser.getValue(nodeY,"__TABLESCHEMA__");
+        db = ElementParameterParser.getValue(nodeY,"__DBNAME__");
+        user = ElementParameterParser.getValue(nodeY,"__USER__");
+        String passwordFieldName = "__PASS__";
+        %>
+        <%if(ElementParameterParser.canEncrypt(nodeY, passwordFieldName)){%>
+            final String decryptedPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(nodeY, passwordFieldName)%>);
+        <%}else{%>
+            final String decryptedPassword_<%=cid%> = <%= ElementParameterParser.getValue(nodeY, passwordFieldName)%>;
+        <%}%>
+        String dbPwd_<%= cid %> = decryptedPassword_<%=cid%>;
+        <%
+    }
+%>
+    String fullTableName_<%= cid %> = <%= loadTable %>;
+    if(!"".equals(<%= dbschema %>) && !"\"\"".equals(<%= dbschema %>) && <%= dbschema %> != null){
+        fullTableName_<%= cid %> = "\"" + <%= dbschema %> + "\".\"" + fullTableName_<%= cid %> + "\"";
+    }
+<%
+//Error handling options
+boolean useErrHandlingOptions = "true".equals(ElementParameterParser.getValue(node, "__ERROR_HANDLING_OPTIONS__"));
+String errFileType = ElementParameterParser.getValue(node, "__ERR_FILE_TYPE__");
+String errFileName = ElementParameterParser.getValue(node, "__ERR_FILE_NAME__");
+String errFileTypeCmd = null;
+String messagesFileName = ElementParameterParser.getValue(node, "__MSG_FILE_NAME__");
+boolean willRestartJob = "true".equals(ElementParameterParser.getValue(node, "__WILL_RESTART_JOB__"));
+String restartJobType = ElementParameterParser.getValue(node, "__RESTART_JOB_TYPE__");
+boolean restartJobOFF = "OFF".equals(restartJobType);
+String restartJobId = ElementParameterParser.getValue(node, "__JOB_ID__");
+String exceptionTable = ElementParameterParser.getValue(node, "__EXCEPTION_TABLE__");
+String warningCount = ElementParameterParser.getValue(node, "__WARNINGCOUNT__");
+String scriptStorageFolder = ElementParameterParser.getValue(node, "__SCRIPT_STORAGE_FOLDER__");
+%>
+   String scriptPath_<%= cid %> = <%= scriptStorageFolder %>;
+<%
+List<Map<String, String>> columnsDetail = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__EXISTS_IN_TABLE_COLUMN__");
+List<Map<String, String>> setMapping = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SET_MAPPING__");
+List<IMetadataColumnEnhance> iMetadataColumnEnhanceList = new ArrayList<IMetadataColumnEnhance>();
+if((metadataList != null) && (metadataList.size() > 0)){
+    IMetadataTable metadata = metadataList.get(0);
+    if(metadata != null){
+       List<IMetadataColumn> columnListA = metadata.getListColumns();
+       int idx = 0;
+       for(IMetadataColumn imetadataColumn: columnListA){
+          iMetadataColumnEnhanceList.add(
+                   new IMetadataColumnEnhance(
+                        imetadataColumn
+                      , "true".equals(columnsDetail.get(idx).get("CORRESPOND_TO_THE_TABLE_COLUMN"))
+                      , columnsDetail.get(idx).get("START")
+                      , columnsDetail.get(idx).get("END")
+                      , setMapping.get(idx).get("EXPRESSION")
+                                              )
+                      );
+          idx ++;
+       }
+    }
+}
+String whereClause = ElementParameterParser.getValue(node, "__WHERE_CLAUSE__");
+String mergeClause = ElementParameterParser.getValue(node, "__MERGE_CLAUSE__");
+%>
+
+<%
+    if ((metadataList != null) && (metadataList.size() > 0)){//-> Tag1
+        IMetadataTable metadata = metadataList.get(0);
+        if(metadata != null){//-> Tag2
+            List<IMetadataColumn> tableColumnList = metadata.getListColumns();
+            if(tableColumnList.size() <= 0){
+                generateValStatement = false;
+                generateFieldDefinition = false;
+            }
+               %>
+                     String columnDelimiter_<%= cid %> = ", ";
+                     StringBuilder ingestCmd_<%= cid %> = new StringBuilder("ingest data from");
+                  <% /* It is best to write the delimiter at the beginning of the field. */ %>
+                     ingestCmd_<%= cid %>.append(" <%= "folder".equals(loadFrom) ? "file" : loadFrom %> ");
+                  <%
+                  if("file".equals(loadFrom)){
+                  %>
+                     ingestCmd_<%= cid %>.append((<%= targetLoadFile %>).replace(
+                                                                                 fileSeparatorMapping_<%= cid %>.get(runtimeFileSep_<%= cid %>)
+                                                                                 , runtimeFileSep_<%= cid %>)
+                                                                               );
+                  <%
+                  }else if("pipe".equals(loadFrom)){
+                  %>
+                     ingestCmd_<%= cid %>.append(<%= pipeName %>);
+                  <%
+                  }else if("folder".equals(loadFrom)){
+                  %>
+                     ingestCmd_<%= cid %>.append(
+                                          fileFinder_<%= cid %>.getFilePathJoinedWithComma(
+                                          new java.io.File(<%= targetFolder %>)
+                                        , <%= filePattern %>
+                                        , <%= willRecurse %>
+                                                            )
+                                                );
+                  <%
+                  }else{
+                  %>
+                     Compile Err: UNSUPPORTED LOAD TYPE <%= loadFrom %>
+                  <%
+                  }
+                  %>
+                     ingestCmd_<%= cid %>.append(" format");
+                  <%
+                  if("delimited".equals(contentFormat)){
+                  %>
+                     ingestCmd_<%= cid %>.append(" delimited");
+                     <%
+                     if(fieldDelimitedBy != null && !"".equals(fieldDelimitedBy) && !"\"\"".equals(fieldDelimitedBy)){
+                     %>
+                     ingestCmd_<%= cid %>.append(" by '");
+                     ingestCmd_<%= cid %>.append(<%= fieldDelimitedBy %>);
+                     ingestCmd_<%= cid %>.append("'");
+                     <%
+                     }
+                      %>
+                  <%
+                  }else if("positional".equals(contentFormat)){
+                  %>
+                     ingestCmd_<%= cid %>.append(" positional");
+                     <%
+                     if(recordLgth != null && !"".equals(recordLgth) && !"\"\"".equals(recordLgth)){
+                     %>
+                     ingestCmd_<%= cid %>.append(" recordlen ");
+                     ingestCmd_<%= cid %>.append(Integer.valueOf(<%= recordLgth %>));
+                     <%
+                     }
+                      %>
+                  <%
+                  }else{
+                  %>
+                     Compile Err: UNSUPPORTED DATA FORMAT <%= contentFormat %>
+                  <%
+                  }
+                  if(codePage != null && !"".equals(codePage) && !"\"\"".equals(codePage)){
+                  %>
+                     ingestCmd_<%= cid %>.append(" input codepage ");
+                     ingestCmd_<%= cid %>.append(Integer.valueOf(<%= codePage %>));
+                  <%
+                  }
+                  %>
+
+                 <% /* field definition */ %>
+                 <%
+                 if(generateFieldDefinition){
+                 %>
+                    <%@ include file="@{org.talend.designer.components.localprovider}/components/tDB2BulkExec/tDB2BulkExec_begin_INGEST_Field_Definition.javajet"%>
+                    ingestCmd_<%= cid %>.append(fieldDefinition_<%= cid %>);
+                 <%
+                 }
+                 %>
+
+                  <% /* options  begin */ %>
+                  <%
+                  if(useErrHandlingOptions){
+                    if("dumpfile".equals(errFileType)){
+                         errFileTypeCmd = "dumpfile ";
+                    }else if("badfile".equals(errFileType)){
+                         errFileTypeCmd = "badfile ";
+                    }else{
+                    %>
+                    Compile Err: UNSUPPORTED ERR FILE TYPE <%= errFileType %>
+                    <%
+                    }
+                  %>
+                    ingestCmd_<%= cid %>.append(" <%= errFileTypeCmd %>");
+                    ingestCmd_<%= cid %>.append(<%= errFileName %>);
+                    <%
+                    }
+                     %>
+                    <%
+                    if(exceptionTable != null && !"".equals(exceptionTable) && !"\"\"".equals(exceptionTable)){
+                    %>
+                       ingestCmd_<%= cid %>.append(" exception table ");
+                       ingestCmd_<%= cid %>.append(<%= exceptionTable %>);
+                    <%
+                    }
+                    %>
+                    <%
+                    if(warningCount != null && !"".equals(warningCount) && !"\"\"".equals(warningCount)){
+                    %>
+                       ingestCmd_<%= cid %>.append(" warningcount ");
+                       ingestCmd_<%= cid %>.append(Integer.valueOf(<%= warningCount %>));
+                    <%
+                    }
+                    if(messagesFileName != null && !"".equals(messagesFileName) && !"\"\"".equals(messagesFileName)){
+                    %>
+                       ingestCmd_<%= cid %>.append(" messages ");
+                       ingestCmd_<%= cid %>.append(<%= messagesFileName %>);
+                    <%
+                    }
+                     %>
+                  <%
+                  if(willRestartJob){
+                  %>
+                    ingestCmd_<%= cid %>.append(" restart ");
+                    ingestCmd_<%= cid %>.append("<%= restartJobType %>");
+                  <%
+                  if(!restartJobOFF){
+                  if("NEW".equals(restartJobType)){
+                  if(restartJobId != null && !"".equals(restartJobId) && !"\"\"".equals(restartJobId)){
+                  %>
+                     ingestCmd_<%= cid %>.append(" '");
+                     ingestCmd_<%= cid %>.append(<%= restartJobId %>);
+                     ingestCmd_<%= cid %>.append("'");
+                  <%
+                  }
+                  }else{
+                     if(restartJobId != null && !"".equals(restartJobId) && !"\"\"".equals(restartJobId)){
+                  %>
+                     ingestCmd_<%= cid %>.append(" '");
+                     ingestCmd_<%= cid %>.append(<%= restartJobId %>);
+                     ingestCmd_<%= cid %>.append("'");
+                  <%
+                     }else{
+                     %>
+                        Compile Err: JOB ID MUST NOT BE EMPTY.
+                     <%
+                     }
+                  }
+                }
+             }
+                  %>
+                  <% /* options  end */ %>
+
+                  <% /* SQL statement  begin */ %>
+                  <%
+                  if(generateValStatement){
+                  %>
+                     StringBuilder valStatement_<%= cid %> = new StringBuilder(" (");
+                     StringBuilder valsStatement_<%= cid %> = new StringBuilder("(");
+                 <%
+                     int index = 0;
+                     for(IMetadataColumnEnhance imetadataColumnEnhance: iMetadataColumnEnhanceList){
+                        IMetadataColumn imetadataColumnY = imetadataColumnEnhance.getIMetadataColumn();
+                        boolean isTableColumn = imetadataColumnEnhance.isTableColumn();
+                        if(isTableColumn){
+                        if(index != 0){
+                           %>
+                              valStatement_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                              valsStatement_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                           <%
+                        }
+                        %>
+                             valStatement_<%= cid %>.append("\"<%= imetadataColumnY.getLabel()%>\"");
+                             valsStatement_<%= cid %>.append("$<%= imetadataColumnY.getLabel()%>");
+                        <%
+                        index ++;
+                        }
+                     }
+                     %>
+                             valStatement_<%= cid %>.append(")");
+                             valsStatement_<%= cid %>.append(")");
+                     <%
+                  }
+                %>
+
+                <%
+                if("INSERT".equals(operationType) || "REPLACE".equals(operationType)){
+                %>
+                   ingestCmd_<%= cid %>.append(" <%= operationType %> into ");
+                   ingestCmd_<%= cid %>.append(fullTableName_<%= cid %>);
+                   <%
+                   if(customInsertValuesClause){
+                   if(generateValStatement){
+                   %>
+                      ingestCmd_<%= cid %>.append(valStatement_<%= cid %>);
+                   <%
+                   }
+                    %>
+                      ingestCmd_<%= cid %>.append(" ");
+                      ingestCmd_<%= cid %>.append(<%= insertValsClause %>);
+                   <%
+                   }else{
+                   if(generateValStatement){
+                   %>
+                      ingestCmd_<%= cid %>.append(valStatement_<%= cid %>);
+                      ingestCmd_<%= cid %>.append(" values ");
+                      ingestCmd_<%= cid %>.append(valsStatement_<%= cid %>);
+                   <%
+                        }
+                   }
+                    %>
+                <%
+                }else if("UPDATE".equals(operationType)){
+                %>
+                   ingestCmd_<%= cid %>.append(" update ");
+                   ingestCmd_<%= cid %>.append(fullTableName_<%= cid %>);
+                   ingestCmd_<%= cid %>.append(" set ");
+                   StringBuilder updateKey_<%= cid %> = new StringBuilder("(");
+                   StringBuilder updateVal_<%= cid %> = new StringBuilder("(");
+                   <%
+                   if(customSetMapping){
+                      int flag = 0;
+                      for(IMetadataColumnEnhance imetadataColumnEnhanceMore: iMetadataColumnEnhanceList){
+                         IMetadataColumn iMetadataColumnMore = imetadataColumnEnhanceMore.getIMetadataColumn();
+                         String tblColumnName = iMetadataColumnMore.getOriginalDbColumnName();
+                         boolean isTableColumn = imetadataColumnEnhanceMore.isTableColumn();
+                         String expr = imetadataColumnEnhanceMore.getExpression();
+                         if(expr == null || "".equals(expr)){
+                            expr = "$" + tblColumnName;
+                         }
+                         %>
+                         <%
+                         if(isTableColumn){
+                         if(flag != 0){
+                         %>
+                            updateKey_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                            updateVal_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                         <%
+                         }
+                         %>
+                            updateKey_<%= cid %>.append("<%= tblColumnName %>");
+                            updateVal_<%= cid %>.append("<%= expr %>");
+                         <%
+                         flag ++;
+                        }
+                      }
+                   }else{
+                   %>
+                      <%
+                      int counter = 0;
+                      for(IMetadataColumnEnhance imetadataColumnEnhanceY: iMetadataColumnEnhanceList){
+                         IMetadataColumn imetadataColumnV = imetadataColumnEnhanceY.getIMetadataColumn();
+                         String columnName = imetadataColumnV.getLabel();
+                         boolean isTableColumn = imetadataColumnEnhanceY.isTableColumn();
+                         if(isTableColumn){
+                         if(counter != 0){
+                         %>
+                            updateKey_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                            updateVal_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                         <%
+                         }
+                         %>
+                            updateKey_<%= cid %>.append("<%= columnName %>");
+                            updateVal_<%= cid %>.append("$<%= columnName %>");
+                         <%
+                         counter ++ ;
+                        }
+                      }
+                   }
+                    %>
+                        updateKey_<%= cid %>.append(")");
+                        updateVal_<%= cid %>.append(") ");
+                        ingestCmd_<%= cid %>.append(updateKey_<%= cid %>);
+                        ingestCmd_<%= cid %>.append(" = ");
+                        ingestCmd_<%= cid %>.append(updateVal_<%= cid %>);
+                        ingestCmd_<%= cid %>.append(<%= whereClause %>);
+                <%
+                }else if("DELETE".equals(operationType)){
+                %>
+                        ingestCmd_<%= cid %>.append(" delete from ");
+                        ingestCmd_<%= cid %>.append(fullTableName_<%= cid %>);
+                        ingestCmd_<%= cid %>.append(" ");
+                        ingestCmd_<%= cid %>.append(<%= whereClause %>);
+                <%
+                }else if("MERGE".equals(operationType)){
+                %>
+                      ingestCmd_<%= cid %>.append(" ");
+                      ingestCmd_<%= cid %>.append(<%= mergeClause %>);
+                <%
+                }
+                %>
+
+                   <% /* Try to execute the ingest cmd */ %>
+                   if(!(scriptPath_<%= cid %>.endsWith("/") || scriptPath_<%= cid %>.endsWith("\\"))){
+                       scriptPath_<%= cid %> = scriptPath_<%= cid %> + java.io.File.separator;
+                    }
+                       scriptPath_<%= cid %> = scriptPath_<%= cid %>.replace(
+                                                     fileSeparatorMapping_<%= cid %>.get(runtimeFileSep_<%= cid %>)
+                                                     , runtimeFileSep_<%= cid %>);
+                       String scriptStorageFolder_<%= cid %> = scriptPath_<%= cid %>;
+                       scriptPath_<%= cid %> = scriptPath_<%= cid %> + "db2_ingest_cmd.db2";
+
+                   java.io.Writer writer_<%= cid %> = new java.io.BufferedWriter(
+                                                        new java.io.OutputStreamWriter(
+                                                            new java.io.FileOutputStream(new java.io.File(scriptPath_<%= cid %>), false)
+                                                            , "UTF-8")
+                                                    );
+                  writer_<%= cid %>.write("CONNECT TO ");
+                  writer_<%= cid %>.write(<%= db %>);
+                  writer_<%= cid %>.write(" USER ");
+                  writer_<%= cid %>.write(<%= user %>);
+                  writer_<%= cid %>.write(" USING ");
+                  writer_<%= cid %>.write(dbPwd_<%= cid %>);
+                  writer_<%= cid %>.write(System.getProperty("line.separator"));
+                  writer_<%= cid %>.write(ingestCmd_<%= cid %>.toString());
+                  writer_<%= cid %>.close();
+
+                    Process process_<%=cid %> = null;
+                   if(runOnWindows_<%= cid %>){
+                        process_<%=cid %> = Runtime.getRuntime().exec("cmd /c db2cmd /i db2 -f " + scriptPath_<%= cid %>);
+                   }else{
+                        process_<%=cid %> = Runtime.getRuntime().exec(new String[]{
+                                               "sh"
+                                              ,"-c"
+                                              ,"db2 -f ./db2_ingest_cmd.db2"
+                                              }
+                                              ,null,new java.io.File(scriptStorageFolder_<%= cid %>)
+                                              );
+                   }
+
+                   final java.io.InputStream inputStream_<%= cid %> = process_<%=cid %>.getInputStream();
+                   final java.io.InputStream errStream_<%= cid %> = process_<%=cid %>.getErrorStream();
+                   Thread normal_<%=cid %> = new Thread() {
+                       public void run() {
+                           try {
+                               java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream_<%= cid %>));
+                               String line = "";
+                               try {
+                                   while((line = reader.readLine()) != null) {
+                                      System.out.println(line);
+                                   }
+                               } finally {
+                                    reader.close();
+                               }
+                           }catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+                               ioe.printStackTrace();
+                           }
+                       }
+                   };
+                   normal_<%=cid %>.start();
+
+                   Thread error_<%=cid %> = new Thread() {
+                       public void run() {
+                           try {
+                               java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(errStream_<%= cid %>));
+                               String line = "";
+                               try {
+                                   while((line = reader.readLine()) != null) {
+										System.err.println(line);
+                                   }
+                               } finally {
+                                   reader.close();
+                               }
+                           } catch(java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+                              ioe.printStackTrace();
+                           }
+                       }
+                   };
+                   error_<%=cid %>.start();
+                   process_<%=cid %>.waitFor();
+					normal_<%=cid %>.join();
+					error_<%=cid %>.join();
+                   java.nio.file.Files.delete(new java.io.File(scriptPath_<%= cid %>).toPath());
+                <%
+        }//-> Tag2
+    }//-> Tag1
+%>

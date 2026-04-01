@@ -1,0 +1,69 @@
+<%@ jet 
+imports="
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+skeleton="../templates/sqlpattern.skeleton"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	boolean hasUpdateClause = ElementParameterParser.getValue(node, "__USE_UPDATE__").equals("true");
+	boolean hasAddtionalUpdateColumns = ElementParameterParser.getValue(node, "__SPECIFY_ADDITIONAL_UPDATE_COLUMNS__").equals("true");
+	boolean hasUpdateWhereClause = ElementParameterParser.getValue(node, "__SPECIFY_UPDATE_WHERE_CLAUSE__").equals("true");
+	boolean hasInsertClause = ElementParameterParser.getValue(node, "__USE_INSERT__").equals("true");
+	boolean hasAdditionalInsertColumns = ElementParameterParser.getValue(node, "__SPECIFY_ADDITIONAL_INSERT_COLUMNS__").equals("true");
+	boolean hasInsertWhereClause = ElementParameterParser.getValue(node, "__SPECIFY_INSERT_WHERE_CLAUSE__").equals("true");
+	List<Map<String, String>> mergeOnColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__MERGE_ON__");
+	List<Map<String, String>> updateColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__UPDATE_MAPPING__");
+	List<Map<String, String>> additionalUpdateColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADDITIONAL_UPDATE_COLUMNS__");
+	List<Map<String, String>> insertColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__INSERT_MAPPING__");
+	List<Map<String, String>> additionalInsertColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADDITIONAL_INSERT_COLUMNS__");
+%>
+
+<%
+	// ************************************************************************
+	// declare variables for sql pattern only if the parameter is not defined
+	// or left empty to avoid compile errors
+	// ************************************************************************
+	
+	StringBuilder declareVariables = new StringBuilder(1000);
+	
+	if (mergeOnColumns == null || mergeOnColumns.size() == 0) {
+		declareVariables.append("String[] MERGE_ON_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] MERGE_ON_SRC_COLUMN_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] MERGE_ON_TRG_COLUMN_" + cid + " = new String[0];\r\n");
+	}
+	if (updateColumns == null || updateColumns.size() == 0) {
+		declareVariables.append("String[] UPDATE_MAPPING_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] UPDATE_MAPPING_TRG_COLUMN_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] UPDATE_MAPPING_SRC_COLUMN_" + cid + " = new String[0];\r\n");
+	}
+	if (additionalUpdateColumns == null || additionalUpdateColumns.size() == 0) {
+		declareVariables.append("String[] ADDITIONAL_UPDATE_COLUMNS_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] ADDITIONAL_UPDATE_COLUMNS_TRG_COLUMN_VALUE_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] ADDITIONAL_UPDATE_COLUMNS_TRG_COLUMN_NAME_" + cid + " = new String[0];\r\n");
+	}
+	if (insertColumns == null || insertColumns.size() == 0) {
+		declareVariables.append("String[] INSERT_MAPPING_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] INSERT_MAPPING_TRG_COLUMN_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] INSERT_MAPPING_SRC_COLUMN_" + cid + " = new String[0];\r\n");
+	}
+	if (additionalInsertColumns == null || additionalInsertColumns.size() == 0) {
+		declareVariables.append("String[] ADDITIONAL_INSERT_COLUMNS_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] ADDITIONAL_INSERT_COLUMNS_TRG_COLUMN_VALUE_" + cid + " = new String[0];\r\n");
+		declareVariables.append("String[] ADDITIONAL_INSERT_COLUMNS_TRG_COLUMN_NAME_" + cid + " = new String[0];\r\n");
+	}
+%>
+
+<%=declareVariables.toString()%>
+
+<%=generateSQLPatternCode(node) %>
+
+globalMap.put("<%=cid %>_NB_LINE",stmt_<%=cid%>.getUpdateCount());
+globalMap.put("<%=cid %>_NB_LINE_MERGED",stmt_<%=cid%>.getUpdateCount());
+
+stmt_<%=cid%>.close();
+

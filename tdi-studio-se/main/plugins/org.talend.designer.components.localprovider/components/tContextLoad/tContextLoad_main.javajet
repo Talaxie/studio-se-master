@@ -1,0 +1,196 @@
+<%@ jet
+    imports="
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        java.util.List
+        org.talend.core.model.process.IProcess
+        org.talend.core.model.process.IContextParameter
+        java.util.ArrayList
+    "
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+IProcess process=node.getProcess();
+List<IContextParameter> params = new ArrayList<IContextParameter>();
+params=process.getContextManager().getDefaultContext().getContextParameterList();
+List<IMetadataTable> metadatas = node.getMetadataList();
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String cid = node.getUniqueName();
+%>
+        //////////////////////////
+        String tmp_key_<%=cid%> = null;
+<%
+        List< ? extends IConnection> conns = node.getIncomingConnections();
+        for (IConnection conn : conns) {
+            if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                %>
+                <%
+                List<IMetadataColumn> columns = metadata.getListColumns();
+                int sizeColumns = columns.size();
+                for (int i = 0; (sizeColumns >= 2)&&(i < 2); i++) {
+                    IMetadataColumn column = columns.get(i);
+                    JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                    boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+                    %>
+                    String <%=i==0?"key":"value" %>_<%=cid %> = null;
+<%
+                    // allow to add comment line start with '#' or '!'
+                    if (i == 0){
+%>
+                      if (<%=conn.getName() %>.<%=column.getLabel() %> != null){
+                          tmp_key_<%=cid%> = <%=conn.getName() %>.<%=column.getLabel() %>.trim();
+                        if ((tmp_key_<%=cid%>.startsWith("#") || tmp_key_<%=cid%>.startsWith("!") )){
+                          tmp_key_<%=cid%> = null;
+                        } else {
+                          <%=conn.getName() %>.<%=column.getLabel() %> = tmp_key_<%=cid%>;
+                        }
+                      }
+<%
+                    }
+                    if(!isPrimitive) {
+                        %>
+                        if(<%=conn.getName() %>.<%=column.getLabel() %> != null) {
+                        <%
+                    }
+                    %>
+                    <%=i==0?"key":"value" %>_<%=cid %> =
+                    <%
+                    String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                    if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+                        %>
+                        FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+                        <%
+                    } else if(javaType == JavaTypesManager.STRING) {
+                        %>
+                        <%=conn.getName() %>.<%=column.getLabel() %>;
+                        <%
+                    } else {
+                        %>
+                        String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+                        <%
+                    }
+                    if(!isPrimitive) {
+                         %>
+                        }
+                        <%
+                    }
+                }//here end the last for, the List "columns"
+                %>
+				
+				String currentValue_<%=cid %> = value_<%=cid %>;
+				
+<%
+				
+				for (IContextParameter ctxParam: params) {
+					if ("id_Password".equals(ctxParam.getType()) ) {
+%>						
+						if ((key_<%=cid %> != null) && ("<%=ctxParam.getName()%>".equals(key_<%=cid %>)) && (currentValue_<%=cid %> != null)) 
+							currentValue_<%=cid %> = currentValue_<%=cid %>.replaceAll(".", "*");
+<%						
+					}	
+
+				}		
+%>
+
+<%
+                if(node.getElementParameter("PRINT_OPERATIONS").isContextMode()) {
+%>
+                    if(<%=ElementParameterParser.getValue(node, "__PRINT_OPERATIONS__")%>) {
+                        System.out.println("<%=cid %> set key \"" + key_<%=cid %> + "\" with value \"" + currentValue_<%=cid %> + "\"");
+                    }
+<%
+                } else {
+                    if (ElementParameterParser.getValue(node, "__PRINT_OPERATIONS__").equals("true")) {
+%>
+                        System.out.println("<%=cid %> set key \"" + key_<%=cid %> + "\" with value \"" + currentValue_<%=cid %> + "\"");
+<%
+                    }
+                }
+%>
+  if (tmp_key_<%=cid%> != null){
+  try{
+  <%
+            for (IContextParameter ctxParam :params)
+             {
+                String typeToGenerate ="String";
+                if( !(ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory") ||ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_Password")))
+                {
+                   typeToGenerate=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+                }
+        %>
+        if(key_<%=cid %>!=null && "<%=ctxParam.getName()%>".equals(key_<%=cid %>))
+        {
+           <% if(typeToGenerate.equals("java.util.Date"))
+            {%>
+                String context_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                if(context_<%=ctxParam.getName()%>_value==null)
+                    context_<%=ctxParam.getName()%>_value = "";
+                int context_<%=ctxParam.getName()%>_pos = context_<%=ctxParam.getName()%>_value.indexOf(";");
+                String context_<%=ctxParam.getName()%>_pattern =  "yyyy-MM-dd HH:mm:ss";
+                if(context_<%=ctxParam.getName()%>_pos > -1){
+                    context_<%=ctxParam.getName()%>_pattern = context_<%=ctxParam.getName()%>_value.substring(0, context_<%=ctxParam.getName()%>_pos);
+                }
+                context.<%=ctxParam.getName()%>=(java.util.Date)(new java.text.SimpleDateFormat(context_<%=ctxParam.getName()%>_pattern).parse(value_<%=cid %>));
+
+            <%}else if(typeToGenerate.equals("Integer")){%>
+
+                context.<%=ctxParam.getName()%>=Integer.parseInt(value_<%=cid %>);
+
+           <%}else if(typeToGenerate.equals("Object")||typeToGenerate.equals("String")||typeToGenerate.equals("java.lang.String")){%>
+           context.<%=ctxParam.getName()%>=value_<%=cid %>;
+           <%}else if(typeToGenerate.equals("Character")){%>
+           context.<%=ctxParam.getName()%>=new java.text.StringCharacterIterator(value_<%=cid %>).first();
+           <%}else if(typeToGenerate.equals("BigDecimal")){%>
+           context.<%=ctxParam.getName()%>=new <%=typeToGenerate%> (value_<%=cid %>);
+           <%}
+           else{%>
+
+               context.<%=ctxParam.getName()%>=<%=typeToGenerate%>.parse<%=typeToGenerate%>(value_<%=cid %>);
+
+           <%}%>
+        }
+
+         <%
+             }
+        %>
+
+        if (context.getProperty(key_<%=cid %>)!=null)
+        {
+            assignList_<%=cid %>.add(key_<%=cid %>);
+        }else  {
+            newPropertyList_<%=cid %>.add(key_<%=cid %>);
+        }
+        if(value_<%=cid %> == null){
+            context.setProperty(key_<%=cid %>, "");
+        }else{
+            context.setProperty(key_<%=cid %>,value_<%=cid %>);
+        }
+    }catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        <%if(isLog4jEnabled){%>
+            log.error("<%=cid%> - Setting a value for the key \"" + key_<%=cid %> + "\" has failed. Error message: " + e.getMessage());
+        <%}%>
+        System.err.println("Setting a value for the key \"" + key_<%=cid %> + "\" has failed. Error message: " + e.getMessage());
+    }
+        nb_line_<%=cid %>++;
+    }
+<%
+            }
+        }//here end the first for, the List "conns"
+%>
+        //////////////////////////
+<%
+    }
+}
+%>

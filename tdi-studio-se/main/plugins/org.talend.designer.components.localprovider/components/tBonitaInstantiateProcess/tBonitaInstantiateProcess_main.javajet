@@ -1,0 +1,219 @@
+<%@ jet 
+imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			java.util.List
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.IConnectionCategory
+			org.talend.core.model.metadata.IMetadataColumn
+			org.talend.core.model.metadata.IMetadataTable
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.core.model.metadata.types.JavaType
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String processID = ElementParameterParser.getValue(node, "__PROCESS_ID__");
+	String clientMode = ElementParameterParser.getValue(node, "__CLIENT_MODE__");
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+	
+	String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns != null && conns.size() > 0 && conns.get(0) != null) {
+    	IConnection conn = conns.get(0);
+    	if(conn!=null && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+	    	INode previousNode = conn.getSource();
+	    	if(previousNode != null) {
+				List<IMetadataTable> metadatas = previousNode.getMetadataList();
+				if ((metadatas!=null)&&(metadatas.size()>0)) {
+					IMetadataTable metadata = metadatas.get(0);
+					if (metadata!=null) {
+						List<IMetadataColumn> columns = metadata.getListColumns();
+						int sizeColumns = columns.size();
+						
+						for (int i = 0; i < sizeColumns; i++) {
+							if ("HTTP_CLIENT".equals(clientMode)) {
+								if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+									if(!JavaTypesManager.isJavaPrimitiveType(columns.get(i).getTalendType(), columns.get(i).isNullable())) {
+									%>
+										if(<%=conn.getName()%>.<%=(columns.get(i)).getLabel()%> != null) {//}
+									<%
+									}
+									
+									JavaType javaType = JavaTypesManager.getJavaTypeFromId(columns.get(i).getTalendType());
+									String pattern = columns.get(i).getPattern() == null || columns.get(i).getPattern().trim().length() == 0 ? null : columns.get(i).getPattern();
+									if(javaType == JavaTypesManager.DATE){
+									%>
+										vars_<%=cid%>.put("<%=columns.get(i).getLabel()%>",org.apache.commons.lang3.StringEscapeUtils.escapeJson(routines.system.FormatterUtils.format_Date(<%=conn.getName()%>.<%=columns.get(i).getLabel()%>, <%= pattern %>)));
+									<%
+									} else {
+									%>
+										
+										vars_<%=cid%>.put("<%=columns.get(i).getLabel()%>",org.apache.commons.lang3.StringEscapeUtils.escapeJson(String.valueOf(<%=conn.getName()%>.<%=(columns.get(i)).getLabel()%>)));
+									<%
+									}
+									
+									if(!JavaTypesManager.isJavaPrimitiveType(columns.get(i).getTalendType(), columns.get(i).isNullable())) {
+									%>
+										//{
+										} else {
+											vars_<%=cid%>.put("<%=columns.get(i).getLabel()%>","");
+										}
+									<%
+									}
+									
+									continue;
+								}
+								
+								if (i==0) {
+								%>
+									parameters_<%=cid%>.append("&variables=<map>");
+								<%
+								}
+								%>
+								parameters_<%=cid%>.append("<entry><string><%=columns.get(i).getLabel() %></string>");
+								<%if(!JavaTypesManager.isJavaPrimitiveType(columns.get(i).getTalendType(), columns.get(i).isNullable())) {%>
+									if(<%=conn.getName()%>.<%=(columns.get(i)).getLabel()%> != null) {
+								<%}
+									JavaType javaType = JavaTypesManager.getJavaTypeFromId(columns.get(i).getTalendType());
+									if(javaType == JavaTypesManager.DATE){
+									%>
+										java.io.StringWriter sw_<%=cid%> = new java.io.StringWriter();
+										new com.thoughtworks.xstream.XStream().marshal(<%=conn.getName()%>.<%=(columns.get(i)).getLabel()%>, new com.thoughtworks.xstream.io.xml.CompactWriter(sw_<%=cid%>));
+										parameters_<%=cid%>.append(sw_<%=cid%>);
+									<%
+									}else{
+									%>
+										parameters_<%=cid%>.append("<string><![CDATA[");
+										parameters_<%=cid%>.append(java.net.URLEncoder.encode(java.net.URLEncoder.encode(String.valueOf(<%=conn.getName()%>.<%=(columns.get(i)).getLabel()%>), utf8Charset),utf8Charset));
+										parameters_<%=cid%>.append("]]></string>");
+									<%
+									}
+									%>
+								<%if(!JavaTypesManager.isJavaPrimitiveType(columns.get(i).getTalendType(), columns.get(i).isNullable())) {%>
+									}else{
+										parameters_<%=cid%>.append("<string></string>");
+									}
+								<%}%>
+								parameters_<%=cid%>.append("</entry>");
+								<%
+								if (i==sizeColumns-1) {
+								%>
+									parameters_<%=cid%>.append("</map>");
+								<%
+								}
+							} else {
+							%>
+								parameters_<%=cid%>.put("<%=(columns.get(i)).getLabel()%>", <%=conn.getName()%>.<%=(columns.get(i)).getLabel()%>);
+							<%
+							}
+						}
+					}
+				}
+	    	}
+	    }
+    }
+	%>    
+	try{
+		<%
+		if ("HTTP_CLIENT".equals(clientMode)) {
+			if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+		%>
+				processInstanceUUID_<%=cid%> = client_<%=cid%>.startProcess(processID_<%=cid%>,vars_<%=cid%>);
+		<%
+			} else {
+		%>
+				java.io.DataOutputStream output_<%=cid%> = new java.io.DataOutputStream(httpConn_<%=cid %>.getOutputStream());
+				output_<%=cid%>.writeBytes(parameters_<%=cid%>.toString());
+				output_<%=cid%>.flush();
+				if (output_<%=cid%> != null) {
+					output_<%=cid%>.close();
+					output_<%=cid%> = null;
+				}
+			    int responseCode_<%=cid%> = httpConn_<%=cid %>.getResponseCode();
+			    
+			    if(responseCode_<%=cid %> != java.net.HttpURLConnection.HTTP_OK){
+			    	System.out.println("----------\nRequest failled: " + responseCode_<%=cid%>+ "----------");
+			      	throw new java.lang.Exception("Request the url:" + url_<%=cid%> + " failed: " + responseCode_<%=cid%>);
+			    } else {
+			      	java.io.InputStream is_<%=cid%> = httpConn_<%=cid %>.getInputStream();
+			      	javax.xml.xpath.XPath xPath_<%=cid%> = javax.xml.xpath.XPathFactory.newInstance().newXPath();
+			      	org.xml.sax.InputSource inputSource_<%=cid %> = new org.xml.sax.InputSource(is_<%=cid %>);
+			      	processInstanceUUID_<%=cid%> = (String) xPath_<%=cid%>.evaluate("/ProcessInstanceUUID/value/text()", inputSource_<%=cid %>, javax.xml.xpath.XPathConstants.STRING);
+			      	if (is_<%=cid%> != null) {
+			      		is_<%=cid%>.close();
+			      		is_<%=cid%> = null;
+			      	}
+			    }
+		<%
+			}
+		} else { // Java Client
+			if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+				boolean use_process_id = "true".equals(ElementParameterParser.getValue(node, "__USE_PROCESS_ID__"));
+				if(use_process_id) {
+		%>
+					processInstanceUUID_<%=cid%> = client_<%=cid%>.startProcess(<%=processID%>,parameters_<%=cid%>);
+		<%
+				} else {
+					String process_name = ElementParameterParser.getValue(node, "__PROCESS_NAME__");
+					String process_version = ElementParameterParser.getValue(node, "__PROCESS_VERSION__");
+		%>
+					processInstanceUUID_<%=cid%> = client_<%=cid%>.startProcess(<%=process_name%>,<%=process_version%>,parameters_<%=cid%>);
+		<%
+				}
+			} else {
+		%>
+				org.ow2.bonita.facade.uuid.ProcessInstanceUUID instanceUUID_<%=cid%> = runtimeAPI_<%=cid%>.instantiateProcess(processID_<%=cid%>, parameters_<%=cid%>);
+				processInstanceUUID_<%=cid%> = instanceUUID_<%=cid%>.getValue();
+		<%
+			}
+		}
+		%>
+	} catch (java.lang.Exception lee_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",lee_<%=cid%>.getMessage());
+		<%
+		if (dieOnError) {
+		%>
+			throw lee_<%=cid%>;	
+		<%
+		} else {
+		%>
+			System.err.println(lee_<%=cid%>.getMessage());
+		<%	
+		}
+		%>
+	}
+	<%
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			List< ? extends IConnection> conns_out = node.getOutgoingConnections();
+			for (IConnection conn : conns_out) {
+				String connName = conn.getName();
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					List<IMetadataColumn> columns = metadata.getListColumns();
+					int sizeColumns = columns.size();
+					for (int i = 0; i < sizeColumns; i++) {
+						if ("ProcessInstanceUUID".equals(columns.get(i).getLabel()) ) {
+						%>
+							<%=connName%>.<%=(columns.get(i)).getLabel()%> = processInstanceUUID_<%=cid%>;
+							<%
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+	%>
+		 
+	System.out.println("**** Instance "+ processInstanceUUID_<%=cid%> + " created ****");
+	
+	globalMap.put("<%=cid %>_ProcessInstanceUUID", processInstanceUUID_<%=cid%>); 

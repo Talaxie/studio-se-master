@@ -1,0 +1,56 @@
+<%@ jet 
+	imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			org.talend.core.model.metadata.types.JavaTypesManager
+			org.talend.designer.xmlmap.XmlMapComponent
+			org.talend.designer.xmlmap.model.emf.xmlmap.XmlMapData
+			org.eclipse.emf.common.util.EList
+			org.talend.designer.xmlmap.model.emf.xmlmap.VarTable
+			org.talend.designer.xmlmap.model.emf.xmlmap.InputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputXmlTree
+			org.talend.designer.xmlmap.model.emf.xmlmap.TreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.OutputTreeNode
+			org.talend.designer.xmlmap.model.emf.xmlmap.NodeType
+			org.talend.core.model.process.IConnection
+			org.talend.core.model.process.EConnectionType
+			org.talend.core.model.utils.NodeUtil
+            java.util.Map
+            java.util.HashMap
+            java.util.List
+            java.util.ArrayList
+        	org.talend.core.model.metadata.types.JavaType
+"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	XmlMapComponent node = (XmlMapComponent) codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	XmlMapData xmlMapData=(XmlMapData)ElementParameterParser.getObjectValueXMLTree(node);
+	
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	EList<OutputXmlTree> outputTables = xmlMapData.getOutputTrees();
+	
+	List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+	Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+		nameToOutputConnection.put(connection.getName(), connection);
+	}
+	
+    for (OutputXmlTree table : outputTables) {
+        EList<OutputTreeNode> tableEntries = table.getNodes();
+        if (tableEntries == null || nameToOutputConnection.get(table.getName()) == null) {
+            continue;
+        }
+        String outputTableName = table.getName();
+        
+		if(isLog4jEnabled) {
+%>
+		log.debug("<%=cid%> - Written records count in the table '<%=outputTableName%>': " + count_<%=outputTableName%>_<%=cid%> + ".");
+<%
+		}
+    }
+%>

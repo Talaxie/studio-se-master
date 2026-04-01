@@ -1,0 +1,82 @@
+<%
+// ------------------- *** Dom4j generation mode start *** ------------------- //
+class XSDToolByDom4j{
+    String cid = null;
+    
+	//opt for big xml config tree
+	BigMethodHelper bigMethodHelper = null;
+	TouchXMLNode touchXMLNode = null;
+	
+	public XSDToolByDom4j() {
+		bigMethodHelper = new BigMethodHelper();
+		touchXMLNode = bigMethodHelper.getTouchXMLNode();
+	}
+	
+	public void generateXSD(String parent, String currEleName, XMLNode root){
+		if(!("ELEMENT").equals(root.type)){
+			return;
+		}
+		
+		bigMethodHelper.setGenerateId(currEleName);
+		//start the class
+		bigMethodHelper.generateClassNameWithRBlock();
+		
+		bigMethodHelper.resetIndex();
+		
+		generateMainCode(parent,currEleName,root);
+		
+		//end the last method
+		bigMethodHelper.generateLeftBlock();
+		
+		//end the class
+		bigMethodHelper.generateLeftBlock();
+		
+		bigMethodHelper.generateMethodCall();
+	}
+	
+    public void generateMainCode(String parent, String currEleName, XMLNode root){
+    	if(("ELEMENT").equals(root.type)){
+    		bigMethodHelper.generateMethod();
+    		
+    		createElement(parent,currEleName,root);
+			
+			if(root.elements!=null && root.elements.size()>0
+			  || root.attributes!=null && root.attributes.size()>0){
+			  
+				touchXMLNode.putCurrentComplexTypeElement(currEleName);
+				touchXMLNode.putCurrentSequenceElement(currEleName);
+				
+        		int index = 0;
+        		for(XMLNode child:root.elements){
+        			generateMainCode(currEleName+"_s", currEleName+"_"+index++, child);
+        		}
+        		
+        		for(XMLNode attri:root.attributes){
+        			createAttribute(currEleName+"_c",attri);
+        		}
+			}
+    	}
+    }
+    
+    private void createElement(String parent, String currEleName, XMLNode node){
+    	touchXMLNode.putCurrentElement(currEleName,parent);
+%>
+		<%touchXMLNode.getXMLElement(currEleName);%>.addAttribute("name","<%=node.name%>");
+		<%touchXMLNode.getXMLElement(currEleName);%>.addAttribute("nillable","true");
+<%
+		if(node.parent != null){
+%>
+		<%touchXMLNode.getXMLElement(currEleName);%>.addAttribute("minOccurs","0");
+		<%touchXMLNode.getXMLElement(currEleName);%>.addAttribute("maxOccurs","unbounded");
+<%
+		}
+    }
+    
+    private void createAttribute(String parent, XMLNode node){
+%>
+		<%touchXMLNode.getXMLNode(parent);%>.addElement("xsd:attribute").addAttribute("name","<%=node.name%>");
+<%
+    }
+}
+// ------------------- *** Dom4j generation mode end *** ------------------- //
+%>

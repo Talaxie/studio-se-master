@@ -1,0 +1,61 @@
+// ============================================================================
+//
+// Copyright (C) 2006-2021 Talaxie Inc. - www.deilink.fr
+//
+// This source code is available under agreement available at
+// %InstallDIR%\features\org.talend.rcp.branding.%PRODUCTNAME%\%PRODUCTNAME%license.txt
+//
+// You should have received a copy of the agreement
+// along with this program; if not, write to Talaxie SA
+// 9 rue Pages 92150 Suresnes, France
+//
+// ============================================================================
+package org.talend.designer.rowgenerator;
+
+import org.talend.core.GlobalServiceRegister;
+import org.talend.core.IService;
+import org.talend.designer.codegen.ICodeGeneratorService;
+import org.talend.designer.runprocess.IRunProcessService;
+import org.talend.repository.model.IProxyRepositoryFactory;
+import org.talend.repository.model.IRepositoryService;
+
+/**
+ * The activator class controls the plug-in life cycle.
+ */
+public final class PluginUtils {
+
+    private PluginUtils() {
+    }
+    // The plug-in ID
+    public static final String PLUGIN_ID = "org.talend.designer.rowgenerator"; //$NON-NLS-1$
+
+    /**
+     * get a implement of CodeGeneratorService.
+     *
+     * @return a implement of CodeGeneratorService
+     */
+    public static ICodeGeneratorService getCodeGeneratorService() {
+        IService service = GlobalServiceRegister.getDefault().getService(ICodeGeneratorService.class);
+        return (ICodeGeneratorService) service;
+    }
+
+    /**
+     * get a implement of RunProcessService.
+     *
+     * @return
+     */
+    public static IRunProcessService getRunProcessService() {
+        IService service = GlobalServiceRegister.getDefault().getService(IRunProcessService.class);
+        return (IRunProcessService) service;
+    }
+
+    public static IRepositoryService getRepositoryService() {
+        IService service = GlobalServiceRegister.getDefault().getService(IRepositoryService.class);
+        return (IRepositoryService) service;
+    }
+
+    public static IProxyRepositoryFactory getProxyRepositoryFactory() {
+        IRepositoryService service = getRepositoryService();
+        return service.getProxyRepositoryFactory();
+    }
+}

@@ -1,0 +1,93 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		java.util.List
+		org.talend.core.model.utils.NodeUtil
+		org.talend.core.model.process.AbstractNode
+	"
+%>
+	
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+	
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+    boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+	
+	boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+	boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+	boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+
+	String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+	boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+%>
+<% 
+	if(codeGenArgument.getIsRunInMultiThread()){
+%>
+	synchronized (multiThreadLockWrite) {
+<%
+	}
+	if (((AbstractNode)node).getParallelIterator() != null) {
+%>
+	synchronized ((Object[])globalMap.get("lockWrite_<%=((AbstractNode)node).getParallelIterator()%>")) {
+<% 
+	}
+	if (isParallelize) {
+%>
+	Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+	synchronized (pLockWrite) {
+<% 
+	}
+	if(!useStream){
+%>
+	java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out<%=cid%>");
+	out<%=cid %>.close();
+<% 
+	}else{
+%>
+	java.io.Writer out<%=cid%> = (java.io.Writer)resourceMap.get("out<%=cid%>");
+	java.io.OutputStreamWriter outWriter_<%=cid %> = (java.io.OutputStreamWriter)resourceMap.get("outWriter_<%=cid %>");
+	out<%=cid %>.flush();
+	outWriter_<%=cid %>.flush();
+	outWriter_<%=cid %> = null;
+<%
+	}
+	if ( isParallelize) {
+%>
+    } 
+<%
+    }
+	if (((AbstractNode)node).getParallelIterator() != null) {
+%>
+	}
+<% 
+	}
+	if(codeGenArgument.getIsRunInMultiThread()){
+%>
+	}
+<%
+	}
+%>
+	<%
+	}
+}
+%>
+<%if(!useStream && isDeleteEmptyFile){%>
+				if(Boolean.valueOf(String.valueOf(resourceMap.get("isFileGenerated_<%=cid%>"))) && Integer.valueOf(String.valueOf(resourceMap.get("nb_line_<%=cid %>"))) == 0){
+					<%if(compress && !isAppend){%>
+						((java.io.File)resourceMap.get("file_<%=cid%>")).delete();
+					<%}else{%>
+						((java.io.File)resourceMap.get("createFile<%=cid%>")).delete();
+					<%}%>	
+					}
+			<%}%>

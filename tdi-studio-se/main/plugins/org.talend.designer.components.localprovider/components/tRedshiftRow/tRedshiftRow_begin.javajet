@@ -1,0 +1,108 @@
+<%@ jet 
+imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+			java.util.List
+			java.util.Map
+			java.util.ArrayList
+		" 
+%>
+<%@ include file="../templates/DB/Row/HelpClass.javajet"%>
+<%
+
+	class DBRowBeginUtil extends DefaultDBRowUtil{
+
+        int driveVersion;
+        Boolean useStringProperties;
+        String logLevel;
+        String jdbcUrl;
+	
+		public void beforeComponentProcess(INode node){
+			super.beforeComponentProcess(node);
+			cid = node.getUniqueName();
+	    }
+	    
+		public void setURL(INode node) {
+            jdbcUrl = ElementParameterParser.getValue(node, "__JDBC_URL__");
+            driveVersion = "DRIVER_V2".equals(ElementParameterParser.getValue(node, "__DRIVER_VERSION__"))? 2 : 1;
+            useStringProperties = "true".equals(ElementParameterParser.getValue(node, "__USE_STRING_PROPERTIES__"));
+
+%>
+            StringBuilder sbuilder_<%=cid%> = new StringBuilder();
+            sbuilder_<%=cid%>.append("jdbc:redshift:");
+<%
+            if ("SSO".equals(jdbcUrl)){
+%>
+                sbuilder_<%=cid%>.append("iam:");
+<%
+}
+%>
+            sbuilder_<%=cid%>.append("//")
+                             .append(<%=dbhost%>)
+                             .append(":")
+                             .append(<%=dbport%>)
+                             .append("/")
+                             .append(<%=dbname%>);
+<%
+            if(( useStringProperties || driveVersion == 1) && dbproperties != null && !"\"\"".equals(dbproperties) && !"".equals(dbproperties)) {
+%>
+                sbuilder_<%=cid%>.append("?").append(<%=dbproperties%>);
+<%
+            }
+%>
+            String url_<%=cid%> = sbuilder_<%=cid%>.toString();
+<%
+		}
+
+		public void newConnection(INode node) {
+        				     if(driveVersion == 2 && !useStringProperties){
+        				     List<Map<String, String>> properties = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ENTRY_PROPERTIES__");
+                %>
+                            java.util.Properties properties_<%=cid%> = new java.util.Properties();
+                                            properties_<%=cid%>.setProperty("user",dbUser_<%=cid%>);
+<%
+                                            if ("SSO".equals(jdbcUrl)){
+%>
+                                                if (dbPwd_<%=cid%> != null) {
+<%
+                                            }
+%>
+                                                    properties_<%=cid%>.setProperty("password",dbPwd_<%=cid%>);
+<%
+                                            if ("SSO".equals(jdbcUrl)){
+%>
+                                                }
+<%
+                                            }
+%>
+                                            <%
+                                            for(Map<String, String> entry : properties){
+                                            %>
+                                            properties_<%=cid%>.setProperty(<%=entry.get("KEY")%>,<%=entry.get("VALUE")%>);
+                                            <%}%>
+
+                        	conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>,properties_<%=cid%>);
+                <%
+                             }else{
+
+                %>
+                             conn_<%=cid%> = java.sql.DriverManager.getConnection(url_<%=cid%>,dbUser_<%=cid%>,dbPwd_<%=cid%>);
+                <%
+
+                             }
+                		}
+		
+		public String getDirverClassName(INode node){
+			return "com.amazon.redshift.jdbc42.Driver";
+		}
+		
+		public String getQueryString(INode node) {
+
+			String trackerString = "\""+ org.talend.core.utils.TrackerUtil.getRedshiftTracker() + "\\n\" + ";
+			return trackerString + "(" + super.getQueryString(node) + ")";
+		}
+	}
+	dbRowBeginUtil = new DBRowBeginUtil();
+%>
+<%@ include file="../templates/DB/Row/AbstractDBRowBegin.javajet"%>

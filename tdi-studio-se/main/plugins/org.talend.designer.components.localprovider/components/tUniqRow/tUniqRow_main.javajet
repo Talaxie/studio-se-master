@@ -1,0 +1,238 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.INode  
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.IConnection
+    java.util.List
+    java.util.Map
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String connName = null;
+if (node.getIncomingConnections().size()==1) {
+	IConnection conn = node.getIncomingConnections().get(0);
+	connName = conn.getName();
+}
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null && connName != null) {
+		List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+		List<? extends IConnection> connsUnique = node.getOutgoingConnections("UNIQUE");
+		List<? extends IConnection> connsDuplicate = node.getOutgoingConnections("DUPLICATE");
+		String onlyOnceEachDuplicatedKey = ElementParameterParser.getValue(node, "__ONLY_ONCE_EACH_DUPLICATED_KEY__");
+		List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__UNIQUE_KEY__");
+		boolean hasKey = false;
+		for(Map<String, String> keyColumn:keyColumns){
+			if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+				hasKey = true;
+				break;
+			}
+		}
+		int ii = 0;
+		if(hasKey){
+%>
+<%
+	if (conns!=null) {
+		if (conns.size()>0) {
+			for (int i=0;i<conns.size();i++) {
+				IConnection conn = conns.get(i);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+
+			    	 %><%=conn.getName() %> = null;			
+<%					 
+				}
+			}
+		}
+	}
+	
+	for (int i=0; i<metadata.getListColumns().size();i++) {
+		IMetadataColumn column = metadata.getListColumns().get(i);
+		Map<String,String> keyColumn = keyColumns.get(i);
+		if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+			boolean caseSensitive = ("true").equals(keyColumn.get("CASE_SENSITIVE"));
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(javaType == JavaTypesManager.STRING) {
+				if(caseSensitive){
+		%>
+finder_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+				}else{
+%>
+if(<%=connName %>.<%=column.getLabel() %> == null){
+	finder_<%=cid %>.<%=column.getLabel() %> = null;
+}else{
+	finder_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>.toLowerCase();
+}
+<%
+				}
+			}else{
+%>
+finder_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+			}
+		}
+	}
+%>	
+finder_<%=cid %>.hashCodeDirty = true;
+if (!keys<%=cid %>.contains(finder_<%=cid %>)) {
+		KeyStruct_<%=cid %> new_<%=cid %> = new KeyStruct_<%=cid %>();
+
+		<%
+	for (int ij=0; ij<metadata.getListColumns().size();ij++) {
+		IMetadataColumn column = metadata.getListColumns().get(ij);
+		Map<String,String> keyColumn = keyColumns.get(ij);
+		if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+			boolean caseSensitive = ("true").equals(keyColumn.get("CASE_SENSITIVE"));
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(javaType == JavaTypesManager.STRING) {
+				if(caseSensitive){
+		%>
+new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+				}else{
+%>
+if(<%=connName %>.<%=column.getLabel() %> == null){
+	new_<%=cid %>.<%=column.getLabel() %> = null;
+}else{
+	new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>.toLowerCase();
+}
+<%
+				}
+			}else{
+%>
+new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+			}
+		}
+	}
+		%>
+		
+		keys<%=cid %>.add(new_<%=cid %>);
+<%
+	if (connsUnique!=null) {
+		if (connsUnique.size()>0) {
+			for (int i=0;i<connsUnique.size();i++) {
+				IConnection conn = connsUnique.get(i);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>if(<%=conn.getName() %> == null){ 
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the unique record " + (nb_uniques_<%=cid %>+1) + " into <%=conn.getName() %>.");
+	<%
+	}
+	%>
+	<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+}
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+			    	 %><%=conn.getName() %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;			
+<%					 }
+				}
+			}
+		}
+	}
+%>		
+		nb_uniques_<%=cid %>++;
+	} else {
+<%
+	if (connsDuplicate!=null) {
+		if (connsDuplicate.size()>0) {
+			for (int i=0;i<connsDuplicate.size();i++) {
+				IConnection conn = connsDuplicate.get(i);
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+					if(("true").equals(onlyOnceEachDuplicatedKey)){
+					%>
+if (!keysForDuplicated<%=cid %>.contains(finder_<%=cid %>)) {
+		KeyStruct_<%=cid %> new_<%=cid %> = new KeyStruct_<%=cid %>();
+
+		<%
+	for (int ik=0; ik<metadata.getListColumns().size();ik++) {
+		IMetadataColumn column = metadata.getListColumns().get(ik);
+		Map<String,String> keyColumn = keyColumns.get(ik);
+		if(("true").equals(keyColumn.get("KEY_ATTRIBUTE"))){
+			boolean caseSensitive = ("true").equals(keyColumn.get("CASE_SENSITIVE"));
+			JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			if(javaType == JavaTypesManager.STRING) {
+				if(caseSensitive){
+		%>
+new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+				}else{
+%>
+if(<%=connName %>.<%=column.getLabel() %> == null){
+	new_<%=cid %>.<%=column.getLabel() %> = null;
+}else{
+	new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>.toLowerCase();
+}
+<%
+				}
+			}else{
+%>
+new_<%=cid %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+<%
+			}
+		}
+	}
+		%>
+	keysForDuplicated<%=cid %>.add(new_<%=cid %>);
+					<%
+					}
+%>
+if(<%=conn.getName() %> == null){ 
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.trace("<%=cid%> - Writing the duplicate record " + (nb_duplicates_<%=cid %>+1) + " into <%=conn.getName() %>.");
+	<%
+	}
+	%>
+	<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+}				
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+			    	 %><%=conn.getName() %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;			
+<%					 }
+					if(("true").equals(onlyOnceEachDuplicatedKey)){
+					%>
+}
+					<%
+					}
+				}
+			}
+		}
+	}
+%>
+	  nb_duplicates_<%=cid %>++;
+	}
+<%
+	}else{
+		if (conns!=null) {
+			if (conns.size()>0) {
+				for (int i=0;i<conns.size();i++) {
+					IConnection conn = conns.get(i);
+			    	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+			    		for (IMetadataColumn column: metadata.getListColumns()) {
+			    	 %><%=conn.getName() %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;			
+<%						}
+					}
+				}
+			}
+		}
+	}
+	}
+}
+%>

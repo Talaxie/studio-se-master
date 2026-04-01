@@ -1,0 +1,129 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	LogUtil logtpl = new LogUtil(node);
+	String cid = node.getUniqueName();
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas==null)||(metadatas.isEmpty())) {
+		return "";
+	}
+	
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata==null) {
+		return "";
+	}
+	
+	String filepath = ElementParameterParser.getValue(node,"__FILE__");
+	
+	String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+	
+	String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+	
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	if(encoding!=null) {
+		encoding = encoding.replace("UTF16LE","UTF-16LE").replace("UTF16BE","UTF-16BE");
+	}
+	
+	boolean isAppend = "true".equals(ElementParameterParser.getValue(node,"__APPEND__"));
+	
+	boolean isCreateDir = "true".equals(ElementParameterParser.getValue(node,"__CREATE__"));
+%>
+	int nb_line_<%=cid%> = 0;
+	String rowSeparator_<%=cid %> = "\n";
+	String fieldSeparator_<%=cid %> = 
+<%
+	if(fieldSeparator.trim().isEmpty()) {
+%>
+	",";
+<%
+	} else {
+%>
+	String.valueOf(<%=fieldSeparator.trim()%>);
+<%
+	}
+%>
+
+	char textEnclosure_<%=cid %> = 
+<%
+	if("EMPTY".equals(textEnclosure)) {
+%>
+	'\0';
+	
+	String escapedFieldSeparator_<%=cid %> = "\\" + fieldSeparator_<%=cid %>;
+<%
+	} else if("DOUBLE_QUOTE".equals(textEnclosure)) {
+%>
+	'"';
+<%
+	} else {
+%>
+	String.valueOf(<%=textEnclosure%>).charAt(0);
+<%
+	}
+%>
+	String textEnclosureReplaced_<%=cid %> = "" + textEnclosure_<%=cid %>;
+	String textEnclosureReplacement_<%=cid %> = "" + textEnclosure_<%=cid %> + textEnclosure_<%=cid %>;
+	
+	java.io.File file_<%=cid %> = new java.io.File(<%=filepath %>);		
+
+	<%if(isCreateDir) {%>
+    java.io.File parentFile_<%= cid %> = file_<%=cid %>.getParentFile();
+    if(parentFile_<%= cid %> != null && !parentFile_<%= cid %>.exists()){
+        String absolutePath_<%= cid %> = parentFile_<%= cid %>.getAbsolutePath();
+        <% logtpl.info("\"The directory '\"",logtpl.var("absolutePath"),"\"' doesn't exist,try to create it.\""); %>
+        if(parentFile_<%= cid %>.mkdirs()){
+            <% logtpl.info("\"The directory '\"",logtpl.var("absolutePath"),"\"' has been created successfully.\""); %>
+            System.out.println("The directory '"+absolutePath_<%=cid%>+"' has been created successfully.");
+        }else{
+            <% logtpl.error("\"Fail to create directory '\"",logtpl.var("absolutePath"),"\"'.\""); %>
+            System.err.println("Fail to create directory '"+absolutePath_<%=cid%>+"'.");
+        }
+    }
+	<%}%>
+	
+<%
+	boolean compress = "true".equals(ElementParameterParser.getValue(node, "__COMPRESS__"));
+	boolean delete = "true".equals(ElementParameterParser.getValue(node,"__DELETE_LOCALFILE__"));
+	if((delete || !isAppend) && compress) {
+		String compression = ElementParameterParser.getValue(node, "__COMPRESSION__");
+%>
+		String filePath_<%=cid%> = file_<%=cid %>.getAbsolutePath().replace("\\","/");
+		String gzPath_<%=cid%> = filePath_<%=cid%> + ".gz";
+		file_<%=cid %> = new java.io.File(gzPath_<%=cid%>);
+		
+		java.io.BufferedWriter csvWriter_<%=cid%> = 
+			new java.io.BufferedWriter(
+				new java.io.OutputStreamWriter(
+					new java.util.zip.GZIPOutputStream(
+						new java.io.FileOutputStream(file_<%=cid %>) 
+					),
+					<%=encoding %>
+				)
+			);
+<%
+	} else {
+%>
+	java.io.BufferedWriter csvWriter_<%=cid%> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+    	new java.io.FileOutputStream(file_<%=cid %>, <%=(!delete && isAppend) %>), <%=encoding %>));
+<%
+    }
+%>
+    resourceMap.put("csvWriter_<%=cid%>", csvWriter_<%=cid%>);
+<%
+	if(delete) {
+%>
+	resourceMap.put("file_<%=cid %>", file_<%=cid %>);
+<%
+	}
+%>
+   

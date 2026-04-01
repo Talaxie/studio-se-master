@@ -1,0 +1,1388 @@
+<%@ jet 
+	imports="
+	java.util.ArrayList
+	java.util.List
+	java.util.Map
+	java.util.HashMap
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.designer.mapper.MapperMain
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.designer.mapper.MapperComponent
+	org.talend.designer.mapper.external.data.ExternalMapperData 
+	org.talend.designer.mapper.external.data.ExternalMapperTable
+	org.talend.designer.mapper.external.data.ExternalMapperTableEntry
+	org.talend.core.model.process.IConnection
+	org.talend.designer.mapper.language.ILanguage
+	org.talend.designer.mapper.language.generation.GenerationManagerFactory
+	org.talend.designer.mapper.language.generation.JavaGenerationManager
+	org.talend.designer.mapper.language.LanguageProvider
+    org.talend.core.model.process.ElementParameterParser
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.process.INode
+	org.talend.designer.components.lookup.common.ICommonLookup.MATCHING_MODE
+	org.talend.core.model.utils.TalendTextUtils
+	" 
+	skeleton="tMap_commons.skeleton"
+%>
+
+<%
+
+//org.talend.core.model.utils.NodeUtil
+
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	MapperComponent node = (MapperComponent) codeGenArgument.getArgument();
+	boolean stats = codeGenArgument.isStatistics();
+	
+	String componentName = node.getUniqueName();
+	
+	
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        ExternalMapperData data = (ExternalMapperData) node.getExternalData();
+        List<ExternalMapperTable> varsTables = data.getVarsTables();
+        ILanguage currentLanguage = LanguageProvider.getJavaLanguage();
+        JavaGenerationManager gm = (JavaGenerationManager) GenerationManagerFactory.getInstance().getGenerationManager(currentLanguage);
+
+		String tempFolder = ElementParameterParser.getValue(node, "__TEMPORARY_DATA_DIRECTORY__");
+		if (("").equals(tempFolder)) {
+			tempFolder=ElementParameterParser.getValue(node.getProcess(), "__COMP_DEFAULT_FILE_DIR__") + "/temp";
+			tempFolder=TalendTextUtils.addQuotes(tempFolder);
+		}
+		String rowsBufferSize = ElementParameterParser.getValue(node, "__ROWS_BUFFER_SIZE__");
+		
+		
+		boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		
+		
+%>
+
+// ###############################
+// # Lookup's keys initialization
+<%
+
+List<IConnection> inputConnections = (List<IConnection>) node.getIncomingConnections();
+
+boolean hasConcurrencyContext = false;
+boolean isVirtualIn = componentName.endsWith("TMAP_IN");
+boolean isVirtualOut = componentName.endsWith("TMAP_OUT");
+
+String uniqueNameComponent = componentName.replaceAll("_TMAP_IN", "");
+uniqueNameComponent = uniqueNameComponent.replaceAll("_TMAP_OUT", "");
+
+
+if(isVirtualIn) {
+	List<IConnection> localInputConnections = inputConnections;
+	String searchedComponentName = componentName.replaceAll("TMAP_IN", "TMAP_OUT");
+	List<? extends INode> generatedNodes = node.getProcess().getGeneratingNodes();
+	for(INode loopNode : generatedNodes) {
+		if(loopNode.getUniqueName().equals(searchedComponentName)) {
+			localInputConnections = (List<IConnection>) loopNode.getIncomingConnections();
+			break;
+		}
+	}
+	hasConcurrencyContext = hasConcurrencyContext(localInputConnections, node.getProcess().getGraphicalNodes());
+} else {
+	hasConcurrencyContext = hasConcurrencyContext(inputConnections, node.getProcess().getGraphicalNodes());
+}
+
+if(hasConcurrencyContext && !isVirtualIn) {
+%>
+
+	Integer currentThreadNumber_<%= uniqueNameComponent %> = null;  
+	<%
+	// if codeGenArgument.getIsRunInMultiThread() is true, the job.this.globalMap will wrapped with synchronizedMap, use synchronized(job.this.globalMap)
+	// when codeGenArgument.getIsRunInMultiThread() is false, the job.this.globalMap is HashMap, use synchronized(job.this.object) when do the job.this.globalMap.put() operation(tMap,tIterateToFlow).
+	if(codeGenArgument.getIsRunInMultiThread()){%>
+		synchronized (<%=node.getProcess().getName()%>.this.globalMap) {
+	<%}else{%>
+		synchronized (<%=node.getProcess().getName()%>.this.obj) {
+	<%}%>
+		
+			currentThreadNumber_<%= uniqueNameComponent %> = (Integer) <%= node.getProcess().getName() %>.this.globalMap.get("currentThreadNumber_<%= uniqueNameComponent %>");
+		
+			if(currentThreadNumber_<%= uniqueNameComponent %> == null) {
+				currentThreadNumber_<%= uniqueNameComponent %> = 1;
+			} else {
+				currentThreadNumber_<%= uniqueNameComponent %>++;
+			}
+			<%= node.getProcess().getName() %>.this.globalMap.put("currentThreadNumber_<%= uniqueNameComponent %>", currentThreadNumber_<%= uniqueNameComponent %>);
+	
+		}
+<%
+}
+
+HashMap<String, IConnection> hNameToConnection = new HashMap<String, IConnection>();
+for (IConnection connection : inputConnections) {
+    hNameToConnection.put(connection.getName(), connection);
+}
+
+List<ExternalMapperTable> inputTablesWithInvalid = new ArrayList<ExternalMapperTable>(data.getInputTables());
+
+List<ExternalMapperTable> inputTables = new ArrayList<ExternalMapperTable>();
+for(int i=0; i < inputTablesWithInvalid.size(); i++) {
+	ExternalMapperTable currentLoopTable = inputTablesWithInvalid.get(i);
+	if(isLog4jEnabled){
+		if(!isVirtualOut) {
+		%>
+		int count_<%=currentLoopTable.getName()%>_<%=uniqueNameComponent%> = 0;
+		<%
+		}
+	}
+	if(hNameToConnection.get(currentLoopTable.getName()) != null) {
+		inputTables.add(currentLoopTable);
+	}
+}
+
+int lstSizeInputs = inputTables.size();
+for (int i = 1; i < lstSizeInputs; i++) {
+    ExternalMapperTable inputTable = (ExternalMapperTable) inputTables.get(i);
+    String tableName = inputTable.getName();
+
+    List<ExternalMapperTableEntry> tableEntries = inputTable.getMetadataTableEntries();
+    if (tableEntries == null) {
+        continue;
+    }
+    String className = tableName + "Struct";
+    
+    boolean isAllRows = "ALL_ROWS".equals(inputTable.getMatchingMode());
+    
+	String lookupMode = inputTable.getLookupMode();
+	boolean isReloadLookupMode = org.talend.designer.mapper.model.table.LOOKUP_MODE.RELOAD.name().equals(lookupMode);
+	boolean isCacheOrReloadLookupMode = org.talend.designer.mapper.model.table.LOOKUP_MODE.CACHE_OR_RELOAD.name().equals(lookupMode);
+	boolean isOneOfReloadLookupMode = isReloadLookupMode || isCacheOrReloadLookupMode;
+    
+    if(inputTable.isPersistent()) {
+
+		%>
+
+		org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct> tHash_Lookup_<%=tableName%> = 
+			(org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+				((org.talend.designer.components.lookup.persistent.Persistent<%= isAllRows ? "" : "Sorted" %>LookupManager<<%=tableName%>Struct>) 
+					 globalMap.get( "tHash_Lookup_<%=tableName%>" ))
+					<%
+					if(hasConcurrencyContext) {
+					%>
+					.clone()
+					<%}%>;
+	<%
+	
+	} else {
+	
+	%>
+	
+		org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct> tHash_Lookup_<%=tableName%> = <%
+		
+		if(isOneOfReloadLookupMode) {
+			 %>null;<%
+		} else {
+			%>(org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+				((org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct>) 
+					globalMap.get( "tHash_Lookup_<%=tableName%>" ))
+					<%
+					if(hasConcurrencyContext) {
+					%>
+					.clone()
+					<%}%>;<%
+		}
+					
+	%>					
+					
+	<%
+	}
+
+	String matchingModeStr = inputTable.getMatchingMode();
+	
+	if(isCacheOrReloadLookupMode) {
+	%>
+	
+		org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct> tHash_Lookup_Cache_<%=tableName%> = 
+			org.talend.designer.components.lookup.memory.AdvancedMemoryLookup.
+				<<%=tableName%>Struct>getLookup(org.talend.designer.components.lookup.common.ICommonLookup.MATCHING_MODE.<%= matchingModeStr %>);
+	
+		org.talend.designer.components.lookup.memory.AdvancedMemoryLookup<<%=tableName%>Struct> tHash_Lookup_Real_<%=tableName%> = null;
+	
+	<%}
+
+	if(isAllRows && !isOneOfReloadLookupMode) {
+	%>
+		tHash_Lookup_<%= tableName %>.initGet();
+	<%
+}
+
+
+
+
+%>
+
+<%=className%> <%=tableName%>HashKey = new <%=className%>();
+<%=className%> <%=tableName%>Default = new <%=className%>();
+<%
+        }
+%>
+// ###############################        
+
+// ###############################
+// # Vars initialization
+<%
+
+        /////////////////////////////////////////////////////////////////////////
+        gm.setVarsTables(varsTables);
+
+        List<ExternalMapperTable> varTablesList = new ArrayList<ExternalMapperTable>(varsTables);
+
+        // constants
+        for (ExternalMapperTable table : varTablesList) {
+            List<ExternalMapperTableEntry> tableEntries = table.getMetadataTableEntries();
+            if (tableEntries == null) {
+                continue;
+            }
+            String tableName = table.getName();
+            
+            String instanceVarName = tableName + "__" + node.getUniqueName();
+            String className = instanceVarName + "__Struct";
+            
+%>
+class  <%=className%>  {
+
+<%
+            int lstSize = tableEntries.size();
+            for (int i = 0; i < lstSize; i++) {
+                ExternalMapperTableEntry varTableEntry = (ExternalMapperTableEntry) tableEntries.get(i);
+                String javaType = varTableEntry.getType();
+
+%>	<%= JavaTypesManager.getTypeToGenerate(javaType, varTableEntry.isNullable()) %> <%= varTableEntry.getName() %>;
+
+<%
+            }
+%>}
+<%= className %> <%= instanceVarName %> = new <%= className %>();
+<%
+        }
+%>
+// ###############################
+
+// ###############################
+// # Outputs initialization
+<%
+
+		  List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+		  Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+        for (IConnection connection : outputConnections) {
+		  		nameToOutputConnection.put(connection.getName(), connection);
+		  }
+
+        List<ExternalMapperTable> outputTablesList = new ArrayList<ExternalMapperTable>(data.getOutputTables());
+        // constants
+        for (ExternalMapperTable table : outputTablesList) {
+        
+            List<ExternalMapperTableEntry> tableEntries = table.getMetadataTableEntries();
+            if (tableEntries == null || nameToOutputConnection.get(table.getName()) == null) {
+                continue;
+            }
+            String tableName = table.getName();
+			if(isLog4jEnabled){
+				if(!isVirtualOut) {
+				%>
+				int count_<%=tableName%>_<%=uniqueNameComponent%> = 0;
+				<%
+				}
+			}
+            
+            String instanceVarName = tableName + "__" + node.getUniqueName();
+            String className = tableName + "Struct";
+            
+%>
+<%= className %> <%= tableName %>_tmp = new <%= className %>();
+<%
+        }
+%>
+// ###############################
+
+<%
+        for (ExternalMapperTable table : data.getOutputTables()) {
+            if (hasJoinedTable(table.getName(),data)&&nameToOutputConnection.get(table.getName())!=null) {
+%>
+		List<<%= table.getName()%>Struct> <%= table.getName()%>_List = new java.util.ArrayList<<%= table.getName()%>Struct>();
+<%
+            }
+        }
+
+%>
+
+<%
+
+HashMap<String, ExternalMapperTableEntry> hExternalInputTableEntries = new HashMap<String, ExternalMapperTableEntry>();
+
+int currentJoinedTableIndex = 0;
+
+int sizeInputTables = inputTables.size();
+        
+List<IConnection> cumulatedInputConnections = new ArrayList<IConnection>();
+
+String comma;
+for (int iInputTable = 0; iInputTable < sizeInputTables - 1; iInputTable++) { // T_TM_B_101
+        
+	ExternalMapperTable currentInputTable = inputTables.get(iInputTable);
+	ExternalMapperTable nextInputTable = null; 
+	
+	if(sizeInputTables > 1) {
+		nextInputTable = inputTables.get(iInputTable + 1);
+	}
+	
+	currentJoinedTableIndex++;
+
+	String currentTableName = currentInputTable.getName();
+    IConnection currentConection = hNameToConnection.get(currentTableName);
+    if (currentConection == null) {
+        continue;
+    }
+	
+	
+    cumulatedInputConnections.add(currentConection);
+	
+	if(nextInputTable != null && nextInputTable.isPersistent()) { // T_TM_B_103
+	
+		List<IMetadataColumn> nextColumnsKeys = new ArrayList<IMetadataColumn>();
+
+	        String nextTableName = nextInputTable.getName();
+            IConnection nextConection = hNameToConnection.get(nextTableName);
+            if (nextConection == null) {
+                continue;
+            }
+	
+		%>
+	
+		class SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%> implements Comparable<SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>>, routines.system.IPersistableRow<SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>> { // G_TM_B_001 
+
+			boolean is__rejectedInnerJoin;
+
+		<%
+	        
+	        
+                IMetadataTable nextMetadataTable = nextConection.getMetadataTable();
+                if (nextInputTable != null) {
+                    hExternalInputTableEntries.clear();
+                    List<ExternalMapperTableEntry> metadataTableEntries = nextInputTable.getMetadataTableEntries();
+                    if (metadataTableEntries == null) {
+                        continue;
+                    }
+                    for (ExternalMapperTableEntry nextInputTableEntry : metadataTableEntries) {
+                        hExternalInputTableEntries.put(nextInputTableEntry.getName(), nextInputTableEntry);
+                    }
+                    List<IMetadataColumn> listColumns = nextMetadataTable.getListColumns();
+                    for (IMetadataColumn column : listColumns) {
+                        String columnName = column.getLabel();
+                        ExternalMapperTableEntry externalInputTableEntry = hExternalInputTableEntries.get(columnName);
+                        if (externalInputTableEntry != null) {
+                            String expressionKey = externalInputTableEntry.getExpression();
+                            if (expressionKey != null && !"".equals(expressionKey.trim())) {
+                            
+                            	nextColumnsKeys.add(column);
+                            
+                            	%><%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>;
+                            	<%
+ 		                           
+                            }
+                        }
+                    }
+				}
+			
+			
+			// properties declarations 
+			%>
+			//<%= currentInputTable.getName() %>
+			<%
+			
+        
+                IMetadataTable currentMetadataTable = currentConection.getMetadataTable();
+                if (currentInputTable != null) {
+
+					for(IConnection connection : cumulatedInputConnections) {
+                    	IMetadataTable joinedTable = connection.getMetadataTable();
+	                    List<IMetadataColumn> listColumns = joinedTable.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+	                        String columnName = column.getLabel();
+                            
+                            %><%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> <%= connection.getName() %>__<%=column.getLabel() %>;
+                            <%
+						}
+                    }
+
+                    hExternalInputTableEntries.clear();
+                    List<ExternalMapperTableEntry> metadataTableEntries = currentInputTable.getMetadataTableEntries();
+                    if (metadataTableEntries == null) {
+                        continue;
+                    }
+                    for (ExternalMapperTableEntry currentInputTableEntry : metadataTableEntries) {
+                        hExternalInputTableEntries.put(currentInputTableEntry.getName(), currentInputTableEntry);
+                    }
+
+				}
+				
+		%>
+		
+		
+		
+		         public void fillFrom(<%
+		         
+			        comma = "";
+		         	for(IConnection connection : cumulatedInputConnections) {
+		         	
+		         		IConnection realConnection = org.talend.core.model.utils.NodeUtil.getRealConnectionTypeBased(connection);
+		         	
+			        	%><%=comma%> <%= realConnection.getName() %>Struct <%= connection.getName() %><%
+		         		comma = ", ";
+		         	}
+                    int sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_105
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+
+		         		%><%=comma%> <%= JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()) %> exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %><%
+                    
+                    } // T_TM_B_105
+                    
+		         %>) {
+
+					<%
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+                    		if ("Dynamic".equals(JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()))) {
+							%>
+								this.<%= connection.getName() %>__<%= column.getLabel() %> = (routines.system.Dynamic) <%= connection.getName() %>.<%= column.getLabel() %>.clone();
+	                		<%
+	                		} else {
+	                		%>
+	                			this.<%= connection.getName() %>__<%= column.getLabel() %> = <%= connection.getName() %>.<%= column.getLabel() %>;
+	                		<%
+	                		}
+                		}
+                	}
+                	%>
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_104
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+						if ("Dynamic".equals(JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable()))) {
+						%>
+							this.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %> = (routines.system.Dynamic) exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>.clone();
+						<%
+						} else {
+						%>
+							this.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %> = exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>;
+						<%
+                    	}
+                    } // T_TM_B_104
+                    %>
+                }
+
+                public void copyDataTo(<%
+		         
+		         comma = "";
+		         for(IConnection connection : cumulatedInputConnections) {
+
+		            IConnection realConnection = org.talend.core.model.utils.NodeUtil.getRealConnectionTypeBased(connection);
+
+			         %><%=comma%><%= realConnection.getName() %>Struct <%= connection.getName() %><%
+		         	comma = ", ";
+		         }
+		         %>) {
+
+					<%
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+						%><%= connection.getName() %>.<%= column.getLabel() %> = this.<%= connection.getName() %>__<%= column.getLabel() %>;
+	                	<%
+                		}
+                	}
+                	%>
+                }
+
+		
+    public String toString() {
+		
+		StringBuilder sb = new StringBuilder();
+		sb.append(super.toString());
+		sb.append("[");
+		<%	
+		comma = "";
+       	for(IConnection connection : cumulatedInputConnections) {
+		        	
+       		IMetadataTable metadata = connection.getMetadataTable();
+			if (metadata !=null) {
+				for (IMetadataColumn column: metadata.getListColumns()) {
+						if(comma.length() > 0) {
+						%>
+							sb.append("<%= comma %>");
+						<%
+						}
+						%>
+						sb.append("<%= connection.getName() %>__<%= column.getLabel() %>");
+						sb.append("=");
+						sb.append(String.valueOf(this.<%= connection.getName() %>__<%= column.getLabel() %>));
+					<%
+					comma = ", ";
+				}
+    		}
+    	}
+	    %>
+	    sb.append("]");
+	    
+	    return sb.toString();
+    }
+
+		
+		
+		
+		        public int compareTo(SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%> other) {
+
+                    int returnValue = 0;
+                    
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_102
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+                    %>
+                    
+                    	returnValue = checkNullsAndCompare(this.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>, other.exprKey_<%= nextInputTable.getName() %>__<%=column.getLabel() %>);
+                    	if (returnValue != 0) {
+	                        return returnValue;
+                    	}
+                    
+                    <%
+                    } // T_TM_B_102
+                    %>
+
+                    return returnValue;
+                }
+
+                private int checkNullsAndCompare(Object object1, Object object2) {
+                    int returnValue = 0;
+                    if (object1 instanceof Comparable && object2 instanceof Comparable) {
+                        returnValue = ((Comparable) object1).compareTo(object2);
+                    } else if (object1 != null && object2 != null) {
+                        returnValue = compareStrings(object1.toString(), object2
+                                .toString());
+                    } else if (object1 == null && object2 != null) {
+                        returnValue = 1;
+                    } else if (object1 != null && object2 == null) {
+                        returnValue = -1;
+                    } else {
+                        returnValue = 0;
+                    }
+
+                    return returnValue;
+                }
+
+                private int compareStrings(String string1, String string2) {
+                    return string1.compareTo(string2);
+                }
+
+
+		
+    public void readData(ObjectInputStream dis) {
+
+		synchronized(<%= currentTableName %>Struct.commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>) {
+
+	        try {
+            
+				int length = 0;
+			
+				this.is__rejectedInnerJoin = dis.readBoolean();
+			
+		<%	
+		boolean hasAtLeastOneRead = false;
+		boolean hasAtLeastOneObjectType = false;
+		if (currentMetadataTable !=null) {
+		
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        	
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+			 	
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.<%= connection.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+           						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+           						} else {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+	               				}
+           					}
+               				dis.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+               				this.<%= connection.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%= codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+           				}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           			    	this.<%= connection.getName() %>__<%= column.getLabel() %> = new Date(dis.readLong());
+           				}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+               				byte[] byteArray = new byte[length];
+               				dis.readFully(byteArray);
+               				this.<%= connection.getName() %>__<%= column.getLabel() %> = byteArray;
+           				}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+			 		hasAtLeastOneObjectType = true;
+					%>
+						this.<%= connection.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+					
+					<%
+				} else {
+					typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           							hasAtLeastOneObjectType = true;
+           					%>
+           							this.<%= connection.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+           					<%
+           						} else {
+           					%>
+           							this.<%= connection.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           					<%
+           						}
+           					%>
+           				}
+					<%
+				}
+
+
+                		}
+                	}
+                	%>
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_104
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           			    	this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new Date(dis.readLong());
+           				}
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+           						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+           						} else {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+	               				}
+           					}
+               				dis.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+               				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+           				}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+               				byte[] byteArray = new byte[length];
+               				dis.readFully(byteArray);
+               				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = byteArray;
+           				}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+			 		hasAtLeastOneObjectType = true;
+					%>
+           				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+					
+					<%
+				} else {
+					typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           							hasAtLeastOneObjectType = true;
+           					%>
+           							this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) dis.readObject();
+           					<%
+           						} else {
+           					%>
+           							this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           					<%
+           						}
+           					%>
+           				}
+					<%
+				}
+                    
+                    } // T_TM_B_104
+		
+		
+		
+
+
+
+    	}
+	    if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+        
+      } 
+    }
+    
+    
+    public void readData(org.jboss.marshalling.Unmarshaller objectIn) {
+
+		synchronized(<%= currentTableName %>Struct.commonByteArrayLock_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>) {
+
+	        try {
+            
+				int length = 0;
+			
+				this.is__rejectedInnerJoin = objectIn.readBoolean();
+			
+		<%	
+		 hasAtLeastOneRead = false;
+		 hasAtLeastOneObjectType = false;
+		if (currentMetadataTable !=null) {
+		
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        	
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+			 	
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.<%= connection.getName() %>__<%= column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readInt();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+           						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+           						} else {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+	               				}
+           					}
+               				objectIn.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+               				this.<%= connection.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%= codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+           				}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readByte();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           			    	this.<%= connection.getName() %>__<%= column.getLabel() %> = new Date(objectIn.readLong());
+           				}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readInt();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+               				byte[] byteArray = new byte[length];
+               				objectIn.readFully(byteArray);
+               				this.<%= connection.getName() %>__<%= column.getLabel() %> = byteArray;
+           				}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+			 		hasAtLeastOneObjectType = true;
+					%>
+						this.<%= connection.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) objectIn.readObject();
+					<%
+				} else {
+					typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            length = objectIn.readByte();
+           				if (length == -1) {
+           	    			this.<%= connection.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           							hasAtLeastOneObjectType = true;
+           					%>
+           							this.<%= connection.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) objectIn.readObject();
+           					<%
+           						} else {
+           					%>
+           							this.<%= connection.getName() %>__<%= column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+           					<%
+           						}
+           					%>
+           				}
+					<%
+				}
+
+
+                		}
+                	}
+                	%>
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_104
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+
+			  	hasAtLeastOneRead = true;
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readByte();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           			    	this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new Date(objectIn.readLong());
+           				}
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readInt();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					if(length > <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length) {
+           						if(length < 1024 && <%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>.length == 0) {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[1024];
+           						} else {
+	               					<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %> = new byte[2 * length];
+	               				}
+           					}
+               				objectIn.readFully(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length);
+               				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = new String(<%= currentTableName %>Struct.commonByteArray_<%=codeGenArgument.getCurrentProjectName() %>_<%=codeGenArgument.getJobName() %>, 0, length, utf8Charset);
+           				}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			            length = objectIn.readInt();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+               				byte[] byteArray = new byte[length];
+               				objectIn.readFully(byteArray);
+               				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = byteArray;
+           				}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+			 		hasAtLeastOneObjectType = true;
+					%>
+           				this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) objectIn.readObject();
+					<%
+				} else {
+					typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            length = objectIn.readByte();
+           				if (length == -1) {
+           	    			this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = null;
+           				} else {
+           					<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           							hasAtLeastOneObjectType = true;
+           					%>
+           							this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = (<%= typeToGenerate %>) objectIn.readObject();
+           					<%
+           						} else {
+           					%>
+           							this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> = objectIn.read<%= typeToGenerate %>();
+           					<%
+           						}
+           					%>
+           				}
+					<%
+				}
+                    
+                    } // T_TM_B_104
+		
+		
+		
+
+
+
+    	}
+	    if(hasAtLeastOneRead) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+
+		<%
+		if(hasAtLeastOneObjectType) {
+		%>
+			} catch(ClassNotFoundException eCNFE) {
+				 throw new RuntimeException(eCNFE);
+		<%
+		}
+		%>
+
+        }
+        
+      } 
+    }
+
+    public void writeData(ObjectOutputStream dos) {
+        try {
+
+           	dos.writeBoolean(this.is__rejectedInnerJoin);
+
+		<%	
+		boolean hasAtLeastOneWrite = false;
+		if (currentMetadataTable !=null) {
+			
+			
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	dos.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeInt(-1);
+						} else {
+			                byte[] byteArray = this.<%= connection.getName() %>__<%= column.getLabel() %>.getBytes(utf8Charset);
+           			    	dos.writeInt(byteArray.length);
+               				dos.write(byteArray);
+		            	}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	dos.writeLong(this.<%= connection.getName() %>__<%= column.getLabel() %>.getTime());
+		            	}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeInt(-1);
+						} else {
+           			    	dos.writeInt(this.<%= connection.getName() %>__<%= column.getLabel() %>.length);
+               				dos.write(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+		            	}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+       			    	dos.writeObject(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           					%>
+           							dos.writeObject(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						} else {
+           					%>
+           							dos.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						}
+           					%>
+		            	}
+					<%
+				
+				}
+                		}
+                	}
+                	%>
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_104
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	dos.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeInt(-1);
+						} else {
+			                byte[] byteArray = this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getBytes(utf8Charset);
+           			    	dos.writeInt(byteArray.length);
+               				dos.write(byteArray);
+		            	}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	dos.writeLong(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getTime());
+		            	}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeInt(-1);
+						} else {
+           			    	dos.writeInt(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.length);
+               				dos.write(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+		            	}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+       			    	dos.writeObject(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                dos.writeByte(-1);
+						} else {
+               				dos.writeByte(0);
+           			    	<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           					%>
+           							dos.writeObject(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						} else {
+           					%>
+           							dos.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						}
+           					%>
+		            	}
+					<%
+				
+				}
+                    
+                    } // T_TM_B_104
+			
+			
+
+
+    	}
+	    if(hasAtLeastOneWrite) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        }
+    }
+    
+    public void writeData(org.jboss.marshalling.Marshaller objectOut) {
+        try {
+
+           	objectOut.writeBoolean(this.is__rejectedInnerJoin);
+
+		<%	
+		hasAtLeastOneWrite = false;
+		if (currentMetadataTable !=null) {
+			
+			
+		        	for(IConnection connection : cumulatedInputConnections) {
+		        	
+		        		IMetadataTable table = connection.getMetadataTable();
+						List<IMetadataColumn> listColumns = table.getListColumns();
+                    	for (IMetadataColumn column : listColumns) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	objectOut.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeInt(-1);
+						} else {
+			                byte[] byteArray = this.<%= connection.getName() %>__<%= column.getLabel() %>.getBytes(utf8Charset);
+           			    	objectOut.writeInt(byteArray.length);
+               				objectOut.write(byteArray);
+		            	}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeByte(-1);
+						} else {
+               				objectOut.writeByte(0);
+           			    	objectOut.writeLong(this.<%= connection.getName() %>__<%= column.getLabel() %>.getTime());
+		            	}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeInt(-1);
+						} else {
+           			    	objectOut.writeInt(this.<%= connection.getName() %>__<%= column.getLabel() %>.length);
+               				objectOut.write(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+		            	}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+						objectOut.clearInstanceCache();
+						objectOut.writeObject(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+						if(this.<%= connection.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeByte(-1);
+						} else {
+               				objectOut.writeByte(0);
+           			    	<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           					%>
+           							objectOut.clearInstanceCache();
+           							objectOut.writeObject(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						} else {
+           					%>
+           							objectOut.write<%= typeToGenerate %>(this.<%= connection.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						}
+           					%>
+		            	}
+					<%
+				
+				}
+                		}
+                	}
+                	%>
+                    <%
+                    sizeNextColumns = nextColumnsKeys.size();
+                    for (int iColumn = 0; iColumn < sizeNextColumns; iColumn++) { // T_TM_B_104
+                    	IMetadataColumn column = nextColumnsKeys.get(iColumn);
+
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+				hasAtLeastOneWrite = true;
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+		            	objectOut.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeInt(-1);
+						} else {
+			                byte[] byteArray = this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getBytes(utf8Charset);
+           			    	objectOut.writeInt(byteArray.length);
+               				objectOut.write(byteArray);
+		            	}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeByte(-1);
+						} else {
+               				objectOut.writeByte(0);
+           			    	objectOut.writeLong(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.getTime());
+		            	}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeInt(-1);
+						} else {
+           			    	objectOut.writeInt(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>.length);
+               				objectOut.write(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+		            	}
+					<%
+				} else if(("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+						objectOut.clearInstanceCache();
+						objectOut.writeObject(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+						if(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %> == null) {
+			                objectOut.writeByte(-1);
+						} else {
+               				objectOut.writeByte(0);
+           			    	<%
+           						if ("Dynamic".equals(typeToGenerate)) {
+           					%>
+           							objectOut.clearInstanceCache();
+           							objectOut.writeObject(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						} else {
+           					%>
+           							objectOut.write<%= typeToGenerate %>(this.exprKey_<%= nextInputTable.getName() %>__<%= column.getLabel() %>);
+           					<%
+           						}
+           					%>
+		            	}
+					<%
+				
+				}
+                    
+                    } // T_TM_B_104
+			
+			
+
+
+    	}
+	    if(hasAtLeastOneWrite) {
+	    %>
+        	} catch (IOException e) {
+	            throw new RuntimeException(e);
+        <%
+        }
+        %>
+        }
+    }
+    
+    public boolean supportJboss(){
+    	return true;
+    }
+		
+		
+		
+		} // G_TM_B_001
+	
+	<%
+	String threadInsertedString = "thread\" + currentThreadNumber_" + uniqueNameComponent + " + \""; 
+	%>
+	
+
+	org.talend.designer.components.lookup.persistent.PersistentRowSorterIterator<SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>> fsi_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%> = 
+		new org.talend.designer.components.lookup.persistent.PersistentRowSorterIterator<SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>>(
+			<%= tempFolder %> + "/"+ jobName +"_tMapData_" + Thread.currentThread().getId() + "_" + pid +"_<%= hasConcurrencyContext ? threadInsertedString + "_" : "" %><%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>", <%= rowsBufferSize %>) {
+			public SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%> createRowInstance() {
+				return new SortableRow_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>();
+			}
+		};
+	
+	fsi_<%=uniqueNameComponent%>_<%=currentJoinedTableIndex%>.initPut();
+
+		
+		
+<%
+	} // T_TM_B_103
+} // T_TM_B_101      
+
+%>        
+        
+
+
+
+        

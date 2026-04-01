@@ -1,0 +1,80 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+    java.util.HashMap
+  	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.EConnectionType
+"
+skeleton="tFileOutputMSXML_java.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+// ------------------- *** Common code start *** ------------------- //
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String incomingName = (String)codeGenArgument.getIncomingName();
+List<IMetadataTable> metadatas = NodeUtil.getIncomingMetadataTable(node, IConnectionCategory.FLOW);
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    	final List< ? extends IConnection> incomingConns = node.getIncomingConnections();
+    	
+  		//Notice here: only for the code viewer, because when click the tUnite component, it doesn't know which is the right input connection. 
+    	if (incomingName == null && incomingConns.size() > 0) 
+    	{ 
+    	   incomingName = incomingConns.get(0).getName(); 
+    	}    	 	
+    	if(incomingConns!=null && incomingConns.size()>0){
+    	/**
+    		//the first connection name
+    		String firstConnName=incomingConns.get(0).getUniqueName();
+    	
+	    	IConnection incomingConn = null;
+	    	INode preNode = null;
+	    	List<IMetadataTable> preMetadatas = null;
+	    	IMetadataTable preMetadata = null;
+	    	String sourceName=null;
+	    	for (IConnection conn : incomingConns) {
+	    		if ( conn.getLineStyle().equals(EConnectionType.FLOW_MERGE) && conn.getName().equals(incomingName)) {
+					
+					incomingConn = conn;
+					preNode = incomingConn.getSource();
+					preMetadatas = preNode.getMetadataList();
+					preMetadata = preMetadatas.get(0);
+					sourceName = incomingConn.getUniqueName();
+	    		    break;
+	    		}
+	    	}
+	    	*/
+//    		if(preMetadata!=null){
+%>
+<%@ include file="tFileOutputMSXML_begin.inc.javajet"%>
+<%
+				int schemaOptNum=100;
+				String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+				if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+					schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+				}
+    			OptimizeCodeGenerator optimizeGen = new OptimizeCodeGenerator(cid,schemaOptNum);
+    			optimizeGen.incomingName = incomingName;
+				optimizeGen.generateCode(node);
+// ------------------- *** Common code start *** ------------------- //
+//			}
+		}
+}
+// ------------------- *** Common code end *** ------------------- //
+%>

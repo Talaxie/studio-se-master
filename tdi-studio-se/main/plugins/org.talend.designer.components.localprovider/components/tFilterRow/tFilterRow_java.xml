@@ -1,0 +1,108 @@
+<COMPONENT>
+
+	<HEADER 
+		PLATEFORM="ALL" 
+		SERIAL="" 
+		VERSION="0.102" 
+		STATUS="ALPHA"
+		COMPATIBILITY="ALL" 
+		AUTHOR="Talaxie" 
+		RELEASE_DATE="20070312A"
+		STARTABLE="false" 
+		HAS_CONDITIONAL_OUTPUTS="true"
+		DATA_AUTO_PROPAGATE="false"
+		SCHEMA_AUTO_PROPAGATE ="true"
+		PARTITIONING="AUTO"
+		LOG4J_ENABLED="true"
+		>
+		<SIGNATURE />
+	</HEADER>
+
+  <FAMILIES>
+    <FAMILY>Processing</FAMILY>
+  </FAMILIES>
+
+	<DOCUMENTATION>
+		<URL />
+	</DOCUMENTATION>
+
+	<CONNECTORS>
+		<CONNECTOR CTYPE="FLOW" MAX_OUTPUT="0" MAX_INPUT="1" />
+		<CONNECTOR NAME="FILTER" CTYPE="FLOW" MAX_OUTPUT="1" COLOR="086438" BASE_SCHEMA="FLOW" />
+		<CONNECTOR NAME="REJECT" CTYPE="FLOW" MAX_OUTPUT="1" LINE_STYLE="2" COLOR="f36300" BASE_SCHEMA="FLOW" />
+		<CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="0" MAX_INPUT="0" />
+		<CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="COMPONENT_OK" />
+		<CONNECTOR CTYPE="COMPONENT_ERROR" />
+		<CONNECTOR CTYPE="RUN_IF" />
+	</CONNECTORS>
+
+	<PARAMETERS>
+		<PARAMETER NAME="SCHEMA" FIELD="SCHEMA_TYPE" REQUIRED="true" NUM_ROW="1" READONLY="true"/>
+		<PARAMETER NAME="SCHEMA_FILTER" FIELD="SCHEMA_TYPE" NUM_ROW="1"	CONTEXT="FILTER" />
+		<PARAMETER NAME="SCHEMA_REJECT" FIELD="SCHEMA_TYPE" NUM_ROW="1"	CONTEXT="REJECT">
+		  <TABLE READONLY="true">
+		    <COLUMN NAME="errorMessage" TYPE="id_String" LENGTH="255" READONLY="true" CUSTOM="true"/>
+		  </TABLE>
+		</PARAMETER>
+		
+		<PARAMETER NAME="LOGICAL_OP" FIELD="CLOSED_LIST" NUM_ROW="2" REQUIRED="true">
+			<ITEMS DEFAULT="AND">
+				<ITEM NAME="OR" VALUE="||" />
+				<ITEM NAME="AND" VALUE="&amp;&amp;" />
+			</ITEMS>
+		</PARAMETER>		
+		
+		<PARAMETER NAME="CONDITIONS" FIELD="TABLE" REQUIRED="false"	NUM_ROW="3" NB_LINES="3">
+			<ITEMS>
+				<ITEM NAME="INPUT_COLUMN" FIELD="PREV_COLUMN_LIST" />
+				<ITEM NAME="FUNCTION" FIELD="CLOSED_LIST">
+					<ITEMS DEFAULT="EMPTY">
+						<ITEM NAME="EMPTY" VALUE="" NOT_SHOW_IF="(CONDITIONS.INPUT_COLUMN.TYPE == 'byte[]') or (CONDITIONS.INPUT_COLUMN.TYPE == 'Object') or (CONDITIONS.INPUT_COLUMN.TYPE == 'List')" />
+						<ITEM NAME="ABS_VALUE"	VALUE="Math.abs($source) $operator $target" SHOW_IF="(CONDITIONS.INPUT_COLUMN.TYPE == 'int') or (CONDITIONS.INPUT_COLUMN.TYPE == 'long') or (CONDITIONS.INPUT_COLUMN.TYPE == 'float') or (CONDITIONS.INPUT_COLUMN.TYPE == 'double')" />
+						<ITEM NAME="LC"		 	VALUE="$source == null? false : $source.toLowerCase().compareTo($target) $operator 0" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+						<ITEM NAME="UC"		 	VALUE="$source == null? false : $source.toUpperCase().compareTo($target) $operator 0" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+						<ITEM NAME="LCFIRST" 	VALUE="$source == null? false : $source.toLowerCase().charAt(0) $operator $target" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+						<ITEM NAME="UCFIRST" 	VALUE="$source == null? false : $source.toUpperCase().charAt(0) $operator $target" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+						<ITEM NAME="LENGTH"  	VALUE="$source == null? false : $source.length() $operator $target" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+						<ITEM NAME="MATCH"    	VALUE="$source == null? false : $source.matches($target) $operator true" SHOW_IF="CONDITIONS.INPUT_COLUMN.TYPE == 'String'" />
+					</ITEMS>
+				</ITEM>
+
+				<ITEM NAME="OPERATOR" FIELD="CLOSED_LIST">
+					<ITEMS DEFAULT="EQ_JAVA">
+						<ITEM NAME="EQ_JAVA" VALUE="==" />
+						<ITEM NAME="NE_JAVA" VALUE="!=" />
+						<ITEM NAME="GT_JAVA" VALUE="&gt;" NOT_SHOW_IF="CONDITIONS.FUNCTION == 'MATCH'"/>
+						<ITEM NAME="LT_JAVA" VALUE="&lt;" NOT_SHOW_IF="CONDITIONS.FUNCTION == 'MATCH'"/>
+						<ITEM NAME="GE_JAVA" VALUE="&gt;=" NOT_SHOW_IF="CONDITIONS.FUNCTION == 'MATCH'"/>
+						<ITEM NAME="LE_JAVA" VALUE="&lt;=" NOT_SHOW_IF="CONDITIONS.FUNCTION == 'MATCH'"/>						
+					</ITEMS>
+				</ITEM>
+				<ITEM NAME="RVALUE" FIELD="String" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="USE_ADVANCED" FIELD="CHECK" REQUIRED="true" NUM_ROW="4">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+
+		<PARAMETER NAME="ADVANCED_COND" FIELD="MEMO_JAVA" RAW="true" NUM_ROW="5" NB_LINES="5" NOT_SHOW_IF="(USE_ADVANCED=='false')">
+			<DEFAULT>// code sample : use input_row to define the condition.
+// input_row.columnName1.equals("foo") ||!(input_row.columnName2.equals("bar"))
+// replace the following expression by your own filter condition 
+input_row.columnName1.equals(input_row.columnName2)
+			</DEFAULT>
+		</PARAMETER>
+
+	</PARAMETERS>
+
+	<CODEGENERATION />
+
+	<RETURNS>
+		<RETURN NAME="NB_LINE" TYPE="id_Integer" AVAILABILITY="AFTER"/>
+		<RETURN NAME="NB_LINE_OK" TYPE="id_Integer"	AVAILABILITY="AFTER"/>
+		<RETURN NAME="NB_LINE_REJECT" TYPE="id_Integer"	AVAILABILITY="AFTER"/>
+	</RETURNS>
+</COMPONENT>

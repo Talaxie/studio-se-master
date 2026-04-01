@@ -1,0 +1,197 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataColumn
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.process.EConnectionType
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String queueUrl = ElementParameterParser.getValue(node,"__QUEUE_URL__");
+    boolean dieOnError = "true".equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    boolean useBatch = "true".equals(ElementParameterParser.getValue(node,"__USE_BATCH__"));
+    String batchSize = ElementParameterParser.getValue(node,"__BATCH_SIZE__");
+    String messageGroupId = ElementParameterParser.getValue(node,"__GROUP_ID__");
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	List<? extends IConnection> connMains = node.getOutgoingConnections("MAIN");
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		List<IMetadataColumn> columns = metadata.getListColumns();
+		List< ? extends IConnection> conns = node.getIncomingConnections();
+		if((conns!=null)&&(conns.size()>0)) {
+			IConnection conn = conns.get(0);		
+			if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)||conn.getLineStyle().equals(EConnectionType.FLOW_MERGE)){
+	%>
+				sendMsgRequest_<%=cid%> = new com.amazonaws.services.sqs.model.<%=useBatch?"SendMessageBatchRequest":"SendMessageRequest"%>();
+				sendMsgRequest_<%=cid%>.setQueueUrl(<%=queueUrl%>);
+				nbline_<%=cid %>++;
+    <%
+				if(useBatch){
+	%>
+					com.amazonaws.services.sqs.model.SendMessageBatchRequestEntry entry_<%=cid%> = new com.amazonaws.services.sqs.model.SendMessageBatchRequestEntry();
+	<%
+				}
+				for (int i = 0; i < columns.size(); i++) {
+					IMetadataColumn column = columns.get(i);
+					if (column.getLabel().equals("Body")) {
+						if(useBatch){
+	%>
+							entry_<%=cid%>.setMessageBody(<%=conn.getName()%>.Body);
+	<%
+						}else{
+	%>
+							sendMsgRequest_<%=cid%>.setMessageBody(<%=conn.getName()%>.Body);							
+	<% 
+						}
+					}else if (column.getLabel().equalsIgnoreCase("MessageDeduplicationId")){
+						if(useBatch){
+	%>
+							entry_<%=cid%>.setMessageDeduplicationId(<%=conn.getName()%>.<%=column.getLabel()%>);
+	<%
+						}else{
+						%>
+					        sendMsgRequest_<%=cid%>.setMessageDeduplicationId(<%=conn.getName()%>.<%=column.getLabel()%>);
+					<%
+						}
+					}else if (column.getLabel().equalsIgnoreCase("MessageGroupId")){
+						if(useBatch){
+	%>
+							entry_<%=cid%>.setMessageGroupId(<%=conn.getName()%>.<%=column.getLabel()%>);
+	<%
+						}else{
+						%>
+					        sendMsgRequest_<%=cid%>.setMessageGroupId(<%=conn.getName()%>.<%=column.getLabel()%>);
+					<%
+						}
+					}else{
+						String dataType=null;;
+						if ("id_String".equals(column.getTalendType())) {
+							dataType="String";
+						}else if (JavaTypesManager.isNumber(column.getTalendType())){
+							dataType="Number";
+						}else if ("id_byte[]".equals(column.getTalendType())){
+							dataType="Binary";
+						}
+						if(dataType!=null){
+	%>
+							if(<%=conn.getName()%>.<%=column.getLabel()%> != null){
+								com.amazonaws.services.sqs.model.MessageAttributeValue <%=cid%>_<%=column.getLabel()%>_messageAttributeValue = new com.amazonaws.services.sqs.model.MessageAttributeValue();
+								<%=cid%>_<%=column.getLabel()%>_messageAttributeValue.setDataType("<%=dataType%>");
+    <%
+								if ("Binary".equals(dataType)){
+    %>
+									<%=cid%>_<%=column.getLabel()%>_messageAttributeValue.setBinaryValue(java.nio.ByteBuffer.wrap(<%=conn.getName()%>.<%=column.getLabel()%>));
+    <%
+								}else{ 
+    %>
+									<%=cid%>_<%=column.getLabel()%>_messageAttributeValue.setStringValue(String.valueOf(<%=conn.getName()%>.<%=column.getLabel()%>));
+    <%
+								}
+								if(useBatch){
+	%>
+									entry_<%=cid%>.addMessageAttributesEntry("<%=column.getOriginalDbColumnName()%>", <%=cid%>_<%=column.getLabel()%>_messageAttributeValue);
+	<%
+								}else{
+	%>
+									sendMsgRequest_<%=cid%>.addMessageAttributesEntry("<%=column.getOriginalDbColumnName()%>", <%=cid%>_<%=column.getLabel()%>_messageAttributeValue);
+	<% 
+								}
+    %>
+							}
+	<%
+						}
+					}
+				}
+				if(useBatch){
+	%>
+					entry_<%=cid%>.setId(String.valueOf(nbline_<%=cid %>));
+    				entries_<%=cid%>.add(entry_<%=cid%>);
+    				if(entries_<%=cid%>.size() >0 && entries_<%=cid%>.size() >= <%=batchSize%>){
+    					sendMsgRequest_<%=cid%>.setEntries(entries_<%=cid%>);
+	<%
+						if(isLog4jEnabled){
+	%>
+							log.debug("Sending the message with batch request" );
+	<%
+						}
+	%>
+    					com.amazonaws.services.sqs.model.SendMessageBatchResult sendMsgResult_<%=cid%> = conn_<%=cid%>.sendMessageBatch(sendMsgRequest_<%=cid%>);
+    					resultSuccessEntries_<%=cid%> =  sendMsgResult_<%=cid%>.getSuccessful();
+    					resultErrorEntries_<%=cid%> =  sendMsgResult_<%=cid%>.getFailed();
+    					nb_success_<%=cid%> = nb_success_<%=cid%> + resultSuccessEntries_<%=cid%>.size();
+    					nb_reject_<%=cid%> = nb_reject_<%=cid%> + resultErrorEntries_<%=cid%>.size();
+	<%
+						if(isLog4jEnabled){
+	%>	
+                			log.debug("<%=cid%> - "+resultSuccessEntries_<%=cid%>.size()+" messages were sent successfully:");
+                			for(com.amazonaws.services.sqs.model.SendMessageBatchResultEntry resultEntry_<%=cid%>:resultSuccessEntries_<%=cid%>){
+                				log.debug("<%=cid%> - Message Start: ");
+                    			log.debug("<%=cid%> - MessageId: " + resultEntry_<%=cid%>.getMessageId());
+                    			log.debug("<%=cid%> - MD5OfBody: " + resultEntry_<%=cid%>.getMD5OfMessageBody());
+                    			log.debug("<%=cid%> - Message End ");
+                    		}
+                    		log.debug("<%=cid%> - "+resultErrorEntries_<%=cid%>.size()+" messages were sent failed:");
+                			for(com.amazonaws.services.sqs.model.BatchResultErrorEntry resultErrorEntry_<%=cid%>:resultErrorEntries_<%=cid%>){
+                				log.debug("<%=cid%> - Error row number: " + resultErrorEntry_<%=cid%>.getId());
+                    			log.debug("<%=cid%> - Error code: " + resultErrorEntry_<%=cid%>.getCode());
+                    			log.debug("<%=cid%> - Error message: " + resultErrorEntry_<%=cid%>.getMessage());
+                    		}
+	<%
+						}
+	%>
+						entries_<%=cid%>.clear();
+					}
+	<%
+				}else{
+					if(isLog4jEnabled){
+	%>
+						log.debug("Sending the message" );
+	<%
+					}
+	%>
+    				com.amazonaws.services.sqs.model.SendMessageResult sendMsgResult_<%=cid%> = conn_<%=cid%>.sendMessage(sendMsgRequest_<%=cid%>);
+    				nb_success_<%=cid%>++;
+	<%
+					if(isLog4jEnabled){
+	%>	
+            			log.debug("<%=cid%> - Message Start: ");
+            			log.debug("<%=cid%> - MessageId: " + sendMsgResult_<%=cid%>.getMessageId());
+            			log.debug("<%=cid%> - MD5OfBody: " + sendMsgResult_<%=cid%>.getMD5OfMessageBody());
+            			log.debug("<%=cid%> - Message End ");
+	<%
+					}
+				}
+				if (connMains != null && connMains.size() == 1) {
+					IConnection connMain = connMains.get(0);
+					if (connMain.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+						IMetadataTable outputTable = connMain.getMetadataTable();
+						%>
+						<%=connMain.getName() %> = new <%=connMain.getName() %>Struct();
+						<%
+						if(outputTable != null && outputTable.getColumn("MessageId")!=null){
+						%>
+							<%=connMain.getName() %>.MessageId = sendMsgResult_<%=cid%>.getMessageId();
+						<%
+						}
+						for (IMetadataColumn column: metadata.getListColumns()) {
+						%>
+    						<%=connMain.getName() %>.<%=column.getLabel() %> = <%=conn.getName() %>.<%=column.getLabel() %>;			
+						<%	
+						}
+					}
+				}
+			}
+		}
+	}
+	%>

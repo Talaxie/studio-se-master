@@ -1,0 +1,152 @@
+<%@ jet 
+imports="
+java.util.List
+java.util.Map
+java.text.SimpleDateFormat
+org.talend.core.model.metadata.IMetadataColumn
+org.talend.core.model.metadata.IMetadataTable
+org.talend.core.model.metadata.types.JavaType
+org.talend.core.model.metadata.types.JavaTypesManager
+org.talend.core.model.process.ElementParameterParser
+org.talend.core.model.process.IConnection
+org.talend.core.model.process.IConnectionCategory
+org.talend.core.model.process.INode
+org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String isTrimAllStr = ElementParameterParser.getValue(node,"__TRIMALL__");
+boolean isTrimAll = (isTrimAllStr!=null&&!("").equals(isTrimAllStr))?("true").equals(isTrimAllStr):true;
+
+log = new LogUtil(node);
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+//get column list
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas == null) || (metadatas.isEmpty())) {
+	return stringBuffer.toString();
+}
+
+IMetadataTable metadata = metadatas.get(0);
+
+if (metadata == null) {
+	return stringBuffer.toString();
+}
+
+List<IMetadataColumn> columnList = metadata.getListColumns();                        
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+
+//if output columns are defined
+if(columnList==null || columnList.isEmpty() || outgoingConns == null || outgoingConns.isEmpty()){
+	return stringBuffer.toString();
+}
+
+IConnection outgoingConn = outgoingConns.get(0);
+%>
+
+
+nb_line_<%=cid%>++;
+Object obj_<%=cid%> = <%=cid%>_resultArray.get(<%=cid%>_i);
+if(obj_<%=cid%> instanceof org.json.JSONObject){
+    <%=cid%>_result = (org.json.JSONObject) <%=cid%>_resultArray.get(<%=cid%>_i);
+}
+
+<%
+for (int i = 0; i < columnList.size(); i++) {
+	IMetadataColumn column = columnList.get(i);
+	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), true);
+	JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+	String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+	
+%>
+	<%=outgoingConn.getName()%>.<%=column.getLabel()%> = null; // reset row value
+<%	
+	if("id_Dynamic".equals(column.getTalendType())) {
+%>
+		dynamic_<%=cid %>.clearColumnValues();
+    	for(int j_<%=cid%> = 0; j_<%=cid%> < dynamic_<%=cid %>.getColumnCount(); j_<%=cid%>++){
+			routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = dynamic_<%=cid %>.getColumnMetadata(j_<%=cid%>);
+			String columnName_<%=cid%> = dynamicMetadata_<%=cid %>.getName();
+			
+			String value_<%=cid%> = (!<%=cid%>_result.has(columnName_<%=cid%>) || (<%=cid%>_result.get(columnName_<%=cid%>) == null)) ? null : <%=cid%>_result.get(columnName_<%=cid%>).toString()<%if(isTrimAll){%>.trim()<%}%>;
+			
+			if(value_<%=cid%> == null){
+				dynamic_<%=cid %>.addColumnValue(null);
+			}else{
+				if("id_String".equals(dynamicMetadata_<%=cid%>.getType()) || "id_Object".equals(dynamicMetadata_<%=cid%>.getType())) {
+					dynamic_<%=cid %>.addColumnValue(value_<%=cid%>);
+				} else if(!value_<%=cid%>.isEmpty()) {
+        			if("id_Date".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_Date(value_<%=cid%>, dynamicMetadata_<%=cid%>.getFormat()));
+        			}else if("id_Integer".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_Integer(value_<%=cid%>));
+        			}else if("id_Double".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_Double(value_<%=cid%>));
+        			}else if("id_Boolean".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_Boolean(value_<%=cid%>));
+        			}else if("id_Float".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_Float(value_<%=cid%>));
+        			}else if("id_BigDecimal".equals(dynamicMetadata_<%=cid%>.getType())){
+        				dynamic_<%=cid %>.addColumnValue(ParserUtils.parseTo_BigDecimal(value_<%=cid%>));
+        			}
+				} else {
+					dynamic_<%=cid %>.addColumnValue(null);
+				}
+			}
+		}
+		<%=outgoingConn.getName() %>.<%=column.getLabel()%> = dynamic_<%=cid %>;
+<%
+		continue;
+	}
+%>
+
+	//check data type
+  	if (<%=cid%>_result.has("<%=column.getLabel()%>")) {
+    	String value_<%=cid%> = (<%=cid%>_result.get("<%=column.getLabel()%>") == null) ? null : <%=cid%>_result.get("<%=column.getLabel()%>").toString()<%if(isTrimAll){%>.trim()<%}%>;
+    	<%
+    	if (javaType == JavaTypesManager.STRING) {
+      	%>
+  			<%=outgoingConn.getName()%>.<%=column.getLabel()%> = value_<%=cid%>;
+      	<%
+    	} else {
+		%>
+      		if (value_<%=cid%> != null && !value_<%=cid%>.isEmpty()) {
+        <%
+        if(javaType == JavaTypesManager.OBJECT) {
+      	%>
+          	<%=outgoingConn.getName()%>.<%=column.getLabel()%> = value_<%=cid%>;
+      	<%
+        } else if(javaType == JavaTypesManager.DATE) {
+      	%>
+	    	<%=outgoingConn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_Date(value_<%=cid%>, <%=pattern%>);
+      	<%
+        } else if(javaType == JavaTypesManager.BYTE_ARRAY) {
+      	%>
+        	<%=outgoingConn.getName()%>.<%=column.getLabel()%> = value_<%=cid%>.getBytes();//use default encoding
+        <%
+ 	 	} else {
+        %>
+        	<%=outgoingConn.getName()%>.<%=column.getLabel()%> = ParserUtils.parseTo_<%=typeToGenerate%>(value_<%=cid%>);
+        <%
+      	}
+      	%>
+            } else {
+                //use the default value of java
+            }
+	  	<%
+  		}
+      	%>
+	} else {
+  	<%
+  	if(isLog4jEnabled){%>
+  		log.warn("<%=cid%> - Object: '" + "<%=column.getLabel()%>" + "' not found.");<%
+  	}
+  	%>
+	}
+<%
+}// column loop
+%>

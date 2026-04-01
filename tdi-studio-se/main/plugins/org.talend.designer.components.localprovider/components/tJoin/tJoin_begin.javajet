@@ -1,0 +1,98 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.EConnectionType			
+		java.util.List
+		java.util.Map
+		org.talend.core.model.utils.NodeUtil
+" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+    IMetadataTable metadata = metadatas.get(0);
+    String lookupConName = "";
+    if (metadata!=null) {//2
+    
+        String cid = node.getUniqueName();
+        String hashName = "";
+
+        //get the input Main and Lookup connection
+        IConnection inMainCon = null;
+        IConnection inRefCon = null;   
+        List< ? extends IConnection> connsIn = node.getIncomingConnections();     
+        for (IConnection conn : connsIn) {//3
+        	if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+        		inMainCon = NodeUtil.getRealConnectionTypeBased(conn);
+        	}
+        	else if(conn.getLineStyle().equals(EConnectionType.FLOW_REF))
+        	{
+        		inRefCon = conn;
+        		lookupConName = inRefCon.getName();
+        		hashName = lookupConName;
+        		if (conn.getSource().getComponent().isHashComponent()) {
+        			hashName = ElementParameterParser.getValue(conn.getSource(), "__LIST__");
+        			lookupConName = "row2";
+        		}
+        	}
+        }//3 
+        
+        if(inMainCon == null || inRefCon == null){
+        	return "";
+        }
+        
+        String incomingName = inMainCon.getName();
+        
+        List<Map<String, String>> joinKeys = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__JOIN_KEY__");
+%>
+    final java.util.Map<<%=lookupConName %>Struct, <%=lookupConName %>Struct> tHash_<%=cid %> = (java.util.Map<<%=lookupConName %>Struct, <%=lookupConName %>Struct>) globalMap.get("tHash_<%=hashName %>");
+    
+    class Util_<%=cid %>
+    {
+        <%=lookupConName %>Struct lookupValue = null;
+        <%=lookupConName %>Struct <%=lookupConName %>HashKey = new <%=lookupConName %>Struct(); 
+        
+        public boolean isJoined(<%=incomingName %>Struct mainRow) {            
+<%            
+		boolean hasHashableKey = false;
+		int curCount = 0;
+		for(Map<String, String> joinKeyLine : joinKeys){
+			String inputKey = joinKeyLine.get("INPUT_COLUMN");
+			String lookupKey = joinKeyLine.get("LOOKUP_COLUMN");
+			hasHashableKey = true;            
+%>            
+           <%=lookupConName %>HashKey.<%=lookupKey %> = mainRow.<%=inputKey %>;
+
+<%
+           curCount ++ ;
+		}
+		
+		if(hasHashableKey) {
+%>
+			<%=lookupConName %>HashKey.hashCodeDirty = true;
+<%
+		}
+%>			             
+            lookupValue = tHash_<%=cid %>.get(<%=lookupConName %>HashKey);            
+            if(lookupValue != null){
+            	return true;
+            }else{
+            }  
+            return false;
+        }
+    }
+        
+	Util_<%=cid %> util_<%=cid %> = new Util_<%=cid %>();
+        
+    int nb_line_<%= cid %> = 0; 
+<%
+    }//2
+}//1
+%>

@@ -1,0 +1,437 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.designer.runprocess.ProcessorUtilities
+	org.talend.designer.runprocess.ProcessorException
+	java.util.Map
+	java.util.List
+	java.util.Date
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean useDynamicJob = ("true").equals(ElementParameterParser.getValue(node, "__USE_DYNAMIC_JOB__"));
+boolean useIndependentProcess = "true".equals(ElementParameterParser.getValue(node, "__USE_INDEPENDENT_PROCESS__"));
+
+String process = ElementParameterParser.getValue(node,"__PROCESS_TYPE_PROCESS__");
+String context = "";
+
+if(useDynamicJob) {
+	context = ElementParameterParser.getValue(node,"__CONTEXT_NAME__");
+} else {
+	context = ElementParameterParser.getValue(node,"__PROCESS_TYPE_CONTEXT__");
+}
+
+boolean useExtraClassPath = "true".equals(ElementParameterParser.getValue(node, "__USE_EXTRA_CLASSPATH__"));
+String extraClassPath = ElementParameterParser.getValue(node,"__EXTRA_CLASSPATH__");
+boolean useDynamicContext = "true".equals(ElementParameterParser.getValue(node, "__USE_DYNAMIC_CONTEXT__"));
+String dynamicContext = ElementParameterParser.getValue(node,"__DYNAMIC_CONTEXT__");
+			
+String[] codeOptions = null;
+
+String[] commandLine = new String[] {"<command>"};
+
+String childJobName;
+int jobNamePosition;
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(isLog4jEnabled){
+	codeOptions = new String[] {"\"--father_pid=\"+pid", "\"--root_pid=\"+rootPid", "\"--father_node="+ cid + "\"", "\"--log4jLevel=\"+ log4jLevel", "(\"--audit.enabled=\"+ enableLogStash)"};
+} else {
+	codeOptions = new String[] {"\"--father_pid=\"+pid", "\"--root_pid=\"+rootPid", "\"--father_node="+ cid + "\""};
+}
+
+boolean use_custom_jvm_setting = "true".equals(ElementParameterParser.getValue(node, "__USE_CUSTOM_JVM_SETTING__"));
+List<Map<String, String>> jvm_arguments = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__JVM_ARGUMENTS__");
+
+if(useDynamicJob || useIndependentProcess){
+%>
+class DealChildJobLibrary_<%=cid%> {
+
+	public String replaceJarPathsFromCrcMap(String originalClassPathLine) throws java.lang.Exception {
+		String classPathLine = "";
+		String crcMapPath = new java.io.File("../crcMap").getCanonicalPath();
+		if (isNeedAddLibsPath( crcMapPath)) {
+			java.util.Map<String, String> crcMap = null;
+			java.io.ObjectInputStream ois = new java.io.ObjectInputStream(new java.io.FileInputStream(crcMapPath)) {
+				@Override
+				public Class<?> resolveClass(java.io.ObjectStreamClass desc) throws java.io.IOException, ClassNotFoundException {
+					if(!"java.util.HashMap".equals(desc.getName())) {
+						throw new java.io.InvalidClassException("Unauthorized deserialization attempt : " + desc.getName());
+					}
+					return super.resolveClass(desc);
+				}
+			};
+			crcMap = (java.util.Map<String, String>) ois.readObject();
+			ois.close();
+			classPathLine = addLibsPath(originalClassPathLine, crcMap);
+		} else {
+			classPathLine = originalClassPathLine;
+		}
+		return classPathLine;
+	}
+	
+	private boolean isNeedAddLibsPath(String crcMapPath) {
+		if (!(new java.io.File(crcMapPath).exists())) {// when not use cache
+			return false;
+		}
+		return true;
+	}
+	
+	
+	private String addLibsPath(String line, java.util.Map<String, String> crcMap) {
+		for (java.util.Map.Entry<String, String> entry : crcMap.entrySet()) {
+			line = adaptLibPaths(line, entry);
+		}
+		return line;
+	}
+	
+	private String adaptLibPaths(String line, java.util.Map.Entry<String, String> entry) {
+		String jarName = entry.getValue();
+		String crc = entry.getKey();
+		String libStringFinder = "../lib/" + jarName;
+		if (line.contains(libStringFinder)) {
+			line = line.replace(libStringFinder, "../../../cache/lib/" + crc + "/" + jarName);
+		} else if (line.contains(":$ROOT_PATH/" + jarName + ":")) {
+			line = line.replace(":$ROOT_PATH/" + jarName + ":", ":$ROOT_PATH/../../../cache/lib/" + crc + "/" + jarName + ":");
+		} else if (line.contains(";" + jarName + ";")) {
+			line = line.replace(";" + jarName + ";", ";../../../cache/lib/" + crc + "/" + jarName + ";");
+		}
+		return line;
+	}
+	
+}
+	DealChildJobLibrary_<%=cid%> dealChildJobLibrary_<%=cid %> = new DealChildJobLibrary_<%=cid%>();
+
+	class JVMArgumentHelper_<%=cid%> {
+		
+		<%
+		if(use_custom_jvm_setting) {
+		%>
+		
+		private boolean have_set_custom_argument;
+		
+		private java.util.List<String> custom_arguments;
+		
+		<%
+		//the parameters below is set by Talend(sure come from Talend as we add one ProcessorUtilities.getCommandLine method to ignore the one set by user)
+		//for function purpose, not set by user.
+		//if user set them in tables of tRunjob with "overwrite child job vm parametes", we will overwrite the one from Talend
+		//if user don't set them in tables of tRunjob with "overwrite child job vm parametes", we will append them in the jvm command for Talend function
+		%>
+		boolean custom_file_encoding;
+		boolean custom_jmxremote;
+		boolean custom_jmxremote_port;
+		boolean custom_jmxremote_ssl;
+		boolean custom_jmxremote_authenticate;
+		<%}%>
+		
+		private void addClasspath(java.util.List<String> target_argument_list, String job_origin_classpath) {
+			<%
+			if(!useExtraClassPath) {
+				extraClassPath = null;
+			}
+			%>
+			String extra_classpath = <%=extraClassPath%>;
+			String path_separator = System.getProperty("path.separator");
+			if (path_separator != null && path_separator.length() > 1) {
+				throw new RuntimeException("path separator should be single character");
+			}
+			
+			if(extra_classpath!=null && !extra_classpath.isEmpty()) {
+				if(extra_classpath.endsWith(path_separator)) {
+					target_argument_list.add(extra_classpath+job_origin_classpath);
+				} else if(extra_classpath.contains(path_separator)) {
+					target_argument_list.add(concatStr(extra_classpath, path_separator, job_origin_classpath));
+				} else if(extra_classpath.endsWith(":")) {
+					target_argument_list.add(extra_classpath.replace(":", path_separator)+job_origin_classpath);
+				} else if(extra_classpath.endsWith(";")) {
+					target_argument_list.add(extra_classpath.replace(";", path_separator)+job_origin_classpath);
+				} else if(extra_classpath.contains(":")) {
+					target_argument_list.add(concatStr(extra_classpath.replace(":", path_separator), path_separator, job_origin_classpath));
+				} else if(extra_classpath.contains(";")) {
+					target_argument_list.add(concatStr(extra_classpath.replace(";", path_separator), path_separator, job_origin_classpath));
+				} else {
+					target_argument_list.add(concatStr(extra_classpath, path_separator, job_origin_classpath));
+				}
+				return;
+			}
+			
+			target_argument_list.add(job_origin_classpath);
+		}
+		
+		private String concatStr(String s1, String s2, String s3) {
+			java.lang.StringBuilder strB = new java.lang.StringBuilder();
+			strB.append(s1).append(s2).append(s3);
+			return strB.toString();
+		}
+		
+		public void addArgumentsTo(java.util.List<String> target_argument_list, String argument_from_child) {
+			addArgumentsTo(target_argument_list, argument_from_child, false);
+		}
+		
+		public void addArgumentsTo(java.util.List<String> target_argument_list, String argument_from_child, boolean isCP) {
+			if(isCP) {
+				addClasspath(target_argument_list, argument_from_child);
+				return;
+			}
+		
+			<%if(use_custom_jvm_setting) {%>
+			if(!have_set_custom_argument) {
+				custom_arguments = new java.util.ArrayList<>();
+				<%
+				for (Map<String, String> one : jvm_arguments) {
+					String jvm_argument = one.get("ARGUMENT");
+					%>
+					custom_arguments.add(<%=jvm_argument%>);
+				<%
+				}
+				%>
+				
+				for(String current_custom_argument : custom_arguments) {
+					if(current_custom_argument == null || current_custom_argument.isEmpty()) {
+						continue;
+					}
+					
+					target_argument_list.add(current_custom_argument);
+					
+					if(current_custom_argument.startsWith("-Dfile.encoding=")) {
+						custom_file_encoding = true;
+					}
+					
+					if(current_custom_argument.equals("-Dcom.sun.management.jmxremote")) {
+						custom_jmxremote = true;
+					}
+					
+					if(current_custom_argument.startsWith("-Dcom.sun.management.jmxremote.port=")) {
+						custom_jmxremote_port = true;
+					}
+					
+					if(current_custom_argument.startsWith("-Dcom.sun.management.jmxremote.ssl=")) {
+						custom_jmxremote_ssl = true;
+					}
+					
+					if(current_custom_argument.startsWith("-Dcom.sun.management.jmxremote.authenticate=")) {
+						custom_jmxremote_authenticate = true;
+					}
+				}
+				
+				have_set_custom_argument = true;
+			}
+			
+			if(argument_from_child == null || argument_from_child.isEmpty()) {
+				return;
+			}
+			
+			if(argument_from_child.startsWith("-Dfile.encoding=") && custom_file_encoding) {
+				return;
+			}
+			
+			if(argument_from_child.equals("-Dcom.sun.management.jmxremote") && custom_jmxremote) {
+				return;
+			}
+			
+			if(argument_from_child.startsWith("-Dcom.sun.management.jmxremote.port=") && custom_jmxremote_port) {
+				return;
+			}
+			
+			if(argument_from_child.equals("-Dcom.sun.management.jmxremote.ssl=false") && custom_jmxremote_ssl) {
+				return;
+			}
+			
+			if(argument_from_child.equals("-Dcom.sun.management.jmxremote.authenticate=false") && custom_jmxremote_authenticate) {
+				return;
+			}
+			<%}%>
+			
+			<%
+			if(useDynamicContext) {
+			%>
+			if(argument_from_child.startsWith("--context=")) {
+				target_argument_list.add("--context="+<%=dynamicContext%>);
+			} else {
+				target_argument_list.add(argument_from_child);
+			}
+			<%
+			} else {
+			%>
+			target_argument_list.add(argument_from_child);
+			<%}%>
+		}
+		
+		<%
+		if(use_custom_jvm_setting) {
+		%>
+		public void reset() {
+			have_set_custom_argument = false;
+			custom_arguments.clear();
+			
+			custom_file_encoding = false;
+			custom_jmxremote = false;
+			custom_jmxremote_port = false;
+			custom_jmxremote_ssl = false;
+			custom_jmxremote_authenticate = false;
+		}
+		<%}%>
+	}
+	
+	JVMArgumentHelper_<%=cid%> jvm_argument_helper_<%=cid%> = new JVMArgumentHelper_<%=cid%>();
+	
+	String audit_jar_path_<%=cid%> = System.getProperty("classpath.extended");
+	<%
+}
+try {
+	if(useDynamicJob){
+	%>
+		//For different jobs, job name must be different, but classpath and JVM arguments are possbilely different
+		java.util.Map<String,List<String>> childJob_commandLine_Mapper_<%=cid%> = new java.util.HashMap<String,List<String>>();
+		java.util.List<String> childJob_commandLine_<%=cid%> = null;
+		String classpathSeparator_<%=cid%> = System.getProperty("path.separator");
+		if (classpathSeparator_<%=cid%> != null && classpathSeparator_<%=cid%>.length() > 1) {
+			throw new RuntimeException("path separator should be single character");
+		}
+		<%
+	
+		//issue 19108: The context text field waits for a context name without quotes. The component removes the first quote and the last quote if they exist.
+		if(context.startsWith("\"")) {
+			context=context.substring(1, context.length());
+		}
+		if(context.endsWith("\"")) {
+			context=context.substring(0, context.length()-1);
+		}
+
+		if(process!=null && !process.equals("")){
+			String[] childJobIds = process.split(";");
+			for (int i=0;i<childJobIds.length;i++) {
+			%>
+				childJob_commandLine_<%=cid%> = new java.util.ArrayList<String>();
+				<%
+				String oldInterpreter = ProcessorUtilities.getInterpreter();
+		        String oldCodeLocation = ProcessorUtilities.getCodeLocation();
+		        String oldLibraryPath = ProcessorUtilities.getLibraryPath();
+		        boolean oldExportConfig = ProcessorUtilities.isExportConfig();
+		        Date oldExportTimestamp = ProcessorUtilities.getExportTimestamp();
+		        boolean isJobTest = ProcessorUtilities.isJobTest(node.getProcess().getId(),context,null);
+				if(isJobTest&&ProcessorUtilities.isCIMode()) {
+					 ProcessorUtilities.setExportConfig(false);
+					 ProcessorUtilities.setDynamicJobAndCITest(true);
+				}
+				
+				try {
+			    	commandLine = ProcessorUtilities.getCommandLine("win32", false, true, childJobIds[i], context,org.talend.designer.runprocess.IProcessor.NO_STATISTICS,org.talend.designer.runprocess.IProcessor.NO_TRACES, use_custom_jvm_setting, codeOptions);
+			    
+				    // remove the frontal 2 lines
+				    if (commandLine.length > 0 && ProcessorUtilities.isExportConfig()){
+						int tmpSize = commandLine.length - 2;
+						String[] tmp = new String[tmpSize];
+						System.arraycopy(commandLine, 2, tmp, 0, tmpSize);
+						commandLine = tmp;
+					}
+				} finally {
+					if(isJobTest&&ProcessorUtilities.isCIMode()) {
+				    	ProcessorUtilities.setExportConfig(oldInterpreter, oldCodeLocation, oldLibraryPath, oldExportConfig,
+                    oldExportTimestamp);
+                        ProcessorUtilities.setDynamicJobAndCITest(false);
+			    	}
+			    }
+			    
+				boolean isCP = false;
+				
+				for (int j = 0; j < commandLine.length; j++) {
+					// commandLine[j] = commandLine[j].replace("\n", "");
+					if (j == 0){
+					%>
+					childJob_commandLine_<%=cid%>.add("<%=commandLine[j]%>");
+					
+					final java.util.List<String> cc_<%=cid%>_<%=i%> = childJob_commandLine_<%=cid%>;
+					if(enableLogStash){
+						System.getProperties().stringPropertyNames().stream()
+							.filter(it -> it.startsWith("audit."))
+							.forEach(key -> cc_<%=cid%>_<%=i%>.add("-D" + key + "=" + System.getProperty(key)));
+					}
+							
+					System.getProperties().stringPropertyNames().stream()
+						.filter(it -> it.startsWith("runtime.lineage.") || "classpath.extended".equals(it))
+						.forEach(key -> cc_<%=cid%>_<%=i%>.add("-D" + key + "=" + System.getProperty(key)));
+					<%
+				  } else if (j > 0){
+				    if (commandLine[j].indexOf("\"") >= 0){
+				    	if(commandLine[j].indexOf(".jar")>=0){
+				    %>
+				    		String classpath_<%=cid %>_<%=i %>_<%=j %> = <%=commandLine[j] %>;
+				    		<%if(isCP && (commandLine[j].endsWith(":\"") || commandLine[j].endsWith(";\""))) {%>
+				    		if(audit_jar_path_<%=cid %>!=null && !audit_jar_path_<%=cid %>.isEmpty()) {
+				      			classpath_<%=cid %>_<%=i %>_<%=j %> += audit_jar_path_<%=cid %>;
+				      		}
+				      		<%}%>
+				      		jvm_argument_helper_<%=cid%>.addArgumentsTo(childJob_commandLine_<%=cid%>, dealChildJobLibrary_<%=cid %>.replaceJarPathsFromCrcMap(classpath_<%=cid %>_<%=i %>_<%=j %>).replaceAll(";",classpathSeparator_<%=cid%>), <%=isCP%>);
+				    <%
+				    	}else{
+				    %>
+				    		jvm_argument_helper_<%=cid%>.addArgumentsTo(childJob_commandLine_<%=cid%>, <%=commandLine[j] %>.replaceAll(";",classpathSeparator_<%=cid%>));
+				    <%
+				    	}
+				    	
+				    	if("\"-cp\"".equals(commandLine[j]) || "\"-classpath\"".equals(commandLine[j])) {
+			    			isCP = true;
+			    		} else {
+			    			isCP = false;
+			    		}
+				    }else{
+				    	if(commandLine[j].indexOf(".jar")>=0){
+				    %>
+				    		String classpath_<%=cid %>_<%=i %>_<%=j %> = "<%=commandLine[j] %>";
+				    		<%if(isCP && (commandLine[j].endsWith(":") || commandLine[j].endsWith(";"))) {%>
+				    		if(audit_jar_path_<%=cid %>!=null && !audit_jar_path_<%=cid %>.isEmpty()) {
+				      			classpath_<%=cid %>_<%=i %>_<%=j %> += audit_jar_path_<%=cid %>;
+				      		}
+				      		<%}%>
+				    		jvm_argument_helper_<%=cid%>.addArgumentsTo(childJob_commandLine_<%=cid%>, dealChildJobLibrary_<%=cid %>.replaceJarPathsFromCrcMap(classpath_<%=cid %>_<%=i %>_<%=j %>).replaceAll(";",classpathSeparator_<%=cid%>), <%=isCP%>);
+				    <%
+				    	}else{
+				    %>
+				    		jvm_argument_helper_<%=cid%>.addArgumentsTo(childJob_commandLine_<%=cid%>, "<%=commandLine[j] %>".replaceAll(";",classpathSeparator_<%=cid%>));
+				    <%
+				    	}
+				    	
+				    	if("-cp".equals(commandLine[j]) || "-classpath".equals(commandLine[j])) {
+			    			isCP = true;
+			    		} else {
+			    			isCP = false;
+			    		}
+				    }
+				  }
+				}
+				
+				if(use_custom_jvm_setting) {
+				%>
+				jvm_argument_helper_<%=cid%>.reset();
+				<%
+				}
+				
+				//find the job name and classpath, the job name in front of codeOptions
+			    int position = 0;
+			    for(String tempCommandLine : commandLine){
+			   		if(codeOptions[0].equals(tempCommandLine)){
+			   			break;
+			   		}
+			   		position++;
+			    }
+			    jobNamePosition = position-1;
+			    
+                childJobName = commandLine[jobNamePosition];
+
+			    childJobName = childJobName.substring(childJobName.lastIndexOf(".")+1);
+				%>
+				childJob_commandLine_Mapper_<%=cid%>.put("<%=childJobName%>",childJob_commandLine_<%=cid%>);	
+			<%
+			}
+		}
+	}
+} catch (ProcessorException e) {
+}	
+%>

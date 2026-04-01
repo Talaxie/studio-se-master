@@ -1,0 +1,78 @@
+<%@ jet 
+imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		java.util.Map
+		java.util.List
+" 
+%>
+	<%@ include file="../templates/DB/Input/HelpClass.javajet"%>
+<%
+
+	class DBInputBeginUtil extends DefaultDBInputUtil{
+		private String dbDriver = "";
+	    
+		public void setURL(INode node) {
+			dbDriver = ElementParameterParser.getValue(node, "__DB_DRIVER__");
+%>
+			String dbProperties_<%=cid%> = <%=dbproperties%>;
+			
+			<%if (dbDriver.equals("POSTGRESQL")){%>
+				String url_<%=cid %> = "jdbc:postgresql://" + <%=dbhost%> + ":" + <%=dbport%> + "/" + <%=dbname%>;
+				
+				if(dbProperties_<%=cid%> != null && !"".equals(dbProperties_<%=cid%>.trim())) {
+                    url_<%=cid %> = url_<%=cid%> + "?" + dbProperties_<%=cid%>;
+                }
+			<%} else {%>
+				String url_<%=cid %> = "jdbc:pivotal:greenplum://"+<%=dbhost%>+":"+<%=dbport%>+";DatabaseName="+<%=dbname%>;
+				
+				if(dbProperties_<%=cid%> != null && !"".equals(dbProperties_<%=cid%>.trim())) {
+                    url_<%=cid %> = url_<%=cid%> + ";" + dbProperties_<%=cid%>;
+                }
+			<%}
+		}
+		
+		public String getDirverClassName(INode node){
+			dbDriver = ElementParameterParser.getValue(node, "__DB_DRIVER__");
+			if (dbDriver.equals("POSTGRESQL")){
+				return "org.postgresql.Driver";
+			} else {
+				return "com.pivotal.jdbc.GreenplumDriver";
+			}
+		}
+		
+		public void createConnection(INode node) {
+			super.createConnection(node);
+			String useCursor= ElementParameterParser.getValue(node, "__USE_CURSOR__");
+			if(("true").equals(useCursor)) { 
+				log4jCodeGenerateUtil.autoCommit(node,false);
+			}
+		}
+		
+		public void createStatement(INode node) {
+			super.createStatement(node);
+			String useCursor= ElementParameterParser.getValue(node, "__USE_CURSOR__");
+			String cursorSize= ElementParameterParser.getValue(node, "__CURSOR_SIZE__");
+            if(("true").equals(useCursor)) {
+%>
+                stmt_<%=cid %>.setFetchSize(<%=cursorSize %>);
+<%
+            }
+		}
+		
+		//-----------according schema type to generate ResultSet
+	    
+	    //---------end according schema type to generate ResultSet
+	}//end class
+	
+	dbInputBeginUtil = new DBInputBeginUtil();
+%>
+    
+	<%@ include file="../templates/DB/Input/AbstractDBInputBegin.javajet"%>
+

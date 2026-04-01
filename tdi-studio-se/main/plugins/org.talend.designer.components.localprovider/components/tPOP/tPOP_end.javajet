@@ -1,0 +1,77 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+  "
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    String cid = node.getUniqueName();
+    boolean bDeleteFromServer = "true".equals(ElementParameterParser.getValue(node, "__DELETE_FROM_SERVER__"));
+    List<Map<String, String>> filterList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_FILTER__");
+    String protocol = ElementParameterParser.getValue(node, "__PROTOCOL__");
+    
+		if (filterList.size() > 0) {
+    %>
+			}
+    <%
+    	}
+    	
+		if(isLog4jEnabled){
+			%>
+			log.debug("<%=cid%> - Retrieving the record " + nb_email_<%=cid %> + ".");
+			<%		
+		}
+		
+		if ("pop3".equals(protocol)) {
+  %>
+			} catch (javax.mail.MessageRemovedException mre) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",mre.getMessage());
+			<%if(isLog4jEnabled){%>
+				log.warn("<%=cid%> - One mail fails to retrieve since it was removed");
+			<%}%>
+			System.out.println("one mail fails to retrieve since it was removed");
+	<%
+		} else {%>
+			} catch (javax.mail.MessagingException me) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",me.getMessage());
+				if (!"Cannot load header".equals(me.getMessage())) {
+      				throw me;
+				}else{ 
+					<%if(isLog4jEnabled){%>
+						log.warn("<%=cid%> - One mail fails to retrieve since it was removed");
+					<%}%>
+      				System.out.println("one mail fails to retrieve since it was removed");
+      			}
+	<%
+		}%>
+			}
+	}
+
+	if (folder_<%=cid %> != null) {
+		<%if (bDeleteFromServer) {%>
+			folder_<%=cid %>.close(true); 
+		<%} else {%> 
+			folder_<%=cid %>.close(false);
+		<%}%>
+	}
+
+	if (store_<%=cid %> != null) {
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Closing the connection to the server.");
+		<%}%>
+		store_<%=cid %>.close();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to the server closed.");
+		<%}%>
+	}
+	globalMap.put("<%=cid %>_NB_EMAIL", nb_email_<%=cid %>);  
+
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Retrived "+nb_email_<%=cid %> + " mails.");
+	<%}%>

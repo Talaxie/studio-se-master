@@ -1,0 +1,57 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.IConnection
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+		
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.IDataConnection
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+	boolean includeParallelComps = false;
+	if (connections != null && connections.size() > 0) {
+        for (IConnection connection : connections) {
+        	String connectionName = connection.getName();
+        	INode validTarget = ((IDataConnection) connection).getLinkNodeForHash();
+        	INode partitionNode = null;
+        	if(validTarget != null) {
+            	partitionNode = validTarget.getDesignSubjobStartNode();
+	   			if ("tCollector".equals(partitionNode.getComponent().getName())) {
+					includeParallelComps = true;
+					partitionNode = partitionNode.getIncomingConnections(EConnectionType.STARTS).get(0).getSource();
+				}
+			}
+			if (includeParallelComps && partitionNode!=null) {
+			%>
+				synchronized (this) {
+					if (globalMap.get("tHash_<%=connectionName%>") == null) {
+			            java.util.Map<<%=connectionName%>Struct, <%=connectionName%>Struct> tHash_<%=connectionName%> = null;
+			            boolean isMultiThreaded_<%=cid%> = false;
+			            if (!(globalMap.get("MULTI_THREADED_JOB_<%=partitionNode.getUniqueName()%>_"+jobName) == null || !((Boolean)globalMap.get("MULTI_THREADED_JOB_<%=partitionNode.getUniqueName()%>_"+jobName)))) {
+			            	tHash_<%=connectionName%> = new java.util.concurrent.ConcurrentHashMap<<%=connectionName%>Struct,<%=connectionName%>Struct>();
+			            	isMultiThreaded_<%=cid%> = true;
+			            } else {
+			              	tHash_<%=connectionName%> = new java.util.LinkedHashMap<<%=connectionName%>Struct, <%=connectionName%>Struct>();
+			            }
+			            globalMap.put("tHash_<%=connectionName%>", tHash_<%=connectionName%>);
+
+			<%	
+			} else {
+			%>
+				java.util.Map<<%=connectionName%>Struct, <%=connectionName%>Struct> tHash_<%=connectionName%> = new java.util.LinkedHashMap<<%=connectionName%>Struct, <%=connectionName%>Struct>();
+	            globalMap.put("tHash_<%=connectionName%>", tHash_<%=connectionName%>);
+			<%
+			}
+		}
+	}
+
+%>
+            

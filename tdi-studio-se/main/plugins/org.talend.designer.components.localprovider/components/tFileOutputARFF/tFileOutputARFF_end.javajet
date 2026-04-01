@@ -1,0 +1,80 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+	" 
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean isDeleteEmptyFile = ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"));
+
+boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+%>
+java.io.FileOutputStream out<%=cid%> = null;
+<% if(isAppend){%>
+	java.io.BufferedReader buf_Check_<%=cid%> =null;
+<%}%>
+try {
+    out<%=cid%> = new java.io.FileOutputStream(fileNewName_<%=cid%>, <%=isAppend%>);
+<% if(isAppend){%>
+    try{
+        //to check if the file-to-write is an existing-valid ARFF file
+       buf_Check_<%=cid%>=new java.io.BufferedReader(new java.io.FileReader(fileNewName_<%=cid%>));
+       new weka.core.Instances(buf_Check_<%=cid%>);
+       StringBuilder sb<%=cid%> = new StringBuilder();
+       for (int i = oldInsNum<%=cid%>; i < m_Data<%=cid%>.numInstances(); i++) {
+           sb<%=cid%>.append("\n");
+           sb<%=cid%>.append(m_Data<%=cid%>.instance(i).toString());
+       }
+       out<%=cid%>.write(sb<%=cid%>.toString().getBytes(), 0, sb<%=cid%>.toString().getBytes().length);
+    }catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+       out<%=cid%>.write(m_Data<%=cid%>.toString().getBytes(),0,m_Data<%=cid%>.toString().getBytes().length);
+    }   
+<%}else{%>   
+    out<%=cid%>.write(m_Data<%=cid%>.toString().getBytes(),0,m_Data<%=cid%>.toString().getBytes().length);
+<%}%>
+} catch (java.io.IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+    <%if(isLog4jEnabled) {%>
+	log.error("<%=cid%> - " + e.getMessage());
+	<%}%>
+}finally{
+<%
+	if(isAppend){
+%>
+	if(buf_Read_<%=cid%>!=null){
+		buf_Read_<%=cid%>.close();
+	}
+	if(buf_Check_<%=cid%>!=null){
+		buf_Check_<%=cid%>.close();
+	}
+<%
+	}
+%>
+	out<%=cid%>.close();
+	out<%=cid%> = null;
+}
+globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+
+<%if(isDeleteEmptyFile){%>
+	if(isFileGenerated_<%=cid %> && nb_line_<%=cid %> == 0){
+		createFile<%=cid%>.delete();
+	}		
+<%}%>
+
+<%
+log4jFileUtil.writeDataFinishInfo(node);
+%>

@@ -1,0 +1,51 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    java.util.List
+  " 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();  
+	List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+	    
+	String host = ElementParameterParser.getValue(node, "__HOST__");
+	String queue = ElementParameterParser.getValue(node, "__QUEUE__");
+	String queueType = ElementParameterParser.getValue(node, "__QUEUE_TYPE__");
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+	if (outConns != null && outConns.size() > 0){
+	%>
+		org.talend.msmq.MsmqUtil msgu_<%=cid%> = new org.talend.msmq.MsmqUtil();
+	    try{
+	    	msgu_<%=cid%>.setHost(<%=host%>);
+	   		msgu_<%=cid%>.setQueue(<%=queue%>); 
+	   		<%
+	   		if("PUBLIC".equals(queueType)){
+			%>
+				msgu_<%=cid%>.setQueueType(""); 
+			<%
+			}
+	   		%>
+	    	msgu_<%=cid%>.open();
+	    	if (msgu_<%=cid%>.isOpen()){
+				<%
+				String connNameOut = outConns.get(0).getName();
+				if (outConns.get(0).getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { 
+					IMetadataTable outTable = outConns.get(0).getMetadataTable();
+					List<IMetadataColumn> columns = outTable.getListColumns();
+					if (columns != null && columns.size() > 0){
+					%>
+	    
+						<%=connNameOut%>.<%=columns.get(0).getLabel()%> = msgu_<%=cid%>.receive();
+					<%
+					}
+				}
+	}
+	%>

@@ -1,0 +1,219 @@
+<%@ jet%>
+
+<%
+for(Map<String, String> sk : sourceKeys) {
+    joinClause.add(" d." + StringUtils.getPostgresqlProtectedColumnName(sk.get("NAME")) +
+            " = t." + StringUtils.getPostgresqlProtectedColumnName(sk.get("NAME")));
+}
+String joinClauseString = StringUtils.join(joinClause.toArray(), " AND ");
+
+if(isEnableType1) {
+    List<String> columnNames = new ArrayList<String>();
+    List<String> setColumns = new ArrayList<String>();
+    List<String> whereClause = new ArrayList<String>();
+    for(Map<String, String> sk : sourceKeys) {
+        if(isEqualWithSK) {
+            if(!sk.get("NAME").equals(surrogateKey)) {
+                columnNames.add(StringUtils.getPostgresqlProtectedColumnName(sk.get("NAME")));
+            }
+        } else {
+            columnNames.add(StringUtils.getPostgresqlProtectedColumnName(sk.get("NAME")));                
+        }
+    }
+    
+    for(Map<String, String> type1Attribute : type1Attributes) {
+        strFieldName = StringUtils.getPostgresqlProtectedColumnName(type1Attribute.get("NAME"));
+        columnNames.add(strFieldName);
+        setColumns.add(strFieldName +  " = t." + strFieldName);                    
+        whereClause.add(" COALESCE(d." + strFieldName + "<> t."+ strFieldName + ", (d." + strFieldName + " is null and not t." + strFieldName + " is null) or (not d." + strFieldName + " is null and t." + strFieldName + " is null))");                   
+    }
+    selectColumnString = StringUtils.join(columnNames.toArray(), ", t.");
+    columnNameString = StringUtils.join(columnNames.toArray(), ", ");    
+    String setColumnsString = StringUtils.join(setColumns.toArray(), ", ");    
+    String whereClauseString = StringUtils.join(whereClause.toArray(), " OR ");
+    %>
+    String updateForType1_<%=cid%> = "UPDATE \"" + tableName_<%=cid%> + "\" d SET <%=setColumnsString%> FROM \"" + sourceTable_<%=cid%> + "\" t WHERE <%=joinClauseString%> AND (<%=whereClauseString%>)";
+    java.sql.Statement stmtType1Update_<%=cid%> = conn_<%=cid%>.createStatement();
+    stmtType1Update_<%=cid%>.executeUpdate(updateForType1_<%=cid%>);
+    stmtType1Update_<%=cid%>.close();
+    <%
+    if(isEnableDebug) {
+        %>
+        System.out.println("[<%=cid%>] type1 update sql\n" + updateForType1_<%=cid%> + "\ndone");
+        <%
+    }
+}
+
+if(isEnableType2) {
+    List<String> whereClause = new ArrayList<String>();
+    for (Map<String, String> type2Attribute : type2Attributes) {
+        strFieldName = StringUtils.getPostgresqlProtectedColumnName(type2Attribute.get("NAME"));            
+        whereClause.add(" COALESCE(d." + strFieldName + "<> t."+ strFieldName + ", (d." + strFieldName + " is null and not t." + strFieldName + " is null) or (not d." + strFieldName + " is null and t." + strFieldName + " is null))");
+    }
+    String whereClauseString = StringUtils.join(whereClause.toArray(), " OR ");
+    if ("FIXED_DATE_VALUE".equals(l2EndDateFieldType)) { %>
+      String customEndDate_<%=cid%> = java.sql.Timestamp.valueOf(<%=l2EndDateFieldFixedDateValue%> +" 00:00:00").toString();
+    <%}%>
+    String updateForType2_<%=cid%> = "UPDATE \"" + tableName_<%=cid%> + "\" d SET \"<%=endDateField%>\" = '" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "'<%if(isEnableActive) {%>, \"<%=activeField%>\" = 0<%}%> FROM \"" + sourceTable_<%=cid%> + "\" t WHERE <%=joinClauseString%> AND (<%=whereClauseString%>) AND d.\"<%=endDateField%>\"<% if ("NULL".equals(l2EndDateFieldType)) { %> IS NULL"<% } else { %> = '" + (customEndDate_<%=cid%>) + "'"<%}%>;
+    java.sql.Statement stmtType2Update_<%=cid%> = conn_<%=cid%>.createStatement();
+    stmtType2Update_<%=cid%>.executeUpdate(updateForType2_<%=cid%>);
+    stmtType2Update_<%=cid%>.close();
+    <%
+    if(isEnableDebug) {
+        %>
+        System.out.println("[<%=cid%>] type2 update sql\n" + updateForType2_<%=cid%> + "\ndone");
+        <%
+    }
+    List<String> columnNames = new ArrayList<String>();
+    for(Map<String, String> sourceKey : sourceKeys) {
+        if(isEqualWithSK) {
+            if(!sourceKey.get("NAME").equals(surrogateKey)) {
+                columnNames.add(StringUtils.getPostgresqlProtectedColumnName(sourceKey.get("NAME")));
+            }
+        } else {
+            columnNames.add(StringUtils.getPostgresqlProtectedColumnName(sourceKey.get("NAME")));                
+        }
+    }
+    for(Map<String, String> type1Attribute : type1Attributes) {
+        columnNames.add(StringUtils.getPostgresqlProtectedColumnName(type1Attribute.get("NAME")));
+    }
+    for(Map<String, String> type2Attribute : type2Attributes) {
+        columnNames.add(StringUtils.getPostgresqlProtectedColumnName(type2Attribute.get("NAME")));
+    }
+    selectColumnString = StringUtils.join(columnNames.toArray(), ", t.");
+    columnNames.add(StringUtils.getPostgresqlProtectedColumnName(startDateField));
+    columnNames.add(StringUtils.getPostgresqlProtectedColumnName(endDateField));
+    if(isEnableActive) {
+        columnNames.add(StringUtils.getPostgresqlProtectedColumnName(activeField));
+    }
+    if(isEnableVersion) {
+        columnNames.add(StringUtils.getPostgresqlProtectedColumnName(versionField));
+    }
+    columnNameString = StringUtils.join(columnNames.toArray(), ", ");
+    %>
+    String insertForType2_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\"(<%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>\"<%=surrogateKey%>\", <%}%><%=columnNameString%>) SELECT <%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>NEXTVAL('" + <%=sequenceName%> + "'), <%}%>t.<%=selectColumnString%>, '" + 
+    (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "',<% if("NULL".equals(l2EndDateFieldType)) { %> NULL<% } else {%> '" + (customEndDate_<%=cid%>) + "'<%} if(isEnableActive) {%>, 1<%}%><%if(isEnableVersion) {%>, d.\"<%=versionField%>\" + 1<%}%> FROM \"" + 
+    sourceTable_<%=cid%> + "\" t, \"" + tableName_<%=cid%> + "\" d WHERE <%=joinClauseString%> AND (<%=whereClauseString%>) AND d.\"<%=endDateField%>\" = '" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) + "'";
+    java.sql.Statement stmtType2Insert_<%=cid%> = conn_<%=cid%>.createStatement();
+    stmtType2Insert_<%=cid%>.executeUpdate(insertForType2_<%=cid%>);
+    stmtType2Insert_<%=cid%>.close();
+    <%
+    if(isEnableDebug) {
+        %>
+        System.out.println("[<%=cid%>] type2 new active row sql\n" + insertForType2_<%=cid %> + "\ndone");
+        <%
+    }
+}
+
+List<String> outerWhereClause = new ArrayList<String>();
+for (Map<String, String> sk : sourceKeys) {
+    outerWhereClause.add(" d." + StringUtils.getPostgresqlProtectedColumnName(sk.get("NAME")) + " IS NULL");
+}
+String outerWhereClauseString = StringUtils.join(outerWhereClause.toArray(), " AND ");
+if(isEnableType1 || isEnableType2){
+%>
+String insert_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\"(<%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>\"<%=surrogateKey%>\", <%}%><%=columnNameString%>) SELECT <%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>NEXTVAL('" + <%=sequenceName%> + "'), <%}%>t.<%=selectColumnString%>"<%if(isEnableType2) {%> + ", '" + (new java.sql.Timestamp((Long)start_Hash.get("<%=cid %>"))) 
++ "',<% if ("NULL".equals(l2EndDateFieldType)) { %> NULL"<% } else {%> '" + (customEndDate_<%=cid%>) + "'"<%}}%>
++ "<%if(isEnableType2 && isEnableActive) {%>, 1<%}%><%if(isEnableType2 && isEnableVersion) {%>, 1<%}%> FROM \"" + 
+sourceTable_<%=cid%> + "\" t LEFT JOIN \"" + tableName_<%=cid%> + "\" d ON <%=joinClauseString%> WHERE (<%=outerWhereClauseString%>)";
+java.sql.Statement stmtInsert_<%=cid%> = conn_<%=cid%>.createStatement();
+stmtInsert_<%=cid%>.executeUpdate(insert_<%=cid%>);
+stmtInsert_<%=cid%>.close();
+<%
+if(isEnableDebug) {
+    %>
+    System.out.println("[<%=cid%>] new rows sql\n" + insert_<%=cid %> + "\ndone");
+    <%
+}
+%>
+<%
+}
+
+if(isEnableType0) {
+	    List<String> columnNames = new ArrayList<String>();
+	    List<String> setColumns = new ArrayList<String>();
+	    List<String> whereClause = new ArrayList<String>();
+	    for(Map<String, String> sk : sourceKeys) {
+	        if(isEqualWithSK) {
+	            if(!sk.get("NAME").equals(surrogateKey)) {
+	                columnNames.add(text_util.wrap(sk.get("NAME")));
+	            }
+	        } else {
+	            columnNames.add(text_util.wrap(sk.get("NAME")));
+	        }
+	    }
+	    for(Map<String, String> type0Attribute : type0Attributes) {
+	    	strFieldName = text_util.wrap(type0Attribute.get("NAME"));
+	        columnNames.add(strFieldName);
+	        setColumns.add(strFieldName + " = t." + strFieldName);
+	        whereClause.add("( d." + strFieldName + " is null AND t." + strFieldName + " is not null )");
+	    }
+	    selectColumnString = StringUtils.join(columnNames.toArray(), ", t.");
+	    columnNameString = StringUtils.join(columnNames.toArray(), ", ");
+	    String setColumnsString = StringUtils.join(setColumns.toArray(), ", ");
+	    String whereClauseString = StringUtils.join(whereClause.toArray(), " OR ");
+	    %>
+	    String updateForType0_<%=cid%> = "UPDATE \"" + tableName_<%=cid%>  + "\" AS d SET <%=setColumnsString%> FROM \"" + tableName_<%=cid%> + "\" AS t WHERE <%=joinClauseString%> AND (<%=whereClauseString%>)";
+
+	    <%
+		    if(isEnableDebug) {
+			    if(log4jEnabled){
+	        %>
+			    log.debug("[<%=cid%>] type0 update sql\n" + updateForType0_<%=cid%> + "\ndone");
+	        <%
+			} else{
+			%>
+			    System.out.println("[<%=cid%>] type0 update sql\n" + updateForType0_<%=cid%> + "\ndone");
+			<%
+			}
+	    }
+		%>
+		java.sql.Statement stmtType0Update_<%=cid%> = conn_<%=cid%>.createStatement();
+	    stmtType0Update_<%=cid%>.executeUpdate(updateForType0_<%=cid%>);
+	    stmtType0Update_<%=cid%>.close();
+	    String updateNullForType0_<%=cid%> ="UPDATE \"" + tableName_<%=cid%> + "\" AS d SET <%=setColumnsString%> FROM \"" + sourceTable_<%=cid%> + "\" AS t WHERE <%=joinClauseString%> AND (<%=whereClauseString%>)";
+		
+		
+	    <%
+		    if(isEnableDebug) {
+			     if(log4jEnabled){
+	        %>
+			    log.debug("[<%=cid%>] type0 update sql\n" + updateNullForType0_<%=cid%> + "\ndone");
+	        <%
+			} else{
+			%>
+			    System.out.println("[<%=cid%>] type0 update sql\n" + updateNullForType0_<%=cid%> + "\ndone");
+			<%
+			}
+	    }
+		%>
+		
+		java.sql.Statement stmtType0NullUpdate_<%=cid%> = conn_<%=cid%>.createStatement();
+	    stmtType0NullUpdate_<%=cid%>.executeUpdate(updateNullForType0_<%=cid%>);
+	    stmtType0NullUpdate_<%=cid%>.close();
+		
+		<% if(!isEnableType1 && !isEnableType2){ %>
+	String insertForTpye0_<%=cid%> = "INSERT INTO \"" + tableName_<%=cid%> + "\"(<%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>\"<%=surrogateKey%>\", <%}%><%=columnNameString%>) SELECT <%if(("DB_SEQUENCE").equals(surrogateKeyType)) {%>NEXTVAL('" + <%=sequenceName%> + "'), <%}%>t.<%=selectColumnString%>"
++ " FROM \"" + sourceTable_<%=cid%> + "\" t LEFT JOIN \"" + tableName_<%=cid%> + "\" d ON <%=joinClauseString%> WHERE (<%=outerWhereClauseString%>)";
+	    <%
+		    if(isEnableDebug) {
+			     if(log4jEnabled){
+	        %>
+			    log.debug("[<%=cid%>] type0 update sql\n" + insertForTpye0_<%=cid%> + "\ndone");
+	        <%
+			} else{
+			%>
+			    System.out.println("[<%=cid%>] type0 update sql\n" + insertForTpye0_<%=cid%> + "\ndone");
+			<%
+			}
+	    }
+		%>
+	java.sql.Statement stmtInsertForTpye0_<%=cid%> = conn_<%=cid%>.createStatement();
+	stmtInsertForTpye0_<%=cid%>.executeUpdate(insertForTpye0_<%=cid%>);
+	stmtInsertForTpye0_<%=cid%>.close();
+	    <%
+		}
+
+
+	}
+%>

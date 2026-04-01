@@ -1,0 +1,61 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+	" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean version07 = ("true").equals(ElementParameterParser.getValue(node,"__VERSION_2007__"));
+	String mode = ElementParameterParser.getValue(node,"__GENERATION_MODE__");
+	boolean eventMode = "EVENT_MODE".equals(mode);
+	
+	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+			}
+			<%if(version07 && eventMode) {%>
+			try {
+				if(excelReader_<%=cid%>!=null) {
+					excelReader_<%=cid%>.handleException();
+				}
+			} catch(java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+				if(!(e_<%=cid%>.getCause() instanceof com.talend.excel.xssf.event.EnoughDataException)) {
+				<% if(dieOnError) { %>
+				throw(e_<%=cid%>);
+				<% } else { %>
+					<%if(isLog4jEnabled){%>
+						log.error("<%=cid %> - " + e_<%=cid%>.getMessage());
+					<%}%>
+				System.err.println(e_<%=cid%>.getMessage());	
+				<% } %>
+				}
+			}
+			<%}%>
+			<%log4jFileUtil.retrievedDataNumberInfo(node);%>
+			
+			<%if((version07 && !eventMode) || !version07) {%>
+				}
+			<%}//Bug TDI-25655%>
+
+			globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+		} finally {
+				<%if(!version07){%>
+					if(!(source_<%=cid %> instanceof java.io.InputStream)){
+						workbook_<%=cid %>.close();
+					}
+				<%}else if(!eventMode){%>
+  				if(!(source_<%=cid %> instanceof java.io.InputStream)){
+  					workbook_<%=cid %>.getPackage().revert();
+  				}
+				<%} else {//TODO event mode
+				
+				}%>
+		}	
+		

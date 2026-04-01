@@ -1,0 +1,82 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+" 
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String cid = node.getUniqueName();
+        String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+    	boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+    	List<Map<String, String>> colDef = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__COLDEFINE__");
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	List<IMetadataColumn> columnList;
+%>
+        vals<%=cid%>=new double[m_Data<%=cid%>.numAttributes()];
+        weka.core.Instance instt<%=cid%>;
+<%
+    	//get data from IncomingConnections
+        for (IConnection conn : conns) {
+            if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+                INode inNode=conn.getSource();
+                List<IMetadataTable> inMetaTables=inNode.getMetadataList();           
+                if(inMetaTables !=null && inMetaTables.size()>0){
+                    IMetadataTable inMetaTable=inMetaTables.get(0);
+                    if(inMetaTable != null){
+                        columnList = inMetaTable.getListColumns();
+                int colNum=0;
+                //for(Map<String, String> colD:colDef){
+                        for(IMetadataColumn column:columnList){
+                           // if(colDef.get(colNum).get("REFCOL").equals(column.getLabel())){
+                                if(("String").equals(colDef.get(colNum).get("TYPE"))){%>
+                                    //insert String value
+                                    vals<%=cid%>[<%=colNum%>]=m_Data<%=cid%>.attribute(<%=colNum%>).addStringValue(<%=conn.getName() %>.<%=column.getLabel()%>);
+          <%                    }else if(("Numeric").equals(colDef.get(colNum).get("TYPE"))){%>
+                                    //insert Numeric value
+                                    vals<%=cid%>[<%=colNum%>]=<%=conn.getName() %>.<%=column.getLabel()%>;
+          <%                    }else if(("Date").equals(colDef.get(colNum).get("TYPE"))){%>
+                                    //insert Date value
+                                    vals<%=cid%>[<%=colNum%>]=m_Data<%=cid%>.attribute(<%=colNum%>).parseDate(new java.text.SimpleDateFormat(<%=colDef.get(colNum).get("PATTERN")%>).format(<%=conn.getName() %>.<%=column.getLabel()%>));
+          <%                    }else if(("Nominal").equals(colDef.get(colNum).get("TYPE"))){%>
+                                    //insert Nominal value          
+                                    vals<%=cid%>[<%=colNum%>]=classValues<%=cid%><%=colNum%>.indexOf(<%=conn.getName() %>.<%=column.getLabel()%>);
+          <%                    }
+                         //   }
+                        //}
+                        colNum++;
+                 }
+                }
+              }
+                %>  
+             instt<%=cid%>=new weka.core.Instance(1.0,vals<%=cid%>);
+             m_Data<%=cid%>.add(instt<%=cid%>);			
+ <%   		
+            }//end if connection is DATA
+        }//end for Iconnection conn:conns
+%>
+        
+        nb_line_<%=cid %>++;     
+        
+        
+ <%       
+		log4jFileUtil.debugWriteData(node);
+	}//end if metadata!=null
+
+}
+%>

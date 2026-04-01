@@ -1,0 +1,86 @@
+<%@ jet %>
+
+<%
+class GetFileSystem{
+	public void invoke(INode node, String cid){
+        String fsDefaultName = ElementParameterParser.getValue(node, "__FS_DEFAULT_NAME__");
+        List<Map<String, String>> hadoopProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HADOOP_ADVANCED_PROPERTIES__");
+        String user = null;
+        
+        String fsDefaultNameKey = "fs.default.name";
+        
+        String distribution = null;
+        String hadoopVersion = null;
+        boolean isCustom = false;
+
+        String dbuser = ElementParameterParser.getValue(node, "__USER__");
+        %>
+        String username_<%=cid%> = (<%=dbuser%> != null && !"".equals(<%=dbuser%>)) ? <%=dbuser%> : System.getProperty("user.name");;
+        org.apache.hadoop.fs.FileSystem fs_<%=cid%> = null;
+        <%
+        distribution = ElementParameterParser.getValue(node, "__DISTRIBUTION__");
+        hadoopVersion = ElementParameterParser.getValue(node, "__HIVE_VERSION__");
+        boolean useKrb = "true".equals(ElementParameterParser.getValue(node, "__USE_KRB__"));
+        String kerberosPrincipal = ElementParameterParser.getValue(node, "__NAMENODE_PRINCIPAL__");
+        boolean useKeytab = "true".equals(ElementParameterParser.getValue(node, "__USE_KEYTAB__"));
+        String userPrincipal = ElementParameterParser.getValue(node, "__PRINCIPAL__");
+        String keytabPath = ElementParameterParser.getValue(node, "__KEYTAB_PATH__");
+        boolean mrUseDatanodeHostname = "true".equals(ElementParameterParser.getValue(node, "__USE_DATANODE_HOSTNAME__"));
+
+        org.talend.hadoop.distribution.component.HDFSComponent hdfsDistrib = null;
+        try {
+            hdfsDistrib = (org.talend.hadoop.distribution.component.HDFSComponent) org.talend.hadoop.distribution.DistributionFactory.buildDistribution(distribution, hadoopVersion);
+        } catch (java.lang.Exception e) {
+            e.printStackTrace();
+        }
+
+        isCustom = hdfsDistrib instanceof org.talend.hadoop.distribution.custom.CustomDistribution;
+        
+        %>
+        org.apache.hadoop.conf.Configuration conf_<%=cid%> = new org.apache.hadoop.conf.Configuration(); 
+        conf_<%=cid%>.set("<%=fsDefaultNameKey%>", <%=fsDefaultName%>);
+        
+        <%
+        if(mrUseDatanodeHostname && (isCustom || hdfsDistrib.doSupportUseDatanodeHostname())){
+        %>
+            conf_<%=cid%>.set("dfs.client.use.datanode.hostname", "true");
+        <%
+        }
+        if(hadoopProps!=null && hadoopProps.size() > 0){
+        	for(Map<String, String> item : hadoopProps){
+        	%>
+        		conf_<%=cid%>.set(<%=item.get("PROPERTY") %> ,<%=item.get("VALUE") %>);
+        	<% 
+    		}
+    	}
+        	
+    	if((hdfsDistrib.doSupportKerberos() && useKrb && !isCustom) || (isCustom && useKrb)){
+    	%>
+            username_<%=cid%> = null;
+    		conf_<%=cid%>.set("dfs.namenode.kerberos.principal", <%=kerberosPrincipal%>);
+    		<%
+    		if(useKeytab){
+    		%>
+    			org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(<%=userPrincipal%>, <%=keytabPath%>);
+    		<%
+    		}
+    	}
+    	
+    	if(hdfsDistrib.doSupportGroup()){
+    		%>
+			conf_<%=cid%>.set("hadoop.job.ugi",username_<%=cid%>+","+username_<%=cid%>);
+        	fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(conf_<%=cid%>);
+        <%
+        }else{
+        %>
+        	
+        	if(username_<%=cid%> == null || "".equals(username_<%=cid%>)){
+        		fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(conf_<%=cid%>);
+        	}else{
+        		fs_<%=cid%> = org.apache.hadoop.fs.FileSystem.get(new java.net.URI(conf_<%=cid%>.get("<%=fsDefaultNameKey%>")),conf_<%=cid%>,username_<%=cid%>);
+        	}	
+        <%
+        }
+    }
+}
+%>

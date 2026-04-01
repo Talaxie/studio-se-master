@@ -1,0 +1,55 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode  
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.process.ProcessUtils
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+	"
+%>
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String description = ElementParameterParser.getValue(node, "__DESCRIPTION__");
+	String expression = ElementParameterParser.getValue(node, "__EXPRESSION__");
+%>
+
+<%
+			if (node.getProcess().getNodesOfType("tAssertCatcher").size() > 0) {
+				List<INode> assertCatchers = (List<INode>)node.getProcess().getNodesOfType("tAssertCatcher");
+				for (INode assertCatcher : assertCatchers) {
+					if (("true").equals(ElementParameterParser.getValue(assertCatcher, "__CATCH_TASSERT__"))) {
+%>
+ if(<%=expression %>) {
+	<%=assertCatcher.getUniqueName() %>.addMessage(pid, projectName, jobName, "java", "<%=cid %>", "Ok", "--", <%=description.trim().length()==0?"null":description %>);
+	<%=assertCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+}else {
+	<%=assertCatcher.getUniqueName() %>.addMessage(pid, projectName, jobName, "java", "<%=cid %>", "Failed", "Test logically failed", <%=description.trim().length()==0?"null":description %>);
+	<%=assertCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);	
+}					
+<%
+					}
+				}
+			}
+%>
+
+<%
+if(ProcessUtils.isTestContainer(node.getProcess())) {
+%>
+if(!(<%=expression %>)){
+   if (junitGlobalMap.get("tests.log") == null) {
+        junitGlobalMap.put("tests.log", new String());
+   }
+   if (junitGlobalMap.get("tests.nbFailure") == null) {
+        junitGlobalMap.put("tests.nbFailure", new Integer(0));
+   }
+   junitGlobalMap.put("tests.log",((String)junitGlobalMap.get("tests.log"))+"<%=cid %>:"+ <%=description %>+java.lang.System.getProperty("line.separator"));
+   junitGlobalMap.put("tests.nbFailure",((Integer)junitGlobalMap.get("tests.nbFailure"))+1);
+}else{
+   assertTrue(<%=expression%>);
+}
+<%
+}
+%>

@@ -1,0 +1,183 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.INode
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.runprocess.ProcessorUtilities
+		java.util.List
+	"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String confLib = ElementParameterParser.getValue(node, "__CONF_LIB__");
+    Boolean setHadoopConf = ElementParameterParser.getBooleanValue(node, "__SET_HADOOP_CONF__");
+    String customHadoopConfPath = ElementParameterParser.getValue(node, "__HADOOP_CONF_SPECIFIC_JAR__");
+    if (setHadoopConf == null) {
+        setHadoopConf = Boolean.FALSE;
+    }
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+
+<% if((confLib != null && confLib.length() > 0) || setHadoopConf){%>
+
+String libPath_<%=cid %> = "";
+
+<% if (setHadoopConf) { 
+
+    if (isLog4jEnabled) {
+        %>
+        log.info("hadoop conf jar : " + <%=customHadoopConfPath %>);
+        <%
+    }
+    %>
+    libPath_<%=cid %> = <%=customHadoopConfPath %>;
+
+<% } else { %>
+
+class DealJobLibrary_<%=cid%> {
+
+    public String getConfJarName(String confLib, String extraId) {
+        String confJarName = confLib;
+        if (extraId != null && extraId.length() > 0) {
+            String jarName = confLib.substring(0, confLib.lastIndexOf("."));
+            String jarExt = confLib.substring(confLib.lastIndexOf("."));
+            confJarName = jarName + "_" + extraId + jarExt;
+        }
+        return confJarName;
+    }
+
+    public String replaceJarPathsFromCrcMap(String originalClassPathLine) throws java.lang.Exception {
+        String classPathLine = "";
+        String crcMapPath = new java.io.File("../crcMap").getCanonicalPath();
+        if (isNeedAddLibsPath( crcMapPath)) {
+            java.util.Map<String, String> crcMap = null;
+            java.io.ObjectInputStream ois = new java.io.ObjectInputStream(new java.io.FileInputStream(crcMapPath));
+            crcMap = (java.util.Map<String, String>) ois.readObject();
+            ois.close();
+            classPathLine = addLibsPath(originalClassPathLine, crcMap);
+        } else {
+            classPathLine = originalClassPathLine;
+        }
+        return classPathLine;
+    }
+
+    private boolean isNeedAddLibsPath(String crcMapPath) {
+        if (!(new java.io.File(crcMapPath).exists())) {// when not use cache
+            return false;
+        }
+        return true;
+    }
+
+
+    private String addLibsPath(String line, java.util.Map<String, String> crcMap) {
+        for (java.util.Map.Entry<String, String> entry : crcMap.entrySet()) {
+            line = adaptLibPaths(line, entry);
+        }
+        return line;
+    }
+
+    private String adaptLibPaths(String line, java.util.Map.Entry<String, String> entry) {
+        line = line.replace("\\", "/");
+        String jarName = entry.getValue();
+        String crc = entry.getKey();
+        String libStringFinder = "../lib/" + jarName;
+        String libStringFinder2 = "./" + jarName; // for the job jar itself.
+        String replacement = "../../../cache/lib/" + crc + "/" + jarName;
+        if (line.contains(libStringFinder)) {
+            line = line.replace(libStringFinder, replacement);
+        } else if (line.toLowerCase().contains(libStringFinder2)) {
+            line = line.toLowerCase().replace(libStringFinder2, replacement);
+        } else if (line.equalsIgnoreCase(jarName)) {
+            line = replacement;
+        } else if (line.contains(":$ROOT_PATH/" + jarName + ":")) {
+            line = line.replace(":$ROOT_PATH/" + jarName + ":", ":$ROOT_PATH/" + replacement + ":");
+        } else if (line.contains(";" + jarName + ";")) {
+            line = line.replace(";" + jarName + ";", ";" + replacement + ";");
+        }
+        return line;
+    }
+
+}
+
+DealJobLibrary_<%=cid%> dealJobLibrary = new DealJobLibrary_<%=cid%>();
+String confJarName = dealJobLibrary.getConfJarName(<%=confLib %>, this.contextStr);
+
+
+<%
+String libFolder = ProcessorUtilities.isExportConfig() ? "../lib" : ProcessorUtilities.getJavaProjectLibFolder().getAbsolutePath().replace("\\", "/");
+%>    
+libPath_<%=cid%> = dealJobLibrary.replaceJarPathsFromCrcMap(new java.io.File("<%=libFolder%>/" + confJarName).getAbsolutePath());
+java.io.File fileConfJar = new java.io.File(libPath_<%=cid%>);
+    
+// Checking standard hadoop conf 
+if (!fileConfJar.exists()) {
+    <% 
+    if (isLog4jEnabled) { 
+        %>
+        log.info("Hadoop configuration '" + confJarName + "' does not exist");
+        <% 
+    } 
+    %>
+    confJarName = confJarName.replace("_"+this.contextStr,"");
+    libPath_<%=cid%> = dealJobLibrary.replaceJarPathsFromCrcMap(new java.io.File("<%=libFolder%>/" + confJarName).getAbsolutePath());
+    fileConfJar = new java.io.File(libPath_<%=cid%>);
+}
+
+// Checking hadoop conf without timestamp suffix 
+if (!fileConfJar.exists()) {
+    <% 
+    if (isLog4jEnabled) { 
+        %>
+        log.info("Hadoop configuration '" + confJarName + "' does not exist");
+        <% 
+    } 
+    %>
+    confJarName = confJarName.replaceFirst("(_[0-9]+)","");
+    libPath_<%=cid%> = dealJobLibrary.replaceJarPathsFromCrcMap(new java.io.File("<%=libFolder%>/" + confJarName).getAbsolutePath());
+    fileConfJar = new java.io.File(libPath_<%=cid%>);
+}
+
+if (!fileConfJar.exists()) {
+    <% 
+    if (isLog4jEnabled) { 
+        %>
+        log.info("Hadoop configuration '" + confJarName + "' does not exist");
+        <% 
+    } 
+    %>
+    //in case of windows and context and RE + JS local, this.contextStr is the context (Default ie) + a TS, and the hadop conf is like 
+    //hadoop-conf-CLUSTER_CONTEXT.jar, so we get rid of the timestamp
+    confJarName = <%=confLib%>.replaceAll(".jar", "") + "_" + this.contextStr.replaceFirst("(_[0-9]+)","") + ".jar";
+    libPath_<%=cid%> = dealJobLibrary.replaceJarPathsFromCrcMap(new java.io.File("<%=libFolder%>/" + confJarName).getAbsolutePath());
+    fileConfJar = new java.io.File(libPath_<%=cid%>);
+}
+
+if (!fileConfJar.exists()) {
+    <% 
+    if (isLog4jEnabled) { 
+        %>
+        log.info("Hadoop configuration '" + confJarName + "' does not exist");
+        log.info("at : "+fileConfJar.toString());
+        <% 
+    } 
+    %>
+    throw new RuntimeException("Hadoop configuration jar not found");
+}
+<%
+if (isLog4jEnabled) { 
+    %>
+    log.info("Hadoop configuration '" + confJarName + "' used");
+    <% 
+} 
+}
+%>
+
+final java.net.URL[] urlHadoop_<%=cid %> =new java.net.URL[] { new java.io.File(libPath_<%=cid %>).toURL() };
+final ClassLoader threadClassLoader_<%=cid %> = Thread.currentThread().getContextClassLoader();
+java.net.URLClassLoader newThreadClassLoader_<%=cid%> = new java.net.URLClassLoader(urlHadoop_<%=cid %>, threadClassLoader_<%=cid%>);
+Thread.currentThread().setContextClassLoader(newThreadClassLoader_<%=cid%>);
+
+<%}%>

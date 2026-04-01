@@ -1,0 +1,1146 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.metadata.types.JavaTypesManager
+    org.talend.core.model.utils.NodeUtil
+    java.util.List
+    org.talend.core.model.process.IProcess
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.process.AbstractNode
+"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean isTSalesforceWaveOutputBulkExec = ((cid == null) ? false : (cid.startsWith("tSalesforceWaveOutputBulkExec")));
+boolean useDoubleQuoteEnclosure = "true".equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))
+                                  && ("\"\"\"").equals(ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__"));
+boolean applyNA4Null = isTSalesforceWaveOutputBulkExec;
+String str4Nil = "#N/A";
+
+boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+String outStream = ElementParameterParser.getValue(node,"__STREAMNAME__");
+String fileName = ElementParameterParser.getValue(node,"__FILENAME__");
+
+boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+int schemaOptNum=100;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+    schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+}
+boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node,"__INCLUDEHEADER__"));
+String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+boolean split = ("true").equals(ElementParameterParser.getValue(node, "__SPLIT__"));
+boolean isInRowMode = ("true").equals(ElementParameterParser.getValue(node,"__ROW_MODE__"));
+
+boolean compress = ("true").equals(ElementParameterParser.getValue(node,"__COMPRESS__"));
+
+String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+IProcess process = node.getProcess();
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));
+boolean exceptionOnFileExist = !useStream&&!isAppend&&(("true").equals(ElementParameterParser.getValue(node, "__FILE_EXIST_EXCEPTION__")));
+%>
+String fileName_<%=cid%> = "";
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//A1
+    IMetadataTable metadata = metadatas.get(0);
+    boolean hasDynamic = metadata.isDynamicSchema();
+    if(hasDynamic && ("true").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))){
+    %>
+        int dynamic_column_count_<%=cid%> = 1;
+    <%
+    }
+    IMetadataColumn dynamicCol = metadata.getDynamicColumn();
+    for (IConnection conn : conns) {//B1
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//C1
+            List<IMetadataColumn> columns = metadata.getListColumns();
+            int sizeColumns = columns.size();
+            if(sizeColumns> schemaOptNum){//D1
+            %>
+                class FileOutputDelimitedUtil_<%=cid%>{
+                    <%
+                    if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {//E1 not use CSV Option
+                        if(isIncludeHeader){//F1
+                            for (int i = 0; i < sizeColumns; i++) {//H1
+                                IMetadataColumn column = columns.get(i);
+                                if(i%schemaOptNum==0){
+                                %>
+                                    public void putHeaderValue_<%=i/schemaOptNum%>(java.io.Writer out<%=cid%>,final String OUT_DELIM_<%=cid%><%if(hasDynamic){%>,final <%=NodeUtil.getPrivateConnClassName(conn) %>Struct <%=conn.getName() %><%}%>)throws java.lang.Exception{
+                                <%
+                                }
+                                if(!("id_Dynamic".equals(column.getTalendType()))) {
+                                %>
+                                    out<%=cid%>.write("<%=column.getLabel() %>");
+                                <%
+                                }else{
+                                %>
+                                    routines.system.DynamicUtils.writeHeaderToDelimitedFile(<%=conn.getName() %>.<%=column.getLabel() %>, out<%=cid%>, OUT_DELIM_<%=cid%>);
+                                <%
+                                }
+                                if(i != sizeColumns - 1) {
+                                %>
+                                    out<%=cid%>.write(OUT_DELIM_<%=cid%>);
+                                <%
+                                }
+                                if((i+1)%schemaOptNum==0){
+                                %>
+                                    }
+                                <%
+                                }
+                            }//H1
+                            if(sizeColumns>0&&(sizeColumns%schemaOptNum)>0){
+                            %>
+                                }
+                            <%
+                            }
+                        }//F1
+                        for (int i = 0; i < sizeColumns; i++) {//F2
+                            IMetadataColumn column = columns.get(i);
+                            JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                            boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+                            if(i%schemaOptNum==0){
+                            %>
+                                public void putValue_<%=i/schemaOptNum%>(final <%=NodeUtil.getPrivateConnClassName(conn) %>Struct <%=conn.getName() %>,StringBuilder sb_<%=cid%>,final String OUT_DELIM_<%=cid%>)throws java.lang.Exception {
+                            <%
+                            }
+                            if(!isPrimitive) {
+                            %>
+                                if(<%=conn.getName() %>.<%=column.getLabel() %> != null) {
+                            <%
+                            }
+                            if(column.getTalendType().equals("id_Dynamic")){
+                                if(advancedSeparator){
+%>
+                                routines.system.DynamicUtils.writeValuesToStringBuilder(<%=conn.getName() %>.<%=column.getLabel() %>, sb_<%=cid %>, OUT_DELIM_<%=cid %>, <%= thousandsSeparator %>, <%= decimalSeparator %>, java.nio.charset.Charset.forName(<%=encoding %>));
+<%
+							    }else{%>
+							    routines.system.DynamicUtils.writeValuesToStringBuilder(<%=conn.getName() %>.<%=column.getLabel() %>, sb_<%=cid %>, OUT_DELIM_<%=cid %>, java.nio.charset.Charset.forName(<%=encoding %>));
+							    <%}
+                            }else{
+                            %>
+                                sb_<%=cid%>.append(
+                                    <%
+                                    String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                                    if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+                                    %>
+                                        FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>)
+                                    <%
+                                    } else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+                                        if(javaType == JavaTypesManager.BIGDECIMAL) {
+                                        %>
+                                            FormatterUtils.format_Number(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>)
+                                        <%
+                                        } else {
+                                        %>
+                                            FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>)
+                                        <%
+                                        }
+                                    } else if(javaType == JavaTypesManager.BIGDECIMAL){
+                                    %>
+                                        <%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+                                    <%
+                                    } else if(javaType == JavaTypesManager.BYTE_ARRAY){
+                                    %>
+                                        java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+                                    <%
+                                    } else {
+                                    %>
+                                        <%=conn.getName() %>.<%=column.getLabel() %>
+                                    <%
+                                    }
+                                    %>
+                                );
+                            <%
+                            }
+                            if(!isPrimitive) {
+                            %>
+                                }
+                            <%
+                            }
+                            if(i != sizeColumns - 1) {
+                            %>
+                                sb_<%=cid%>.append(OUT_DELIM_<%=cid%>);
+                            <%
+                            }
+                            if((i+1)%schemaOptNum==0){
+                            %>
+                                }
+                            <%
+                            }
+                        }//F2
+                        if(sizeColumns>0&&(sizeColumns%schemaOptNum)>0){
+                        %>
+                            }
+                        <%
+                        }
+                    }else{
+                        //E2 use CSV Option
+                        if(isIncludeHeader){//F3
+                            for (int i = 0; i < sizeColumns; i++) {//H3
+                                IMetadataColumn column = columns.get(i);
+                                if(i%schemaOptNum==0){
+                                %>
+                                    public void putHeaderValue_<%=i/schemaOptNum%>(String[] headColu<%=cid%><%if(hasDynamic){%>,final <%=NodeUtil.getPrivateConnClassName(conn) %>Struct <%=conn.getName() %>,int dynamic_column_count_<%=cid%> <%}%>)throws java.lang.Exception{
+                                <%
+                                }
+                                if(!("id_Dynamic".equals(column.getTalendType()))) {
+                                    if(hasDynamic){
+                                    %>
+                                        headColu<%=cid%>[<%=i-1%>+dynamic_column_count_<%=cid%>]="<%=column.getLabel() %>";
+                                    <%
+                                    }else{
+                                    %>
+                                        headColu<%=cid%>[<%=i%>]="<%=column.getLabel() %>";
+                                    <%
+                                    }
+                                }else{
+                                %>
+                                    dynamic_column_count_<%=cid%> = <%=conn.getName()%>.<%=column.getLabel()%>.getColumnCount();
+                                    for(int mi=0;mi<dynamic_column_count_<%=cid%>;mi++){
+                                        headColu<%=cid%>[<%=i%>+mi]=<%=conn.getName()%>.<%=column.getLabel()%>.getColumnMetadata(mi).getName();
+                                    }
+                                <%
+                                }
+                                if((i+1)%schemaOptNum==0){
+                                %>
+                                    }
+                                <%
+                                }
+                            }//H3
+                            if(sizeColumns>0&&(sizeColumns%schemaOptNum)>0){
+                            %>
+                                }
+                            <%
+                            }
+                        }//F3
+                        for (int i = 0; i < sizeColumns; i++) {//F4
+                            IMetadataColumn column = columns.get(i);
+                            JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                            String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+                            boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+                            if(i%schemaOptNum==0){
+                            %>
+                                public void putValue_<%=i/schemaOptNum%>(final <%=NodeUtil.getPrivateConnClassName(conn) %>Struct <%=conn.getName() %>,String[] row<%=cid%><%if(hasDynamic){%>,int dynamic_column_count_<%=cid%> <%}%>){
+                            <%
+                            }
+                            if(("id_Dynamic").equals(column.getTalendType())) {
+                            %>
+                                if (<%=conn.getName()%>.<%=column.getLabel()%> != null) {
+                                    dynamic_column_count_<%=cid%> = <%=conn.getName()%>.<%=column.getLabel()%>.getColumnCount();
+                                    routines.system.DynamicUtils.writeValuesToStringArrayEnhance(<%=conn.getName()%>.<%=column.getLabel()%>, row<%=cid%>, <%= i %>,
+                                    <%
+                                       if(applyNA4Null){
+                                            %>
+                                               "<%= str4Nil %>"
+                                            <%
+                                       }else{
+                                            %>
+                                               null
+                                            <%
+                                       }
+                                     %>, java.nio.charset.Charset.forName(<%=encoding %>));
+                                }
+                            <%
+                            }else{
+                                if(hasDynamic){
+                                %>
+                                    row<%=cid%>[<%=i-1%>+dynamic_column_count_<%=cid%>]=<%=isPrimitive? "":conn.getName()+"."+column.getLabel()+ " == null ? null : "%>
+                                <%
+                                }else{
+                                %>
+                                    row<%=cid%>[<%=i%>]=<%=isPrimitive? "":conn.getName()+"."+column.getLabel()+ " == null ? null : "%>
+                                <%
+                                }
+                                if(javaType == JavaTypesManager.STRING ){
+                                %>
+                                    <%=conn.getName() %>.<%=column.getLabel() %>;
+                                <%
+                                }else if(javaType == JavaTypesManager.DATE && pattern != null){
+                                %>
+                                    FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+                                <%
+                                }else if(javaType == JavaTypesManager.BYTE_ARRAY){
+                                %>
+                                    java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString();
+                                <%
+                                }else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+                                    if(javaType == JavaTypesManager.BIGDECIMAL) {%>
+                                        FormatterUtils.format_Number(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+                                    <%
+                                    } else { %>
+                                        FormatterUtils.format_Number(new java.math.BigDecimal(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)).toPlainString(), <%= thousandsSeparator %>, <%= decimalSeparator %>);
+                                    <%
+                                    }
+                                } else if (javaType == JavaTypesManager.BIGDECIMAL) {
+                                %>
+                                    <%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString();
+                                <%
+                                } else{
+                                %>
+                                    String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+                                <%
+                                }
+                            }
+                            if((i+1)%schemaOptNum==0){
+                            %>
+                                }
+                            <%
+                            }
+                        }//F4
+                        if(sizeColumns>0&&(sizeColumns%schemaOptNum)>0){
+                        %>
+                            }
+                        <%
+                        }
+                    }
+                    %>
+                }
+                FileOutputDelimitedUtil_<%=cid%> fileOutputDelimitedUtil_<%=cid%>=new FileOutputDelimitedUtil_<%=cid%>();
+            <%
+            }//D1
+        }//C1
+    }//B1
+}//A1
+
+if(!useStream){
+%>
+    fileName_<%=cid%> = (new java.io.File(<%=fileName%>)).getAbsolutePath().replace("\\","/");
+    String fullName_<%=cid%> = null;
+    String extension_<%=cid%> = null;
+    String directory_<%=cid%> = null;
+    if((fileName_<%=cid%>.indexOf("/") != -1)) {
+        if(fileName_<%=cid%>.lastIndexOf(".") < fileName_<%=cid%>.lastIndexOf("/")) {
+            fullName_<%=cid%> = fileName_<%=cid%>;
+            extension_<%=cid%> = "";
+        } else {
+            fullName_<%=cid%> = fileName_<%=cid%>.substring(0, fileName_<%=cid%>.lastIndexOf("."));
+            extension_<%=cid%> = fileName_<%=cid%>.substring(fileName_<%=cid%>.lastIndexOf("."));
+        }
+        directory_<%=cid%> = fileName_<%=cid%>.substring(0, fileName_<%=cid%>.lastIndexOf("/"));
+    } else {
+        if(fileName_<%=cid%>.lastIndexOf(".") != -1) {
+            fullName_<%=cid%> = fileName_<%=cid%>.substring(0, fileName_<%=cid%>.lastIndexOf("."));
+            extension_<%=cid%> = fileName_<%=cid%>.substring(fileName_<%=cid%>.lastIndexOf("."));
+        } else {
+            fullName_<%=cid%> = fileName_<%=cid%>;
+            extension_<%=cid%> = "";
+        }
+        directory_<%=cid%> = "";
+    }
+    boolean isFileGenerated_<%=cid%> = true;
+    java.io.File file<%=cid%> = new java.io.File(fileName_<%=cid%>);
+    globalMap.put("<%=cid%>_FILE_NAME",fileName_<%=cid%>);
+    <%
+    if(exceptionOnFileExist){
+    %>
+    if(file<%=cid%>.exists()){
+            throw new RuntimeException("The particular file \""+file<%=cid%>.getAbsoluteFile() +
+            "\" already exist. If you want to overwrite the file, please uncheck the" + 
+            " \"Throw an error if the file already exist\" option in Advanced settings.");
+        }
+    <%
+    }
+    %>
+    <%
+    if(isAppend){
+    %>
+        if(file<%=cid%>.exists()){
+            isFileGenerated_<%=cid%> = false;
+        }
+    <%
+    }
+}
+if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {
+
+            String fieldSeparator = ElementParameterParser.getValueWithUIFieldKey(
+                node,
+                "__FIELDSEPARATOR__",
+                "FIELDSEPARATOR"
+            );
+
+            String rowSeparator = ElementParameterParser.getValueWithUIFieldKey(
+                node,
+                "__ROWSEPARATOR__",
+                "ROWSEPARATOR"
+            );
+
+
+            String splitEvery = ElementParameterParser.getValue(node, "__SPLIT_EVERY__");
+
+            boolean hasDynamic = metadata.isDynamicSchema();
+            if(hasDynamic){
+            %>
+                boolean isFirstCheckDyn_<%=cid%>= true;
+            <%
+            }
+            %>
+            int nb_line_<%=cid%> = 0;
+            <%
+            if(split){
+            %>
+            int splitEvery_<%=cid%> = <%=splitEvery %>;
+            <%
+            }
+            %>
+            int splitedFileNo_<%=cid%> = 0;
+            int currentRow_<%=cid%> = 0;
+
+            final String OUT_DELIM_<%=cid%> = <%=fieldSeparator %>;
+
+            final String OUT_DELIM_ROWSEP_<%=cid%> = <%=rowSeparator %>;
+
+            <%
+            if(!useStream){
+            //**************************** the following is the part of file Path***************************************
+
+                if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+                %>
+                    //create directory only if not exists
+                    if(directory_<%=cid%> != null && directory_<%=cid%>.trim().length() != 0) {
+                        java.io.File dir_<%=cid%> = new java.io.File(directory_<%=cid%>);
+                        if(!dir_<%=cid%>.exists()) {
+                            <%if(isLog4jEnabled){%>
+                                log.info("<%=cid%> - Creating directory '" + dir_<%=cid%>.getCanonicalPath() +"'.");
+                            <%}%>
+                            dir_<%=cid%>.mkdirs();
+                            <%if(isLog4jEnabled){%>
+                                log.info("<%=cid%> - The directory '"+ dir_<%=cid%>.getCanonicalPath() + "' has been created successfully.");
+                            <%}%>
+                        }
+                    }
+                <%
+                }
+                %>
+
+                <%
+                String writerClass = null;
+                if(isInRowMode){
+                    writerClass = "routines.system.BufferedOutput";
+                }else{
+                    writerClass = "java.io.BufferedWriter";
+                }
+                if(!split){
+                    if(compress && !isAppend){// compress the dest file
+                    %>
+                        file<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                        String zipName_<%=cid%> = fullName_<%=cid%> + ".zip";
+                        java.io.File file_<%=cid%> = new java.io.File(zipName_<%=cid%>);
+                        //routines.system.Row
+                        java.util.zip.ZipOutputStream zipOut_<%=cid%>= null;
+                        java.io.Writer out<%=cid%> = null;
+
+                        if(file_<%=cid%>.exists()) {
+                            file_<%=cid%>.delete();
+                        }
+                        zipOut_<%=cid%>= new java.util.zip.ZipOutputStream(
+                                new java.io.BufferedOutputStream(new java.io.FileOutputStream(zipName_<%=cid%>)));
+                        zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry(file<%=cid%>.getName()));
+                        out<%=cid%> = new <%=writerClass%>(new java.io.OutputStreamWriter(zipOut_<%=cid%>,<%=encoding%>));
+                    <%
+                    }else{
+                    %>
+                        //routines.system.Row
+                        java.io.Writer out<%=cid%> = null;
+
+                        <%if(!isAppend) {%>
+                        java.io.File fileToDelete_<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                        if(fileToDelete_<%=cid%>.exists()) {
+                            fileToDelete_<%=cid%>.delete();
+                        }
+                        <%}%>
+                        out<%=cid%> = new <%=writerClass%>(new java.io.OutputStreamWriter(
+                        new java.io.FileOutputStream(fileName_<%=cid%>, <%=isAppend%>),<%=encoding%>));
+                    <%
+                    }
+                } else {
+                %>
+                    java.io.Writer out<%=cid%> = null;
+                    file<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+
+                    <%if(!isAppend) {%>
+                    if(file<%=cid%>.exists()) {
+                        file<%=cid%>.delete();
+                    }
+                    <%}%>
+                    out<%=cid%> = new <%=writerClass%>(new java.io.OutputStreamWriter(
+                        new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%=isAppend%>),<%=encoding%>));
+                <%
+                }
+                %>
+                resourceMap.put("out_<%=cid%>", out<%=cid%>);
+                <%
+                if(isIncludeHeader && !hasDynamic){
+                %>
+                    <%
+                    if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                        synchronized (multiThreadLockWrite) {
+                    <%
+                    }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                        %>
+                            synchronized (fileName_<%=cid%>.intern()) {
+                        <%
+                        }
+                            if (isParallelize) {
+                            %>
+                                Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                                synchronized (pLockWrite) {
+                            <%
+                            }
+                                if(!split && compress && !isAppend){
+                                %>
+                                    if(file_<%=cid%>.length()==0){
+                                <%
+                                }else{
+                                %>
+                                    if(file<%=cid%>.length()==0){
+                                <%
+                                }
+                                List<IMetadataColumn> columns = metadata.getListColumns();
+                                int sizeColumns = columns.size();
+                                for (int i = 0; i < sizeColumns; i++) {
+                                    IMetadataColumn column = columns.get(i);
+                                    if(sizeColumns > schemaOptNum){
+                                        if(i%schemaOptNum==0){
+                                        %>
+                                            fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(out<%=cid%>,OUT_DELIM_<%=cid%>);
+                                        <%
+                                        }
+                                    }else{//AA
+                                    %>
+                                        out<%=cid%>.write("<%=column.getLabel() %>");
+                                        <%
+                                        if(i != sizeColumns - 1) {
+                                            %>
+                                            out<%=cid%>.write(OUT_DELIM_<%=cid%>);
+                                            <%
+                                        }
+                                    }//AA
+                                }
+                                %>
+                                        out<%=cid%>.write(OUT_DELIM_ROWSEP_<%=cid%>);
+                                        out<%=cid%>.flush();
+                                    }
+                            <%
+                            if (isParallelize) {
+                            %>
+                                }
+                            <%
+                            }
+                        if (((AbstractNode)node).getParallelIterator() != null) {
+                        %>
+                            }
+                        <%
+                        }
+                    if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                        }
+                    <%
+                    }
+                }
+
+            }else{
+            //***********************the following is the part of output Stream**************************************
+
+                String writerClass = null;
+                if(isInRowMode){
+                    writerClass = "routines.system.BufferedOutput";
+                }else{
+                    writerClass = "java.io.BufferedWriter";
+                }
+                if(compress){// compress the dest output stream
+                %>
+                    //routines.system.Row
+                    java.util.zip.ZipOutputStream zipOut_<%=cid%>= null;
+                    java.io.OutputStreamWriter writer_<%=cid%> = null;
+                    java.io.Writer out<%=cid%> = null;
+                    zipOut_<%=cid%>=new java.util.zip.ZipOutputStream(new java.io.BufferedOutputStream(<%=outStream %>));
+                    zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry("TalendOutputDelimited"));
+                    writer_<%=cid%> = new java.io.OutputStreamWriter(zipOut_<%=cid%>,<%=encoding%>);
+                    out<%=cid%> = new <%=writerClass%>(writer_<%=cid%>);
+                <%
+                }else{
+                %>
+                    //routines.system.Row
+                    java.io.OutputStreamWriter writer_<%=cid%> = null;
+                    java.io.Writer out<%=cid%> = null;
+                    writer_<%=cid%> = new java.io.OutputStreamWriter(<%=outStream %>,<%=encoding%>);
+                    out<%=cid%> = new <%=writerClass%>(writer_<%=cid%>);
+                <%
+                }
+                %>
+                resourceMap.put("out_<%=cid%>", out<%=cid%>);
+            	resourceMap.put("writer_<%=cid%>", writer_<%=cid%>);
+            	<%
+                if(isIncludeHeader && !hasDynamic){
+                    List<IMetadataColumn> columns = metadata.getListColumns();
+                    int sizeColumns = columns.size();
+                    for (int i = 0; i < sizeColumns; i++) {
+                        IMetadataColumn column = columns.get(i);
+                        if(sizeColumns > schemaOptNum){
+                            if(i%schemaOptNum==0){
+                            %>
+                                fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(out<%=cid%>,OUT_DELIM_<%=cid%>);
+                            <%
+                            }
+                        }else{//BB
+                        %>
+                            out<%=cid%>.write("<%=column.getLabel() %>");
+                            <%
+                            if(i != sizeColumns - 1) {
+                            %>
+                                out<%=cid%>.write(OUT_DELIM_<%=cid%>);
+                            <%
+                            }
+                        }//BB
+                    }
+                    %>
+                    out<%=cid%>.write(OUT_DELIM_ROWSEP_<%=cid%>);
+                <%
+                }
+            }// ****************************output Stream end*************************************
+        }
+    }
+    %>
+
+<%
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}else{// the following is the tFileOutputCSV component
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {
+            List<IMetadataColumn> columns = metadata.getListColumns();
+            int sizeColumns = columns.size();
+            String delim = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+            String rowSeparator = ElementParameterParser.getValue(node, "__CSVROWSEPARATOR__");
+            boolean useOSLineSeparator = ("true").equals(ElementParameterParser.getValue(node,"__OS_LINE_SEPARATOR_AS_ROW_SEPARATOR__"));
+
+            String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+
+            if(escapeChar1.equals("\"\"\"")){
+                escapeChar1 = "\"\\\"\"";
+            }
+
+            String textEnclosure1 = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+            if(textEnclosure1.equals("\"\"\"")){
+                textEnclosure1 = "\"\\\"\"";
+            }
+
+            String splitEvery = ElementParameterParser.getValue(node, "__SPLIT_EVERY__");
+
+            boolean hasDynamic = metadata.isDynamicSchema();
+            if(hasDynamic){
+            %>
+                boolean isFirstCheckDyn_<%=cid%>= true;
+                String[] headColu<%=cid%> = null;
+            <%
+            }else{
+            %>
+                String[] headColu<%=cid%>=new String[<%=sizeColumns%>];
+            <%
+            }
+            %>
+            class CSVBasicSet_<%=cid%>{
+                private char field_Delim;
+                private char row_Delim;
+                private char escape;
+                private char textEnclosure;
+                private boolean useCRLFRecordDelimiter;
+
+                public boolean isUseCRLFRecordDelimiter() {
+                    return useCRLFRecordDelimiter;
+                }
+
+                public void setFieldSeparator(String fieldSep) throws IllegalArgumentException{
+                    char field_Delim_<%=cid%>[] = null;
+
+                    //support passing value (property: Field Separator) by 'context.fs' or 'globalMap.get("fs")'.
+                    if (fieldSep.length() > 0 ){
+                        field_Delim_<%=cid%> = fieldSep.toCharArray();
+                    }else {
+                        throw new IllegalArgumentException("Field Separator must be assigned a char.");
+                    }
+                    this.field_Delim = field_Delim_<%=cid%>[0];
+                }
+
+                public char getFieldDelim(){
+                    if(this.field_Delim==0){
+                        setFieldSeparator(<%=delim %>);
+                    }
+                    return this.field_Delim;
+                }
+
+                public void setRowSeparator(String rowSep){
+                    if("\r\n".equals(rowSep)) {
+                        useCRLFRecordDelimiter = true;
+                        return;
+                    }
+                    char row_Delim<%=cid%>[] = null;
+
+                    //support passing value (property: Row Separator) by 'context.rs' or 'globalMap.get("rs")'.
+                    if (rowSep.length() > 0 ){
+                        row_Delim<%=cid%> = rowSep.toCharArray();
+                    }else {
+                        throw new IllegalArgumentException("Row Separator must be assigned a char.");
+                    }
+                    this.row_Delim = row_Delim<%=cid%>[0];
+                }
+
+                public char getRowDelim(){
+                    if(this.row_Delim==0){
+                        setRowSeparator(<%=rowSeparator%>);
+                    }
+                    return this.row_Delim;
+                }
+
+                public void setEscapeAndTextEnclosure(String strEscape, String strTextEnclosure) throws IllegalArgumentException{
+                    if(strEscape.length() <= 0 ){
+                        throw new IllegalArgumentException("Escape Char must be assigned a char.");
+                    }
+
+                    if ("".equals(strTextEnclosure)) strTextEnclosure = "\0";
+                    char textEnclosure_<%=cid%>[] = null;
+
+                    if(strTextEnclosure.length() > 0 ){
+                        textEnclosure_<%=cid%> = strTextEnclosure.toCharArray();
+                    }else {
+                        throw new IllegalArgumentException("Text Enclosure must be assigned a char.");
+                    }
+
+                    this.textEnclosure = textEnclosure_<%=cid%>[0];
+
+                    if(("\\").equals(strEscape)){
+                        this.escape = '\\';
+                    }else if(strEscape.equals(strTextEnclosure)){
+                        this.escape = this.textEnclosure;
+                    } else {
+                        //the default escape mode is double escape
+                        this.escape = this.textEnclosure;
+                    }
+
+
+                }
+
+                public char getEscapeChar(){
+                    return (char)this.escape;
+                }
+
+                public char getTextEnclosure(){
+                    return this.textEnclosure;
+                }
+            }
+
+            int nb_line_<%=cid%> = 0;
+            <%
+            if(split){
+            %>
+            int splitEvery_<%=cid%> = <%=splitEvery %>;
+            <%
+            }
+            %>
+            int splitedFileNo_<%=cid%> =0;
+            int currentRow_<%=cid%> = 0;
+
+
+            CSVBasicSet_<%=cid%> csvSettings_<%=cid%> = new CSVBasicSet_<%=cid%>();
+            csvSettings_<%=cid%>.setFieldSeparator(<%=delim%>);
+            csvSettings_<%=cid%>.setRowSeparator(<%=rowSeparator%>);
+            csvSettings_<%=cid%>.setEscapeAndTextEnclosure(<%=escapeChar1 %>,<%=textEnclosure1 %>);
+            <%
+            if(!useStream){
+            //**************************** the following is the part of file Path***************************************
+                if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+                %>
+                    //create directory only if not exists
+                    if(directory_<%=cid%> != null && directory_<%=cid%>.trim().length() != 0) {
+                        java.io.File dir_<%=cid%> = new java.io.File(directory_<%=cid%>);
+                        if(!dir_<%=cid%>.exists()) {
+                            <%if(isLog4jEnabled){%>
+                                log.info("<%=cid%> - Creating directory '" +dir_<%=cid%>.getCanonicalPath() +"'.");
+                            <%}%>
+                            dir_<%=cid%>.mkdirs();
+                            <%if(isLog4jEnabled){%>
+                                log.info("<%=cid%> - The directory '" + dir_<%=cid%>.getCanonicalPath() + "' has been created successfully.");
+                            <%}%>
+                        }
+                    }
+                <%
+                }
+
+                if(!split){
+                    if(isInRowMode){
+                        if(compress && !isAppend){// compress the dest file
+                        %>
+                            file<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                            String zipName_<%=cid%> = fullName_<%=cid%> + ".zip";
+                            java.io.File file_<%=cid%> = new java.io.File(zipName_<%=cid%>);
+                            //routines.system.Row
+                            java.util.zip.ZipOutputStream zipOut_<%=cid%> = null;
+                            java.io.Writer out<%=cid%> = null;
+                            com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                            if(file_<%=cid%>.exists()) {
+                                file_<%=cid%>.delete();
+                            }
+                            zipOut_<%=cid%>=new java.util.zip.ZipOutputStream(
+                                    new java.io.BufferedOutputStream(new java.io.FileOutputStream(zipName_<%=cid%>)));
+                            zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry(file<%=cid%>.getName()));
+                            out<%=cid%> = new routines.system.BufferedOutput(new java.io.OutputStreamWriter(zipOut_<%=cid%>, <%=encoding%>));
+                            java.io.StringWriter strWriter<%=cid%> = new java.io.StringWriter();
+                            CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                            CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                        <%
+                        }else{
+                        %>
+                            java.io.Writer out<%=cid%> = null;
+                            com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                            <%if(!isAppend) {%>
+                            java.io.File fileToDelete_<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                            if(fileToDelete_<%=cid%>.exists()) {
+                                fileToDelete_<%=cid%>.delete();
+                            }
+                            <%}%>
+                            if (resourceMap.get("outWriter_for_" + (<%=fileName %>)) == null) {
+                                out<%=cid%> = new routines.system.BufferedOutput(new java.io.OutputStreamWriter(
+                                    new java.io.FileOutputStream(fileName_<%=cid%>, <%=isAppend%>), <%=encoding%>));
+                                resourceMap.put("outWriter_for_" + (<%=fileName %>), out<%=cid%>);
+                            } else {
+                                out<%=cid%> = (java.io.Writer) resourceMap.get("outWriter_for_" + (<%=fileName %>));
+                            }
+                            java.io.StringWriter strWriter<%=cid%> = new java.io.StringWriter();
+                            CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                            CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                        <%
+                        }
+
+                    }else{
+                        if(compress && !isAppend){// compress the dest file
+                        %>
+                            file<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                            String zipName_<%=cid%> = fullName_<%=cid%> + ".zip";
+                            java.io.File file_<%=cid%> = new java.io.File(zipName_<%=cid%>);
+                            //routines.system.Row
+                            java.util.zip.ZipOutputStream zipOut_<%=cid%> = null;
+                            com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                            if(file_<%=cid%>.exists()) {
+                                file_<%=cid%>.delete();
+                            }
+                            zipOut_<%=cid%>=new java.util.zip.ZipOutputStream(
+                                    new java.io.BufferedOutputStream(new java.io.FileOutputStream(zipName_<%=cid%>)));
+                            zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry(file<%=cid%>.getName()));
+                            CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+                            zipOut_<%=cid%>, <%=encoding%>)));
+                            CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                        <%
+                        }else{
+                        %>
+                            com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                            <%if(!isAppend) {%>
+                            java.io.File fileToDelete_<%=cid%> = new java.io.File(fileName_<%=cid%>);
+                            if(fileToDelete_<%=cid%>.exists()) {
+                                fileToDelete_<%=cid%>.delete();
+                            }
+                            <%}%>
+                            CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+                            new java.io.FileOutputStream(fileName_<%=cid%>, <%=isAppend%>), <%=encoding%>)));
+                            CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                        <%
+                        }
+                    }
+                }else{
+                    if(isInRowMode){
+                    %>
+                        file<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+                        java.io.Writer out<%=cid%> = null;
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                        <%if(!isAppend) {%>
+                        if(file<%=cid%>.exists()) {
+                            file<%=cid%>.delete();
+                        }
+                        <%}%>
+                        out<%=cid%> = new routines.system.BufferedOutput(new java.io.OutputStreamWriter(
+                            new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%=isAppend%>),<%=encoding%>));
+                        java.io.StringWriter strWriter<%=cid%> = new java.io.StringWriter();
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+
+                    <%
+                    }else{
+                    %>
+                        file<%=cid%> = new java.io.File(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>);
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+
+                        <%if(!isAppend) {%>
+                        if(file<%=cid%>.exists()) {
+                            file<%=cid%>.delete();
+                        }
+                        <%}%>
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+                            new java.io.FileOutputStream(fullName_<%=cid%> + splitedFileNo_<%=cid%> + extension_<%=cid%>, <%=isAppend%>),<%=encoding%>)));
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                    <%
+                    }
+                }
+                %>
+                resourceMap.put("CsvWriter_<%=cid%>", CsvWriter<%=cid%>);
+                <%
+                if(isInRowMode) {
+                %>
+                	resourceMap.put("out_<%=cid%>", out<%=cid%>);
+                <%
+                }
+
+                if(!useOSLineSeparator) {
+                %>
+                    if(csvSettings_<%=cid%>.isUseCRLFRecordDelimiter()) {
+                        CsvWriter<%=cid%>.setLineEnd("\r\n");
+                    } else {
+                        CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                    }
+                <%
+                } else {
+                %>
+                    if(!csvSettings_<%=cid%>.isUseCRLFRecordDelimiter() && csvSettings_<%=cid%>.getRowDelim()!='\r' && csvSettings_<%=cid%>.getRowDelim()!='\n') {
+                        CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                    }
+                <%
+                }
+
+                if(isIncludeHeader && !hasDynamic)
+                {
+                %>
+                    <%
+                    if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                        synchronized (multiThreadLockWrite) {
+                    <%
+                    }
+                    if (((AbstractNode)node).getParallelIterator() != null) {
+                    %>
+                        synchronized (fileName_<%=cid%>.intern()) {
+                    <%
+                    }
+                    if (isParallelize) {
+                    %>
+                        Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+                        synchronized (pLockWrite) {
+                    <%
+                    }
+                    if(!split && compress && !isAppend){
+                    %>
+                        if(file_<%=cid%>.length()==0){
+                    <%
+                    }else{
+                    %>
+                        if(file<%=cid%>.length()==0){
+                    <%
+                    }
+                    %>
+                            <%
+                            for(int i = 0 ; i < sizeColumns ; i++){
+                                IMetadataColumn column = columns.get(i);
+                                if(sizeColumns> schemaOptNum){
+                                    if(i%schemaOptNum==0){
+                                    %>
+                                        fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(headColu<%=cid%>);
+                                    <%
+                                    }
+                                }else{//CC
+                                %>
+                                    headColu<%=cid%>[<%=i%>]="<%=column.getLabel() %>";
+                                <%
+                                }//CC
+                            }
+                            %>
+                            CsvWriter<%=cid%>.writeNext(headColu<%=cid%>);
+                            CsvWriter<%=cid%>.flush();
+                            <%if(isInRowMode){%>
+                                out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                                out<%=cid%>.flush();
+                                strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                            <%}%>
+                        }
+                    <%
+                    if (isParallelize) {
+                    %>
+                        }
+                    <%
+                    }
+                    if (((AbstractNode)node).getParallelIterator() != null) {
+                    %>
+                        }
+                    <%
+                    }
+                    if(codeGenArgument.getIsRunInMultiThread()){
+                    %>
+                        }
+                    <%
+                    }
+                    %>
+                <%
+                }
+            }else{
+            //***********************the following is the part of output Stream**************************************
+                if(isInRowMode){
+                    if(compress){// compress the dest output stream
+                    %>
+                        java.util.zip.ZipOutputStream zipOut_<%=cid%> = null;
+                        java.io.OutputStreamWriter outWriter_<%=cid%> = null;
+                        java.io.Writer out<%=cid%> = null;
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+                        zipOut_<%=cid%>=new java.util.zip.ZipOutputStream(
+                                new java.io.BufferedOutputStream(<%=outStream %>));
+                        zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry("TalendOutputDelimited"));
+                        outWriter_<%=cid%> = new java.io.OutputStreamWriter(zipOut_<%=cid%>, <%=encoding%>);
+                        out<%=cid%> = new routines.system.BufferedOutput(outWriter_<%=cid%>);
+                        java.io.StringWriter strWriter<%=cid%> = new java.io.StringWriter();
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                    <%
+                    }else{
+                    %>
+                        java.io.OutputStreamWriter outWriter_<%=cid%> = null;
+                        java.io.Writer out<%=cid%> = null;
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+                        outWriter_<%=cid%> = new java.io.OutputStreamWriter(<%=outStream %>, <%=encoding%>);
+                        out<%=cid%> = new routines.system.BufferedOutput(outWriter_<%=cid%>);
+                        java.io.StringWriter strWriter<%=cid%> = new java.io.StringWriter();
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(strWriter<%=cid%>);
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                    <%
+                    }
+
+                }else{
+                    if(compress){// compress the dest output stream
+                    %>
+                        java.util.zip.ZipOutputStream zipOut_<%=cid%> = null;
+                        java.io.OutputStreamWriter outWriter_<%=cid%> = null;
+                        java.io.BufferedWriter bufferWriter_<%=cid%> = null;
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+                        zipOut_<%=cid%>=new java.util.zip.ZipOutputStream(
+                                new java.io.BufferedOutputStream(<%=outStream %>));
+                        zipOut_<%=cid%>.putNextEntry(new java.util.zip.ZipEntry("TalendOutputDelimited"));
+                        outWriter_<%=cid%> = new java.io.OutputStreamWriter(zipOut_<%=cid%>, <%=encoding%>);
+                        bufferWriter_<%=cid%> = new java.io.BufferedWriter(outWriter_<%=cid%>);
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(bufferWriter_<%=cid%>);
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                    <%
+                    }else{
+                    %>
+                        java.io.OutputStreamWriter outWriter_<%=cid%> = null;
+                        java.io.BufferedWriter bufferWriter_<%=cid%> = null;
+                        com.talend.csv.CSVWriter CsvWriter<%=cid%> = null;
+                        outWriter_<%=cid%> = new java.io.OutputStreamWriter(<%=outStream %>, <%=encoding%>);
+                        bufferWriter_<%=cid%> = new java.io.BufferedWriter(outWriter_<%=cid%>);
+                        CsvWriter<%=cid%> = new com.talend.csv.CSVWriter(bufferWriter_<%=cid%>);
+                        CsvWriter<%=cid%>.setSeparator(csvSettings_<%=cid%>.getFieldDelim());
+                    <%
+                    }
+                }
+                
+                %>
+                resourceMap.put("CsvWriter_<%=cid%>", CsvWriter<%=cid%>);
+                <%
+                if(isInRowMode){
+                %>
+                    resourceMap.put("out_<%=cid%>", out<%=cid%>);
+                    resourceMap.put("outWriter_<%=cid%>", outWriter_<%=cid%>);
+                <%
+                }else{
+                %>
+                    resourceMap.put("bufferWriter_<%=cid%>", bufferWriter_<%=cid%>);
+                    resourceMap.put("outWriter_<%=cid%>", outWriter_<%=cid%>);
+                <%
+                }
+                if(!useOSLineSeparator) {
+                %>
+                    if(csvSettings_<%=cid%>.isUseCRLFRecordDelimiter()) {
+                        CsvWriter<%=cid%>.setLineEnd("\r\n");
+                    } else {
+                        CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                    }
+                <%
+                } else {
+                %>
+                    if(!csvSettings_<%=cid%>.isUseCRLFRecordDelimiter() && csvSettings_<%=cid%>.getRowDelim()!='\r' && csvSettings_<%=cid%>.getRowDelim()!='\n') {
+                        CsvWriter<%=cid%>.setLineEnd(""+csvSettings_<%=cid%>.getRowDelim());
+                    }
+                <%
+                }
+
+                if(isIncludeHeader && !hasDynamic)
+                {
+                    for(int i = 0; i < sizeColumns; i++)
+                    {
+                        IMetadataColumn column = columns.get(i);
+                        if(sizeColumns> schemaOptNum){
+                            if(i%schemaOptNum==0){
+                            %>
+                                fileOutputDelimitedUtil_<%=cid%>.putHeaderValue_<%=i/schemaOptNum%>(headColu<%=cid%>);
+                            <%
+                            }
+                        }else{//DD
+                        %>
+                            headColu<%=cid%>[<%=i%>]="<%=column.getLabel() %>";
+                        <%
+                        }//DD
+                    }
+                    %>
+                    CsvWriter<%=cid%>.writeNext(headColu<%=cid%>);
+                    <%if(isInRowMode){%>
+                        out<%=cid%>.write(strWriter<%=cid%>.getBuffer().toString());
+                        strWriter<%=cid%>.getBuffer().delete(0, strWriter<%=cid%>.getBuffer().length());
+                    <%}
+                }
+            }//*****************************csv mode under output stream end********************************************************
+
+            if(!(isIncludeHeader && hasDynamic)){//when there is dynamic schema, it won't be enclosed with "\""
+            %>
+                CsvWriter<%=cid%>.setEscapeChar(csvSettings_<%=cid%>.getEscapeChar());
+                CsvWriter<%=cid%>.setQuoteChar(csvSettings_<%=cid%>.getTextEnclosure());
+                CsvWriter<%=cid%>.setQuoteStatus(com.talend.csv.CSVWriter.QuoteStatus.FORCE);
+            <%
+            }
+        }
+    }
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+%>
+
+resourceMap.put("nb_line_<%=cid%>", nb_line_<%=cid%>);
+<%if(!useStream && ("true").equals(ElementParameterParser.getValue(node, "__DELETE_EMPTYFILE__"))){%>
+    resourceMap.put("isFileGenerated_<%=cid%>", isFileGenerated_<%=cid%>);
+    <%if(compress && !isAppend && !split){%>
+        resourceMap.put("file_<%=cid%>", file_<%=cid%>);
+    <%}else{%>
+        resourceMap.put("file<%=cid%>", file<%=cid%>);
+    <%}%>
+<%}%>

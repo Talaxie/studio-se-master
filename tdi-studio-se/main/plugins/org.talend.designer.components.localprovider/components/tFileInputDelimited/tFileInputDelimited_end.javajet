@@ -1,0 +1,129 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+		java.util.List
+		org.talend.core.model.process.IProcess
+	" 
+%>
+
+<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+	
+	String vcid = "";
+	
+	String projectName = codeGenArgument.getCurrentProjectName();
+	String jobName = codeGenArgument.getJobName();
+	String jobVersion = codeGenArgument.getJobVersion();
+	
+	String tempDir = ElementParameterParser.getValue(node, "__TEMP_DIR__");
+
+	String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+	if(destination!=null && !"".equals(destination)){
+		vcid = destination;
+	}
+	IProcess process = node.getProcess();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));
+	if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {	
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>
+
+<%
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+			if(!("".equals(vcid))) {
+				filename = "\"/"+filename.substring(1, filename.length()-1)+vcid+"_"+projectName+"_"+jobName+"_"+jobVersion+"\"";
+				filename = tempDir+"+"+filename;
+			}
+			
+    		boolean uncompress = ("true").equals(ElementParameterParser.getValue(node,"__UNCOMPRESS__"));
+
+			if(uncompress){
+%>
+				
+            }
+            nb_line_<%=cid%>+=fid_<%=cid %>.getRowNumber();
+		}
+		}finally{
+            if(!((Object)(<%=filename %>) instanceof java.io.InputStream)){
+            	if(fid_<%=cid %>!=null){
+            		fid_<%=cid %>.close();
+            	}
+            }
+            if(fid_<%=cid %>!=null){
+            	globalMap.put("<%=cid %>_NB_LINE", nb_line_<%=cid%>);
+            }
+					<%if(isLog4jEnabled){%>
+						log.info("<%=cid%>- Retrieved records count: "+ nb_line_<%=cid%> + ".");
+					<%}%>
+        }
+<%
+			}else{
+%>
+
+            }
+            }finally{
+                if(!((Object)(<%=filename %>) instanceof java.io.InputStream)){
+                	if(fid_<%=cid %>!=null){
+                		fid_<%=cid %>.close();
+                	}
+                }
+                if(fid_<%=cid %>!=null){
+                	globalMap.put("<%=cid %>_NB_LINE", fid_<%=cid %>.getRowNumber());
+					<%if(isLog4jEnabled){%>
+						log.info("<%=cid%> - Retrieved records count: "+ fid_<%=cid %>.getRowNumber() + ".");
+					<%}%>
+                }
+			}
+<%
+			}
+		}
+	}
+%>
+
+<%
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}else{//the following is the tFileInputCSV component
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>
+
+<%
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+    		boolean uncompress = ("true").equals(ElementParameterParser.getValue(node,"__UNCOMPRESS__"));
+
+%>
+				nb_line_<%=cid%>++;
+			}
+			<%if(uncompress){//compress%>}<%}%>
+			}finally{
+    			if(!(filename_<%=cid %> instanceof java.io.InputStream)){
+    				if(csvReader<%=cid %>!=null){
+    					csvReader<%=cid %>.close();
+    				}
+    			}
+    			if(csvReader<%=cid %>!=null){
+    				globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);
+    			}
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Retrieved records count: "+ nb_line_<%=cid %> + ".");
+				<%}%>
+			}
+<%
+		}
+	}
+%>
+			
+<%
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  }
+%>			  

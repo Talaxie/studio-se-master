@@ -1,0 +1,78 @@
+<%@ jet 
+imports="
+	org.talend.core.model.process.INode 
+	org.talend.core.model.process.ElementParameterParser 
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.List
+	java.util.Map
+" 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String queue = ElementParameterParser.getValue(node,"__QUEUE__");
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+	List<Map<String,String>> queueAttributes = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__QUEUE_ATTRIBUTES__");
+	%>
+		<%@ include file="../tSQSConnection/SQSClient.javajet" %>
+	try{
+		<%
+		if(queueAttributes.size()>0){
+			%>
+			java.util.Map<String,String> attributes_<%=cid%> = new java.util.HashMap<String,String>();
+			
+			<%
+			for(java.util.Map<String,String> map :queueAttributes){
+				String attribute = map.get("ATTRIBUTE");
+				String value = map.get("VALUE");
+				if(attribute!=null && !attribute.trim().isEmpty()){
+				%>
+					attributes_<%=cid%>.put("<%=attribute%>",String.valueOf(<%=value%>));
+				<%
+				}
+			}
+		}
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Creating a queue with name:" + <%=queue%>);
+		<%
+		}
+		%>
+		com.amazonaws.services.sqs.model.CreateQueueRequest createQueueRequest_<%=cid%> = new com.amazonaws.services.sqs.model.CreateQueueRequest(<%=queue%>)<%if(queueAttributes.size()>0){%>.withAttributes(attributes_<%=cid%>)<%}%>;
+        String queueUrl_<%=cid%> = conn_<%=cid%>.createQueue(createQueueRequest_<%=cid%>).getQueueUrl();
+		<%
+		if(isLog4jEnabled){
+		%>	
+			log.info("<%=cid%> - Create the queue successfully [" + queueUrl_<%=cid%> + "]");
+		<%
+		}
+		%>
+	}catch(java.lang.Exception e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		<%
+		if (("true").equals(dieOnError)) {
+		%>
+			throw(e_<%=cid%>);
+		<%
+		} else {
+			if(isLog4jEnabled){
+			%>
+				log.error("<%=cid%> - " + e_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+			System.err.println(e_<%=cid%>.getMessage());
+		<%
+		}
+		if(!("true").equals(useExistingConn)) {
+		%>
+	}finally{
+		if(conn_<%=cid%> !=null){
+			conn_<%=cid%>.shutdown();
+		}
+		<%
+		}
+		%>
+	}
+	

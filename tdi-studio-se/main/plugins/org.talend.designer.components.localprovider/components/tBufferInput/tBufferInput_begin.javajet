@@ -1,0 +1,109 @@
+<%@ jet
+	    imports="
+		org.talend.core.model.process.INode 	
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+	    "
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+%>
+
+int nb_line_<%=cid%> = 0;
+
+<%
+List<IMetadataTable> metadatas = node.getMetadataList();
+
+if ((metadatas!=null) && (metadatas.size() > 0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata != null) {
+    	
+    	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+    	String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+		boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+		String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+		String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+		
+    	
+		List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+		if (conns != null){
+		
+			if (conns.size()>0){
+		
+				IConnection conn =conns.get(0);
+				String connName = conn.getName();
+		
+				if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		
+					List<IMetadataColumn> columns = metadata.getListColumns();
+					int nbColumns = columns.size();
+//-----------
+%>
+String[] row_<%=cid%> = new String[<%=nbColumns%>];
+for (int n = 0; n < globalBuffer.size(); n++)
+{
+	row_<%=cid%> = (String[])globalBuffer.get(n);
+<%
+//-----------
+					for ( int i = 0; i < nbColumns; i++ ){
+					
+						IMetadataColumn column = columns.get(i);
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						String columnName = column.getLabel();	
+//-----------
+%>	
+	if(<%=i%> < row_<%=cid%>.length){
+	<%
+		if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+	%>
+		<%=connName%>.<%=columnName%> = row_<%=cid%>[<%=i%>];	
+	<%
+		}else if(javaType == JavaTypesManager.BYTE_ARRAY){
+	%>
+		<%=connName%>.<%=columnName%> = row_<%=cid%>[<%=i%>].getBytes(<%=encoding%>);	
+	<%	
+		}else if(javaType == JavaTypesManager.DATE){
+	%>
+		<%=connName%>.<%=columnName%> = ParserUtils.parseTo_Date(row_<%=cid%>[<%=i%>], <%=patternValue %>);
+	<%
+		}else if(advancedSeparator && JavaTypesManager.isNumberType(javaType)) {
+	%> 
+		<%=connName%>.<%=columnName%> = ParserUtils.parseTo_<%=typeToGenerate%>(ParserUtils.parseTo_Number(row_<%=cid%>[<%=i%>], <%=thousandsSeparator%>, <%=decimalSeparator%>));
+	<%
+		}else if(javaType == JavaTypesManager.LIST) {
+	%> 
+		<%=connName%>.<%=columnName%> = ParserUtils.parseTo_<%=typeToGenerate%>(row_<%=cid%>[<%=i%>], ",");
+	<%
+		} else { 
+	%>
+		<%=connName%>.<%=columnName%> = ParserUtils.parseTo_<%=typeToGenerate%>(row_<%=cid%>[<%=i%>]);
+	<%
+		}
+	%>
+	}
+	<%if(JavaTypesManager.isJavaPrimitiveType(javaType,false)==false){%>
+	else{
+		<%=connName%>.<%=columnName%> = null;
+	}
+<%	}
+//-----------
+					}
+				}		
+			}
+		}			 
+	}	    
+}
+%>

@@ -1,0 +1,184 @@
+<%@ jet 
+imports="
+  org.talend.core.model.process.ElementParameterParser
+  org.talend.core.model.metadata.IMetadataTable
+  org.talend.core.model.metadata.IMetadataColumn
+  org.talend.core.model.process.INode  
+  org.talend.designer.codegen.config.CodeGeneratorArgument
+  org.talend.core.model.process.IConnectionCategory
+  org.talend.core.model.process.IConnection
+  java.util.List
+  java.util.Map
+  org.talend.core.model.metadata.types.JavaTypesManager
+  org.talend.core.model.metadata.types.JavaType
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String connName = null;
+
+if (node.getIncomingConnections().size() == 1) {
+  IConnection conn = node.getIncomingConnections().get(0);
+  connName = conn.getName();
+}
+List<IMetadataTable> metadatas = node.getMetadataList();
+
+if ((metadatas != null) && (metadatas.size() > 0)) {
+  IMetadataTable metadata = metadatas.get(0);
+
+  if (metadata!=null && connName != null) {
+    String logical = ElementParameterParser.getValue(node,"__LOGICAL_OP__");    
+    List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+    List<? extends IConnection> connsFilter = node.getOutgoingConnections("FILTER");
+    List<? extends IConnection> connsReject = node.getOutgoingConnections("REJECT");
+    boolean use_advanced = ("true").equals(ElementParameterParser.getValue(node, "__USE_ADVANCED__"));
+    String advancedCondition = ElementParameterParser.getValue(node, "__ADVANCED_COND__");    
+    List<Map<String, String>> keyColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,  "__CONDITIONS__");
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    
+    if (conns != null && conns.size() > 0) {
+       
+      for (int i = 0; i < conns.size(); i++) {
+        IConnection conn = conns.get(i);
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+        %>
+          <%=conn.getName()%> = null;
+        <%
+        }
+      }
+    }
+    %>
+    Operator_<%=cid%> ope_<%=cid%> = new Operator_<%=cid%>("<%=logical%>");
+    <%
+    for (Map<String, String> keyColumn : keyColumns) {
+      String sFunction = keyColumn.get("FUNCTION");
+      
+      if (!"".equals(keyColumn.get("FUNCTION"))) {
+        String sPartFunction = sFunction.substring(sFunction.indexOf(":") < 0 ? 0 : sFunction.indexOf(":") + 1); 
+        %>    
+        ope_<%=cid%>.matches((<%=keyColumn.get("FUNCTION").replace("$source", connName + "." + keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE")).replace("$operator", keyColumn.get("OPERATOR"))%>)
+                       , "<%=sPartFunction.replace("$source", keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE").replace("\\", "\\\\").replace("\"", "\\\"")).replace("$operator", keyColumn.get("OPERATOR"))%> failed");
+      <%
+      } else {
+        IMetadataColumn rightColumn = metadata.getColumn(keyColumn.get("INPUT_COLUMN"));
+        JavaType javaType = JavaTypesManager.getJavaTypeFromId(rightColumn.getTalendType());
+
+        if (!JavaTypesManager.isJavaPrimitiveType(javaType, rightColumn.isNullable())) {
+          //this is only for bug:8133, when "Oject" type, and "Empty" function, and compare with "null"
+          
+          if (keyColumn.get("RVALUE") != null && keyColumn.get("RVALUE").equals("null")){
+	      %>
+	        ope_<%=cid%>.matches((<%="$source $operator $target".replace("$source", connName + "." + keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE")).replace("$operator", keyColumn.get("OPERATOR"))%>)
+	                       , "<%=keyColumn.get("INPUT_COLUMN")%><%=keyColumn.get("OPERATOR")%><%=keyColumn.get("RVALUE").replace("\\", "\\\\").replace("\"", "\\\"")%> failed");
+          <%} else {
+			if( JavaTypesManager.isNumberType(javaType, rightColumn.isNullable())) {
+				String typeToGenerate = JavaTypesManager.getTypeToGenerate(rightColumn.getTalendType(), rightColumn.isNullable());
+          %>
+            ope_<%=cid%>.matches((<%="$source == null? false : $source.compareTo($target) $operator 0".replace("$source", connName + "." + keyColumn.get("INPUT_COLUMN")).replace("$target", "ParserUtils.parseTo_"+typeToGenerate+"(String.valueOf("+keyColumn.get("RVALUE")+"))").replace("$operator", keyColumn.get("OPERATOR"))%>)
+                           , "<%="$source.compareTo($target) $operator 0".replace("$source", keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE").replace("\\", "\\\\").replace("\"", "\\\"")).replace("$operator", keyColumn.get("OPERATOR"))%> failed");
+		 	<%
+			}else{
+         	%>
+            ope_<%=cid%>.matches((<%="$source == null? false : $source.compareTo($target) $operator 0".replace("$source", connName + "." + keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE")).replace("$operator", keyColumn.get("OPERATOR"))%>)
+                           , "<%="$source.compareTo($target) $operator 0".replace("$source", keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE").replace("\\", "\\\\").replace("\"", "\\\"")).replace("$operator", keyColumn.get("OPERATOR"))%> failed");
+          <%
+         	}
+	      }
+        } else {
+        %>  
+          ope_<%=cid%>.matches((<%="$source $operator $target".replace("$source", connName + "." + keyColumn.get("INPUT_COLUMN")).replace("$target", keyColumn.get("RVALUE")).replace("$operator", keyColumn.get("OPERATOR")) %>)
+                         , "<%=keyColumn.get("INPUT_COLUMN")%><%=keyColumn.get("OPERATOR")%><%=keyColumn.get("RVALUE").replace("\\", "\\\\").replace("\"", "\\\"")%> failed");
+        <%
+	    }
+      }
+    }
+    
+    if (use_advanced) {
+    %>
+      ope_<%=cid%>.matches((<%=advancedCondition.replace("input_row", connName)%>), "advanced condition failed");
+    <%
+    }
+    %>
+    
+    if (ope_<%=cid%>.getMatchFlag()) {
+      <%
+      if (connsFilter != null) {
+
+        if (connsFilter.size() > 0) {
+
+          for (int i = 0; i < connsFilter.size(); i++) {
+            IConnection conn = connsFilter.get(i);
+
+            if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            %>
+              if(<%=conn.getName() %> == null){ 
+                <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+              }
+              <%
+              for (IMetadataColumn column: metadata.getListColumns()) {
+              %>
+               <%=conn.getName() %>.<%=column.getLabel() %> = <%=connName %>.<%=column.getLabel() %>;
+              <%
+	          }
+				if(isLog4jEnabled){
+				%>
+					log.debug("<%=cid%> - Process the record " + (nb_line_<%=cid%>+1) + ".");
+					<%
+				}
+            }
+          }
+        }
+      }
+      %>    
+      nb_line_ok_<%=cid%>++;
+    } else {
+      <%
+      if (connsReject != null && connsReject.size() > 0) {
+       
+        for (int i = 0; i < connsReject.size(); i++) {
+          IConnection conn = connsReject.get(i);
+          String sRejectConnName = conn.getName();
+
+          if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+          %>
+            if (<%=sRejectConnName%> == null){
+              <%=sRejectConnName%> = new <%=sRejectConnName%>Struct();
+            }
+            <%
+            boolean hasErrorMsg = false;
+            for (IMetadataColumn column: conn.getMetadataTable().getListColumns()) {
+              String columnName = column.getLabel();
+              
+              if ("errorMessage".equals(columnName)) {
+              	hasErrorMsg = true;
+              %>
+	            <%=sRejectConnName%>.errorMessage = ope_<%=cid%>.getErrorMsg();
+              <%
+              } else {
+              %>
+                <%=sRejectConnName%>.<%=column.getLabel() %> = <%=connName%>.<%=column.getLabel() %>;
+              <%
+              }
+	        }
+				if(isLog4jEnabled){
+				%>
+					log.debug("<%=cid%> - Process the record " + (nb_line_<%=cid%>+1) + ".");
+					<%if (hasErrorMsg) {%>
+					log.debug("<%=cid%> - Reject the record " + (nb_line_<%=cid%>+1) + ". Caused by: " + <%=sRejectConnName%>.errorMessage+ ".");
+					<%}
+				}
+          }
+        }
+      }
+      %>
+      nb_line_reject_<%=cid%>++;
+    }
+  <%
+  }
+}
+%>
+
+nb_line_<%=cid%>++;

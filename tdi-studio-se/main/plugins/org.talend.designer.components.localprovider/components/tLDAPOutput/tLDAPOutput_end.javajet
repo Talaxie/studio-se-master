@@ -1,0 +1,50 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser 
+	" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+<%
+if(("false").equals(useExistingConn)){
+    String protocol=ElementParameterParser.getValue(node, "__PROTOCOL__");
+    
+    if("TLS".equals(protocol)){
+        if(isLog4jEnabled){
+%>
+	         log.info("<%=cid%> - Closing the TLS connection.");
+<%
+        }
+%>
+        tls_<%=cid%>.close();
+
+<%
+        if(isLog4jEnabled){
+%>
+	         log.info("<%=cid%> - TLS connection closed.");
+<%
+        }
+    }
+%>
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Closing the connection to the server.");
+	<%}%>
+	ctx_<%=cid%>.close();
+	<%if(isLog4jEnabled){%>
+		log.info("<%=cid%> - Connection to the server closed.");
+	<%}%>
+<%
+}
+%>
+globalMap.put("<%=cid %>_NB_LINE", nb_line_<%=cid %>);
+globalMap.put("<%=cid %>_NB_LINE_REJECTED",nb_line_rejected_<%=cid%>);
+<%if(isLog4jEnabled){%>
+	log.info("<%=cid%> - Written records count: " + nb_line_<%=cid %> + ".");
+<%}%>

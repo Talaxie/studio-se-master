@@ -1,0 +1,146 @@
+<%@ jet 
+	imports="
+	    org.talend.core.model.process.INode 
+	    org.talend.core.model.metadata.IMetadataTable
+	    org.talend.core.model.metadata.IMetadataColumn
+	    org.talend.core.model.process.IConnection
+	    org.talend.core.model.process.ElementParameterParser
+    	    org.talend.core.model.process.IConnectionCategory
+	    org.talend.designer.codegen.config.CodeGeneratorArgument
+	    java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	boolean autoPropagate = "true".equals(ElementParameterParser.getValue(node, "__DATA_AUTO_PROPAGATE__"));
+	
+	//this 3 flag must be only one as true, the new component is default isVersion_V4.0=true	
+	boolean isVersion_V2_0 = "true".equals(ElementParameterParser.getValue(node, "__Version_V2_0__"));
+	boolean isVersion_V3_2 = "true".equals(ElementParameterParser.getValue(node, "__Version_V3_2__"));
+	boolean isVersion_V4_0 = "true".equals(ElementParameterParser.getValue(node, "__Version_V4.0__"));
+	
+	String code = ElementParameterParser.getValue(node, "__CODE_MAIN__");
+	
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+	
+			// we give a default value to prevComponentName so that no error
+			// occur when the user tries to generated Java code while no input
+			// component was linked to our tJavaFlex.
+			String inputRowName = "input_row";
+			String outputRowName = "output_row";
+
+			List< ? extends IConnection> inConns = node.getIncomingConnections();
+			if (inConns != null && !inConns.isEmpty()) {
+				IConnection inConn = inConns.get(0);
+				inputRowName = inConn.getName();
+			}
+			
+			List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+			if (outConns != null && !outConns.isEmpty()) {
+				IConnection outConn = outConns.get(0);
+				if(outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+					outputRowName = outConn.getName();
+				}
+			}
+
+			// In case the user would make some tricky Java things, he can use
+			// the arrays as a whole.
+			code = code.replaceAll(
+				"(?<![\\w$|.])input_row(?![\\w$])",
+				inputRowName
+			);
+
+			code = code.replaceAll(
+				"(?<![\\w$|.])output_row(?![\\w$])",
+				outputRowName
+			);
+		}
+	}
+%>
+
+<%
+//after TOS4.0, copy action BEFORE code
+
+if(autoPropagate&&isVersion_V4_0){//1
+	if ((metadatas!=null)&&(metadatas.size()>0)) {//A
+    	IMetadataTable metadata = metadatas.get(0);
+    	if (metadata!=null) {//2
+			IConnection inConn = null;
+			IConnection outConn = null;
+	        List< ? extends IConnection> inConns = node.getIncomingConnections();
+	        
+	        //in order to support the "Iterate/Main" at the same time.
+	        List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+	        if (inConns != null && !inConns.isEmpty()) {
+	            inConn = inConns.get(0);
+	        }
+	        if (outConns != null && !outConns.isEmpty()) {
+	            outConn = outConns.get(0);
+	        }
+	        if(inConn != null && outConn != null){//3
+	        	if(inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA) && outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {	        			
+    	    		List<IMetadataColumn> columns = metadata.getListColumns();
+    	    		IMetadataTable ref_metadata = inConn.getMetadataTable();
+    	    		if(ref_metadata != null) {
+	        	    	for(IMetadataColumn column : columns){
+	        	    		//add a name mapping for issue:11712
+	        	    		if (ref_metadata.getColumn(column.getLabel()) != null) {
+%>
+	        				<%=outConn.getName()%>.<%=column.getLabel()%> = <%=inConn.getName()%>.<%=column.getLabel()%>;
+<%
+	        				}
+	        			}
+	        		}
+				}
+			} //3
+		} //2
+	} //A
+} //1
+%>
+
+<%=code %>
+
+<%
+//between TOS3.2 and TOS4.0, copy action AFTER code
+ 
+if(autoPropagate&&isVersion_V3_2){//1
+	if ((metadatas!=null)&&(metadatas.size()>0)) {//A
+    	IMetadataTable metadata = metadatas.get(0);
+    	if (metadata!=null) {//2
+			IConnection inConn = null;
+			IConnection outConn = null;
+	        List< ? extends IConnection> inConns = node.getIncomingConnections();
+	        
+	        //in order to support the "Iterate/Main" at the same time.
+	        List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+	        if (inConns != null && !inConns.isEmpty()) {
+	            inConn = inConns.get(0);
+	        }
+	        if (outConns != null && !outConns.isEmpty()) {
+	            outConn = outConns.get(0);
+	        }
+	        if(inConn != null && outConn != null){//3
+	        	if(inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA) && outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {	        			
+    	    		List<IMetadataColumn> columns = metadata.getListColumns();
+    	    		IMetadataTable ref_metadata = inConn.getMetadataTable();
+    	    		if(ref_metadata != null) {
+	        	    	for(IMetadataColumn column : columns){
+	        	    		//add a name mapping for issue:11712, 
+	        	    		if (ref_metadata.getColumn(column.getLabel()) != null) {        	    	
+%>
+	        				<%=outConn.getName()%>.<%=column.getLabel()%> = <%=inConn.getName()%>.<%=column.getLabel()%>;
+<%
+	        				}
+	        			}
+	        		}
+				}
+			} //3
+		} //2
+	} //A
+} //1
+%>

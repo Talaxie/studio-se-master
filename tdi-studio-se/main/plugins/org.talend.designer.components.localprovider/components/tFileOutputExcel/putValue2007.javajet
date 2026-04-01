@@ -1,0 +1,62 @@
+					<%
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+					if(!isPrimitive) {
+    				%>   				
+	    				if(<%=conn.getName() %>.<%=column.getLabel() %> != null) {
+    				<%
+    				} 
+    				%>
+<%
+					if(!column.getTalendType().equals("id_Dynamic")){
+					
+    				String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+    				if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {
+%>
+							xlsxTool_<%=cid%>.addCellValue(<%=conn.getName() %>.<%=column.getLabel() %>, <%=pattern%>);
+<%
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY){
+%>					
+							xlsxTool_<%=cid%>.addCellValue(java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString());
+<%
+					} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+%>
+							<% if(javaType == JavaTypesManager.BIGDECIMAL) {%>
+							xlsxTool_<%=cid%>.addCellValue(FormatterUtils.format_Number(String.valueOf(<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>), <%= thousandsSeparator %>, <%= decimalSeparator %>));				
+							<% } else { %>
+							xlsxTool_<%=cid%>.addCellValue(FormatterUtils.format_Number(String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>), <%= thousandsSeparator %>, <%= decimalSeparator %>));
+							<% } %>
+<%
+					} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>		
+							xlsxTool_<%=cid%>.addCellValue((<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>).doubleValue());
+<%
+					}else if (javaType == JavaTypesManager.BOOLEAN){
+%>
+							xlsxTool_<%=cid%>.addCellValue(<%=conn.getName() %>.<%=column.getLabel()%>);
+<%
+					}else if (javaType == JavaTypesManager.DOUBLE){
+%>
+							xlsxTool_<%=cid%>.addCellValue(<%=conn.getName() %>.<%=column.getLabel()%>);
+<%					}else if(JavaTypesManager.isNumberType(javaType)){
+%>
+							xlsxTool_<%=cid%>.addCellValue(Double.parseDouble(String.valueOf(<%=conn.getName() %>.<%=column.getLabel()%>)));
+<%
+					}else{	
+%>
+							xlsxTool_<%=cid%>.addCellValue(String.valueOf(<%=conn.getName() %>.<%=column.getLabel()%>));
+<%				
+					}
+					}else{
+					%>
+						excelDynamicUtil_<%=cid%>.writeValuesToExcelFile(<%=conn.getName() %>.<%=column.getLabel() %>, xlsxTool_<%=cid%>);
+						<%
+					}
+					if(!isPrimitive) {
+    				%>
+	    				} else {
+	    					xlsxTool_<%=cid%>.addCellNullValue();
+	    				}
+					<%
+    				} 
+    				%>

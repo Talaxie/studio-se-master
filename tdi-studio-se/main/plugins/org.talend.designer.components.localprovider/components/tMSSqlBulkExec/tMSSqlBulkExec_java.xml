@@ -1,0 +1,435 @@
+<COMPONENT>
+
+  <HEADER
+    PLATEFORM="ALL"
+    SERIAL=""
+    VERSION="0.102"
+    STATUS="ALPHA"
+
+    COMPATIBILITY="ALL"
+    AUTHOR="Talaxie"
+    RELEASE_DATE="20050320A"
+    STARTABLE="true"
+    LOG4J_ENABLED="true"
+  >
+    <SIGNATURE/>
+  </HEADER>
+
+  <FAMILIES>
+    <FAMILY>Databases/DB Specifics/MS_SQL_Server</FAMILY>
+  </FAMILIES>
+
+  <DOCUMENTATION>
+    <URL/>
+  </DOCUMENTATION>
+
+  <CONNECTORS>
+    <CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0"/>
+    <CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1"/>
+    <CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+    <CONNECTOR CTYPE="COMPONENT_OK" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="COMPONENT_ERROR" MAX_OUTPUT="1"/>
+    <CONNECTOR CTYPE="RUN_IF" MAX_OUTPUT="1"/>
+  </CONNECTORS>
+
+  <PARAMETERS>
+
+    <PARAMETER
+      NAME="PROPERTY"
+      FIELD="PROPERTY_TYPE"
+      SHOW="true"
+      NUM_ROW="1"
+      REPOSITORY_VALUE="DATABASE:SQL_SERVER"
+      SHOW_IF="(ACTION=='EXPORT') or (USE_EXISTING_CONNECTION == 'false')"
+    />
+
+    <PARAMETER
+	  NAME="USE_EXISTING_CONNECTION"
+	  FIELD="CHECK"
+	  NUM_ROW="2"
+	  SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+	>
+		<DEFAULT>false</DEFAULT>
+	</PARAMETER>
+
+	<PARAMETER
+	  NAME="CONNECTION"
+	  FIELD="COMPONENT_LIST"
+	  REQUIRED="true" FILTER="tMSSqlConnection"
+	  NUM_ROW="2"
+	  SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) and (USE_EXISTING_CONNECTION == 'true')"
+	  DYNAMIC_SETTINGS="true"
+	/>
+
+	<PARAMETER
+		NAME="DRIVER"
+		FIELD="CLOSED_LIST"
+		NUM_ROW="3"
+		REPOSITORY_VALUE="DRIVER"
+		SHOW_IF="USE_EXISTING_CONNECTION == 'false'">
+		<ITEMS DEFAULT="MSSQL_PROP">
+			<ITEM NAME="JTDS" VALUE="JTDS" />
+			<ITEM NAME="MSSQL_PROP" VALUE="MSSQL_PROP"/>
+		</ITEMS>
+	</PARAMETER>
+
+    <PARAMETER
+      NAME="HOST"
+      FIELD="TEXT"
+      NUM_ROW="4"
+      REPOSITORY_VALUE="SERVER_NAME"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) and (USE_EXISTING_CONNECTION == 'false')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TYPE"
+      FIELD="TEXT"
+      NUM_ROW="4"
+      SHOW="false"
+      REPOSITORY_VALUE="TYPE"
+    >
+      <DEFAULT>MSSQL</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="PORT"
+      FIELD="TEXT"
+      NUM_ROW="4"
+      REPOSITORY_VALUE="PORT"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) and (USE_EXISTING_CONNECTION == 'false')"
+    >
+      <DEFAULT>"1433"</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+      NAME="DB_SCHEMA"
+      FIELD="TEXT"
+      NUM_ROW="4"
+      REPOSITORY_VALUE="SCHEMA"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) and (USE_EXISTING_CONNECTION == 'false')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+   	<PARAMETER
+      NAME="BCP_UTILITY"
+      FIELD="FILE"
+      NUM_ROW="2"
+      SHOW_IF="ACTION=='EXPORT'"
+    >
+      <DEFAULT>"bcp"</DEFAULT>
+    </PARAMETER>
+
+
+    <PARAMETER
+      NAME="SERVER"
+      FIELD="TEXT"
+      NUM_ROW="4"
+      SHOW_IF="ACTION=='EXPORT'"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DBNAME"
+      FIELD="TEXT"
+      NUM_ROW="5"
+      REPOSITORY_VALUE="SID"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE'))  and (USE_EXISTING_CONNECTION == 'false')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="USER"
+      FIELD="TEXT"
+      NUM_ROW="6"
+      REPOSITORY_VALUE="USERNAME"
+      SHOW_IF="(USE_EXISTING_CONNECTION == 'false') or (ACTION=='EXPORT')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="PASS"
+      FIELD="PASSWORD"
+      NUM_ROW="6"
+      REPOSITORY_VALUE="PASSWORD"
+	  SHOW_IF="(USE_EXISTING_CONNECTION == 'false') or (ACTION=='EXPORT')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TABLE"
+      FIELD="DBTABLE"
+      NUM_ROW="7"
+      REQUIRED="true"
+      SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="TABLE_ACTION"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="15"
+      NOT_SHOW_IF="(ACTION=='EXPORT') or (PARALLELIZE == 'true')"
+    >
+      <ITEMS DEFAULT="NONE">
+        <ITEM NAME="NONE" VALUE="NONE" />
+        <ITEM NAME="DROP_CREATE" VALUE="DROP_CREATE"/>
+        <ITEM NAME="CREATE" VALUE="CREATE"/>
+        <ITEM NAME="CREATE_IF_NOT_EXISTS" VALUE="CREATE_IF_NOT_EXISTS"/>
+        <ITEM NAME="DROP_IF_EXISTS_AND_CREATE" VALUE="DROP_IF_EXISTS_AND_CREATE" />
+        <ITEM NAME="CLEAR" VALUE="CLEAR"/>
+        <ITEM NAME="TRUNCATE" VALUE="TRUNCATE"/>
+      </ITEMS>
+    </PARAMETER>
+
+  	<PARAMETER NAME="NOTE" FIELD="LABEL" NUM_ROW="15"
+  			NOT_SHOW_IF="(TABLE_ACTION == 'NONE') OR (USE_EXISTING_CONNECTION == 'false')"
+  		>
+  		<DEFAULT>Warning : this component configuration will automatically generate a commit before bulk insert</DEFAULT>
+  	</PARAMETER>
+
+    <PARAMETER
+      NAME="USE_EXISTING_DYNAMIC"
+      FIELD="CHECK"
+      NUM_ROW="17">
+      <DEFAULT>false</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DYNAMIC"
+      FIELD="COMPONENT_LIST"
+      REQUIRED="true"
+      FILTER="tSetDynamicSchema"
+      NUM_ROW="18"
+      SHOW_IF="USE_EXISTING_DYNAMIC == 'true'"
+      >
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="SCHEMA"
+      FIELD="SCHEMA_TYPE"
+      NUM_ROW="20"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) AND (USE_EXISTING_DYNAMIC == 'false')"
+    >
+      <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+    	NAME="QUERY"
+    	FIELD="MEMO_SQL"
+    	NUM_ROW="25"
+    	SHOW_IF="ACTION=='EXPORT'"
+    	REQUIRED="true"
+    >
+    	<DEFAULT>"SELECT * FROM TABLE"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="REMOTE_FILENAME"
+      FIELD="FILE"
+      NUM_ROW="30"
+      REQUIRED="true"
+      SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+    >
+      <DEFAULT>"__COMP_DEFAULT_FILE_DIR__/mssql_bulk.txt"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+    	NAME="OUTPUT_FILE_NAME"
+    	FIELD="FILE"
+    	NUM_ROW="35"
+    	REQUIRED="true"
+    	SHOW_IF="ACTION=='EXPORT'"
+    >
+    	<DEFAULT>"__COMP_DEFAULT_FILE_DIR__/mssql_bulk.txt"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="MAPPING"
+      FIELD="MAPPING_TYPE"
+      NUM_ROW="40"
+      SHOW="false"
+    >
+      <DEFAULT>id_MSSQL</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="FLOAT_LENGTH_FOR_DYNAMIC"
+        FIELD="TEXT"
+        NUM_ROW="50"
+        SHOW="false"
+        REPOSITORY_VALUE="FLOAT_LENGTH_FOR_DYNAMIC"
+    >
+      <DEFAULT>53</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="VARCHAR_LENGTH_FOR_DYNAMIC"
+        FIELD="TEXT"
+        NUM_ROW="60"
+        SHOW="false"
+        REPOSITORY_VALUE="FLOAT_LENGTH_FOR_DYNAMIC"
+    >
+      <DEFAULT>8000</DEFAULT>
+    </PARAMETER>
+   </PARAMETERS>
+
+   <ADVANCED_PARAMETERS>
+   	<PARAMETER
+    	NAME="ACTION"
+    	FIELD="CLOSED_LIST"
+    	SHOW="true"
+    	NUM_ROW="1"
+    >
+    	<ITEMS DEFAULT="INSERT" >
+    		<ITEM NAME="INSERT" VALUE="INSERT" />
+    		<ITEM NAME="UPDATE" VALUE="UPDATE" />
+    		<ITEM NAME="EXPORT" VALUE="EXPORT" />
+    	</ITEMS>
+    </PARAMETER>
+
+	<PARAMETER NAME="PROPERTIES" FIELD="TEXT" NUM_ROW="4" REPOSITORY_VALUE="PROPERTIES_STRING"
+			SHOW_IF="(USE_EXISTING_CONNECTION == 'false') AND (ACTION != 'EXPORT')">
+		<DEFAULT>""</DEFAULT>
+	</PARAMETER>
+
+	<PARAMETER NAME="ACTIVE_DIR_AUTH" FIELD="CHECK" NUM_ROW="6" SHOW_IF="(DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')">
+		<DEFAULT>false</DEFAULT>
+	</PARAMETER>
+
+	<PARAMETER
+      NAME="FIELDS_TERMINATED_BY"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      REQUIRED="true"
+    >
+      <DEFAULT>";"</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+      NAME="ROW_TERMINATED_BY"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      REQUIRED="true"
+      SHOW_IF ="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+    >
+      <DEFAULT>"\n"</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+      NAME="ROW_TERMINATED_EXPORT"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      REQUIRED="true"
+      SHOW_IF ="ACTION=='EXPORT'"
+    >
+      <DEFAULT>"\\n"</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+      NAME="FIRST_ROW"
+      FIELD="TEXT"
+      NUM_ROW="10"
+      REQUIRED="true"
+      SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+    >
+      <DEFAULT>"1"</DEFAULT>
+    </PARAMETER>
+    
+    <PARAMETER
+      NAME="USE_CODE_PAGE"
+      FIELD="CHECK"
+      NUM_ROW="11"
+      SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')">
+      <DEFAULT>true</DEFAULT>
+    </PARAMETER>
+
+   <PARAMETER
+      NAME="CODE_PAGE"
+      FIELD="TEXT"
+      NUM_ROW="11"
+      SHOW_IF="((ACTION=='INSERT') or (ACTION=='UPDATE')) AND (USE_CODE_PAGE=='true')"
+    >
+      <DEFAULT>"OEM"</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+      NAME="DATA_FILE_TYPE"
+      FIELD="CLOSED_LIST"
+      NUM_ROW="11"
+      REQUIRED="true"
+    >
+      <ITEMS DEFAULT ="char" >
+        <ITEM NAME="char"       VALUE="char" />
+        <ITEM NAME="native"     VALUE="native"/>
+        <ITEM NAME="widechar"  	VALUE="widechar"/>
+        <ITEM NAME="widenative" VALUE="widenative" SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"/>
+      </ITEMS>
+    </PARAMETER>
+
+    <PARAMETER
+        NAME="ADDITIONAL_QUERY_PARAMETERS"
+        FIELD="TEXT"
+        NUM_ROW="12"
+        REQUIRED="false"
+        SHOW_IF="(ACTION=='INSERT') or (ACTION=='UPDATE')"
+    >
+        <DEFAULT>""</DEFAULT>
+    </PARAMETER>
+
+    <PARAMETER
+	  NAME="FIRE_TRIGGERS"
+	  FIELD="CHECK"
+	  NUM_ROW="13"
+	  SHOW_IF="ACTION=='INSERT'"
+	>
+		<DEFAULT>false</DEFAULT>
+	</PARAMETER>
+
+    <PARAMETER
+    	NAME="OUTPUT"
+    	FIELD="CLOSED_LIST"
+    	NUM_ROW="13"
+    	REQUIRED = "true"
+    	SHOW_IF="ACTION=='EXPORT'"
+    >
+    	<ITEMS DEFAULT="CONSOLE" >
+    		<ITEM NAME="CONSOLE" VALUE="OUTPUT_TO_CONSOLE" />
+    		<ITEM NAME="VARIABLE" VALUE="RETRIEVE_OUTPUT" />
+    	</ITEMS>
+    </PARAMETER>
+   </ADVANCED_PARAMETERS>
+
+
+   <CODEGENERATION>
+    <IMPORTS>
+		<IMPORT NAME="Driver-jTDS" MODULE="jtds-1.3.1-patch-20190523.jar" MVN="mvn:net.sourceforge.jtds/jtds/1.3.1-patch-20190523"   REQUIRED_IF="(DRIVER == 'JTDS') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="Driver-mssql-jdbc" MODULE="mssql-jdbc.jar" MVN="mvn:com.microsoft.sqlserver/mssql-jdbc/actual"  REQUIRED_IF="(DRIVER == 'MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<!--Active directory dependency module: msal4j and transitive -->
+		<IMPORT NAME="msal4j" MODULE="msal4j-1.11.0.jar" MVN="mvn:com.microsoft.azure/msal4j/1.11.0"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="jackson-core" MODULE="jackson-core-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-core/2.14.3"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="jackson-databind" MODULE="jackson-databind-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-databind/2.14.3"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="jackson-annotations" MODULE="jackson-annotations-2.14.3.jar" MVN="mvn:com.fasterxml.jackson.core/jackson-annotations/2.14.3"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="oauth2-oidc-sdk" MODULE="oauth2-oidc-sdk-9.7.jar" MVN="mvn:com.nimbusds/oauth2-oidc-sdk/9.7"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="jcip-annotations" MODULE="jcip-annotations-1.0-1.jar" MVN="mvn:com.github.stephenc.jcip/jcip-annotations/1.0-1"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="json-smart" MODULE="json-smart-2.4.11.jar" MVN="mvn:net.minidev/json-smart/2.4.11"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="accessors-smart" MODULE="accessors-smart-2.4.11.jar" MVN="mvn:net.minidev/accessors-smart/2.4.11"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="asm" MODULE="asm-9.5.jar" MVN="mvn:org.ow2.asm/asm/9.5"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+
+		<IMPORT NAME="content-type" MODULE="content-type-2.1.jar" MVN="mvn:com.nimbusds/content-type/2.1"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+		<IMPORT NAME="lang-tag" MODULE="lang-tag-1.5.jar" MVN="mvn:com.nimbusds/lang-tag/1.5"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+
+		<IMPORT NAME="nimbus-jose-jwt" MODULE="nimbus-jose-jwt-9.30.2.jar" MVN="mvn:com.nimbusds/nimbus-jose-jwt/9.30.2"  REQUIRED_IF="(ACTIVE_DIR_AUTH == 'true') AND (DRIVER=='MSSQL_PROP') AND (USE_EXISTING_CONNECTION == 'false')" />
+    </IMPORTS>
+  </CODEGENERATION>
+
+   <RETURNS />
+</COMPONENT>

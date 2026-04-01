@@ -1,0 +1,76 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.MappingTypeRetriever
+    org.talend.core.model.metadata.MetadataTalendType
+    java.util.List
+    java.util.ArrayList
+    java.util.Map
+    java.util.HashMap
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+List<IMetadataColumn> columnList = getColumnList(node);
+
+String incomingConnName = null;
+
+    if(conns!=null && conns.size()>0){
+        IConnection conn = conns.get(0);
+        incomingConnName = conn.getName();
+    }
+%>
+	
+	nb_line_<%=cid%>++;
+	
+ 	if(!rangeSet<%=cid%>.contains(nb_line_<%=cid%>)){
+<%
+    for(IConnection conn : outgoingConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            %>        
+            <%=conn.getName() %> = null;            
+<%      
+        }
+    } 	
+%>	
+ 	}else{
+<%
+    for(IConnection conn : outgoingConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+            %>  	
+ 	   <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+ 	   
+<%for(IMetadataColumn column : columnList) {%>
+
+       <%=conn.getName()%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+       
+<%}     
+        }
+    } 	
+%>
+ 	
+ 	}
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 

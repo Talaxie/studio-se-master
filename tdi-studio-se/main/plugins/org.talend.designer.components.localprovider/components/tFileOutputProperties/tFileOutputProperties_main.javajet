@@ -1,0 +1,38 @@
+<%@ jet 
+	imports="
+        java.util.List
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+	" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+String inConnName = null;
+List< ? extends IConnection> inConns = node.getIncomingConnections();
+for(IConnection conn : inConns){
+	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		inConnName = conn.getName();
+	}
+}
+if(inConnName == null){
+	return ""; //return immediately, generate nothing
+}
+if(("PROPERTIES_FORMAT").equals(fileFormat)){
+%>
+	properties_<%=cid%>.setProperty(<%=inConnName %>.key, <%=inConnName %>.value);
+<%
+}else if(("INI_FORMAT").equals(fileFormat)){
+	String sectionName = ElementParameterParser.getValue(node,"__SECTION_NAME__");
+%>
+	ini_<%=cid%>.put(<%=sectionName %>,<%=inConnName %>.key, <%=inConnName %>.value);
+<%
+}
+
+%>

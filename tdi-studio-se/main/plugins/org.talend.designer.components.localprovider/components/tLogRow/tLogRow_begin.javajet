@@ -1,0 +1,441 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser
+    	org.talend.designer.codegen.config.CodeGeneratorArgument 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.utils.NodeUtil
+		java.util.List
+		java.util.Map
+	"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {//2    
+
+	String cid = node.getUniqueName();
+	String label = ElementParameterParser.getValue(node, "__LABEL__");
+	if(("__UNIQUE_NAME__").equals(label))
+	    label=cid;
+    boolean tablePrint = ("true").equals(ElementParameterParser.getValue(node,"__TABLE_PRINT__"));
+    String printHeader = ElementParameterParser.getValue(node,"__PRINT_HEADER__");
+    boolean vertical = ("true").equals(ElementParameterParser.getValue(node,"__VERTICAL__"));
+    boolean uniquePrint = ("true").equals(ElementParameterParser.getValue(node,"__PRINT_UNIQUE__"));
+    boolean titlePrint = ("true").equals(ElementParameterParser.getValue(node,"__PRINT_LABEL__"));
+    boolean uniqueTitlePrint = ("true").equals(ElementParameterParser.getValue(node,"__PRINT_UNIQUE_LABEL__"));
+    boolean basic = !(tablePrint||vertical);
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	boolean isLogContent = ("true").equals(ElementParameterParser.getValue(node,"__PRINT_CONTENT_WITH_LOG4J__"));
+
+	List<IMetadataColumn> columns = metadata.getListColumns();
+	int sizeColumns = columns.size();
+	%>
+	///////////////////////
+	<%
+    if(tablePrint) { // table display mode
+    %>
+        <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/tablePrintLogUtil.javajet"%>        
+<%
+	} 
+	// vertical display mode
+	if(vertical) { 
+%>	
+
+
+	class Util_<%=cid %> {
+	
+		String[] des_top = { ".", "-" };
+
+        String[] des_data = { "-", "+" };
+
+        String[] des_frame = { "|" }; 
+        
+        public void printLine(StringBuilder sb, int titleWidth, int dataWidth){
+        
+        	sb.append("+");
+			for(int i=0; i<titleWidth+2; i++)
+				sb.append("-");
+			sb.append("+");
+			for(int i=0; i<dataWidth+2; i++)
+				sb.append("-");
+        	sb.append("+" + "\n");
+        }      
+
+		public String print(String[] row, int nbLine){
+			
+			StringBuilder sb = new StringBuilder();
+			<%
+			if(uniquePrint) {
+			    %>
+			    String title = "#" + nbLine + ". " + "<%=cid%>";
+			    <%
+			} else if(titlePrint) {
+			    %>
+			    String title = "#" + nbLine + ". " + "<%=label%>";
+			    <%
+			} else if(uniqueTitlePrint) {
+			    %>
+			    String title = "#" + nbLine + ". " + "<%=cid%>--<%=label%>";
+			    <%
+			}
+			%>
+		
+			//step 1: get the max length of all the row[] member;
+			int dataWidth = 5;		//the length of the string "value"	
+			for(int i=0;i<row.length;i++) {
+				if(row[i] == null && 4 > dataWidth) {
+					dataWidth = 4;
+				}
+				else if(row[i] != null && row[i].length()>dataWidth) 
+					dataWidth = row[i].length();
+			}			
+			<%
+			int titleWidth = 3;    //the length of the string 'key'
+			for(IMetadataColumn column:columns)
+				if(column.getLabel().length()>titleWidth) titleWidth = column.getLabel().length();
+			%>			
+			int titleWidth = <%=titleWidth%>;
+			
+			int totalWidth = dataWidth + titleWidth + 5;
+			
+			//step 2: print the header with line number
+			sb.append(".");
+			for(int i=0 ; i<totalWidth ; i++)
+				sb.append("-");			
+			sb.append("." + "\n" + "|");
+			
+			int emptyCenterWidth = (totalWidth-title.length())/2;
+			for(int i=0 ; i<emptyCenterWidth; i++)
+				sb.append(" ");	
+			sb.append(title);
+			for(int i=0 ; i<totalWidth - emptyCenterWidth - title.length() ; i++)
+				sb.append(" ");	
+			sb.append("|" + "\n");
+			
+			//step 3: print "key" and "value"			
+			printLine(sb,titleWidth,dataWidth);
+			
+			sb.append("|" + " key");
+			for(int i=0; i<titleWidth-2; i++)
+				sb.append(" ");
+        	sb.append("|" + " value");
+			for(int i=0; i<dataWidth-4; i++)
+				sb.append(" ");
+			sb.append("|" + "\n");
+			
+			printLine(sb,titleWidth,dataWidth);
+			
+			//step 4: print dataset
+			<%
+			int count = 0;
+			for(IMetadataColumn column:columns){
+			%>
+			//for(int i=0; i<row.length; i++){
+				sb.append("| " + "<%=column.getLabel()%>");
+				for(int i=0; i<titleWidth -"<%=column.getLabel()%>".length()+ 1 ;i++)
+					sb.append(" ");
+				sb.append("| " + row[<%=count%>]);
+				for(int i=0; row[<%=count%>] == null && i<dataWidth - 3 || row[<%=count%>] != null && i<dataWidth -row[<%=count%>].length()+ 1 ;i++)
+					sb.append(" ");
+				sb.append("|" + "\n");
+			
+			//}
+
+			<%
+				count++;
+			}%>
+			//step 5: print a line gap
+			printLine(sb,titleWidth,dataWidth);
+			return sb.toString();
+
+		}
+
+
+	}
+
+	Util_<%=cid %> util_<%=cid %> = new Util_<%=cid %>();
+
+
+
+
+	java.io.PrintStream consoleOut_<%=cid%> = null;
+	if (globalMap.get("tLogRow_CONSOLE")!=null){
+        consoleOut_<%=cid%> = (java.io.PrintStream) globalMap.get("tLogRow_CONSOLE");
+    }else{
+        consoleOut_<%=cid%> = new java.io.PrintStream(new java.io.BufferedOutputStream(System.out));
+        globalMap.put("tLogRow_CONSOLE",consoleOut_<%=cid%>);
+    }
+
+<%	
+	}
+	
+	if(basic) {// basic display mode
+%>
+		final String OUTPUT_FIELD_SEPARATOR_<%=cid %> = <%=ElementParameterParser.getValue(node, "__FIELDSEPARATOR__") %>;
+		java.io.PrintStream consoleOut_<%=cid%> = null;
+<%
+if (("true").equals(printHeader)) {
+%>
+                    
+                    
+                StringBuilder sbHeader_<%=cid%> = new StringBuilder();
+<%    			
+    			for (int i = 0; i < sizeColumns; i++) {
+    			IMetadataColumn column = columns.get(i);
+%>
+				
+				sbHeader_<%=cid%>.append("<%=column.getLabel() %>");
+				
+<%
+				if(i == sizeColumns-1) break;								
+%>
+    			sbHeader_<%=cid%>.append("\t");
+<%
+                }   
+%>
+                   
+                    if (globalMap.get("tLogRow_CONSOLE")!=null)
+                    {
+                    	consoleOut_<%=cid%> = (java.io.PrintStream) globalMap.get("tLogRow_CONSOLE");
+                    }
+                    else
+                    {
+                    	consoleOut_<%=cid%> = new java.io.PrintStream(new java.io.BufferedOutputStream(System.out));
+                    	globalMap.put("tLogRow_CONSOLE",consoleOut_<%=cid%>);
+                    }
+                    <%
+                    if(isLogContent && isLog4jEnabled){
+                    %>
+                    	log.info("<%=cid%> - Header names: " + sbHeader_<%=cid%>.toString());
+                    <%
+                    }
+                    %>
+                    consoleOut_<%=cid%>.println(sbHeader_<%=cid%>.toString());
+                    consoleOut_<%=cid%>.flush();
+                    
+<%
+	}	
+%>	
+
+<%
+  }
+%>
+ 		StringBuilder strBuffer_<%=cid%> = null;
+		int nb_line_<%=cid%> = 0;
+///////////////////////    			
+
+<%
+        String printColumnNames = ElementParameterParser.getValue(node,"__PRINT_COLNAMES__");
+        String useFixedLength = ElementParameterParser.getValue(node,"__USE_FIXED_LENGTH__");
+        List<Map<String, String>> lengths = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__LENGTHS__");
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	for (IConnection conn : conns) {//3
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//4
+    			int schemaOptNum=100;
+				String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+				if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+					schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+				}
+				boolean isOptimizeCode = false;
+				if(schemaOptNum < sizeColumns){
+					isOptimizeCode = true;
+				}
+    			if(isOptimizeCode){//5
+%>
+				class LogRowUtil_<%=cid%>{
+<%
+   				if (basic||vertical) {  // A1
+    				for (int i = 0; i < sizeColumns; i++) {//B1
+	    				IMetadataColumn column = columns.get(i);
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						if(i%schemaOptNum==0){
+%>
+						public void putBasicVerticalValue_<%=i/schemaOptNum%>(final <%=NodeUtil.getPrivateConnClassName(conn)%>Struct <%=conn.getName() %>,StringBuilder strBuffer_<%=cid%>){
+<%
+						}
+   						if (("true").equals(useFixedLength)) {//fix the column length
+%>
+							java.util.Formatter formatter_<%=column.getLabel() %>_<%=cid%> = new java.util.Formatter(new StringBuilder());
+<%
+   						}
+   						if (("true").equals(printColumnNames)) {//print the schema name
+%>
+							strBuffer_<%=cid%>.append("<%=column.getLabel() %>: ");
+<%
+   						}
+						boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+						if(!isPrimitive) { //begin
+%>   				
+	    					if(<%=conn.getName() %>.<%=column.getLabel() %> != null) { //
+<%
+    					} 
+   						if (("true").equals(useFixedLength)) {//AAA
+%>
+							strBuffer_<%=cid%>.append(formatter_<%=column.getLabel() %>_<%=cid%>.format("%1$"+<%=lengths.get(i).get("LENGTH") %>+"s", 
+<%
+    						String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+    							if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {//Date
+%>
+							FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>)
+<%
+								} else if (javaType == JavaTypesManager.BYTE_ARRAY) {//byte[]
+%>
+							java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+<%
+								} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+							<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+<%
+								} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT ) {
+%>
+							FormatterUtils.formatUnwithE(<%=conn.getName() %>.<%=column.getLabel() %>)
+<%
+								} else {//others
+%>
+				           	String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)			
+<%				
+								}
+%>
+							).toString());
+<%
+   						} else {//AAA
+%>							
+							strBuffer_<%=cid%>.append(
+<%
+		    				String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+		    				if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {//Date
+%>
+							FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>)
+<%				
+							} else if (javaType == JavaTypesManager.BYTE_ARRAY) {//byte[]
+%>
+							java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+<%
+							} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+							<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+<%
+							} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT ) {
+%>
+							FormatterUtils.formatUnwithE(<%=conn.getName() %>.<%=column.getLabel() %>)
+<%
+							} else {//others
+%>
+				            String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)			
+<%				
+							}
+%>				
+							);
+<%
+  						}//AAA
+						if(!isPrimitive) {//end
+%>
+	    				} //
+<%
+						}
+						if(i == sizeColumns-1){
+							if((i+1)%schemaOptNum==0){
+%>
+						}
+<%
+							}
+							break;
+						}else{								
+%>
+    						strBuffer_<%=cid%>.append(<%=ElementParameterParser.getValue(node, "__FIELDSEPARATOR__") %>);
+<%
+						}
+							if((i+1)%schemaOptNum==0){
+%>
+						}
+<%
+							}
+					}//B1
+					if(sizeColumns>0 && (sizeColumns%schemaOptNum)>0){
+%>
+						}
+<%
+					}
+				}//A1
+				if(tablePrint || vertical) { //C1
+    				for (int i = 0; i < sizeColumns; i++) {//D1
+	    				IMetadataColumn column = columns.get(i);
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						boolean isPrimitive = JavaTypesManager.isJavaPrimitiveType( javaType, column.isNullable());
+						if(i%schemaOptNum==0){
+%>
+						public void putTableVerticalValue_<%=i/schemaOptNum%>(final <%=NodeUtil.getPrivateConnClassName(conn) %>Struct <%=conn.getName() %>,String[] row_<%=cid%>){
+<%
+						}
+						if(!isPrimitive) { //begin
+%>   				
+	    					if(<%=conn.getName() %>.<%=column.getLabel() %> != null) { //
+<%
+    					}
+%>              
+                 				row_<%=cid%>[<%=i %>]=    						
+<%
+    					String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+    					if (javaType == JavaTypesManager.DATE && pattern != null && pattern.trim().length() != 0) {//Date
+%>
+								FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>)
+<%				
+						} else if (javaType == JavaTypesManager.BYTE_ARRAY) {//byte[]
+%>
+								java.nio.charset.Charset.defaultCharset().decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString()
+<%
+						} else if (javaType == JavaTypesManager.BIGDECIMAL) {
+%>
+								<%=column.getPrecision() == null? conn.getName() + "." + column.getLabel() : conn.getName() + "." + column.getLabel() + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP)" %>.toPlainString()
+<%
+						} else if (javaType == JavaTypesManager.DOUBLE || javaType == JavaTypesManager.FLOAT ) {
+%>
+								FormatterUtils.formatUnwithE(<%=conn.getName() %>.<%=column.getLabel() %>)
+<%
+						} else {//others
+%>    
+				                String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)			
+<%				
+						}
+%>
+					          ;	
+<%
+						if(!isPrimitive) {//end
+%>
+	    					} //
+<%
+						} 
+						if((i+1)%schemaOptNum==0){
+%>
+						}
+<%
+						}
+					}//D1
+					if(sizeColumns>0&&(sizeColumns%schemaOptNum)>0){
+%>
+						}
+<%
+					}
+				}//C1
+%>
+			}
+			LogRowUtil_<%=cid%> logRowUtil_<%=cid%>=new LogRowUtil_<%=cid%>();
+<%
+				}//5
+			}//4
+		}//3
+    }//2
+}//1
+%>
+

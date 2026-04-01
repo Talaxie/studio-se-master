@@ -1,0 +1,237 @@
+<%@ jet %>
+<%
+String action = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+String field_separator = ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__");
+String file = ElementParameterParser.getValue(node, "__DATA__");
+
+String dataAction = ElementParameterParser.getValue(node,"__DATA_ACTION__");
+
+String dateformat = ElementParameterParser.getValue(node, "__DATE_FORMAT__");
+String timeformat = ElementParameterParser.getValue(node, "__TIME_FORMAT__");
+String timestampformat = ElementParameterParser.getValue(node, "__TIMESTAMP_FORMAT__");
+
+boolean removeLoadPending = ("true").equals(ElementParameterParser.getValue(node,"__REMOVE_LODA_PENDING__"));
+%>
+
+String fileName_<%=cid%> = <%=file%>;
+
+<%
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "NONE".equals(tableAction)){
+
+    //----------------------remove Load Pending
+    if (removeLoadPending) {
+%>
+        String sqlLoadPending_<%=cid%> = "CALL SYSPROC.ADMIN_CMD(?)";
+        java.sql.CallableStatement callStmtLoadPending_<%=cid%> = conn_<%=cid%>.prepareCall(sqlLoadPending_<%=cid%>);
+        callStmtLoadPending_<%=cid%>.setString(1, "load from  /dev/null  of del terminate into \"" + tableName_<%=cid%> + "\"");
+        try {
+            callStmtLoadPending_<%=cid%>.execute();
+        } catch (java.sql.SQLException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+            //when table not in load pending mode will throw exception.
+            //and do nothing.
+            <%log4jCodeGenerateUtil.logError(node,"warn");%>
+        }
+        callStmtLoadPending_<%=cid%>.close();
+<%
+    }
+%>
+
+<%@ include file="../templates/_tableActionForBulk.javajet"%>
+
+<%
+    //feature0011004 load command options begin
+    List<Map<String, String>> options = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OPTIONS__");
+    java.util.Map<String, String> parametersMap = new java.util.HashMap<String, String>();
+
+    //  LOAD FROM OF DEL (position1) MODIFIED BY (position2) INTO (position3)
+    java.lang.StringBuilder position1 = new java.lang.StringBuilder();
+    java.lang.StringBuilder position2 = new java.lang.StringBuilder();
+    java.lang.StringBuilder position3 = new java.lang.StringBuilder();
+
+	boolean isMessagesOnServer = false;
+
+    for(java.util.Map<String, String> option : options) {
+        String key = option.get("KEY");
+        String value = option.get("VALUE");
+
+        String[] keySplit = key.split(",");
+        if (keySplit.length > 1) {
+            if ("1".equals(keySplit[1])) {
+                position1.append(keySplit[0]).append(" ").append(value).append(" ");
+            } else if ("2".equals(keySplit[1])) {
+            
+            	if ("MESSAGES".equals(keySplit[0]) && "ON SERVER".equals(value)) {
+					isMessagesOnServer = true;
+				}
+                if ("MODIFIED BY".equals(keySplit[0])) {
+                    position2.append(" ").append(value).append(" ");
+                } else {
+                    position2.append(keySplit[0]).append(" ").append(value).append(" ");
+                }
+            } else if ("3".equals(keySplit[1])) {
+                position3.append(keySplit[0]).append(" ").append(value).append(" ");
+            }
+        }
+    }
+    //end feature0011004 load command options begin
+%>
+Character field_separator_<%=cid %> = (<%=field_separator%>).charAt(0);
+<%
+    ////////////////////////////////////////////
+    //DB2 Load Syntax: https://www-304.ibm.com/support/knowledgecenter/SSEPGG_9.7.0/com.ibm.db2.luw.admin.cmd.doc/doc/r0008305.html?cp=SSEPGG_9.7.0%2F3-6-2-4-78
+    if(("INSERT").equals(action) || ("REPLACE").equals(action)) {
+        %>
+        String action_<%=cid%> = "<%=action%>";
+        java.sql.CallableStatement callStmt_<%=cid%> = null;
+        String sql_<%=cid%> = "CALL SYSPROC.ADMIN_CMD(?)";
+        String param_<%=cid%> = "LOAD FROM \""+ fileName_<%=cid%> + "\" OF DEL <%=position1.toString()%> MODIFIED BY COLDEL"+ field_separator_<%=cid %> +
+                        " dateformat=\""+ <%=dateformat%>+ "\" timeformat=\"" + <%=timeformat%>+ "\" timestampformat=\""+<%=timestampformat%> +"\" <%=position2.toString()%> " +
+                         action_<%=cid%> +" INTO \""  + tableName_<%=cid%> + "\" <%=position3.toString()%>";
+        <%
+        if(isLog4jEnabled_tableAction){
+            %>
+                log.debug("<%=cid%> - Bulk SQL:CALL SYSPROC.ADMIN_CMD("+param_<%=cid%>+").");
+            <%
+            if(("INSERT").equals(action)){
+            %>
+                log.info("<%=cid%> - Bulk inserting data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+            <%
+            }else if(("REPLACE").equals(action)){
+            %>
+                log.info("<%=cid%> - Bulk replacing data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+            <%
+            }
+        }
+        %>
+        callStmt_<%=cid%> = conn_<%=cid%>.prepareCall(sql_<%=cid%>);
+        callStmt_<%=cid%>.setString(1, param_<%=cid%>);
+        callStmt_<%=cid%>.execute();
+        <%
+        if(isLog4jEnabled_tableAction && isMessagesOnServer) {
+        	%>
+        	try {
+		        java.sql.ResultSet rs_<%=cid%> = callStmt_<%=cid%>.getResultSet();
+	        	String mgsSQL_<%=cid%> = null;
+	        	if (rs_<%=cid%>.next()) {
+	        		mgsSQL_<%=cid%> = rs_<%=cid%>.getString("MSG_RETRIEVAL");
+		        }
+		        callStmt_<%=cid%> = conn_<%=cid%>.prepareCall(mgsSQL_<%=cid%>);
+		        callStmt_<%=cid%>.execute();
+		        java.sql.ResultSet rs2_<%=cid%> = callStmt_<%=cid%>.getResultSet();
+		        while (rs2_<%=cid%>.next()) {
+		        	log.info("<%=cid%> - " + rs2_<%=cid%>.getString(1)+":"+rs2_<%=cid%>.getString(2).replaceAll("\n",""));
+		        }
+			} catch (java.sql.SQLException sqle) {
+				log.error("<%=cid%> - Some errors occurred while executing the SQL to retrieve messages on server.");
+			}
+        	<%
+        }
+        %>
+        callStmt_<%=cid%>.close();
+        <%
+        if(isLog4jEnabled_tableAction){
+            if(("INSERT").equals(action)){
+                %>
+                log.info("<%=cid%> - Bulk insert data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has finished.");
+                <%
+            }else if(("REPLACE").equals(action)){
+                %>
+                log.info("<%=cid%> - Bulk replace data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has finished.");
+                <%
+            }
+        }
+    } else if(("UPDATE").equals(action)) {
+        if(columnList != null && columnList.size() > 0) {
+            int keyCount = 0;
+            for(IMetadataColumn column : columnList) {
+                if(column.isKey()) {
+                    keyCount++;
+                }
+            }
+            %>
+            int keyCount_<%=cid%> = <%=keyCount%>;
+            if(keyCount_<%=cid%> == 0) {
+                throw new RuntimeException("For bulk update, Schema must have a key at least.");
+            }
+            String tmpTableName_<%=cid%> = tableName_<%=cid%>;
+            tableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+            java.sql.Statement stmtCreateTmp_<%=cid%> = conn_<%=cid%>.createStatement();
+
+
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Creating temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+            <%}%>
+            stmtCreateTmp_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+            stmtCreateTmp_<%=cid%>.close();
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Create temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has succeeded.");
+            <%}%>
+            java.sql.CallableStatement callStmt_<%=cid%> = null;
+            String sql_<%=cid%> = "CALL SYSPROC.ADMIN_CMD(?)";
+            String param_<%=cid%> = "LOAD FROM \""+ fileName_<%=cid%>.replace("\\","/") + "\" OF DEL <%=position1.toString()%> MODIFIED BY COLDEL" + field_separator_<%=cid %> +
+                                    " dateformat=\""+<%=dateformat%>+"\" timeformat=\"" +<%=timeformat%>+ "\" timestampformat=\"" + <%=timestampformat%>+"\"" +
+                                    " <%=position2.toString()%> INSERT INTO \""  + tableName_<%=cid%> + "\" <%=position3.toString()%>";
+            <%
+            if(isLog4jEnabled_tableAction){
+            %>
+                log.debug("<%=cid%> - Bulk SQL:CALL SYSPROC.ADMIN_CMD("+param_<%=cid%>+").");
+                log.info("<%=cid%> - Bulk inserting data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>." );
+            <%
+            }
+            %>
+            callStmt_<%=cid%> = conn_<%=cid%>.prepareCall(sql_<%=cid%>);
+            callStmt_<%=cid%>.setString(1, param_<%=cid%>);
+            callStmt_<%=cid%>.execute();
+            <%
+	        if(isLog4jEnabled_tableAction && isMessagesOnServer) {
+	        	%>
+	        	try {
+			        java.sql.ResultSet rs_<%=cid%> = callStmt_<%=cid%>.getResultSet();
+		        	String mgsSQL_<%=cid%> = null;
+		        	if (rs_<%=cid%>.next()) {
+		        		mgsSQL_<%=cid%> = rs_<%=cid%>.getString("MSG_RETRIEVAL");
+			        }
+			        callStmt_<%=cid%> = conn_<%=cid%>.prepareCall(mgsSQL_<%=cid%>);
+			        callStmt_<%=cid%>.execute();
+			        java.sql.ResultSet rs2_<%=cid%> = callStmt_<%=cid%>.getResultSet();
+			        while(rs2_<%=cid%>.next()){
+			        	log.info("<%=cid%> - " + rs2_<%=cid%>.getString(1)+":"+rs2_<%=cid%>.getString(2).replaceAll("\n",""));
+			        }
+			    } catch (java.sql.SQLException sqle) {
+					log.error("<%=cid%> - Some errors occurred while executing the SQL to retrieve messages on server.");
+				}
+	        	<%
+	        }
+	        %>
+            callStmt_<%=cid%>.close();
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Bulk insert data into <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> has finished.");
+            <%}%>
+            tableName_<%=cid%> = tmpTableName_<%=cid%>;
+            tmpTableName_<%=cid%> = "tmp_<%=cid%>"+ "_" + pid + Thread.currentThread().getId();
+            java.sql.Statement stmtUpdateBulk_<%=cid%> = conn_<%=cid%>.createStatement();
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Updating <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%> from <%=manager.getLProtectedChar()%>"+tmpTableName_<%=cid%>+"<%=manager.getRProtectedChar()%>.");
+            <%}%>
+            stmtUpdateBulk_<%=cid%>.executeUpdate("<%=manager.getUpdateBulkSQL(columnList)%>");
+            <%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Update has finished.");%>
+            stmtUpdateBulk_<%=cid%>.close();
+            tableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+            java.sql.Statement stmtTmpDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Droping temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%> + "<%=manager.getRProtectedChar()%>.");
+            <%}%>
+            stmtTmpDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+            <%if(isLog4jEnabled_tableAction){%>
+                log.info("<%=cid%> - Drop temp table <%=manager.getLProtectedChar()%>" + tableName_<%=cid%>+ "<%=manager.getRProtectedChar()%> has succeeded.");
+            <%}%>
+            stmtTmpDrop_<%=cid%>.close();
+            <%
+        }
+    }
+}
+%>

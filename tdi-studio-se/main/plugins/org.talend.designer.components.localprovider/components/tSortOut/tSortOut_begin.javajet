@@ -1,0 +1,848 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.metadata.types.JavaType
+    org.talend.core.model.metadata.types.JavaTypesManager
+    java.util.List
+    java.util.Map
+    java.util.ArrayList
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+String rowName= "";
+if ((node.getIncomingConnections()!=null)&&(node.getIncomingConnections().size()>0)) {
+	rowName = node.getIncomingConnections().get(0).getName();
+} else {
+	rowName="defaultRow";
+}
+
+List<Map<String, String>> criterias = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CRITERIA__");
+
+String isExternalSort = ElementParameterParser.getValue(node, "__EXTERNAL__");
+
+final Integer SORT_NUM = 0;
+final Integer SORT_ALPHA = 1;
+final Integer SORT_DATE = 2;
+final Integer SORT_ASC = Integer.MAX_VALUE;
+final Integer SORT_DESC = Integer.MIN_VALUE;
+List<String> listCols = new ArrayList<String>();
+List<Integer> listCriterias = new ArrayList<Integer>();
+List<Integer> listCriteriaTypes = new ArrayList<Integer>();
+List<Boolean> listNullables = new ArrayList<Boolean>();
+List<String> listPatterns = new ArrayList<String>();
+List<JavaType> listColumnTypes = new ArrayList<JavaType>();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata!=null) {
+        for (int i = 0 ; i < criterias.size() ; i++) {
+        	Map<String, String> line = criterias.get(i);
+        	String colname = line.get("COLNAME");
+        	if(listCols.contains(colname)){
+        		continue;//skip dipulicate
+        	}
+        	listCols.add(colname);
+        	if(("asc").equals(line.get("ORDER"))){
+        		listCriterias.add(SORT_ASC);
+        	}else{
+        		listCriterias.add(SORT_DESC);
+        	}
+        	if(("num").equals(line.get("SORT"))){
+        		listCriteriaTypes.add(SORT_NUM);
+        	}else if(("alpha").equals(line.get("SORT"))){
+        		listCriteriaTypes.add(SORT_ALPHA);
+        	}else{
+        		listCriteriaTypes.add(SORT_DATE);
+        	}
+    
+        	for (IMetadataColumn column : metadata.getListColumns()) {
+        		if (column.getLabel().compareTo(colname)==0) {
+        			listColumnTypes.add(JavaTypesManager.getJavaTypeFromId(column.getTalendType()));
+        			if(JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), false)){
+	        			listNullables.add(column.isNullable());
+        			}else{
+        				listNullables.add(true);
+        			}
+        			listPatterns.add(column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern());
+        			
+        		}
+        	}
+    	}
+%><%
+    	for (int i = 0 ; i < listCols.size() ; i++) {
+    		Integer criteriaType = listCriteriaTypes.get(i);
+    		JavaType columnType = listColumnTypes.get(i);
+    		if(criteriaType == SORT_NUM){
+    			if(!columnType.isPrimitive()){
+    				if("id_Dynamic".equals(columnType.getId()) || columnType == JavaTypesManager.LIST || columnType == JavaTypesManager.BYTE_ARRAY || columnType == JavaTypesManager.OBJECT || columnType == JavaTypesManager.STRING){
+%>
+if(true){
+	throw new java.lang.Exception("Bad sort criteria: couldn't sort column \"<%=listCols.get(i) %>\" as num.");
+}
+<%
+					}
+				}
+			}else if(criteriaType == SORT_DATE){
+				if(columnType != JavaTypesManager.DATE){
+%>
+if(true){
+	throw new java.lang.Exception("Bad sort criteria: couldn't sort column \"<%=listCols.get(i) %>\" as date.");
+}
+<%
+				}
+			}
+		}
+%>
+
+<%
+		if(("false").equals(isExternalSort)){
+		//sort in memory begin
+%>
+class Comparable<%=rowName %>Struct extends <%=rowName %>Struct implements Comparable<Comparable<%=rowName %>Struct> {
+	
+	public int compareTo(Comparable<%=rowName %>Struct other) {
+
+<%
+			for (int i = 0 ; i < listCols.size() ; i++) {
+				String colname = listCols.get(i);	
+				JavaType columnType = listColumnTypes.get(i);
+				Integer criteriaType = listCriteriaTypes.get(i);
+				Integer criteria = listCriterias.get(i);
+				if(criteriaType == SORT_NUM){
+					if("id_Dynamic".equals(columnType.getId())){
+					} else if(listNullables.get(i)){//
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+						if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+						}else{
+						%>
+			return 1;
+						<%
+						}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+						if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+						}else{
+						%>
+			return -1;
+						<%
+						}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+						if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+						}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+						}
+%>
+			}
+		}
+<%
+					}else{//end tag for if(listNullables.get(i))
+						if(columnType == JavaTypesManager.BOOLEAN){
+%>
+		if(this.<%=colname %> != other.<%=colname %>){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %> ? 1 : -1;
+<%
+							}else{
+%>
+				return this.<%=colname %> ? -1 : 1;
+<%
+							}
+%>
+		}
+<%
+						}else {
+%>
+		if(this.<%=colname %> != other.<%=colname %>){
+						<%
+							if(criteria == SORT_ASC){
+							%>
+				return this.<%=colname %> > other.<%=colname %> ? 1 : -1;
+							<%
+							}else{
+							%>
+				return other.<%=colname %> > this.<%=colname %> ? 1 : -1;
+							<%
+							}
+						%>
+		}
+<%
+						}
+					}//end of if(listNullables.get(i))
+				}else if(criteriaType == SORT_ALPHA){//end tag for if(criteriaType == SORT_NUM)
+					if(columnType == JavaTypesManager.BYTE_ARRAY){
+%>
+		String thisS<%=colname %> = this.<%=colname %> == null ? "null" : new String(this.<%=colname %>);
+		String otherS<%=colname %> = other.<%=colname %> == null ? "null" : new String(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+					}else if(columnType == JavaTypesManager.DATE){
+%>
+			String thisS<%=colname %> = this.<%=colname %> == null ? "null" : FormatterUtils.format_Date(this.<%=colname %>, <%=listPatterns.get(i) %>);
+			String otherS<%=colname %> = other.<%=colname %> == null ? "null" : FormatterUtils.format_Date(other.<%=colname %>, <%=listPatterns.get(i) %>);
+			if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+				return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+				return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+			}
+<%
+					}else if(columnType == JavaTypesManager.STRING){
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+							}else{
+						%>
+			return 1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+							}else{
+						%>
+			return -1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+							}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+							}
+%>
+			}
+		}
+<%
+					}else{
+						if(listNullables.get(i)){
+%>
+		String thisS<%=colname %> = this.<%=colname %> == null ? "null" : String.valueOf(this.<%=colname %>);
+		String otherS<%=colname %> = other.<%=colname %> == null ? "null" : String.valueOf(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+						}else{
+%>
+		String thisS<%=colname %> = String.valueOf(this.<%=colname %>);
+		String otherS<%=colname %> = String.valueOf(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+						}
+					}
+				}else if(!"id_Dynamic".equals(columnType.getId())){//end tag for if(criteriaType == SORT_ALPHA) for SORT_DATE
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+							}else{
+						%>
+			return 1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+							}else{
+						%>
+			return -1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+							}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+							}
+%>
+			}
+		}
+<%
+				}//end of if(criteriaType == SORT_NUM)
+			}
+%>
+		return 0;
+	}
+}
+
+java.util.List<Comparable<%=rowName %>Struct> list_<%=cid %> = new java.util.ArrayList<Comparable<%=rowName %>Struct>();
+
+<%
+		//sort in memory end
+		}else{
+		//sort out of memory begin
+			String tempDirectory = ElementParameterParser.getValue(node, "__TEMPFILE__");
+			String bufferSize = ElementParameterParser.getValue(node, "__EXTERNAL_SORT_BUFFERSIZE__");
+			boolean bCreateDir = "true".equals(ElementParameterParser.getValue(node, "__CREATEDIR__"));
+%>
+////////////////////////////////////
+class <%=rowName %>StructILightSerializable extends <%=rowName %>Struct implements
+                        org.talend.designer.components.tsort.io.beans.ILightSerializable<<%=rowName %>StructILightSerializable> {
+
+	public int compareTo(<%=rowName %>StructILightSerializable other) {
+
+<%
+			for (int i = 0 ; i < listCols.size() ; i++) {
+				String colname = listCols.get(i);	
+				JavaType columnType = listColumnTypes.get(i);
+				Integer criteriaType = listCriteriaTypes.get(i);
+				Integer criteria = listCriterias.get(i);
+				if(criteriaType == SORT_NUM){
+					if("id_Dynamic".equals(columnType.getId())){
+					} else if(listNullables.get(i)){//
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+						if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+						}else{
+						%>
+			return 1;
+						<%
+						}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+						if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+						}else{
+						%>
+			return -1;
+						<%
+						}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+						if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+						}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+						}
+%>
+			}
+		}
+<%
+					}else{//end tag for if(listNullables.get(i))
+						if(columnType == JavaTypesManager.BOOLEAN){
+%>
+		if(this.<%=colname %> != other.<%=colname %>){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %> ? 1 : -1;
+<%
+							}else{
+%>
+				return this.<%=colname %> ? -1 : -1;
+<%
+							}
+%>
+		}
+<%
+						}else {
+%>
+		if(this.<%=colname %> != other.<%=colname %>){
+						<%
+							if(criteria == SORT_ASC){
+							%>
+				return this.<%=colname %> > other.<%=colname %> ? 1 : -1;
+							<%
+							}else{
+							%>
+				return other.<%=colname %> > this.<%=colname %> ? 1 : -1;
+							<%
+							}
+						%>
+		}
+<%
+						}
+					}//end of if(listNullables.get(i))
+				}else if(criteriaType == SORT_ALPHA){//end tag for if(criteriaType == SORT_NUM)
+					if(columnType == JavaTypesManager.BYTE_ARRAY){
+%>
+		String thisS<%=colname %> = this.<%=colname %> == null ? "null" : new String(this.<%=colname %>);
+		String otherS<%=colname %> = other.<%=colname %> == null ? "null" : new String(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+					}else if(columnType == JavaTypesManager.DATE){
+%>
+			String thisS<%=colname %> = this.<%=colname %> == null ? "null" : FormatterUtils.format_Date(this.<%=colname %>, <%=listPatterns.get(i) %>);
+			String otherS<%=colname %> = other.<%=colname %> == null ? "null" : FormatterUtils.format_Date(other.<%=colname %>, <%=listPatterns.get(i) %>);
+			if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+				return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+				return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+			}
+<%
+					}else if(columnType == JavaTypesManager.STRING){
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+							}else{
+						%>
+			return 1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+							}else{
+						%>
+			return -1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+							}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+							}
+%>
+			}
+		}
+<%
+					}else{
+						if(listNullables.get(i)){
+%>
+		String thisS<%=colname %> = this.<%=colname %> == null ? "null" : String.valueOf(this.<%=colname %>);
+		String otherS<%=colname %> = other.<%=colname %> == null ? "null" : String.valueOf(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+						}else{
+%>
+		String thisS<%=colname %> = String.valueOf(this.<%=colname %>);
+		String otherS<%=colname %> = String.valueOf(other.<%=colname %>);
+		if(!thisS<%=colname %>.equals(otherS<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+							%>
+			return thisS<%=colname %>.compareTo(otherS<%=colname %>);
+							<%
+							}else{
+							%>
+			return otherS<%=colname %>.compareTo(thisS<%=colname %>);
+							<%
+							}
+%>
+		}
+<%
+						}
+					}
+				}else if(!"id_Dynamic".equals(columnType.getId())){//end tag for if(criteriaType == SORT_ALPHA) for SORT_DATE
+%>
+		if(this.<%=colname %> == null && other.<%=colname %> != null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return -1;
+						<%
+							}else{
+						%>
+			return 1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> == null){
+<%
+							if(criteria == SORT_ASC){
+						%>
+			return 1;
+						<%
+							}else{
+						%>
+			return -1;
+						<%
+							}
+%>
+		}else if(this.<%=colname %> != null && other.<%=colname %> != null){
+			if(!this.<%=colname %>.equals(other.<%=colname %>)){
+<%
+							if(criteria == SORT_ASC){
+%>
+				return this.<%=colname %>.compareTo(other.<%=colname %>);
+<%
+							}else{
+%>
+				return other.<%=colname %>.compareTo(this.<%=colname %>);
+<%
+							}
+%>
+			}
+		}
+<%
+				}//end of if(criteriaType == SORT_NUM)
+			}
+%>
+		return 0;
+	}
+
+	public org.talend.designer.components.tsort.io.beans.ILightSerializable createInstance(byte[] byteArray) {
+		<%=rowName %>StructILightSerializable result = new <%=rowName %>StructILightSerializable();
+		java.io.ByteArrayInputStream bai = null;
+		java.io.DataInputStream dis = null;
+
+		try {
+			bai = new java.io.ByteArrayInputStream(byteArray);
+			dis = new java.io.DataInputStream(bai);
+			int length = 0;
+<%
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            result.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			result.<%=column.getLabel() %> = null;
+           				} else {
+               				byte[] bytes = new byte[length];
+               				dis.read(bytes);
+               				result.<%=column.getLabel() %> = new String(bytes, utf8Charset);
+           				}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			result.<%=column.getLabel() %> = null;
+           				} else {
+               				byte[] bytes = new byte[length];
+               				dis.read(bytes);
+               				result.<%=column.getLabel() %> = bytes;
+           				}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			result.<%=column.getLabel() %> = null;
+           				} else {
+           			    	result.<%=column.getLabel() %> = new Date(dis.readLong());
+           				}
+					<%
+				} else if(("id_Dynamic").equals(column.getTalendType()) || ("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+			            length = dis.readInt();
+           				if (length == -1) {
+           	    			result.<%=column.getLabel() %> = null;
+           				} else {
+               				byte[] bytes = new byte[length];
+               				dis.read(bytes);
+               				java.io.ByteArrayInputStream bio_<%=column.getLabel() %>  = new java.io.ByteArrayInputStream(bytes);
+            				java.io.ObjectInputStream ois_<%=column.getLabel() %>  = new java.io.ObjectInputStream(bio_<%=column.getLabel() %> );
+               				result.<%=column.getLabel() %> = (<%= typeToGenerate %>) ois_<%=column.getLabel() %>.readObject();
+               				ois_<%=column.getLabel() %>.close();
+           				}
+					<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			            length = dis.readByte();
+           				if (length == -1) {
+           	    			result.<%=column.getLabel() %> = null;
+           				} else {
+           			    	result.<%=column.getLabel() %> = dis.read<%= typeToGenerate %>();
+           				}
+					<%
+				}
+			}
+    	}
+%>
+
+		} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			e.printStackTrace();
+		} finally {
+			if (dis != null) {
+				try {
+					dis.close();
+            } catch (java.io.IOException e) {
+            	e.printStackTrace();
+         	}
+        	}
+     	}
+
+   	return result;
+   }
+
+	public byte[] toByteArray() {
+ 		java.io.ByteArrayOutputStream bao = null;
+		java.io.DataOutputStream dos = null;
+		byte[] result = null;
+
+ 		try {
+			bao = new java.io.ByteArrayOutputStream();
+			dos = new java.io.DataOutputStream(bao);
+<%	
+		if (metadata !=null) {
+			for (IMetadataColumn column: metadata.getListColumns()) {
+				JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+			 	String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+				if (JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())) {
+					typeToGenerate=typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			dos.write<%= typeToGenerate %>(this.<%=column.getLabel() %>);
+					<%
+				} else if(("String").equals(typeToGenerate)) {
+					%>
+			if(this.<%=column.getLabel() %> == null) {
+				dos.writeInt(-1);
+			} else {
+				byte[] byteArray = this.<%=column.getLabel() %>.getBytes(utf8Charset);
+				dos.writeInt(byteArray.length);
+				dos.write(byteArray);
+			}
+					<%
+				} else if(("byte[]").equals(typeToGenerate)) {
+					%>
+			if(this.<%=column.getLabel() %> == null) {
+				dos.writeInt(-1);
+			} else {
+				dos.writeInt(this.<%=column.getLabel() %>.length);
+				dos.write(this.<%=column.getLabel() %>);
+			}
+					<%
+				} else if(("java.util.Date").equals(typeToGenerate)) {
+					%>
+			if(this.<%=column.getLabel() %> == null) {
+				dos.writeByte(-1);
+			} else {
+				dos.writeByte(0);
+				dos.writeLong(this.<%=column.getLabel() %>.getTime());
+			}
+					<%
+				} else if(("id_Dynamic").equals(column.getTalendType()) || ("Object").equals(typeToGenerate) || ("BigDecimal").equals(typeToGenerate) || ("List").equals(typeToGenerate)) {
+					%>
+			if(this.<%=column.getLabel() %> == null) {
+				dos.writeInt(-1);
+			} else {
+				java.io.ByteArrayOutputStream bao_<%=column.getLabel() %> = new java.io.ByteArrayOutputStream();
+            	java.io.ObjectOutputStream oos_<%=column.getLabel() %> = new java.io.ObjectOutputStream(bao_<%=column.getLabel() %>);
+            	oos_<%=column.getLabel() %>.writeObject(this.<%=column.getLabel() %>);
+            	oos_<%=column.getLabel() %>.close();
+            	byte[] byteArray = bao_<%=column.getLabel() %>.toByteArray();
+				dos.writeInt(byteArray.length);
+				dos.write(byteArray);
+			}
+				<%
+				} else {
+					typeToGenerate =JavaTypesManager.getTypeToGenerate(column.getTalendType(), false);
+					typeToGenerate = typeToGenerate.substring(0,1).toUpperCase()+typeToGenerate.substring(1);
+					%>
+			if(this.<%=column.getLabel() %> == null) {
+				dos.writeByte(-1);
+			} else {
+				dos.writeByte(0);
+				dos.write<%=typeToGenerate %>(this.<%=column.getLabel() %>);
+			}
+					<%
+				
+				}
+			}
+    	}
+    	%>
+    	} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+     		throw new RuntimeException(e);
+		} finally {
+     		if (dos != null) {
+         		try {
+            		dos.close();
+           		} catch (java.io.IOException e) {
+        			e.printStackTrace();
+          		}
+        	}
+     	}
+     	result = bao.toByteArray();
+    	return result;
+  	}
+
+
+}
+// /////////////////////////////////
+<%
+//create directory if doesn't exist
+if (bCreateDir){
+%>
+  java.io.File dir_<%=cid%> = new java.io.File(<%=tempDirectory %>);
+  if (!dir_<%=cid%>.exists()){
+    dir_<%=cid%>.mkdirs();
+  }
+  dir_<%=cid%> = null;
+<%
+}
+%>
+
+org.talend.designer.components.tsort.io.sortimpl.FlowSorterIterator<<%=rowName %>StructILightSerializable> iterator_<%=cid %> = new org.talend.designer.components.tsort.io.sortimpl.FlowSorterIterator<<%=rowName %>StructILightSerializable>();
+iterator_<%=cid %>.setBufferSize(<%=bufferSize %>);
+iterator_<%=cid %>.setILightSerializable(new <%=rowName %>StructILightSerializable());
+iterator_<%=cid %>.workDirectory = <%=tempDirectory %> + "/" + jobName + "<%=cid %> _" + Thread.currentThread().getId() + "_" + pid;
+iterator_<%=cid %>.initPut("");
+
+<%
+		//sort out of memory end
+		}
+	}
+}
+%>

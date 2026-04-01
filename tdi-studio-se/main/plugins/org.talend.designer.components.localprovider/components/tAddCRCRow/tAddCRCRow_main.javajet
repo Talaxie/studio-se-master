@@ -1,0 +1,122 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+    java.util.ArrayList
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.metadata.types.JavaTypesManager
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String crcType = ElementParameterParser.getValue(node,"__CRC_TYPE__");
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null)
+     {
+        String cid = node.getUniqueName();
+        List<Map<String, String>> implication =(List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__IMPLICATION__");
+        List keyCols = new ArrayList();
+        for (int i=0; i<implication.size(); i++) {
+            Map<String, String> col = implication.get(i);
+            if (("true").equals(col.get("USE_IN_CRC"))) {
+                keyCols.add(i);
+            }
+        }
+       List< ? extends IConnection> conns = node.getIncomingConnections();
+       %>
+       Long crcComputedValue<%=cid %> = null;
+       <%
+       if(conns!=null){
+           if (conns.size()>0){
+       
+                IConnection conn =conns.get(0);
+                List<IMetadataColumn> columns = metadata.getListColumns();
+                %>
+                StringBuilder strBuffer_<%=cid%> = new StringBuilder();
+                <%
+                for (int i = 0; i < columns.size()-1; i++) {
+                    IMetadataColumn column = columns.get(i);
+                    JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                    if(keyCols.contains(i))
+                    {
+                %>
+                       strBuffer_<%=cid%>.append(
+				<%
+    				if (javaType == JavaTypesManager.BIGDECIMAL) {
+				%>
+								(<%=conn.getName() %>.<%=column.getLabel() %>==null)?null:(<%=conn.getName() %>.<%=column.getLabel() %>.stripTrailingZeros())
+				<%
+					}  else {
+				%>
+				                String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>)			
+				<%				
+					}
+				%>				
+				);
+                		
+                        <%  
+                    }
+         
+                }
+                if(("crc32").equals(crcType)){
+                    %>
+                    
+                    java.util.zip.CRC32 crc32<%=cid%> = new java.util.zip.CRC32();  
+                    crc32<%=cid%>.update(strBuffer_<%=cid%>.toString().getBytes());
+                    crcComputedValue<%=cid %> = new Long(crc32<%=cid%>.getValue());
+                    <%          
+                }   
+                if(("crc8").equals(crcType)){
+          
+                    %>
+        
+                    crcComputedValue<%=cid %> = new Long(com.dalsemi.onewire.utils.CRC8.compute(strBuffer_<%=cid%>.toString().getBytes())); 
+                    <%       
+                }   
+                if(("crc16").equals(crcType)){
+          
+                    %>      
+                    crcComputedValue<%=cid %> = new Long(com.dalsemi.onewire.utils.CRC16.compute(strBuffer_<%=cid%>.toString().getBytes()));        
+                    <%      
+                }
+                List< ? extends IConnection> connsout = node.getOutgoingConnections(); 
+                if (connsout!=null) {
+                    List<IMetadataColumn> columnsout = metadata.getListColumns();
+                    for(int i=0;i<connsout.size();i++) {
+                        IConnection connout = connsout.get(i);
+                        if(connout.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+                        {
+                            int columnSize=columnsout.size()-1;
+                            for (int j = 0; j < columnSize; j++) {
+                                IMetadataColumn columnout=columnsout.get(j);
+                   
+                                %>
+                                <%=connout.getName() %>.<%=columnout.getLabel() %>=<%=conn.getName() %>.<%=columnout.getLabel() %>;
+                                <%            
+                            }  
+                            IMetadataColumn columnout=columnsout.get(columnSize); 
+                            %>
+                            <%=connout.getName() %>.<%=columnout.getLabel() %>=crcComputedValue<%=cid %>;
+                            <%                  
+                        }
+                    }
+                }
+                %>
+                nb_line_<%=cid %>++;
+                <%
+           }   
+       } 
+                
+    }
+}
+%>

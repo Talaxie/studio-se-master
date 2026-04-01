@@ -1,0 +1,254 @@
+<%@ jet 
+imports="
+java.util.List
+java.util.Map
+org.talend.core.model.metadata.IMetadataColumn
+org.talend.core.model.metadata.IMetadataTable
+org.talend.core.model.process.ElementParameterParser
+org.talend.core.model.process.IConnection
+org.talend.core.model.process.IConnectionCategory
+org.talend.core.model.process.INode
+org.talend.designer.codegen.config.CodeGeneratorArgument
+"
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String tablename = ElementParameterParser.getValue(node, "__TABLENAME__").trim().toLowerCase();
+String customTablename = ElementParameterParser.getValue(node, "__CUSTOM_TABLE__").trim().toLowerCase();
+tablename = "custom_table".equals(tablename) ? customTablename : "\""+tablename+"\"";
+
+String dataAction = ElementParameterParser.getValue(node,"__ACTION__");
+boolean isEnablePayloadDebug = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_PAYLOAD_DEBUG_MODE__"));
+boolean isEnableResponseDebug = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_RESPONSE_DEBUG_MODE__"));
+
+log = new LogUtil(node);
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+String rejectConnName = null;
+List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+if(rejectConns != null && rejectConns.size() > 0) {
+	IConnection rejectConn = rejectConns.get(0);
+	rejectConnName = rejectConn.getName();
+}
+List<IMetadataColumn> rejectColumnList = null;
+IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+if(metadataTable != null) {
+	rejectColumnList = metadataTable.getListColumns();	    
+}
+
+List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+for(IConnection conn : outgoingConns) {
+	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		%>
+		<%=conn.getName() %> = null;            
+		<%
+	}
+}
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {//1
+	IMetadataTable metadata = metadatas.get(0);
+	List<IMetadataColumn> columnList = metadata.getListColumns();
+	int nbSchemaColumns = columnList.size();
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	for(IConnection conn:conns) {//2
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {//3
+			String firstConnName = conn.getName();
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//4
+				%>
+				whetherReject_<%=cid%> = false;
+				//Set json
+				org.json.JSONObject <%=cid%>_Payload = new org.json.JSONObject();
+				org.json.JSONArray <%=cid%>_PayloadArray= new org.json.JSONArray();
+				org.json.JSONObject <%=cid%>_SysId = new org.json.JSONObject();
+				org.json.JSONObject <%=cid%>_ob = new org.json.JSONObject();
+		 <%	for(IMetadataColumn column:columnList) {//5	%>
+					if(<%=conn.getName() %>.<%=column.getLabel()%> != null) {//6
+						<%	if("id_Dynamic".equals(column.getTalendType())) { %>
+							routines.system.Dynamic dynamic_<%=cid%> = <%=conn.getName() %>.<%=column.getLabel()%>;
+							for (int j_<%=cid%> = 0; j_<%=cid%> < dynamic_<%=cid%>.getColumnCount(); j_<%=cid%>++) {
+                                if (dynamic_<%=cid%>.getColumnValue(j_<%=cid%>) != null) {
+                                    routines.system.DynamicMetadata metadata_<%=cid%> = dynamic_<%=cid%>.getColumnMetadata(j_<%=cid%>);
+                                    if ("sys_id".equals(metadata_<%=cid%>.getName())) {
+                                    	<%=cid%>_SysId.put(metadata_<%=cid%>.getName(), <%=firstConnName%>.<%=column.getLabel()%>.getColumnValue(metadata_<%=cid%>.getName()));
+                                    } else {
+                                    	<%=cid%>_ob.put(metadata_<%=cid%>.getName(), <%=firstConnName%>.<%=column.getLabel()%>.getColumnValue(metadata_<%=cid%>.getName()));
+                                    }
+                                }
+                            }
+						<%	} else if ("sys_id".equals(column.getLabel())) {	%>
+							<%=cid%>_SysId.put("<%=column%>", <%=firstConnName%>.<%=column.getLabel()%>);
+						<%	} else if ("id_Date".equals(column.getTalendType())) {	
+									final String pattern = column.getPattern();
+						%>
+							<%=cid%>_ob.put("<%=column%>", TalendDate.formatDate(<%=pattern%>, <%=firstConnName%>.<%=column.getLabel()%>));
+						<%	} else {	%>
+							<%=cid%>_ob.put("<%=column%>", <%=firstConnName%>.<%=column.getLabel()%>);
+						<%	} %>
+						}//6
+			<%	}//5	%>
+				<%=cid%>_PayloadArray.put(<%=cid%>_ob);
+				<%=cid%>_Payload.put("data",<%=cid%>_PayloadArray);
+				<%
+				if (isEnablePayloadDebug) {//9
+					if(isLog4jEnabled){
+						%>log.info("<%=cid%> - Payload: '" + <%=cid%>_Payload + "'.");<%
+					}
+					%>globalMap.put("<%=cid %>_PAYLOAD", <%=cid%>_Payload);<%
+				}//9
+				%>
+				try {//7
+					nb_line_<%=cid%>++;
+					<%
+					if(("insert").equals(dataAction)) {
+						%>
+						<%=cid%>_httpPost = new org.apache.http.client.methods.HttpPost(
+							<%=cid%>_URL + 
+							"/api/now/table/" + 
+							<%=tablename%>
+							);
+						<%=cid%>_httpPost.setHeader("Accept", "application/json");
+						<%=cid%>_httpPost.setHeader("Content-Type", "application/json");
+	//activate Cookie header only if unreliable connection
+						//<%=cid%>_httpPost.setHeader("Cookie", <%=cid%>_cookie); 
+						<%=cid%>_entity = new org.apache.http.entity.StringEntity(<%=cid%>_PayloadArray.get(0).toString());
+						<%=cid%>_httpPost.setEntity(<%=cid%>_entity);
+						<%if(isLog4jEnabled){%>
+							log.info("<%=cid%> - Executing '" + "<%=dataAction%>".toUpperCase() + "' request.");
+							<%
+						}
+						%>
+						<%=cid%>_response = <%=cid%>_httpclient.execute(<%=cid%>_httpPost);
+						<%=cid%>_responseBody = org.apache.http.util.EntityUtils.toString(<%=cid%>_response.getEntity());
+						<%=cid%>_responseCode = <%=cid%>_response.getStatusLine().getStatusCode();
+						<%=cid%>_jsonResponse = new org.json.JSONObject(<%=cid%>_responseBody);
+						<%
+					} else {
+						%>
+						<%=cid%>_httpPut = new org.apache.http.client.methods.HttpPut(
+							<%=cid%>_URL + 
+							"/api/now/table/" + 
+							<%=tablename%> + 
+							"/" + 
+							<%=cid%>_SysId.get("sys_id")
+							);
+						<%=cid%>_httpPut.setHeader("Accept", "application/json");
+						<%=cid%>_httpPut.setHeader("Content-Type", "application/json");
+	//activate Cookie header only if unreliable connection 
+						//<%=cid%>_httpPut.setHeader("Cookie", <%=cid%>_cookie);
+						<%=cid%>_entity = new org.apache.http.entity.StringEntity(<%=cid%>_PayloadArray.get(0).toString());
+						<%=cid%>_httpPut.setEntity(<%=cid%>_entity);
+						<%
+						if(isLog4jEnabled){
+							%>
+							log.info("<%=cid%> - Executing '" + "<%=dataAction%>".toUpperCase() + "' request.");
+							<%
+						}
+						%>
+						<%=cid%>_response = <%=cid%>_httpclient.execute(<%=cid%>_httpPut);
+						<%=cid%>_responseBody = org.apache.http.util.EntityUtils.toString(<%=cid%>_response.getEntity());
+						<%=cid%>_responseCode = <%=cid%>_response.getStatusLine().getStatusCode();
+						<%=cid%>_jsonResponse = new org.json.JSONObject(<%=cid%>_responseBody);
+						<%
+					}
+					if("insert".equals(dataAction)) {
+						%>
+						if(<%=cid%>_responseCode != 201) {
+							nb_line_rejected_<%=cid%>++;
+							<%=cid%>_response.close();
+							throw new org.apache.http.HttpException(<%=cid%>_jsonResponse.getJSONObject("error").getString("message"));
+						} else {
+							nb_line_inserted_<%=cid%>++;
+						}
+						<%
+					}
+					if("update".equals(dataAction)) {
+						%>
+						if(<%=cid%>_responseCode != 200) {
+							nb_line_rejected_<%=cid%>++;
+							<%=cid%>_response.close();
+							throw new org.apache.http.HttpException(<%=cid%>_jsonResponse.getJSONObject("error").getString("message"));
+						} else {
+							nb_line_update_<%=cid%>++;
+						}
+						<%
+					}
+					if(isLog4jEnabled) {
+						%>
+						log.info("<%=cid%> - Execution code '" + <%=cid%>_responseCode + "'.");
+						<%
+					}
+					if (isEnableResponseDebug) {
+						%>
+						<%
+						if(isLog4jEnabled) {
+							%>
+							log.info("<%=cid%> - Response: '" + <%=cid%>_responseBody + "'.");
+							<%
+						}
+						%>
+						globalMap.put("<%=cid %>_RESPONSE", <%=cid%>_responseBody);
+						<%
+					}
+					%>
+					// <%=cid%>_response.close();
+				} //7
+				catch(java.lang.Exception e_<%=cid%>) {//9
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+					whetherReject_<%=cid%> = true;
+					<%
+					if(rejectConnName != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+						%>
+						<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+						<%
+						for(IMetadataColumn column : columnList) {
+							%>
+							<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+							<%
+						}
+						%>
+						<%=rejectConnName%>.action = "<%=dataAction%>";
+						<%=rejectConnName%>.errorCode = Integer.valueOf(<%=cid%>_responseCode).toString();
+						<%=rejectConnName%>.errorMessage = e_<%=cid%>.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+						<%
+					} else {
+						%>
+
+
+						throw new java.lang.RuntimeException("Could not execute " + e_<%=cid%>);
+						<%
+					}
+					%>
+				}//9
+				<%
+				if(outgoingConns != null && outgoingConns.size() > 0) {//10
+					%>
+					if(!whetherReject_<%=cid%>) {//11
+						<%
+						for(IConnection outgoingConn : outgoingConns) {//12
+							if(rejectConnName == null || (rejectConnName != null && !outgoingConn.getName().equals(rejectConnName))) {//13
+								if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//14
+									%>
+									<%=outgoingConn.getName()%> = new <%=outgoingConn.getName()%>Struct();
+									<%
+									for(IMetadataColumn column : columnList) {//15
+										%>
+										<%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+										<% 
+									}//15
+								}//14
+							}//13
+						}//12
+						%>
+					}//11
+					<%
+				}//10
+			}//4
+		}//3
+	}//2
+}//1
+%>
+

@@ -1,0 +1,149 @@
+<%@ jet 
+imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.ElementParameterParser  
+" 
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+
+    String cid = node.getUniqueName();
+    
+    String dbType = ElementParameterParser.getValue(node,"__DBTYPE__");
+
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION_" + dbType + "__");
+    
+    String conn = "conn_" + connection;
+    
+    String schema = "dbschema_" + connection;
+    
+    boolean useFilter = ("true").equals(ElementParameterParser.getValue(node,"__USEFILTER__"));
+    String nameRegex = ElementParameterParser.getValue(node,"__NAME_REGEX__");
+    String criteria = ElementParameterParser.getValue(node,"__CRITERIA__");
+    boolean isInclude = ("INCLUDE").equals(criteria);
+    boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+	java.sql.Connection conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+<%	
+	log4jCodeGenerateUtil.useExistConnection(node);
+%>
+int nb_table_<%=cid%> = 0;
+
+<%
+	if(("DBORACLE").equals(dbType)){
+%>
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery("SELECT table_name from user_tables");
+<%
+		log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Query:SELECT table_name from user_tables.");
+	}else if(("MYSQL").equals(dbType)){
+%>
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery("SHOW tables");
+<%
+		log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Query:SHOW tables.");
+	}else if(("MSSQL").equals(dbType)){
+%>
+java.sql.CallableStatement stmt2_<%=cid %> = conn_<%=cid %>.prepareCall("{call sp_tables()}", java.sql.ResultSet.TYPE_SCROLL_INSENSITIVE, java.sql.ResultSet.CONCUR_READ_ONLY);
+java.sql.ResultSet rs_<%=cid %> = null;
+boolean resultSetFound_<%=cid %> = stmt2_<%=cid %>.execute();
+while (!resultSetFound_<%=cid %>) {
+	resultSetFound_<%=cid %> = stmt2_<%=cid %>.getMoreResults();
+	if (!resultSetFound_<%=cid %> && stmt2_<%=cid %>.getUpdateCount() == -1) {
+		break;
+	}
+}
+if (resultSetFound_<%=cid %>) {
+	rs_<%=cid %> = stmt2_<%=cid %>.getResultSet();
+}
+<%
+	}else if(("POSTGRE").equals(dbType)){
+%>
+String dbschema_<%=cid%> = (String)globalMap.get("<%=schema%>");
+String query_<%=cid %> = "";
+if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() > 0){
+	query_<%=cid %> = "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema = ' + dbschema_<%=cid%> + '";
+}else{
+	query_<%=cid %> = "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('pg_catalog', 'information_schema')";
+}
+<%
+if(isLog4jEnabled){
+%>
+    log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+<%
+}
+%>
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+<%
+	}else if(("DB2").equals(dbType)){
+		schema = "tableschema_" + connection;
+%>
+String dbschema_<%=cid%> = (String)globalMap.get("<%=schema%>");
+String query_<%=cid %> = "";
+if(dbschema_<%=cid%> != null && dbschema_<%=cid%>.trim().length() > 0){
+	query_<%=cid %> = "select tabname from syscat.tables where type='T' and tabschema='"+ dbschema_<%=cid%> +"' order by tabschema, tabname";
+}else{
+	query_<%=cid %> = "select tabname from syscat.tables where type='T' order by tabschema, tabname";
+}
+<%
+if(isLog4jEnabled){
+%>
+    log.info("<%=cid%> - Query:'"+query_<%=cid %>+"'.");
+<%
+}
+%>
+java.sql.Statement stmt2_<%=cid%> = conn_<%=cid%>.createStatement();
+java.sql.ResultSet rs_<%=cid %> = stmt2_<%=cid %>.executeQuery(query_<%=cid %>);
+<%
+	}
+%>
+
+while (rs_<%=cid %>.next()) {
+<%
+	if(("MSSQL").equals(dbType)){
+%>
+	if(!("TABLE").equals(rs_<%=cid %>.getString(4))){
+		continue;
+	}
+	String currentTableName_<%=cid %> = rs_<%=cid %>.getString(3);
+<%
+	}else{
+%>
+	String currentTableName_<%=cid %> = rs_<%=cid %>.getString(1);
+<%
+	}
+%>	
+<%
+if(useFilter){
+%>
+	java.util.regex.Pattern tableNamePattern_<%=cid %> = java.util.regex.Pattern.compile(<%=nameRegex %>);
+<%
+	if(isInclude){%> 
+	if(!tableNamePattern_<%=cid%>.matcher(currentTableName_<%=cid %>).matches()){
+		continue;
+	}
+<%
+	}else{%>       
+	if(tableNamePattern_<%=cid %>.matcher(currentTableName_<%=cid %>).matches()){
+		continue;
+	}
+<%
+	}
+}
+%> 
+
+	nb_table_<%=cid %>++;
+        
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.debug("<%=cid%> - Retrieving the table "+nb_table_<%=cid %>+".");
+		log.trace("<%=cid%> - Name of table "+nb_table_<%=cid%>+":"+currentTableName_<%=cid %>+".");
+	<%
+	}
+	%>
+	globalMap.put("<%=cid %>_CURRENT_TABLE", currentTableName_<%=cid %>);

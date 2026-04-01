@@ -1,0 +1,69 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.ElementParameterParser
+		
+		java.util.List
+	" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+boolean isUseExistConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_CONNECTION__"));
+String cid = node.getUniqueName();
+String serverType=ElementParameterParser.getValue(node, "__SERVER__");
+boolean transacted = "true".equals(ElementParameterParser.getValue(node, "__IS_TRANSACTED__"));
+String connectionComponentName = ElementParameterParser.getValue(node, "__CONNECTION__");
+
+List<? extends INode> commitNodes=node.getProcess().getNodesOfType("tMomCommit");
+List<? extends INode> rollBackNodes=node.getProcess().getNodesOfType("tMomRollback");
+
+boolean isCommitRollback = false;
+for(INode cNode:commitNodes){
+	String cNodeName = ElementParameterParser.getValue(cNode,"__CONNECTION__");
+	if(cid.equals(cNodeName) || (isUseExistConnection && connectionComponentName.equals(cNodeName))){
+		isCommitRollback = true;
+		break;
+	}
+}
+if(!isCommitRollback){
+	for(INode rNode:rollBackNodes){
+		String rNodeName = ElementParameterParser.getValue(rNode,"__CONNECTION__");
+		if(cid.equals(rNodeName) || (isUseExistConnection && connectionComponentName.equals(rNodeName))){
+			isCommitRollback = true;
+			break;
+		}
+	}
+}
+
+if (isUseExistConnection) {
+	for (INode pNode : node.getProcess().getNodesOfType("tMomConnection")) {
+		if (pNode.getUniqueName().equals(connectionComponentName)) {
+			transacted = "true".equals(ElementParameterParser.getValue(pNode, "__IS_TRANSACTED__")); 
+			serverType=ElementParameterParser.getValue(pNode, "__SERVER__");
+		}	
+	}
+}
+
+if((("ActiveMQ").equals(serverType)) && !isCommitRollback && transacted){
+%>
+
+	if(resourceMap.get("finish_<%=cid%>") == null){
+		if(resourceMap.get("session_<%=cid%>") != null){
+			((javax.jms.Session)resourceMap.get("session_<%=cid%>")).rollback();
+	    	<%if(!isUseExistConnection){%>
+	    		if(resourceMap.get("producer_<%=cid%>") != null){
+		    		((javax.jms.MessageProducer)resourceMap.get("producer_<%=cid%>")).close();
+				}
+   	    	 	((javax.jms.Session)resourceMap.get("session_<%=cid%>")).close();
+   	    	 	if(resourceMap.get("connection_<%=cid%>") != null){
+	    	    	((javax.jms.Connection)resourceMap.get("connection_<%=cid%>")).close();
+	    	    }
+			<%}%>
+		}
+	}
+<%
+}
+%>

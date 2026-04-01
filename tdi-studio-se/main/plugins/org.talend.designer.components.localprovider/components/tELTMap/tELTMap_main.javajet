@@ -1,0 +1,68 @@
+<%@ jet 
+	imports="
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+	org.talend.core.model.process.IConnection
+	org.talend.designer.dbmap.external.data.ExternalDbMapData
+	org.talend.designer.dbmap.external.data.ExternalDbMapTable
+	org.talend.designer.dbmap.language.IDbLanguage
+	org.talend.designer.dbmap.DbMapComponent
+	java.util.HashMap
+	java.util.Map
+	java.util.Set
+	java.util.HashSet
+	" 
+%>
+<%
+
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	DbMapComponent node=(DbMapComponent)codeGenArgument.getArgument();
+	boolean stats = codeGenArgument.isStatistics(); 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+    org.talend.designer.dbmap.language.generation.GenericDbGenerationManager gm = new org.talend.designer.dbmap.language.generation.GenericDbGenerationManager();
+    String uniqueNameComponent = null;
+    IDbLanguage currentLanguage = gm.getLanguage();
+
+    List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+    List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+    ExternalDbMapData data = (ExternalDbMapData) node.getExternalData();
+    uniqueNameComponent = node.getUniqueName();
+
+    List<ExternalDbMapTable> outputTables = data.getOutputTables();
+
+    Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+    for (IConnection connection : outputConnections) {
+        nameToOutputConnection.put(connection.getUniqueName(), connection);
+    }
+
+	Set tablesProcessed = new HashSet<String>();
+    int lstOutputTablesSize = outputTables.size();
+    for (int i = 0; i < lstOutputTablesSize; i++) {
+        ExternalDbMapTable outputTable = outputTables.get(i);
+        String outputTableName = outputTable.getName();
+        
+		IConnection connection = nameToOutputConnection.get(outputTableName);
+		
+        if (connection == null) {
+        	continue;
+        }
+        
+        String sqlQuery = gm.buildSqlSelect((DbMapComponent) node, outputTable.getName());
+	%>
+		globalMap.put(
+			"<%=uniqueNameComponent %>"+"QUERY" + "<%= connection.getUniqueName() %>",
+			<%= sqlQuery.replaceAll("[\r\n]", " ") %>
+		);
+		globalMap.put(
+				"<%=uniqueNameComponent %>"+"QUERY_COLUMNS_NAME" + "<%= connection.getUniqueName() %>",
+				<%= gm.getQueryColumnsName() %>
+		);
+		<%
+		tablesProcessed.add(outputTable.getTableName());
+    }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>

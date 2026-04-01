@@ -1,0 +1,148 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+    java.util.ArrayList
+    java.util.LinkedList
+    java.util.Map
+    java.util.HashMap
+  	org.talend.core.model.process.IConnection    
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+	org.talend.core.model.utils.NodeUtil
+	org.talend.core.model.process.EConnectionType
+"
+skeleton="tFileOutputMSXML_java.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+final INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+final boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+
+String incomingName = (String)codeGenArgument.getIncomingName();
+List<IMetadataTable> metadatas = NodeUtil.getIncomingMetadataTable(node, IConnectionCategory.FLOW);
+
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    final List< ? extends IConnection> incomingConns = node.getIncomingConnections();
+  		//Notice here: only for the code viewer, because when click the tUnite component, it doesn't know which is the right input connection. 
+	if (incomingName == null && incomingConns.size() > 0) 
+	{ 
+	   incomingName = incomingConns.get(0).getName(); 
+	} 
+	
+    if(incomingConns!=null && incomingConns.size()>0){
+
+		String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+		String fileName = ElementParameterParser.getValue(node, "__FILENAME__");
+		boolean trimText = ("true").equals(ElementParameterParser.getValue(node,"__TRIM_TEXT__"));
+
+//		List<Map<String, String>> rootTable = 
+//        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ROOT__");
+//        List<Map<String, String>> groupTable = 
+//        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__GROUP__");
+//        List<Map<String, String>> loopTable = 
+//        	(List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__LOOP__");
+%>
+int nb_line_<%=cid%> = 0;
+
+String fileName_<%=cid%> = <%=fileName%>;
+java.io.File createFile<%=cid%> = new java.io.File(fileName_<%=cid%>);
+<%
+		if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+%>
+			//create directory only if not exists
+			java.io.File parentFile_<%=cid%> = createFile<%=cid%>.getParentFile();
+			if(parentFile_<%=cid%> != null && !parentFile_<%=cid%>.exists()) {
+				parentFile_<%=cid%>.mkdirs();
+			}
+<%
+		}
+%>
+
+class NestXMLTool_<%=cid%>{
+	public void parseAndAdd(org.dom4j.Element nestRoot, String value){
+		try {
+            org.dom4j.Document doc4Str = org.dom4j.DocumentHelper.parseText("<root>"+ value + "</root>");
+    		nestRoot.setContent(doc4Str.getRootElement().content());
+    	} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+    		e.printStackTrace();
+  			<%if(isLog4jEnabled) {%>
+  			log.error("<%=cid%> - " + e.getMessage());
+  			<%}%>
+    		nestRoot.setText(value);
+        }
+	}
+	
+	public void setText(org.dom4j.Element element, String value){
+		if (value.startsWith("<![CDATA[") && value.endsWith("]]>")) {
+			String text = value.substring(9, value.length()-3);
+			element.addCDATA(text);
+		}else{
+			element.setText(value);
+		}
+	}
+	
+	public void replaceDefaultNameSpace(org.dom4j.Element nestRoot){
+		if (nestRoot!=null) {
+			for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) nestRoot.elements()) {
+        		if (("").equals(tmp.getQName().getNamespace().getURI()) && ("").equals(tmp.getQName().getNamespace().getPrefix())){
+        			tmp.setQName(org.dom4j.DocumentHelper.createQName(tmp.getName(), nestRoot.getQName().getNamespace()));
+	        	}
+    	    	replaceDefaultNameSpace(tmp);
+       		}
+       	}
+	}
+	
+	public void removeEmptyElement(org.dom4j.Element root){
+		if (root!=null) {
+			for (org.dom4j.Element tmp: (java.util.List<org.dom4j.Element>) root.elements()) {
+				removeEmptyElement(tmp);
+			}
+			if (root.content().size() == 0 
+    			&& root.attributes().size() == 0 
+    			&& root.declaredNamespaces().size() == 0) {
+    			if(root.getParent()!=null){
+                	root.getParent().remove(root);
+                }
+            }
+		}
+	}
+}
+
+
+
+final org.dom4j.Document doc_<%=cid %> = org.dom4j.DocumentHelper.createDocument();
+
+final java.util.Map<String,org.dom4j.Branch> nameToElement_<%=cid%> = new java.util.HashMap<String,org.dom4j.Branch>();
+
+final NestXMLTool_<%=cid%> nestXMLTool_<%=cid%> = new NestXMLTool_<%=cid%>();
+
+final org.dom4j.io.OutputFormat format_<%=cid%> = org.dom4j.io.OutputFormat.createPrettyPrint();
+format_<%=cid %>.setEncoding(<%=encoding%>);
+format_<%=cid %>.setTrimText(<%=trimText%>);
+
+
+<%@ include file="tFileOutputMSXML_begin.inc.javajet"%>
+
+<%
+		int schemaOptNum=100;
+		String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+		if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+			schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+		}
+		OptimizeCodeGenerator optimizeGen = new OptimizeCodeGenerator(cid,schemaOptNum );
+		optimizeGen.setBeginPart(true);
+		optimizeGen.incomingName = incomingName;
+		optimizeGen.generateCode(node);
+	}
+}
+%>

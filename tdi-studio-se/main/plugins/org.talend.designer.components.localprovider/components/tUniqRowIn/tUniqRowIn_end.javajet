@@ -1,0 +1,102 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.metadata.IMetadataTable
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = ElementParameterParser.getValue(node, "__CID__");
+
+int UNIQUE = 1;
+int UNIQUE_AND_DUPLICATE = 2;
+int UNIQUE_AND_DUPLICATE_ONCE = 3;
+int DUPLICATE = 4;
+int DUPLICATE_ONCE = 5;
+
+int mode = 0;
+String connUniqName = null;
+String connDuplicateName = null;
+boolean onlyOnceEachDuplicatedKey = ("true").equals(ElementParameterParser.getValue(node, "__ONLY_ONCE_EACH_DUPLICATED_KEY__"));
+List<? extends IConnection> connsUnique = node.getOutgoingConnections("UNIQUE");
+List<? extends IConnection> connsDuplicate = node.getOutgoingConnections("DUPLICATE");
+final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(connsUnique.size() > 0){
+	connUniqName = connsUnique.get(0).getName();
+	if(connsDuplicate.size() > 0){
+		connDuplicateName = connsDuplicate.get(0).getName();
+		if(onlyOnceEachDuplicatedKey){
+			mode =3;
+		}else{
+			mode = 2;
+		}
+	}else{
+		mode = 1;
+	}
+}else{
+	if(connsDuplicate.size() > 0){
+		connDuplicateName = connsDuplicate.get(0).getName();
+		if(onlyOnceEachDuplicatedKey){
+			mode =5;
+		}else{
+			mode = 4;
+		}
+	}
+}
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+}else{
+	mode = 0;
+}
+
+if(mode == UNIQUE){//HSS_____0
+%>
+            }
+            globalMap.put("<%=cid %>_NB_UNIQUES",nb_uniq_<%=cid %>);
+            globalMap.put("<%=cid %>_NB_DUPLICATES",nb_<%=cid %> - nb_uniq_<%=cid %>);
+            <%
+			if(isLog4jEnabled){
+			%>
+				log.info("<%=cid%> - Unique records count: " + (nb_uniq_<%=cid %>)+" .");
+				log.info("<%=cid%> - Duplicate records count: " + (nb_<%=cid %> - nb_uniq_<%=cid %>)+" .");
+			<%
+			}
+			%>
+<%
+}else if(mode == UNIQUE_AND_DUPLICATE_ONCE || mode == UNIQUE_AND_DUPLICATE){//HSS_____0
+%>
+            }
+            globalMap.put("<%=cid %>_NB_UNIQUES", nb_uniq_<%=cid %>);
+            globalMap.put("<%=cid %>_NB_DUPLICATES", nb_duplicate_<%=cid %>);
+            <%
+			if(isLog4jEnabled){
+			%>
+				log.info("<%=cid%> - Unique records count: " + (nb_uniq_<%=cid %>)+" .");
+				log.info("<%=cid%> - Duplicate records count: " + (nb_duplicate_<%=cid %>)+" .");
+			<%
+			}
+			%>
+<%
+}else if(mode == DUPLICATE_ONCE || mode == DUPLICATE){//HSS_____0
+%>
+            }
+            globalMap.put("<%=cid %>_NB_UNIQUES", nb_<%=cid %> - nb_duplicate_<%=cid %>);
+            globalMap.put("<%=cid %>_NB_DUPLICATES", nb_duplicate_<%=cid %>);
+            <%
+			if(isLog4jEnabled){
+			%>
+				log.info("<%=cid%> - Unique records count: " + (nb_<%=cid %> - nb_duplicate_<%=cid %>)+" .");
+				log.info("<%=cid%> - Duplicate records count: " + (nb_duplicate_<%=cid %>)+" .");
+			<%
+			}
+			%>
+<%
+}//HSS_____0
+
+%>

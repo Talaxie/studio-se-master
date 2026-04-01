@@ -1,0 +1,54 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String filename = ElementParameterParser.getValue(node,"__JRXML_FILE__");
+        String tempDirectory = ElementParameterParser.getValue(node,"__TEMP_FILE__");
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+        
+%>       
+    int nb_line_<%=cid%> = 0;
+    String jrxmlName_<%=cid%> = (<%=filename%>).substring((<%=filename%>).lastIndexOf("/"),(<%=filename%>).lastIndexOf("."));
+    String tempFile_<%=cid%> = <%=tempDirectory%>+jrxmlName_<%=cid%>+".csv";
+    java.io.File file_<%=cid%>=new java.io.File(tempFile_<%=cid%>);	
+    if (!file_<%=cid%>.exists()) {
+        file_<%=cid%>.createNewFile();
+    }
+    
+    com.talend.csv.CSVWriter CsvWriter_<%=cid%>=new com.talend.csv.CSVWriter(new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+                new java.io.FileOutputStream(tempFile_<%=cid%>,false),<%=encoding%>)));  
+	
+<%
+        List<IMetadataColumn> columns = metadata.getListColumns();
+        int sizeColumns = columns.size();
+%>
+   	String[] headColu_<%=cid%>=new String[<%=sizeColumns%>];
+<%
+     	for(int i = 0; i < sizeColumns; i++){
+        	IMetadataColumn column = columns.get(i);
+%>
+   	headColu_<%=cid%>[<%=i%>]="<%=column.getLabel()%>";
+<%
+		}
+%>
+    CsvWriter_<%=cid%>.writeNext(headColu_<%=cid%>);
+<%
+	}
+}
+%>

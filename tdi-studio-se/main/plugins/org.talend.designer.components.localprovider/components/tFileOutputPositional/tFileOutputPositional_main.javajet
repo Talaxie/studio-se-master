@@ -1,0 +1,123 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.utils.NodeUtil
+		java.util.List
+		java.util.Map
+		org.talend.core.model.process.AbstractNode
+	"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        
+        String cid = node.getUniqueName();
+        
+        String separator = ElementParameterParser.getValue(
+            node,
+            "__ROWSEPARATOR__"
+        );
+
+        List<Map<String, String>> formats =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__FORMATS__"
+            );            
+            
+        boolean useByte = ("true").equals(ElementParameterParser.getValue(node, "__USE_BYTE__"));
+        
+        boolean flushOnRow = ("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__")); 
+        String flushMod = ElementParameterParser.getValue(node, "__FLUSHONROW_NUM__");
+     
+		String parallelize = ElementParameterParser.getValue(node,"__PARALLELIZE__");
+		boolean isParallelize = (parallelize!=null&&!("").equals(parallelize))?("true").equals(parallelize):false;
+%>
+
+				String tempStringM<%=cid %>= null;
+				
+				int tempLengthM<%=cid %>= 0;
+				
+<%
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	for (IConnection conn : conns) {
+		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+				StringBuilder sb_<%=cid %> = new StringBuilder();
+<%
+			List<IMetadataColumn> columns = metadata.getListColumns();
+			int sizeColumns = columns.size();
+			for (int i = 0; i < sizeColumns; i++) {
+				if(i%100==0){
+%>
+    				positionUtil_<%=cid%>.setValue_<%=i/100%>(<%=conn.getName() %>,sb_<%=cid %>,tempStringM<%=cid %>,tempLengthM<%=cid %><% if(useByte){ %>,byteArray_<%=cid %>,arrays_<%=cid %><% }%>);
+<%
+				}
+			}
+%>
+			sb_<%=cid %>.append(<%=separator%>);
+			<% 
+				if(codeGenArgument.getIsRunInMultiThread()){
+			%>
+			synchronized (multiThreadLockWrite) {
+			<%
+				}
+				if (((AbstractNode)node).getParallelIterator() != null) {
+			%>
+			synchronized (fileNewName_<%=cid%>.intern()) {
+			<% 
+				}
+				if (isParallelize) {
+			%>
+			Object[] pLockWrite = (Object[])globalMap.get("PARALLEL_LOCK_WRITE");
+			synchronized (pLockWrite) {
+			<% 
+				}
+			%>
+			out<%=cid %>.write(sb_<%=cid %>.toString());
+    		<% if(flushOnRow) { %>
+        		if(nb_line_<%=cid %>%<%=flushMod %> == 0) {
+        		out<%=cid %>.flush();
+        		}
+    		<%
+    			}
+    		%>
+    		<%
+    			if ( isParallelize) {
+			%>
+    			} 
+			<%
+    		    }
+				if (((AbstractNode)node).getParallelIterator() != null) {
+			%>
+				}
+			<% 
+				}
+				if(codeGenArgument.getIsRunInMultiThread()){
+    		%>
+    			}
+    		<%
+    			}
+			%> 						
+			nb_line_<%=cid %>++;
+			resourceMap.put("nb_line_<%=cid %>", nb_line_<%=cid %>);
+<%
+			log4jFileUtil.debugWriteData(node);
+		}
+	}
+    }
+}
+%>

@@ -1,0 +1,57 @@
+<%@ jet 
+	imports="
+        java.util.List
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+	" 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+    String fileFormat = ElementParameterParser.getValue(node,"__FILE_FORMAT__");
+    String retriveMode = ElementParameterParser.getValue(node,"__RETRIVE_MODE__");
+    List< ? extends IConnection> outConns = node.getOutgoingConnections();
+    boolean isGenerateCode=false;
+    for(IConnection conn : outConns){
+    	if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.USE_ITERATE)){
+			isGenerateCode=true;
+		}
+    	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    		isGenerateCode=true;
+    	}
+    }
+    if(!isGenerateCode){
+        return "";//output conn only onsubjob_ok
+    }   	
+
+	if(("PROPERTIES_FORMAT").equals(fileFormat)){
+%>
+		}
+	}finally{
+		if(fis_<%=cid%>!=null){
+			fis_<%=cid%>.close();
+		}
+	}
+<%
+	}else{
+		if(("RETRIVE_ALL").equals(retriveMode) || ("RETRIVE_BY_SECTION").equals(retriveMode)){
+%>
+	}
+}
+<%
+		}else{
+%>
+}
+<%
+		}
+	}
+%>
+globalMap.put("<%=cid %>_NB_LINE", nb_line_<%=cid%>);
+<%
+log4jFileUtil.retrievedDataNumberInfo();
+%>

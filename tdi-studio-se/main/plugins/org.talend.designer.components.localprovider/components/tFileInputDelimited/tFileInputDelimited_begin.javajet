@@ -1,0 +1,1500 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List 
+    	java.util.Map		
+		org.talend.core.model.process.IProcess
+	" 
+%>
+	<%@ include file="../templates/Row/RowHelper.javajet"%>
+	<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+	<% 
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    final String cid = node.getUniqueName();	
+	
+	String projectName = codeGenArgument.getCurrentProjectName();
+	String jobName = codeGenArgument.getJobName();
+	String jobVersion = codeGenArgument.getJobVersion();
+	
+	String tempDir = ElementParameterParser.getValue(node, "__TEMP_DIR__");
+	
+	String vcid = "";
+	IProcess process = node.getProcess();
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(process, "__LOG4J_ACTIVATE__"));
+	
+	String destination = ElementParameterParser.getValue(node, "__DESTINATION__");
+	if(destination!=null && !"".equals(destination)){
+		vcid = destination;
+	}
+	int dynamic_index = -1;
+	boolean hasDynamic = false;
+	int dynamicColumnlength = 100;
+	String dynamic = ElementParameterParser.getValue(node, "__DYNAMIC__");
+	final boolean useExistingDynamic = "true".equals(ElementParameterParser.getValue(node, "__USE_EXISTING_DYNAMIC__"));
+	final String useHeaderAsIs = ElementParameterParser.getValue(node, "__USE_HEADER_AS_IS__");
+	final String dyn = dynamic+"_DYNAMIC";
+	List<IMetadataColumn> columnList = null;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	IMetadataTable metadata = null;
+	int sizeListColumns = 0;
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		metadata = metadatas.get(0);
+		if (metadata!=null) {
+			columnList = metadata.getListColumns();
+			sizeListColumns = columnList.size();
+		}
+	}
+	for(int i=0; columnList!=null && i< columnList.size(); i++) {
+        if(columnList.get(i).getTalendType().equals("id_Dynamic")){
+            dynamic_index = i+1;
+            hasDynamic = true;
+            if(columnList.get(i).getLength() != null){
+                dynamicColumnlength = columnList.get(i).getLength();
+            }
+            break;
+        }
+	}
+	int schemaOptNum=100;
+	String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+	if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+		schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+	}
+		
+		
+	class GenerateCode{
+		public int dynamic_index = -1;
+		public int colLen = 0; // the length of the column in the input schema
+		public void generateDynamicSchemaCode(boolean isCsv,int dynamicColumnlength){
+		%>
+			if(isFirstCheckDyn_<%=cid %>){// for the header line
+				<%
+				if(useExistingDynamic){
+				%>
+				dynamic_<%=cid %> = (routines.system.Dynamic)globalMap.get("<%=dyn%>");
+				isFirstCheckDyn_<%=cid %> = false;
+				<%
+				} else {
+					if(isCsv){
+					%>
+						int colsLen_<%=cid %> = row<%=cid %>.length;
+					<%
+					}else{
+					%>
+						int colsLen_<%=cid %> = fid_<%=cid %>.getColumnsCountOfCurrentRow();
+					<%
+					}
+					%>
+						for (int i = <%=dynamic_index-1%>; i < colsLen_<%=cid %>-<%=colLen-dynamic_index%>; i++) {
+							routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = new routines.system.DynamicMetadata();
+							if(<%=useHeaderAsIs%>) {
+								dynamicMetadata_<%=cid%>.setName(<%if(isCsv){%>row<%=cid %>[i]<%}else{%>fid_<%=cid %>.get(i)<%}%>);
+							} else {
+								dynamicMetadata_<%=cid%>.setName(<%if(isCsv){%>row<%=cid %>[i]<%}else{%>fid_<%=cid %>.get(i)<%}%>.replaceAll("[ .-]+", "_"));
+							}
+							dynamicMetadata_<%=cid%>.setDbName(dynamicMetadata_<%=cid%>.getName());
+							dynamicMetadata_<%=cid%>.setType("id_String");
+							dynamicMetadata_<%=cid%>.setDbType("VARCHAR");
+							dynamicMetadata_<%=cid%>.setLength(<%=dynamicColumnlength%>);
+							dynamicMetadata_<%=cid%>.setPrecision(0);
+							dynamicMetadata_<%=cid%>.setNullable(true);
+							dynamicMetadata_<%=cid%>.setKey(false);
+							dynamicMetadata_<%=cid%>.setSourceType(routines.system.DynamicMetadata.sourceTypes.demilitedFile);
+							dynamicMetadata_<%=cid%>.setColumnPosition(i);
+							dynamic_<%=cid%>.metadatas.add(dynamicMetadata_<%=cid%>);
+						}
+						
+						isFirstCheckDyn_<%=cid %> = false;
+						continue;
+				<%
+				}
+				%>
+			}
+		<%
+		}
+		public void checkFooterAndRandom(String footer,String random){
+		%>
+			int footer_value_<%=cid %> = <%=footer %>, random_value_<%=cid %> = <%=random %>;
+			if(footer_value_<%=cid %> >0 || random_value_<%=cid %> > 0){
+				throw new java.lang.Exception("When the input source is a stream,footer and random shouldn't be bigger than 0.");				
+			}
+		<%
+		}
+		
+		public void checkFooter(String footer){
+		%>
+			int footer_value_<%=cid %> = <%=footer %>;
+			if(footer_value_<%=cid%> > 0){
+				throw new java.lang.Exception("When the input source is a stream,footer shouldn't be bigger than 0.");
+			}
+		<%	
+		}
+	}
+	GenerateCode generateCode = new GenerateCode();
+	%>
+	
+	final routines.system.RowState rowstate_<%=cid%> = new routines.system.RowState();
+	
+	<%
+	if(("false").equals(ElementParameterParser.getValue(node,"__CSV_OPTION__"))) {	
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		final String fieldSeparator = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+		class RowUtil extends DefaultRowUtil{
+			public void codeForValueToConn(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, int start , int end){
+				codeForValueToConnWithD(node, metadata, sourceValueClass, sourceValueName, targetConnName, null, start ,end);
+			}
+			public boolean codeForValueToConnWithD(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, String dynamicName, int start , int end){
+				cid = node.getUniqueName();
+				String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+				
+				List<Map<String, String>> trimSelects = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__TRIMSELECT__");
+				String isTrimAllStr = ElementParameterParser.getValue(node,"__TRIMALL__");
+				boolean isTrimAll = (isTrimAllStr!=null&&!("").equals(isTrimAllStr))?("true").equals(isTrimAllStr):true;
+				
+				List<Map<String, String>> decodeClns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DECODE_COLS__");
+				boolean isEnableDecode = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_DECODE__"));
+				
+				String checkDateStr = ElementParameterParser.getValue(node,"__CHECK_DATE__");
+				boolean checkDate = (checkDateStr!=null&&!("").equals(checkDateStr))?("true").equals(checkDateStr):false;
+				
+				String checkNumStr = ElementParameterParser.getValue(node, "__CHECK_FIELDS_NUM__");
+				boolean checkNum = (checkNumStr!=null&&!("").equals(checkNumStr))?("true").equals(checkNumStr):false; 
+				
+				String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+				boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+				String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+				String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+				
+				List<IMetadataColumn> listColumns = metadata.getListColumns();
+				int sizeListColumns = listColumns.size();
+				boolean noStringTypeExist = false;
+				int dynamic_index = -1;
+				if(metadata.isDynamicSchema()){
+				%>
+				int dynamic_column_count_<%=cid%>=<%if(this.isBehindDynamic){%><%=dynamicName%>.getColumnCount()<%}else{%>1<%}%>;
+				<%
+				}
+				%>
+				int columnIndexWithD_<%=cid%> = 0;
+				<%
+				for (int valueN=0; valueN<sizeListColumns; valueN++) {
+					IMetadataColumn column = listColumns.get(valueN);
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+					}else{
+						noStringTypeExist = true;
+						break;
+					}
+				}
+				boolean hasStringDefault = false;
+				for (int valueM=0; valueM<sizeListColumns; valueM++) {
+					IMetadataColumn column = listColumns.get(valueM);
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+						if(hasStringDefault==false && column.getDefault()!=null && column.getDefault().length() > 0 ){
+							hasStringDefault = true;
+							break;
+						}
+					}
+				}
+				if(noStringTypeExist || hasStringDefault){
+				%>
+					String temp = ""; 
+				<%
+				}
+				String isDecodeNumber = "false";
+				for (int valueN=start; valueN<end; valueN++) {
+					IMetadataColumn column = listColumns.get(valueN);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+					
+					if (decodeClns != null && decodeClns.size() > valueN) { // to avoid the wizard doesn't initialize the table
+						isDecodeNumber = ("true").equals(decodeClns.get(valueN).get("DECODE"))?"true":"false";
+					}
+					if(metadata.isDynamicSchema()){
+					%>
+					columnIndexWithD_<%=cid%> = <%=valueN-1%>+dynamic_column_count_<%=cid%>;
+					<%
+					}else{
+					%>
+					columnIndexWithD_<%=cid%> = <%=valueN%>;
+					<%
+					}
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+						String defaultValue = column.getDefault();
+						if(defaultValue!=null && defaultValue.length()>0){
+						%>
+							temp  = <%=sourceValueName%>.get(columnIndexWithD_<%=cid%>)<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(valueN).get("TRIM"))))?".trim()":"" %>;
+							if(temp.length() > 0){
+								<%=targetConnName %>.<%=column.getLabel() %> = temp;
+							}else{
+								<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+							}
+						<%
+						}else{
+						%>
+							<%=targetConnName %>.<%=column.getLabel() %> = <%=sourceValueName%>.get(columnIndexWithD_<%=cid%>)<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(valueN).get("TRIM"))))?".trim()":"" %>;
+						<%
+						}
+					}else if(column.getTalendType().equals("id_Dynamic")){
+						this.isBehindDynamic=true;
+						dynamic_index = valueN;
+					%>
+						
+						<%=targetConnName %>.<%=column.getLabel() %> = <%=dynamicName%>.copyMetadata();
+						
+						int fieldCount = <%=sourceValueName%>.getColumnsCountOfCurrentRow();
+						dynamic_column_count_<%=cid%> = <%=dynamicName%>.getColumnCount();
+						
+						<%if(!useExistingDynamic){%>
+						for (int i = 0; i < dynamic_column_count_<%=cid%>; i++) {
+							if ((<%=dynamic_index%>+i) < fieldCount){
+								<%=targetConnName %>.<%=column.getLabel() %>.addColumnValue(<%=sourceValueName%>.get(<%=dynamic_index%>+i)<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(valueN).get("TRIM"))))?".trim()":"" %>);
+							}
+							else{
+								<%=targetConnName %>.<%=column.getLabel() %>.addColumnValue("");
+							}
+						}
+						<%} else {%>
+						int maxColumnNumberInDynamicColumn_<%=cid%> = fieldCount - <%=sizeListColumns - 1%>;
+						for (int i = 0; i < dynamic_column_count_<%=cid%>; i++) {
+							Object v_<%=cid%> = null;
+							final routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = <%=dynamicName%>.getColumnMetadata(i);
+							if ((<%=dynamic_index%>+i) < fieldCount && i < maxColumnNumberInDynamicColumn_<%=cid%>){<%//B1 start%>
+								final String tempValue_<%=cid%> = <%=sourceValueName%>.get(<%=dynamic_index%>+i)<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(valueN).get("TRIM"))))?".trim()":"" %>;
+								final String separator_<%=cid%> = <%= fieldSeparator %>;
+								
+								<%@ include file="./use_existing_schema.javajet"%>
+						}
+
+						dynamic_column_count_<%=cid%> = maxColumnNumberInDynamicColumn_<%=cid%>;
+						<%}%>
+					<%
+					}else{
+						
+					%>
+						temp = <%=sourceValueName%>.get(columnIndexWithD_<%=cid%>)<%=(isTrimAll || (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(valueN).get("TRIM"))))?".trim()":"" %>;
+						if(temp.length() > 0) {
+							<%
+							if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+								//do nothing
+							} else {
+								%>
+								try {
+								<%
+    							if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+    							%>
+    								<%=targetConnName %>.<%=column.getLabel() %> = temp.getBytes(<%=encoding%>);
+    							<%
+    							} else if(javaType == JavaTypesManager.LIST){ 
+                                %>
+                                    <%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_List(temp, <%= fieldSeparator %>);
+                                <%
+    							}else if(javaType == JavaTypesManager.DATE) { 
+    								if(checkNum || checkDate){
+    								%>
+    									<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp, <%= patternValue %>, false);
+    								<%
+    								}else{
+    								%>
+    									<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(temp, <%= patternValue %>);
+    								<%
+    								}
+    							}else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) { 
+    								if (JavaTypesManager.isNumberIntType(javaType)) {
+    							%>
+    								<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp, <%= thousandsSeparator %>, <%= decimalSeparator %>)<%=isEnableDecode?","+isDecodeNumber:""%>);
+    							<%
+    								} else {
+    							%>
+    								<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(temp, <%= thousandsSeparator %>, <%= decimalSeparator %>));
+    							<%
+    								}
+    							} else if (JavaTypesManager.isNumberIntType(javaType)) {
+    							%>
+    								<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp<%=isEnableDecode?","+isDecodeNumber:""%>);
+    							<%
+    							} else { 
+    							%>
+    								<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(temp);
+    							<%
+    							}
+    							%>
+    							} catch(java.lang.Exception ex_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+									rowstate_<%=cid%>.setException(new RuntimeException(String.format("Couldn't parse value for column '%s' in '%s', value is '%s'. Details: %s",
+										"<%= column.getLabel() %>", "<%=targetConnName %>", temp, ex_<%=cid%>), ex_<%=cid%>));
+								}
+    							<%
+							}
+							%>
+						} else {						
+							<%
+							String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+							boolean isJavaPrimitiveType = JavaTypesManager.isJavaPrimitiveType(javaType,column.isNullable());
+							if((isJavaPrimitiveType && (column.getDefault()==null || column.getDefault().length() == 0)) || defaultValue == null) {
+							%>
+								rowstate_<%=cid%>.setException(new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=targetConnName %>' connection, value is invalid or this column should be nullable or have a default value."));
+							<%
+							} else {
+							%>
+								<%
+								if (!JavaTypesManager.NULL.equals(defaultValue)) {
+								%>
+								try {
+									<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+								} catch(java.lang.Exception ex_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+									rowstate_<%=cid%>.setException(new RuntimeException(String.format("Couldn't set default value for column '%s' in '%s'. Details: %s",
+										"<%= column.getLabel() %>", "<%=targetConnName %>", ex_<%=cid%>), ex_<%=cid%>));
+								}
+								<%
+								} else {
+								%>
+									<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+								<%
+								}
+								%>
+							<%
+							}
+							%>
+						}
+					<%
+					}
+					%>
+				<%}
+				%>
+				<%if(checkNum) {%>
+				 	int filedsum = <%=sourceValueName%>.getColumnsCountOfCurrentRow();
+				 	if(filedsum < (<%=metadata.getListColumns().size() %> <%if(metadata.isDynamicSchema()){%>+ dynamic_column_count_<%=cid%> -1<%}%>)){
+					 	throw new RuntimeException("Column(s) missing");
+					 } else if(filedsum > (<%=metadata.getListColumns().size() %> <%if(metadata.isDynamicSchema()){%>+ dynamic_column_count_<%=cid%> -1<%}%>)) {
+					 	throw new RuntimeException("Too many columns");
+					 }     
+				<%
+				}
+				return this.isBehindDynamic;
+			}
+			
+			public void codeForConnToConn(INode node, IMetadataTable metadata, String sourceConnName, String targetConnName, int start , int end){
+    			for(int colNum=start;colNum<end;colNum++) {
+    				IMetadataColumn column=metadata.getListColumns().get(colNum);
+    			%>
+    				<%=targetConnName%>.<%=column.getLabel()%> = <%=sourceConnName%>.<%=column.getLabel()%>;
+				<%
+				}
+				%>
+			<%
+			}
+		}//class defined end
+
+		if ((metadatas!=null)&&(metadatas.size()>0)) {
+			if (metadata!=null) {
+				String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+				
+				if(!("".equals(vcid))) {
+					filename = "\"/"+filename.substring(1, filename.length()-1)+vcid+"_"+projectName+"_"+jobName+"_"+jobVersion+"\"";
+					filename = tempDir+"+"+filename;
+				}
+				
+		    	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+		    	String header = ElementParameterParser.getValue(node, "__HEADER__");
+		    	if(("").equals(header)){
+		    		header="0";
+		    	}
+		    	String limit = ElementParameterParser.getValue(node, "__LIMIT__");
+				if(("").equals(limit)){
+					limit = "-1";
+				}
+		    	String footer = ElementParameterParser.getValue(node, "__FOOTER__");
+				boolean uncompress = ("true").equals(ElementParameterParser.getValue(node,"__UNCOMPRESS__"));
+		    	if(("").equals(footer) || uncompress){
+		    		footer="0";
+		    	}
+		    	String random = "-1";
+		    	String ran = ElementParameterParser.getValue(node, "__RANDOM__");
+		    	if(("true").equals(ran)){
+		    		random = ElementParameterParser.getValue(node, "__NB_RANDOM__");
+		    		if(("").equals(random)){
+		    			random="0";
+		    		}
+		    	}
+		    	if(uncompress){
+		    		random="-1";
+		    	}
+				
+		    	String rowSeparator = ElementParameterParser.getValue(node, "__ROWSEPARATOR__");
+		    	String removeEmptyRowFlag =  ElementParameterParser.getValue(node, "__REMOVE_EMPTY_ROW__");
+		    	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+				boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false; 
+				
+				String splitRecordStr = ElementParameterParser.getValue(node, "__SPLITRECORD__");
+				boolean splitRecord = (splitRecordStr!=null&&!("").equals(splitRecordStr))?("true").equals(splitRecordStr):false;
+				
+				//find main & reject conns;
+				List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+			    String rejectConnName = "";
+			    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+			    if(rejectConns != null && rejectConns.size() > 0) {
+			        IConnection rejectConn = rejectConns.get(0);
+			        rejectConnName = rejectConn.getName();
+			    }
+			    List<IMetadataColumn> rejectColumnList = null;
+			    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+			    if(metadataTable != null) {
+			        rejectColumnList = metadataTable.getListColumns();      
+			    }
+			    String firstConnName = "";
+				if (conns!=null) {
+					if (conns.size()>0) {
+						IConnection conn = conns.get(0);
+						if(conn!=null && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+							firstConnName = conn.getName();
+						}
+					}
+				}			    
+				
+				RowUtil rowUtil = new RowUtil(); 
+				if (conns!=null) {
+				    if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {
+						if(hasDynamic){
+							rowUtil.prepareValueToConnWithD(node, metadata, "org.talend.fileprocess.FileInputDelimited", "fid_"+cid, firstConnName, "dynamic_"+cid, schemaOptNum);
+							%>
+							boolean isFirstCheckDyn_<%=cid %> = true;
+							routines.system.Dynamic dynamic_<%=cid %> = new routines.system.Dynamic();
+						<%
+						}else{
+							rowUtil.prepareValueToConn(node, metadata, "org.talend.fileprocess.FileInputDelimited", "fid_"+cid, firstConnName, schemaOptNum);
+						}
+						if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+							rowUtil.prepareConnToConn(metadata, firstConnName, rejectConnName);
+						}
+						rowUtil.generateClass();
+					}
+				}
+				%>
+				int nb_line_<%=cid%> = 0;
+				org.talend.fileprocess.FileInputDelimited fid_<%=cid %> = null;
+				int limit_<%=cid%> = <%=limit%>;
+				try{
+					<%
+					if(uncompress){
+					%>
+						Object filename_<%=cid %> = <%=filename %>;	
+						java.util.zip.ZipInputStream zis_<%=cid %> = null;
+						try {
+							if(filename_<%=cid %> instanceof java.io.InputStream){
+								zis_<%=cid %> = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream((java.io.InputStream)filename_<%=cid %>));
+							}else{
+								zis_<%=cid %> = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(String.valueOf(filename_<%=cid %>))));
+							}
+						} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+							<% if(dieOnError) {%>
+								throw e;
+							<% } else { %>
+								<%if(isLog4jEnabled){%>
+									log.error("<%=cid%> - " +e.getMessage());
+								<%}%>
+								System.err.println(e.getMessage());
+							<% } %>
+						}
+						java.util.zip.ZipEntry entry_<%=cid %> = null;
+		
+						while (true) {
+							try {
+								entry_<%=cid %> = zis_<%=cid %>.getNextEntry();
+							} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+								<% if(dieOnError) {%>
+									throw e;
+								<% } else { %>
+									<%if(isLog4jEnabled){%>
+										log.error("<%=cid%> - " +e.getMessage());
+									<%}%>
+									System.err.println(e.getMessage());
+									break;
+								<% } %>
+							}
+							if(entry_<%=cid %> == null) {
+								break;
+							}
+							if(entry_<%=cid %>.isDirectory()){ //directory
+								continue;
+							}
+							try {
+								fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(zis_<%=cid %>, <%=encoding %>,<%=fieldSeparator %>,<%=rowSeparator %>,<%=removeEmptyRowFlag %>,<%=header %><%=(hasDynamic&&!useExistingDynamic)?"-1":""%>,<%=footer %>,
+								<%if(hasDynamic&&!useExistingDynamic){%>
+									(limit_<%=cid%> > 0) ? limit_<%=cid%>+1 : limit_<%=cid%>
+								<%} else {%>
+									limit_<%=cid%>
+								<%}%>,<%=random %>, <%= splitRecord%>);
+							} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+								<% if(dieOnError) {%>
+									throw e;
+								<% } else { %>
+									<%if(isLog4jEnabled){%>
+										log.error("<%=cid%> - " +e.getMessage());
+									<%}%>
+									System.err.println(e.getMessage());
+								<% } %>
+							}
+					<%
+					}else{
+					%>
+						Object filename_<%=cid %> = <%=filename %>;
+						if(filename_<%=cid %> instanceof java.io.InputStream){
+							<%
+									generateCode.checkFooterAndRandom(footer,random);
+							%>
+						}
+						try {
+							fid_<%=cid %> = new org.talend.fileprocess.FileInputDelimited(<%=filename %>, <%=encoding %>,<%=fieldSeparator %>,<%=rowSeparator %>,<%=removeEmptyRowFlag %>,<%=header %><%=(hasDynamic&&!useExistingDynamic)?"-1":""%>,<%=footer %>,<%if(hasDynamic&&!useExistingDynamic){%>
+									(limit_<%=cid%> > 0) ? limit_<%=cid%>+1 : limit_<%=cid%>
+								<%} else {%>
+									limit_<%=cid%>
+								<%}%>,<%=random %>, <%= splitRecord%>);
+						} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+							<% if(dieOnError) {%>
+								throw e;
+							<% } else { %>
+								<%if(isLog4jEnabled){%>
+									log.error("<%=cid%> - " +e.getMessage());
+								<%}%>
+								System.err.println(e.getMessage());
+							<% } %>
+						}
+					<%
+					}
+					%>
+				    <%if(isLog4jEnabled){%>
+				    	log.info("<%=cid%> - Retrieving records from the datasource.");
+				    <%}%>
+					while (fid_<%=cid %>!=null && fid_<%=cid %>.nextRecord()) {
+						rowstate_<%=cid%>.reset();
+						<%
+				    	if (conns!=null) {
+				    		if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {
+				    			for (int i=0;i<conns.size();i++) {
+				    				IConnection connTemp = conns.get(i);
+				    				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+									%>
+			    						<%=connTemp.getName() %> = null;			
+									<%
+				    				}
+				    			}
+				    	
+								IConnection conn = conns.get(0);
+								if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+								%>			
+									boolean whetherReject_<%=cid %> = false;
+									<%=firstConnName %> = new <%=conn.getName() %>Struct();
+									try {
+										<%
+										if(hasDynamic){// generate the dynamic schema code
+											generateCode.colLen = sizeListColumns;
+											generateCode.dynamic_index = dynamic_index;
+											generateCode.generateDynamicSchemaCode(false,dynamicColumnlength); //false: delimited mode
+											rowUtil.callValueToConnWithD("fid_"+cid, firstConnName, "dynamic_"+cid);
+										}else{
+											rowUtil.callValueToConn("fid_"+cid, firstConnName);
+										}
+										%>
+										
+										if(rowstate_<%=cid%>.getException()!=null) {
+											throw rowstate_<%=cid%>.getException();
+										}
+										
+										<%
+										
+										if(rejectConnName.equals(firstConnName)) {
+										%> 
+											<%=firstConnName %> = null; 
+										<%
+										}
+										%>
+							
+			    					} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			        					whetherReject_<%=cid%> = true;
+			        					<%
+			        					if (dieOnError) {
+			            				%>
+			            					throw(e);
+			            				<%
+			        					} else {
+											if(isLog4jEnabled){%>
+												log.error("<%=cid%> - " +e.getMessage());
+											<%}
+			            					if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+							                %>                    
+			                    				<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+				                				<%rowUtil.callConnToConn(firstConnName, rejectConnName);%>
+				                				<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+			                					<%=firstConnName %> = null;
+			                				<%
+			            					} else if(("").equals(rejectConnName)){
+			                				%>
+			                					System.err.println(e.getMessage());
+			                					<%=firstConnName %> = null;
+			                				<%
+			            					} else if(rejectConnName.equals(firstConnName)){%>
+			            						<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+			            					<%
+			            			} %>
+										<%
+			        					} 
+			        					%>
+			    					}
+								<%
+								}
+							}
+							if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {//no use code, we can link only one main line now.
+								boolean isFirstEnter = true;
+								for (int i=0;i<conns.size();i++) {
+									IConnection conn = conns.get(i);
+									if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+									
+										if(isFirstEnter) {
+										%>
+											if(!whetherReject_<%=cid%>) { 
+												<%isFirstEnter = false; 
+										}
+										%>      
+			             				if(<%=conn.getName() %> == null){ 
+			            	 				<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+			             				}				
+										<%
+						    	 		rowUtil.callConnToConn(firstConnName, conn.getName());
+									}
+								}
+								 
+								if(!isFirstEnter) {
+								%> 
+									} 
+								<%
+								}
+								
+							}
+				  		}
+			}
+		}
+		if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Retrieving the record " + fid_<%=cid %>.getRowNumber() + ".");
+		<%}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	}else{//the following is the tFileInputCSV component
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		final String delim1 = ElementParameterParser.getValue(node, "__FIELDSEPARATOR__");
+		class RowUtil extends DefaultRowUtil{
+			public void codeForValueToConn(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, int start , int end){
+				codeForValueToConnWithD(node, metadata, sourceValueClass, sourceValueName, targetConnName, null, start ,end);
+			}
+			public boolean codeForValueToConnWithD(INode node, IMetadataTable metadata, String sourceValueClass, String sourceValueName, String targetConnName, String dynamicName, int start , int end){
+				cid = node.getUniqueName();
+				String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+				
+				List<Map<String, String>> trimSelects = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__TRIMSELECT__");
+				String isTrimAllStr = ElementParameterParser.getValue(node,"__TRIMALL__");
+				boolean isTrimAll = (isTrimAllStr!=null&&!("").equals(isTrimAllStr))?("true").equals(isTrimAllStr):true;
+				
+				List<Map<String, String>> decodeClns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__DECODE_COLS__");
+				boolean isEnableDecode = ("true").equals(ElementParameterParser.getValue(node,"__ENABLE_DECODE__"));
+				
+				String checkDateStr = ElementParameterParser.getValue(node,"__CHECK_DATE__");
+				boolean checkDate = (checkDateStr!=null&&!("").equals(checkDateStr))?("true").equals(checkDateStr):false;
+				
+				String checkNumStr = ElementParameterParser.getValue(node, "__CHECK_FIELDS_NUM__");
+				boolean checkNum = (checkNumStr!=null&&!("").equals(checkNumStr))?("true").equals(checkNumStr):false; 
+				
+				String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+				boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+				String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+				String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER);
+				
+				List<IMetadataColumn> columns=metadata.getListColumns();
+				int columnSize = columns.size();
+				if(metadata.isDynamicSchema()){
+				%>				
+	                int dynamic_column_count_<%=cid%>=<%if(this.isBehindDynamic){%><%=dynamicName%>.getColumnCount()<%}else{%>1<%}%>;
+				<%
+				}
+				%>
+				char fieldSeparator_<%=cid %>_ListType[] = null;
+				//support passing value (property: Field Separator) by 'context.fs' or 'globalMap.get("fs")'. 
+				if ( ((String)<%=delim1%>).length() > 0 ){
+					fieldSeparator_<%=cid %>_ListType = ((String)<%=delim1%>).toCharArray();
+				}else {			
+					throw new IllegalArgumentException("Field Separator must be assigned a char."); 
+				}
+				if(<%=sourceValueName%>.length == 1 && ("\015").equals(<%=sourceValueName%>[0])){//empty line when row separator is '\n'
+					<%
+					for(int colNo=start;colNo<end;colNo++) {
+						IMetadataColumn column1 =metadata.getListColumns().get(colNo);
+						if("id_Dynamic".equals(column1.getTalendType())) {
+					%>
+    						<%=targetConnName %>.<%=column1.getLabel() %> = <%=dynamicName%>.copyMetadata();
+					<%
+						} else {
+					%>
+							<%=targetConnName %>.<%=column1.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaIdType(column1.getTalendType(), column1.isNullable())%>;
+					<%
+						}
+					}
+					%>
+				}else{
+					<%if(isTrimAll){%>
+					for(int i_<%=cid%>=0;i_<%=cid%><<%=sourceValueName%>.length;i_<%=cid%>++){
+						<%=sourceValueName%>[i_<%=cid%>]=<%=sourceValueName%>[i_<%=cid%>].trim();
+					}
+					<%
+					}
+					boolean hasStringDefault = false;
+					for (int valueM=0; valueM<columnSize; valueM++) {
+						IMetadataColumn column = columns.get(valueM);
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT){
+							if(hasStringDefault==false && column.getDefault()!=null && column.getDefault().length() > 0 ){
+								hasStringDefault = true;
+								break;
+							}
+						}
+					}
+					
+					if(hasStringDefault==true){
+					%>
+						String temp = "";
+					<%
+					}
+					int dynamic_index = 1;
+	                %>
+	                int columnIndexWithD_<%=cid%> = 0; //Column Index 
+	                <%
+	                String isDecodeNumber = "false";
+					for (int i=start;i<end;i++) {
+						IMetadataColumn column=columns.get(i);
+						String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+						JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+						String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+						if (decodeClns !=null && decodeClns.size() > i) { 
+							isDecodeNumber = ("true").equals(decodeClns.get(i).get("DECODE"))?"true":"false";
+						}
+						if(metadata.isDynamicSchema()){
+						%>
+						columnIndexWithD_<%=cid%> = <%=i-1 %> + dynamic_column_count_<%=cid%>;
+						<%
+						}else{
+						%>
+						columnIndexWithD_<%=cid%> = <%=i%>;
+						<%
+						}
+						%>
+						
+						<%if(!"id_Dynamic".equals(column.getTalendType())) {%>
+						if(columnIndexWithD_<%=cid%> < <%=sourceValueName%>.length){
+						<%}%>
+						
+							<%if((!isTrimAll && (!trimSelects.isEmpty() && ("true").equals(trimSelects.get(i).get("TRIM"))))){%>	
+							<%=sourceValueName%>[columnIndexWithD_<%=cid%>]=<%=sourceValueName%>[columnIndexWithD_<%=cid%>].trim();			
+							<%
+							}
+							if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) {
+								String defaultValue = column.getDefault();
+								if(defaultValue!=null && defaultValue.length()>0){
+								%>
+									temp = <%=sourceValueName%>[columnIndexWithD_<%=cid%>];
+									if(temp.length() > 0){
+										<%=targetConnName %>.<%=column.getLabel() %> = temp;
+									}else{
+										<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+									}
+								<%
+								}else{
+								%>
+									<%=targetConnName %>.<%=column.getLabel() %> = <%=sourceValueName%>[columnIndexWithD_<%=cid%>];
+								<%
+								}
+							} else {
+							%>
+								<%if(!"id_Dynamic".equals(column.getTalendType())) {%>
+									if(<%=sourceValueName%>[columnIndexWithD_<%=cid%>].length() > 0) {
+										try {
+									<%
+									if(javaType == JavaTypesManager.DATE) {
+										if(checkNum || checkDate){
+										%>
+											<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(<%=sourceValueName%>[columnIndexWithD_<%=cid%>], <%= patternValue %>, false);
+										<%
+										}else{
+										%>
+											<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(<%=sourceValueName%>[columnIndexWithD_<%=cid%>], <%= patternValue %>);
+										<%
+										}
+									} else if(advancedSeparator && JavaTypesManager.isNumberType(javaType, column.isNullable())) {
+										if (JavaTypesManager.isNumberIntType(javaType)) {
+									%>
+										<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(<%=sourceValueName%>[columnIndexWithD_<%=cid%>], <%= thousandsSeparator %>, <%= decimalSeparator %>)<%=isEnableDecode?","+isDecodeNumber:""%>);
+									<%
+										} else {
+									%>
+										<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(ParserUtils.parseTo_Number(<%=sourceValueName%>[columnIndexWithD_<%=cid%>], <%= thousandsSeparator %>, <%= decimalSeparator %>));
+									<%
+										}
+									}else if(javaType == JavaTypesManager.BYTE_ARRAY){ 
+									%>							
+		    							<%=targetConnName %>.<%=column.getLabel() %> = <%=sourceValueName%>[columnIndexWithD_<%=cid%>].getBytes(<%=encoding %>);
+									<%
+									}else if(javaType == JavaTypesManager.LIST){ 
+                                    %>                          
+                                        <%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_List(<%=sourceValueName%>[columnIndexWithD_<%=cid%>],String.valueOf(fieldSeparator_<%=cid %>_ListType[0]));
+                                    <%
+									}else if (JavaTypesManager.isNumberIntType(javaType)) {
+									%>
+										<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(<%=sourceValueName%>[columnIndexWithD_<%=cid%>]<%=isEnableDecode?","+isDecodeNumber:""%>);
+									<%
+									}else {
+									%>
+										<%=targetConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(<%=sourceValueName%>[columnIndexWithD_<%=cid%>]);
+									<%
+									}
+									%>
+									
+										} catch(java.lang.Exception ex_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+											rowstate_<%=cid%>.setException(new RuntimeException(String.format("Couldn't parse value for column '%s' in '%s', value is '%s'. Details: %s",
+												"<%= column.getLabel() %>", "<%=targetConnName %>", <%=sourceValueName%>[columnIndexWithD_<%=cid%>], ex_<%=cid%>), ex_<%=cid%>));
+										}
+    								}else{
+    									<%
+    									String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+    									boolean isJavaPrimitiveType = JavaTypesManager.isJavaPrimitiveType(javaType,column.isNullable());
+    									if((isJavaPrimitiveType && (column.getDefault()==null || column.getDefault().length() == 0))) {
+    									%>
+    										rowstate_<%=cid%>.setException(new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=targetConnName %>' connection, value is invalid or this column should be nullable or have a default value."));
+    									<%
+    									} else {
+    									%>
+											<%
+											if (!JavaTypesManager.NULL.equals(defaultValue)) {
+											%>
+											try {
+												<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+											} catch(java.lang.Exception ex_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+												rowstate_<%=cid%>.setException(new RuntimeException(String.format("Couldn't set default value for column '%s' in '%s'. Details: %s",
+													"<%= column.getLabel() %>", "<%=targetConnName %>", ex_<%=cid%>), ex_<%=cid%>));
+											}
+											<%
+											} else {
+											%>
+												<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+											<%
+											}
+											%>
+    									<%
+    									}
+    									%>
+    								}
+									
+								<%
+								} else {
+									this.isBehindDynamic=true;
+									dynamic_index = i;
+								%>
+								    dynamic_column_count_<%=cid%> = <%=dynamicName%>.getColumnCount();
+									if(dynamic_column_count_<%=cid%> > 0) {
+										<%=targetConnName %>.<%=column.getLabel() %> = <%=dynamicName%>.copyMetadata();
+									}
+									int fieldCount = <%=sourceValueName%>.length;
+									
+									<%if(!useExistingDynamic){%>
+									for (int i = 0; i < dynamic_column_count_<%=cid%>; i++) {
+										if ((<%=dynamic_index%>+i) < fieldCount) {
+											<%=targetConnName %>.<%=column.getLabel() %>.addColumnValue(<%=sourceValueName%>[<%=dynamic_index%>+i]);
+										} else {
+											<%=targetConnName %>.<%=column.getLabel() %>.addColumnValue("");
+										}
+									}
+									<%} else {%>
+									int maxColumnNumberInDynamicColumn_<%=cid%> = fieldCount - <%=columnSize - 1%>;
+									for (int i = 0; i < dynamic_column_count_<%=cid%>; i++) {
+										Object v_<%=cid%> = null;
+										final routines.system.DynamicMetadata dynamicMetadata_<%=cid%> = <%=dynamicName%>.getColumnMetadata(i);
+										if ((<%=dynamic_index%>+i) < fieldCount && i < maxColumnNumberInDynamicColumn_<%=cid%>){<%//B1 start%>
+											final String tempValue_<%=cid%> = <%=sourceValueName%>[<%=dynamic_index%>+i];
+											final String separator_<%=cid%> = String.valueOf(fieldSeparator_<%=cid %>_ListType[0]);
+											
+											<%@ include file="./use_existing_schema.javajet"%>
+									}
+			
+									dynamic_column_count_<%=cid%> = maxColumnNumberInDynamicColumn_<%=cid%>;
+									<%}%>
+									
+								<%
+								}
+							}
+							%>	
+							
+						<%if(!"id_Dynamic".equals(column.getTalendType())) {%>
+						}else{
+						<%
+						String defaultValue = JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate, column.getDefault());
+						boolean isJavaPrimitiveType = JavaTypesManager.isJavaPrimitiveType(javaType,column.isNullable());
+						if((isJavaPrimitiveType && (column.getDefault()==null || column.getDefault().length() == 0))) {
+						%>
+							rowstate_<%=cid%>.setException(new RuntimeException("Value is empty for column : '<%= column.getLabel() %>' in '<%=targetConnName %>' connection, value is invalid or this column should be nullable or have a default value."));
+						<%
+						} else {
+						%>
+							<%
+							if (!JavaTypesManager.NULL.equals(defaultValue)) {
+							%>
+							try {
+								<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+							} catch(java.lang.Exception ex_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+								rowstate_<%=cid%>.setException(new RuntimeException(String.format("Couldn't set default value for column '%s' in '%s'. %s",
+									"<%= column.getLabel() %>", "<%=targetConnName %>", ex_<%=cid%>), ex_<%=cid%>));
+							}
+							<%
+							} else {
+							%>
+								<%=targetConnName %>.<%=column.getLabel() %> = <%=defaultValue %>;
+							<%
+							}
+							%>
+						<%
+						}
+						%>
+						}
+						<%}%>
+						
+					<%
+					}
+					%>
+				}
+				<%if(checkNum) {%>
+ 					int filedsum = <%=sourceValueName%>.length;
+ 					if(filedsum < (<%=metadata.getListColumns().size() %> <%if(metadata.isDynamicSchema()){%>+ dynamic_column_count_<%=cid%>-1<%}%>)){
+ 						throw new java.lang.Exception("Column(s) missing");
+ 					} else if(filedsum > (<%=metadata.getListColumns().size() %> <%if(metadata.isDynamicSchema()){%>+ dynamic_column_count_<%=cid%> -1<%}%>)) {
+ 						throw new RuntimeException("Too many columns");
+ 					}     
+				<%
+				}
+				return this.isBehindDynamic;
+			}
+			
+			public void codeForConnToConn(INode node, IMetadataTable metadata, String sourceConnName, String targetConnName, int start , int end){
+    			for(int colNum=start;colNum<end;colNum++) {
+    				IMetadataColumn column=metadata.getListColumns().get(colNum);
+    			%>
+    				<%=targetConnName%>.<%=column.getLabel()%> = <%=sourceConnName%>.<%=column.getLabel()%>;
+				<%
+				}
+				%>
+			<%
+			}
+		}//class defined end
+		
+		if ((metadatas!=null)&&(metadatas.size()>0)) {
+		    if (metadata!=null) {
+		    
+		        String filename = ElementParameterParser.getValueWithUIFieldKey(node,"__FILENAME__", "FILENAME");
+		    	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+		    	String header = ElementParameterParser.getValue(node, "__HEADER__");
+		    	String footer = ElementParameterParser.getValue(node, "__FOOTER__");
+		    	String limit = ElementParameterParser.getValue(node, "__LIMIT__");
+		    	if(("").equals(limit)){
+		    		limit="-1";
+		    	}
+		    	  	
+		    	String rowSeparator1 = ElementParameterParser.getValue(node, "__CSVROWSEPARATOR__");
+		    	
+		    	
+		    	String escapeChar1 = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+		    	
+		    	if(("").equals(escapeChar1)){
+		    		escapeChar1 = "\"\"";
+		    	}
+		    	String escapeChar = escapeChar1.substring(1,escapeChar1.length()-1);
+		    	if(("'").equals(escapeChar)){
+		    		escapeChar = "\\'";
+		    	}
+		    	String textEnclosure1 = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+		    	if(("").equals(textEnclosure1)){
+		    		textEnclosure1 = "\"\"";
+		    	}
+		    	String textEnclosure = textEnclosure1.substring(1,textEnclosure1.length()-1);
+		    	if ("".equals(textEnclosure)) 
+		    		textEnclosure = "\0";
+		    	if(("'").equals(textEnclosure)){
+		    		textEnclosure = "\\'";
+		    	}
+		    	
+		    	String removeEmptyRow = ElementParameterParser.getValue(node, "__REMOVE_EMPTY_ROW__");
+		    	
+		    	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+				boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;
+				
+				boolean uncompress = ("true").equals(ElementParameterParser.getValue(node,"__UNCOMPRESS__"));
+				if(uncompress){
+					footer = "0";
+				}
+				
+				List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+			    String rejectConnName = "";
+    			List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    			if(rejectConns != null && rejectConns.size() > 0) {
+        			IConnection rejectConn = rejectConns.get(0);
+        			rejectConnName = rejectConn.getName();
+   				}
+    			List<IMetadataColumn> rejectColumnList = null;
+    			IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    			if(metadataTable != null) {
+        			rejectColumnList = metadataTable.getListColumns();      
+    			}
+    			String firstConnName = "";
+				if (conns!=null) {
+					if (conns.size()>0) {
+						IConnection conn = conns.get(0);
+						if(conn!=null && conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+							firstConnName = conn.getName();		
+						}
+					}
+				}
+				
+				RowUtil rowUtil = new RowUtil(); 
+				if (conns!=null) {
+				    if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {
+						if(hasDynamic){
+							rowUtil.prepareValueToConnWithD(node, metadata, "String[]", "row"+cid, firstConnName, "dynamic_"+cid, schemaOptNum);
+							%>
+							boolean isFirstCheckDyn_<%=cid %> = true;
+							routines.system.Dynamic dynamic_<%=cid %> = new routines.system.Dynamic();
+						<%
+						}else{
+							rowUtil.prepareValueToConn(node, metadata, "String[]", "row"+cid, firstConnName, schemaOptNum);
+						}
+						if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+							rowUtil.prepareConnToConn(metadata, firstConnName, rejectConnName);
+						}
+						rowUtil.generateClass();
+					}
+				}	
+				%>
+				int nb_line_<%=cid%> = 0;
+				int footer_<%=cid %> = <%= footer%>;
+				int totalLine<%=cid %> = 0;
+				int limit<%=cid %> = <%= limit %>;
+				int lastLine<%=cid %> = -1;	
+				
+				char fieldSeparator_<%=cid %>[] = null;
+				
+				//support passing value (property: Field Separator) by 'context.fs' or 'globalMap.get("fs")'. 
+				if ( ((String)<%=delim1%>).length() > 0 ){
+					fieldSeparator_<%=cid %> = ((String)<%=delim1%>).toCharArray();
+				}else {			
+					throw new IllegalArgumentException("Field Separator must be assigned a char."); 
+				}
+			
+				char rowSeparator_<%=cid %>[] = null;
+			
+				//support passing value (property: Row Separator) by 'context.rs' or 'globalMap.get("rs")'. 
+				if ( ((String)<%=rowSeparator1%>).length() > 0 ){
+					rowSeparator_<%=cid %> = ((String)<%=rowSeparator1%>).toCharArray();
+				}else {
+					throw new IllegalArgumentException("Row Separator must be assigned a char."); 
+				}
+			
+				Object filename_<%=cid %> = <%=filename %>;		
+				com.talend.csv.CSVReader csvReader<%=cid %> = null;
+	
+				try{
+					<%
+					if(uncompress){
+					%>
+	        			java.util.zip.ZipInputStream zis_<%=cid %> = null;
+	        			try {
+		        			if(filename_<%=cid %> instanceof java.io.InputStream){
+		        				zis_<%=cid %> = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream((java.io.InputStream)filename_<%=cid %>));
+		        			}else{
+		        				zis_<%=cid %> = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(new java.io.FileInputStream(String.valueOf(filename_<%=cid %>))));
+		        			}
+	        			} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	        				<% if(dieOnError) {%>
+								throw e;
+							<% } else { %>
+								<%if(isLog4jEnabled){%>
+									log.error("<%=cid%> - " + e.getMessage());
+								<%}%>
+								System.err.println(e.getMessage());
+							<% } %>
+	        			}
+	        			java.util.zip.ZipEntry entry_<%=cid %> = null;
+		        
+				        while (true) {
+			        		try {
+	        					entry_<%=cid %> = zis_<%=cid %>.getNextEntry();
+	        				} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+	        					<% if(dieOnError) {%>
+									throw e;
+								<% } else { %>
+									<%if(isLog4jEnabled){%>
+										log.error("<%=cid%> - " + e.getMessage());
+									<%}%>
+									System.err.println(e.getMessage());
+									break;
+								<% } %>
+	        				}
+	        				if(entry_<%=cid %> == null) {
+								break;
+							}
+	        				if(entry_<%=cid %>.isDirectory()){ //directory
+	        					continue;
+	        				}
+	        				String[] row<%=cid %>=null;
+	        				int currentLine<%=cid %> = 0;
+	        				int outputLine<%=cid %> = 0;
+	        				try {//TD110 begin
+	        					csvReader<%=cid %>=new com.talend.csv.CSVReader(zis_<%=cid %>, fieldSeparator_<%=cid %>[0], <%=encoding %>);
+					<%
+					}else{
+					%>
+						String[] row<%=cid %>=null;
+						int currentLine<%=cid %> = 0;
+	        			int outputLine<%=cid %> = 0;
+						try {//TD110 begin
+							if(filename_<%=cid %> instanceof java.io.InputStream){
+							<%
+								generateCode.checkFooter(footer);
+							%>
+								csvReader<%=cid %>=new com.talend.csv.CSVReader((java.io.InputStream)filename_<%=cid %>, fieldSeparator_<%=cid %>[0], <%=encoding %>);
+							}else{
+								csvReader<%=cid %>=new com.talend.csv.CSVReader(String.valueOf(filename_<%=cid %>),fieldSeparator_<%=cid %>[0], <%=encoding %>);
+		        			}
+					<%
+					}
+					%>
+					
+					csvReader<%=cid %>.setTrimWhitespace(false);
+					if ( (rowSeparator_<%=cid %>[0] != '\n') && (rowSeparator_<%=cid %>[0] != '\r') )
+	        			csvReader<%=cid %>.setLineEnd(""+rowSeparator_<%=cid %>[0]);
+						<%
+						if(("").equals(textEnclosure1) || textEnclosure1.startsWith("\"")){//normal situation
+						%>
+	        				csvReader<%=cid %>.setQuoteChar('<%=textEnclosure %>');
+						<%
+						}else{ //context and global variables
+						%>
+							String textEnclosure1_<%=cid %> = <%=textEnclosure1 %>; 
+							char textEnclosure_<%=cid %>[] = null;
+			        
+	    				    if(((String)textEnclosure1_<%=cid %>).length() > 0 ){ 
+	  							textEnclosure_<%=cid %> = ((String)textEnclosure1_<%=cid %>).toCharArray(); 
+							}else { 
+	            				throw new IllegalArgumentException("Text Enclosure must be assigned a char."); 
+	        				}
+							csvReader<%=cid %>.setQuoteChar(textEnclosure_<%=cid %>[0]); 
+						<%
+						}
+					
+						if(("").equals(escapeChar1) || escapeChar1.startsWith("\"")){//normal situation
+	        				if(("\\\\").equals(escapeChar)){
+	        				%>
+	            				csvReader<%=cid %>.setEscapeChar('\\');
+							<%
+	        				}else if(escapeChar.equals(textEnclosure)){
+	        				%>
+	            				csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+							<%
+	        				}else{
+	        				%>
+	            				//?????doesn't work for other escapeChar
+	            				//the default escape mode is double escape
+	            				csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+							<%
+	        				}
+	        			}else{//context and global variables
+	 					%> 
+		        			String escapeChar1_<%=cid %> = <%=escapeChar1 %>;          
+		        			char escapeChar_<%=cid %>[] = null;
+			        
+					        if(((String)escapeChar1_<%=cid %>).length() > 0 ){ 
+					        	escapeChar_<%=cid %> = ((String)escapeChar1_<%=cid %>).toCharArray(); 
+					  		}else { 
+		        			    throw new IllegalArgumentException("Escape Char must be assigned a char."); 
+		        			}
+		       				if(escapeChar_<%=cid %>[0] == '\\'){
+		       					csvReader<%=cid %>.setEscapeChar('\\');
+		       				}else if(escapeChar_<%=cid %>[0] ==<%if(("").equals(textEnclosure1) || textEnclosure1.startsWith("\"")){%>'<%=textEnclosure %>'<%}else{%>textEnclosure_<%=cid %>[0]<%}%>){
+		       					csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+		       				} else {
+		       					//the default escape mode is double escape
+		       					csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+		       				}
+						<%
+						}
+						%>      
+		
+			
+						if(footer_<%=cid %> > 0){
+						for(totalLine<%=cid %>=0;totalLine<%=cid %> < <%= header %>; totalLine<%=cid %>++){
+							csvReader<%=cid %>.readNext();
+						}
+						csvReader<%=cid %>.setSkipEmptyRecords(<%=removeEmptyRow %>);
+			            while (csvReader<%=cid %>.readNext()) {
+							<%
+						   	if(("true").equals(removeEmptyRow)){
+						   	%>
+								row<%=cid %>=csvReader<%=cid %>.getValues();
+								if(!(row<%=cid %>.length == 1 && ("\015").equals(row<%=cid %>[0]))){//empty line when row separator is '\n'
+							<%
+							}
+							%>
+	                
+	                		totalLine<%=cid %>++;
+	                
+							<%
+							if(("true").equals(removeEmptyRow)){
+							%>
+								}
+							<%
+							}
+							%>
+	                
+			            }
+	            		int lastLineTemp<%=cid %> = totalLine<%=cid %> - footer_<%=cid %>   < 0? 0 : totalLine<%=cid %> - footer_<%=cid %> ;
+	            		if(lastLine<%=cid %> > 0){
+	                		lastLine<%=cid %> = lastLine<%=cid %> < lastLineTemp<%=cid %> ? lastLine<%=cid %> : lastLineTemp<%=cid %>; 
+	            		}else {
+	                		lastLine<%=cid %> = lastLineTemp<%=cid %>;
+	            		}
+	         
+			          	csvReader<%=cid %>.close();
+				        if(filename_<%=cid %> instanceof java.io.InputStream){
+				 			csvReader<%=cid %>=new com.talend.csv.CSVReader((java.io.InputStream)filename_<%=cid %>, fieldSeparator_<%=cid %>[0], <%=encoding %>);
+		        		}else{
+							csvReader<%=cid %>=new com.talend.csv.CSVReader(String.valueOf(filename_<%=cid %>),fieldSeparator_<%=cid %>[0], <%=encoding %>);
+						}
+						csvReader<%=cid %>.setTrimWhitespace(false);
+						if ( (rowSeparator_<%=cid %>[0] != '\n') && (rowSeparator_<%=cid %>[0] != '\r') )	
+	        				csvReader<%=cid %>.setLineEnd(""+rowSeparator_<%=cid %>[0]);
+						<%
+						if(("").equals(textEnclosure1) || textEnclosure1.startsWith("\"")){//normal situation
+						%>
+							csvReader<%=cid %>.setQuoteChar('<%=textEnclosure %>');
+						<%
+						}else{
+						%>
+							csvReader<%=cid %>.setQuoteChar(textEnclosure_<%=cid %>[0]);
+						<%
+						}
+						if(("").equals(escapeChar1) || escapeChar1.startsWith("\"")){//normal situation
+	        				if(("\\\\").equals(escapeChar)){
+	        				%>
+	        				csvReader<%=cid %>.setEscapeChar('\\');
+							<%
+	        				}else if(escapeChar.equals(textEnclosure)){
+	        				%>
+	        				csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+							<%
+	        				}else{
+	        				%>
+	        				//?????doesn't work for other escapeChar
+	        				//the default escape mode is double escape
+	        				csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+							<%
+	        				}
+	        			}else{//context and global variables
+						%> 
+	       					if(escapeChar_<%=cid %>[0] == '\\'){
+	       						csvReader<%=cid %>.setEscapeChar('\\');
+	       					}else if(escapeChar_<%=cid %>[0] == <%if(("").equals(textEnclosure1) || textEnclosure1.startsWith("\"")){%>'<%=textEnclosure %>'<%}else{%>textEnclosure_<%=cid %>[0]<%}%>){
+	       						csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+	       					} else {
+	       						//the default escape mode is double escape
+	        					csvReader<%=cid %>.setEscapeChar(csvReader<%=cid %>.getQuoteChar());
+	       					}
+						<%
+	        			}
+	        			%>  
+	        		}
+	        
+			        if(limit<%=cid%> != 0){
+			        	for(currentLine<%=cid %>=0;currentLine<%=cid %> < <%= header %><%=(hasDynamic&&!useExistingDynamic)?"-1":""%>;currentLine<%=cid %>++){
+			        		csvReader<%=cid %>.readNext();
+			        	}
+			        }
+			        csvReader<%=cid %>.setSkipEmptyRecords(<%=removeEmptyRow %>);
+	        
+	    		} catch(java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+					<% if(dieOnError) {%>
+						throw e;
+					<% } else { %>
+						<%if(isLog4jEnabled){%>
+							log.error("<%=cid%> - " +e.getMessage());
+						<%}%>
+						System.err.println(e.getMessage());
+					<% } %>
+	    		}//TD110 end
+	        
+			    <%if(isLog4jEnabled){%>
+			    	log.info("<%=cid%> - Retrieving records from the datasource.");
+			    <%}%>
+	        	while ( limit<%=cid%> != 0 && csvReader<%=cid %>!=null && csvReader<%=cid %>.readNext() ) { 
+	        		rowstate_<%=cid%>.reset();
+	        
+		        	row<%=cid %>=csvReader<%=cid %>.getValues();
+		        	
+					<%
+	   				if(("true").equals(removeEmptyRow)){
+	   				%>
+	        			if(row<%=cid %>.length == 1 && ("\015").equals(row<%=cid %>[0])){//empty line when row separator is '\n'
+	        				continue;
+	        			}
+					<%
+					}
+					%>
+	        	
+	        	
+	        		currentLine<%=cid %>++;
+	            
+		            if(lastLine<%=cid %> > -1 && currentLine<%=cid %> > lastLine<%=cid %>) {
+		                break;
+	    	        }
+	        	    outputLine<%=cid %>++;
+	            	if (limit<%=cid %> > 0 && outputLine<%=cid %> > limit<%=cid %>) {
+	                	break;
+	            	}  
+	                                                                      
+					<%
+			    	if (conns!=null) {
+	    				if (conns.size()>0 && firstConnName != null && firstConnName.length()>0) {
+	    					for (int i=0;i<conns.size();i++) {
+	    						IConnection connTemp = conns.get(i);
+	    						if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+								%>
+	    							<%=connTemp.getName() %> = null;			
+								<%
+	    						}
+	    					}
+	    					
+							IConnection conn = conns.get(0);
+							if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+							%>
+								boolean whetherReject_<%=cid %> = false;
+								<%=firstConnName %> = new <%=conn.getName() %>Struct();
+								try {			
+									<%
+									List<IMetadataColumn> columns=metadata.getListColumns();
+									int columnSize = columns.size();
+									if(hasDynamic){// generate the dynamic schema code
+										generateCode.colLen = columnSize;
+										generateCode.dynamic_index = dynamic_index;
+										generateCode.generateDynamicSchemaCode(true,dynamicColumnlength); //true: CSV mode
+										rowUtil.callValueToConnWithD("row"+cid, firstConnName, "dynamic_"+cid);
+									}else{
+										rowUtil.callValueToConn("row"+cid, firstConnName);
+									}
+									%>
+									
+									if(rowstate_<%=cid%>.getException()!=null) {
+										throw rowstate_<%=cid%>.getException();
+									}
+									
+									<%
+									if(rejectConnName.equals(firstConnName)) {
+									%> 
+										<%=firstConnName %> = null; 
+									<%
+									}
+									%>
+	    						} catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+							        whetherReject_<%=cid%> = true;
+        							<%
+        							if (dieOnError) {
+            						%>
+            							throw(e);
+            						<%
+        							} else {
+								        if(isLog4jEnabled){%>
+											log.error("<%=cid%> - " +e.getMessage());
+										<%}
+            							if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+						                %>
+						                    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+                							<%
+                							rowUtil.callConnToConn(firstConnName, rejectConnName);
+                							%>
+                							<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                							<%=firstConnName %> = null;
+                						<%
+            							} else if(("").equals(rejectConnName)){
+                						%>
+                							System.err.println(e.getMessage());
+                							<%=firstConnName %> = null;
+                						<%	
+            							} else if(rejectConnName.equals(firstConnName)){
+            							%>
+            								<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+            							<%
+            							} %>
+            							globalMap.put("<%=cid %>_ERROR_MESSAGE", e.getMessage());
+            							<%
+        							} 
+        							%>
+	    						}
+	
+							<%			
+							}
+						}
+						if (conns.size()>0) {	
+							boolean isFirstEnter = true;
+							for (int i=0;i<conns.size();i++) {
+								IConnection conn = conns.get(i);
+								if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+									if(isFirstEnter) {
+									%>
+										if(!whetherReject_<%=cid%>) { 
+											<%isFirstEnter = false; 
+									}
+									%>      
+	             					if(<%=conn.getName() %> == null){ 
+	            	 					<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+	             					}
+									<%
+        							rowUtil.callConnToConn(firstConnName, conn.getName());
+								}
+							}
+							if(!isFirstEnter) {
+							%> 
+								} 
+							<%
+							}
+						}
+					}
+			}
+		}
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		if(isLog4jEnabled){%>
+			log.debug("<%=cid%> - Retrieving the record " + (nb_line_<%=cid%>+1) + ".");
+		<%}
+  	}
+	%>

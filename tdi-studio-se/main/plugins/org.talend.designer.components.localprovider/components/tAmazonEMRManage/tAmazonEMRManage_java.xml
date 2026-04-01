@@ -1,0 +1,604 @@
+<COMPONENT>
+	<HEADER PLATEFORM="ALL" SERIAL="" VERSION="0.101" STATUS="ALPHA"
+		COMPATIBILITY="ALL" AUTHOR="Talaxie" RELEASE_DATE="20151016A"
+		STARTABLE="true" LOG4J_ENABLED="true">
+		<SIGNATURE></SIGNATURE>
+	</HEADER>
+
+	<FAMILIES>
+		<FAMILY>Cloud/Amazon/EMR</FAMILY>
+	</FAMILIES>
+
+	<DOCUMENTATION>
+		<URL />
+	</DOCUMENTATION>
+
+	<CONNECTORS>
+		<CONNECTOR CTYPE="FLOW" MAX_INPUT="0" MAX_OUTPUT="0" />
+		<CONNECTOR CTYPE="ITERATE" MAX_OUTPUT="1" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="SUBJOB_OK" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="SUBJOB_ERROR" MAX_INPUT="1" />
+		<CONNECTOR CTYPE="COMPONENT_OK" />
+		<CONNECTOR CTYPE="COMPONENT_ERROR" />
+		<CONNECTOR CTYPE="RUN_IF" />
+	</CONNECTORS>
+
+	<PARAMETERS>
+		<PARAMETER NAME="ACCESS_KEY" FIELD="TEXT" NUM_ROW="10"
+			GROUP="AUTHENTICATION"
+			SHOW_IF="INHERIT_CREDENTIALS == 'false'">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="SECRET_KEY" FIELD="PASSWORD" NUM_ROW="10"
+			GROUP="AUTHENTICATION"
+			SHOW_IF="INHERIT_CREDENTIALS == 'false'">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="INHERIT_CREDENTIALS" FIELD="CHECK" NUM_ROW="11" REQUIRED="true"
+			GROUP="AUTHENTICATION">
+      		<DEFAULT>false</DEFAULT>
+    	</PARAMETER>
+    	
+    	<PARAMETER NAME="ASSUME_ROLE" FIELD="CHECK" NUM_ROW="12" REQUIRED="true"
+			GROUP="AUTHENTICATION">
+      		<DEFAULT>false</DEFAULT>
+    	</PARAMETER>
+    	
+    	<PARAMETER NAME="ARN" FIELD="TEXT" NUM_ROW="13" REQUIRED="true"
+    		SHOW_IF="ASSUME_ROLE == 'true'"
+			GROUP="AUTHENTICATION">
+			<DEFAULT>""</DEFAULT>
+    	</PARAMETER>
+    	
+    	<PARAMETER NAME="ROLE_SESSION_NAME" FIELD="TEXT" NUM_ROW="14" REQUIRED="true"
+    		SHOW_IF="ASSUME_ROLE == 'true'"
+			GROUP="AUTHENTICATION">
+			<DEFAULT>""</DEFAULT>
+    	</PARAMETER>
+    	
+    	<PARAMETER NAME="SESSION_DURATION" FIELD="TEXT" NUM_ROW="15"
+    		SHOW_IF="ASSUME_ROLE == 'true'"
+			GROUP="AUTHENTICATION">
+			<DEFAULT>15</DEFAULT>
+    	</PARAMETER>
+
+		<PARAMETER NAME="ACTION" FIELD="CLOSED_LIST" NUM_ROW="16"
+			GROUP="CONFIGURATION">
+			<ITEMS DEFAULT="START">
+				<ITEM NAME="START" VALUE="START" />
+				<ITEM NAME="STOP" VALUE="STOP" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="REGION" FIELD="OPENED_LIST" NUM_ROW="20"
+			REQUIRED="true" GROUP="CONFIGURATION">
+			<ITEMS DEFAULT="DEFAULT">
+				<ITEM NAME="DEFAULT" VALUE="DEFAULT" />
+				<ITEM NAME="AP_SOUTHEAST_1" VALUE="&quot;ap-southeast-1&quot;" />
+				<ITEM NAME="AP_SOUTHEAST_2" VALUE="&quot;ap-southeast-2&quot;" />
+				<ITEM NAME="AP_NORTHEAST_1" VALUE="&quot;ap-northeast-1&quot;" />
+				<ITEM NAME="CN_NORTH_1" VALUE="&quot;cn-north-1&quot;" />
+				<ITEM NAME="EU_WEST_1" VALUE="&quot;eu-west-1&quot;" />
+				<ITEM NAME="EU_CENTRAL_1" VALUE="&quot;eu-central-1&quot;" />
+				<ITEM NAME="GovCloud" VALUE="&quot;us-gov-west-1&quot;" />
+				<ITEM NAME="SA_EAST_1" VALUE="&quot;sa-east-1&quot;" />
+				<ITEM NAME="US_EAST_1" VALUE="&quot;us-east-1&quot;" />
+				<ITEM NAME="US_WEST_1" VALUE="&quot;us-west-1&quot;" />
+				<ITEM NAME="US_WEST_2" VALUE="&quot;us-west-2&quot;" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="CLUSTER_NAME" FIELD="TEXT" NUM_ROW="30"
+			SHOW_IF="ACTION=='START'" GROUP="CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="CLUSTER_VERSION" FIELD="OPENED_LIST"
+			NUM_ROW="32" SHOW_IF="(ACTION=='START') AND (USE_CUSTOMIZE_VERSION == 'false')" GROUP="CONFIGURATION">
+			<ITEMS DEFAULT="EMR5_29_0">
+				<ITEM NAME="EMR5_29_0" VALUE="&quot;emr-5.29.0&quot;" />
+			    <ITEM NAME="EMR5_15_0" VALUE="&quot;emr-5.15.0&quot;" />
+			    <ITEM NAME="EMR5_11_0" VALUE="&quot;emr-5.11.0&quot;" />
+			    <ITEM NAME="EMR4_9_2" VALUE="&quot;emr-4.9.2&quot;" />
+				<ITEM NAME="EMR4_6_0" VALUE="&quot;emr-4.6.0&quot;" />
+				<ITEM NAME="EMR4_5_0" VALUE="&quot;emr-4.5.0&quot;" />			
+				<ITEM NAME="AMI3_10_0" VALUE="&quot;3.10.0&quot;" />
+				<ITEM NAME="AMI3_9_0" VALUE="&quot;3.9.0&quot;" />
+				<ITEM NAME="AMI3_8_0" VALUE="&quot;3.8.0&quot;" />
+				<ITEM NAME="AMI2_4_11" VALUE="&quot;2.4.11&quot;" />
+				<ITEM NAME="AMI2_4_10" VALUE="&quot;2.4.2&quot;" />
+			</ITEMS>
+		</PARAMETER>
+		
+		<PARAMETER NAME="APPLICATION" FIELD="CLOSED_LIST" NUM_ROW="32"
+			SHOW_IF="(ACTION=='START') AND (USE_CUSTOMIZE_VERSION == 'false') AND ((CLUSTER_VERSION=='EMR5_29_0') OR (CLUSTER_VERSION=='EMR5_15_0') OR (CLUSTER_VERSION=='EMR5_11_0') OR (CLUSTER_VERSION=='EMR4_9_2') OR (CLUSTER_VERSION=='EMR4_6_0') OR (CLUSTER_VERSION=='EMR4_5_0'))" GROUP="CONFIGURATION">
+
+			<ITEMS DEFAULT="CORE_HADOOP">
+				<ITEM NAME="ALL_APPLICATIONS" VALUE="ALL_APPLICATIONS" NOT_SHOW_IF="(CLUSTER_VERSION=='EMR4_6_0') OR (CLUSTER_VERSION=='EMR4_9_2') OR (CLUSTER_VERSION=='EMR5_11_0') OR (CLUSTER_VERSION=='EMR5_15_0') OR (CLUSTER_VERSION=='EMR5_29_0')"/>
+				<ITEM NAME="CORE_HADOOP" VALUE="CORE_HADOOP" />
+				<ITEM NAME="HBASE" VALUE="HBASE" SHOW_IF="(CLUSTER_VERSION=='EMR5_29_0') OR (CLUSTER_VERSION=='EMR5_11_0') OR (CLUSTER_VERSION=='EMR4_9_2') OR (CLUSTER_VERSION=='EMR4_6_0') OR (CLUSTER_VERSION=='EMR5_15_0')"/>
+				<ITEM NAME="PRESTO_SANDBOX" VALUE="PRESTO_SANDBOX" NOT_SHOW_IF="(CLUSTER_VERSION=='EMR5_11_0') OR (CLUSTER_VERSION=='EMR5_15_0') OR (CLUSTER_VERSION=='EMR5_29_0')"/>
+				<ITEM NAME="PRESTO" VALUE="PRESTO" SHOW_IF="(CLUSTER_VERSION=='EMR5_11_0') OR (CLUSTER_VERSION=='EMR5_15_0') OR (CLUSTER_VERSION=='EMR5_29_0')"/>
+				<ITEM NAME="SPARK" VALUE="SPARK" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="SERVICE_ROLE" FIELD="TEXT" NUM_ROW="35"
+			SHOW_IF="ACTION=='START'" GROUP="CONFIGURATION">
+			<DEFAULT>"EMR_DefaultRole"</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="JOBFLOW_ROLE" FIELD="TEXT" NUM_ROW="35"
+			SHOW_IF="ACTION=='START'" GROUP="CONFIGURATION">
+			<DEFAULT>"EMR_EC2_DefaultRole"</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ENABLE_LOG" FIELD="CHECK" NUM_ROW="40"
+			SHOW_IF="ACTION=='START'" GROUP="CONFIGURATION">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="LOG_URL" FIELD="TEXT" NUM_ROW="40"
+			SHOW_IF="isShow[ENABLE_LOG] AND (ENABLE_LOG=='true')" GROUP="CONFIGURATION">
+			<DEFAULT>"s3://myawsbucket-emr/"</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ENABLE_KEY_PAIR" FIELD="CHECK" NUM_ROW="50"
+			SHOW_IF="ACTION=='START'" GROUP="CONFIGURATION">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="KEY_PAIR" FIELD="TEXT" NUM_ROW="50"
+			SHOW_IF="isShow[ENABLE_KEY_PAIR] AND (ENABLE_KEY_PAIR=='true')"
+			GROUP="CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="INSTANCE_COUNT" FIELD="TEXT" NUM_ROW="52"
+			SHOW_IF="ACTION=='START' AND (USE_MULTIPLE_MASTER_NODES=='false')" GROUP="INSTANCE_CONFIGURATION">
+			<DEFAULT>3</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="SLAVE_INSTANCE_COUNT" FIELD="TEXT" NUM_ROW="52"
+			SHOW_IF="ACTION=='START' AND (USE_MULTIPLE_MASTER_NODES=='true')" GROUP="INSTANCE_CONFIGURATION">
+			<DEFAULT>2</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="MASTER_INSTANCE_TYPE" FIELD="OPENED_LIST"
+			NUM_ROW="55" SHOW_IF="ACTION=='START'" GROUP="INSTANCE_CONFIGURATION">
+			<ITEMS DEFAULT="m3.xlarge">
+				<ITEM NAME="m3.xlarge" VALUE="&quot;m3.xlarge&quot;" />
+				<ITEM NAME="m3.2xlarge" VALUE="&quot;m3.2xlarge&quot;" />
+				<ITEM NAME="c3.xlarge" VALUE="&quot;c3.xlarge&quot;" />
+				<ITEM NAME="c3.2xlarge" VALUE="&quot;c3.2xlarge&quot;" />
+				<ITEM NAME="c3.4xlarge" VALUE="&quot;c3.4xlarge&quot;" />
+				<ITEM NAME="c3.8xlarge" VALUE="&quot;c3.8xlarge&quot;" />
+				<ITEM NAME="g2.2xlarge" VALUE="&quot;g2.2xlarge&quot;" />
+				<ITEM NAME="r3.xlarge" VALUE="&quot;r3.xlarge&quot;" />
+				<ITEM NAME="r3.2xlarge" VALUE="&quot;r3.2xlarge&quot;" />
+				<ITEM NAME="r3.4xlarge" VALUE="&quot;r3.4xlarge&quot;" />
+				<ITEM NAME="r3.8xlarge" VALUE="&quot;r3.8xlarge&quot;" />
+				<ITEM NAME="i2.xlarge" VALUE="&quot;i2.xlarge&quot;" />
+				<ITEM NAME="i2.2xlarge" VALUE="&quot;i2.2xlarge&quot;" />
+				<ITEM NAME="i2.4xlarge" VALUE="&quot;i2.4xlarge&quot;" />
+				<ITEM NAME="i2.8xlarge" VALUE="&quot;i2.8xlarge&quot;" />
+				<ITEM NAME="hs1.8xlarge" VALUE="&quot;hs1.8xlarge&quot;" />
+				<ITEM NAME="d2.xlarge" VALUE="&quot;d2.xlarge&quot;" />
+				<ITEM NAME="d2.2xlarge" VALUE="&quot;d2.2xlarge&quot;" />
+				<ITEM NAME="d2.4xlarge" VALUE="&quot;d2.4xlarge&quot;" />
+				<ITEM NAME="d2.8xlarge" VALUE="&quot;d2.8xlarge&quot;" />
+				<ITEM NAME="m1.medium" VALUE="&quot;m1.medium&quot;" />
+				<ITEM NAME="m1.large" VALUE="&quot;m1.large&quot;" />
+				<ITEM NAME="m1.xlarge" VALUE="&quot;m1.xlarge&quot;" />
+				<ITEM NAME="c1.medium" VALUE="&quot;c1.medium&quot;" />
+				<ITEM NAME="c1.large" VALUE="&quot;c1.large&quot;" />
+				<ITEM NAME="cc2.8xlarge" VALUE="&quot;cc2.8xlarge&quot;" />
+				<ITEM NAME="cg1.4xlarge" VALUE="&quot;cg1.4xlarge&quot;" />
+				<ITEM NAME="cg1.4xlarge" VALUE="&quot;cg1.4xlarge&quot;" />
+				<ITEM NAME="m2.xlarge" VALUE="&quot;m2.xlarge&quot;" />
+				<ITEM NAME="m2.2xlarge" VALUE="&quot;m2.2xlarge&quot;" />
+				<ITEM NAME="m2.4xlarge" VALUE="&quot;m2.4xlarge&quot;" />
+				<ITEM NAME="cr1.8xlarge" VALUE="&quot;cr1.8xlarge&quot;" />
+				<ITEM NAME="hi1.4xlarge" VALUE="&quot;hi1.4xlarge&quot;" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="SLAVE_INSTANCE_TYPE" FIELD="OPENED_LIST"
+			NUM_ROW="55" SHOW_IF="ACTION=='START'" GROUP="INSTANCE_CONFIGURATION">
+			<ITEMS DEFAULT="m3.xlarge">
+				<ITEM NAME="m3.xlarge" VALUE="&quot;m3.xlarge&quot;" />
+				<ITEM NAME="m3.2xlarge" VALUE="&quot;m3.2xlarge&quot;" />
+				<ITEM NAME="c3.xlarge" VALUE="&quot;c3.xlarge&quot;" />
+				<ITEM NAME="c3.2xlarge" VALUE="&quot;c3.2xlarge&quot;" />
+				<ITEM NAME="c3.4xlarge" VALUE="&quot;c3.4xlarge&quot;" />
+				<ITEM NAME="c3.8xlarge" VALUE="&quot;c3.8xlarge&quot;" />
+				<ITEM NAME="g2.2xlarge" VALUE="&quot;g2.2xlarge&quot;" />
+				<ITEM NAME="r3.xlarge" VALUE="&quot;r3.xlarge&quot;" />
+				<ITEM NAME="r3.2xlarge" VALUE="&quot;r3.2xlarge&quot;" />
+				<ITEM NAME="r3.4xlarge" VALUE="&quot;r3.4xlarge&quot;" />
+				<ITEM NAME="r3.8xlarge" VALUE="&quot;r3.8xlarge&quot;" />
+				<ITEM NAME="i2.xlarge" VALUE="&quot;i2.xlarge&quot;" />
+				<ITEM NAME="i2.2xlarge" VALUE="&quot;i2.2xlarge&quot;" />
+				<ITEM NAME="i2.4xlarge" VALUE="&quot;i2.4xlarge&quot;" />
+				<ITEM NAME="i2.8xlarge" VALUE="&quot;i2.8xlarge&quot;" />
+				<ITEM NAME="hs1.8xlarge" VALUE="&quot;hs1.8xlarge&quot;" />
+				<ITEM NAME="d2.xlarge" VALUE="&quot;d2.xlarge&quot;" />
+				<ITEM NAME="d2.2xlarge" VALUE="&quot;d2.2xlarge&quot;" />
+				<ITEM NAME="d2.4xlarge" VALUE="&quot;d2.4xlarge&quot;" />
+				<ITEM NAME="d2.8xlarge" VALUE="&quot;d2.8xlarge&quot;" />
+				<ITEM NAME="m1.medium" VALUE="&quot;m1.medium&quot;" />
+				<ITEM NAME="m1.large" VALUE="&quot;m1.large&quot;" />
+				<ITEM NAME="m1.xlarge" VALUE="&quot;m1.xlarge&quot;" />
+				<ITEM NAME="c1.medium" VALUE="&quot;c1.medium&quot;" />
+				<ITEM NAME="c1.large" VALUE="&quot;c1.large&quot;" />
+				<ITEM NAME="cc2.8xlarge" VALUE="&quot;cc2.8xlarge&quot;" />
+				<ITEM NAME="cg1.4xlarge" VALUE="&quot;cg1.4xlarge&quot;" />
+				<ITEM NAME="cg1.4xlarge" VALUE="&quot;cg1.4xlarge&quot;" />
+				<ITEM NAME="m2.xlarge" VALUE="&quot;m2.xlarge&quot;" />
+				<ITEM NAME="m2.2xlarge" VALUE="&quot;m2.2xlarge&quot;" />
+				<ITEM NAME="m2.4xlarge" VALUE="&quot;m2.4xlarge&quot;" />
+				<ITEM NAME="cr1.8xlarge" VALUE="&quot;cr1.8xlarge&quot;" />
+				<ITEM NAME="hi1.4xlarge" VALUE="&quot;hi1.4xlarge&quot;" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="PREDICATES" FIELD="CLOSED_LIST" NUM_ROW="60"
+			SHOW_IF="ACTION=='STOP'" GROUP="CONFIGURATION">
+			<ITEMS DEFAULT="RUNNING">
+				<ITEM NAME="RUNNING" VALUE="RUNNING" />
+				<ITEM NAME="RUNNING_WITH_NAME" VALUE="RUNNING_WITH_NAME" />
+				<ITEM NAME="RUNNING_WITH_ID" VALUE="RUNNING_WITH_ID" />
+			</ITEMS>
+		</PARAMETER>
+
+		<PARAMETER NAME="NAME_OF_CLUSTER" FIELD="TEXT" NUM_ROW="70"
+			GROUP="CONFIGURATION" SHOW_IF="isShow[PREDICATES] AND (PREDICATES=='RUNNING_WITH_NAME')">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ID_OF_CLUSTER" FIELD="TEXT" NUM_ROW="80"
+			GROUP="CONFIGURATION" SHOW_IF="isShow[PREDICATES] AND (PREDICATES=='RUNNING_WITH_ID')">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+	</PARAMETERS>
+
+	<ADVANCED_PARAMETERS>
+		<PARAMETER
+	      NAME="SET_STS_ENDPOINT"
+	      FIELD="CHECK"
+	      NUM_ROW="1"
+	      NB_LINES="5"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="isShow[ASSUME_ROLE] AND (ASSUME_ROLE == 'true')"
+	    >
+	    </PARAMETER>
+	    
+		<PARAMETER
+	      NAME="STS_ENDPOINT"
+	      FIELD="TEXT"
+	      NUM_ROW="1"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="isShow[SET_STS_ENDPOINT] AND (SET_STS_ENDPOINT == 'true')"
+	    >
+	      <DEFAULT>""</DEFAULT>
+	    </PARAMETER>
+	    
+	    <PARAMETER
+	      NAME="SIGNING_REGION"
+	      FIELD="OPENED_LIST"
+	      NUM_ROW="2"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      REQUIRED="true"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <ITEMS DEFAULT="DEFAULT">
+	        	<ITEM NAME="DEFAULT" VALUE="DEFAULT" />
+		        <ITEM NAME="GovCloud" VALUE="&quot;us-gov-west-1&quot;" />
+		        <ITEM NAME="US_EAST_1" VALUE="&quot;us-east-1&quot;" />
+		        <ITEM NAME="US_WEST_1" VALUE="&quot;us-west-1&quot;" />
+		        <ITEM NAME="US_WEST_2" VALUE="&quot;us-west-2&quot;" />
+		        <ITEM NAME="US_EAST_2" VALUE="&quot;us-east-2&quot;" />
+		        <ITEM NAME="SA_EAST_1" VALUE="&quot;sa-east-1&quot;" />
+		        <ITEM NAME="EU_WEST_1" VALUE="&quot;eu-west-1&quot;" />
+		        <ITEM NAME="EU_CENTRAL_1" VALUE="&quot;eu-central-1&quot;" />
+		        <ITEM NAME="EU_WEST_2" VALUE="&quot;eu-west-2&quot;" />
+		        <ITEM NAME="EU_WEST_3" VALUE="&quot;eu-west-3&quot;" />
+		        <ITEM NAME="EU_NORTH_1" VALUE="&quot;eu-north-1&quot;" />
+		        <ITEM NAME="CN_NORTH_1" VALUE="&quot;cn-north-1&quot;" />
+		        <ITEM NAME="CN_NORTHWEST_1" VALUE="&quot;cn-northwest-1&quot;" />
+		        <ITEM NAME="AP_EAST_1" VALUE="&quot;ap-east-1&quot;" />
+	         	<ITEM NAME="AP_SOUTHEAST_1" VALUE="&quot;ap-southeast-1&quot;" />
+		        <ITEM NAME="AP_SOUTHEAST_2" VALUE="&quot;ap-southeast-2&quot;" />
+		        <ITEM NAME="AP_NORTHEAST_1" VALUE="&quot;ap-northeast-1&quot;" />
+		        <ITEM NAME="AP_NORTHEAST_2" VALUE="&quot;ap-northeast-2&quot;" />
+	        	<ITEM NAME="AP_SOUTH_1" VALUE="&quot;ap-south-1&quot;" />
+		        <ITEM NAME="CA_CENTRAL_1" VALUE="&quot;ca-central-1&quot;" />
+	    	</ITEMS>
+	    </PARAMETER> 
+	    
+	    <PARAMETER
+	      NAME="EXTERNALID"
+	      FIELD="TEXT"
+	      NUM_ROW="3"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <DEFAULT>""</DEFAULT>
+	    </PARAMETER>
+	    
+	    <PARAMETER
+	      NAME="SERIALNUMBER"
+	      FIELD="TEXT"
+	      NUM_ROW="4"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <DEFAULT>""</DEFAULT>
+	    </PARAMETER>
+	    
+	     <PARAMETER
+	      NAME="TOKENCODE"
+	      FIELD="TEXT"
+	      NUM_ROW="5"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <DEFAULT>""</DEFAULT>
+	    </PARAMETER>
+	    
+	    <PARAMETER
+	      NAME="TAGS"
+	      FIELD="TABLE"
+	      NUM_ROW="6"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <ITEMS>
+	      	<ITEM NAME="TAG_KEY" FIELD="TEXT" />
+	      	<ITEM NAME="TAG_VALUE" FIELD="TEXT" />
+	      	<ITEM NAME="TAG_TRANSITIVE" FIELD="CHECK" VALUE="FALSE"/>
+	      </ITEMS>
+	    </PARAMETER>
+	    
+	    <PARAMETER
+	      NAME="POLICY_TABLE"
+	      FIELD="TABLE"
+	      NUM_ROW="7"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	   		<ITEMS>
+	    		<ITEM NAME="POLICY_ARN" VALUE="" />
+	   		</ITEMS>
+	    </PARAMETER>
+	    
+	    <PARAMETER
+	      NAME="POLICY"
+	      FIELD="MEMO"
+	      NUM_ROW="8"
+	      GROUP="ASSUME_ROLE_CONFIG"
+	      NB_LINES="15"
+	      SHOW_IF="ASSUME_ROLE == 'true'"
+	    >
+	      <DEFAULT>""</DEFAULT>
+	    </PARAMETER>
+    	
+		<PARAMETER NAME="WAIT_FOR_CLUSTER_READY" FIELD="CHECK"
+			NUM_ROW="10" SHOW_IF="(ACTION=='START')" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="VISIBLE_TO_ALL_USERS" FIELD="CHECK"
+			NUM_ROW="15" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="TERMINATION_PROTECTED" FIELD="CHECK"
+			NUM_ROW="20" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="ENABLE_DEBUG" FIELD="CHECK"
+			NUM_ROW="25" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="USE_CUSTOMIZE_VERSION" FIELD="CHECK"
+			NUM_ROW="30" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="USE_MULTIPLE_MASTER_NODES" FIELD="CHECK"
+			NUM_ROW="31" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_CONFIGURATION">
+			<DEFAULT>false</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="NOTE" FIELD="LABEL" 
+			NUM_ROW="31" SHOW_IF="isShow[USE_MULTIPLE_MASTER_NODES]" GROUP="ADVANCED_CONFIGURATION" >
+		    <DEFAULT>(supported by version 5.23.0 and later)</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="CUSTOMIZE_VERSION" FIELD="TEXT"
+			NUM_ROW="35" SHOW_IF="(ACTION=='START') AND (USE_CUSTOMIZE_VERSION =='true')" GROUP="CUSTOMIZE_APPLICATION_GROUP">
+			<DEFAULT>"emr-5.29.0"</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="CUSTOMIZE_APPLICATION_TABLE" FIELD="TABLE" NUM_ROW="40" NB_LINES="5" GROUP="CUSTOMIZE_APPLICATION_GROUP"
+			SHOW_IF="(ACTION=='START') AND (USE_CUSTOMIZE_VERSION =='true')">
+			<ITEMS>
+				<ITEM NAME="NAME" FIELD="OPENED_LIST">
+					<ITEMS DEFAULT="HADOOP">
+                  <ITEM NAME="HADOOP" VALUE="&quot;HADOOP&quot;" />
+                  <ITEM NAME="ZEPPELIN" VALUE="&quot;ZEPPELIN&quot;" />
+                  <ITEM NAME="LIVY" VALUE="&quot;LIVY&quot;" />
+                  <ITEM NAME="TEZ" VALUE="&quot;TEZ&quot;" />
+                  <ITEM NAME="FLINK" VALUE="&quot;FLINK&quot;" />
+                  <ITEM NAME="GANGLIA" VALUE="&quot;GANGLIA&quot;" />
+                  <ITEM NAME="HBASE" VALUE="&quot;HBASE&quot;" />
+                  <ITEM NAME="PIG" VALUE="&quot;PIG&quot;" />
+                  <ITEM NAME="HIVE" VALUE="&quot;HIVE&quot;" />
+                  <ITEM NAME="PRESTO" VALUE="&quot;PRESTO&quot;" />
+                  <ITEM NAME="ZOOKEEPER" VALUE="&quot;ZOOKEEPER&quot;" />
+                  <ITEM NAME="MXNET" VALUE="&quot;MXNET&quot;" />
+                  <ITEM NAME="SQOOP" VALUE="&quot;SQOOP&quot;" />
+                  <ITEM NAME="MAHOUT" VALUE="&quot;MAHOUT&quot;" />
+                  <ITEM NAME="HUE" VALUE="&quot;HUE&quot;" />
+                  <ITEM NAME="PHOENIX" VALUE="&quot;PHOENIX&quot;" />
+                  <ITEM NAME="OOZIE" VALUE="&quot;OOZIE&quot;" />
+                  <ITEM NAME="SPARK" VALUE="&quot;SPARK&quot;" />
+                  <ITEM NAME="HCATALOG" VALUE="&quot;HCATALOG&quot;" />
+                  <ITEM NAME="PRESTO-SANDBOX" VALUE="&quot;PRESTO-SANDBOX&quot;" />
+                  <ITEM NAME="SQOOP-SANDBOX" VALUE="&quot;SQOOP-SANDBOX&quot;" />
+                  <ITEM NAME="ZEPPELIN-SANDBOX" VALUE="&quot;ZEPPELIN-SANDBOX&quot;" />
+                  <ITEM NAME="ZOOKEEPER-SANDBOX" VALUE="&quot;ZOOKEEPER-SANDBOX&quot;" />
+                  <ITEM NAME="OOZIE-SANDBOX" VALUE="&quot;OOZIE-SANDBOX&quot;" />                  
+					</ITEMS>
+			   </ITEM>
+			</ITEMS>
+		</PARAMETER>
+		
+		<PARAMETER NAME="SUBNET_ID" FIELD="TEXT"
+			NUM_ROW="45" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="AVAILABILITY_ZONE" FIELD="TEXT"
+			NUM_ROW="50" SHOW_IF="(ACTION=='START')" GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="MASTER_SECURITY_GROUP" FIELD="TEXT"
+			REQUIRED="true" NUM_ROW="55" SHOW_IF="ACTION=='START'"
+			GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ADDITIONAL_MASTER_SECURITY_GROUPS" FIELD="TEXT"
+			REQUIRED="true" NUM_ROW="55" SHOW_IF="ACTION=='START'"
+			GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="SLAVE_SECURITY_GROUP" FIELD="TEXT"
+			REQUIRED="true" NUM_ROW="60" SHOW_IF="ACTION=='START'"
+			GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="ADDITIONAL_SLAVE_SECURITY_GROUPS" FIELD="TEXT"
+			REQUIRED="true" NUM_ROW="60" SHOW_IF="ACTION=='START'"
+			GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+
+		<PARAMETER NAME="NOTE" FIELD="LABEL" REQUIRED="true"
+			NUM_ROW="65" SHOW_IF="ACTION=='START'" GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>Additional groups should be set like this : "gname1,gname2,gname3"</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="SERVICE_ACCESS_SECURITY_GROUP" FIELD="TEXT"
+			REQUIRED="true" NUM_ROW="70" SHOW_IF="ACTION=='START'"
+			GROUP="ADVANCED_INSTANCE_CONFIGURATION">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="BOOTSTRAP_ACTIONS" FIELD="TABLE" SHOW_IF="ACTION=='START'" NUM_ROW="75" NB_LINES="5" GROUP="BOOTSTRAP_GROUP">
+			<ITEMS>
+				<ITEM NAME="NAME" />
+				<ITEM NAME="SCRIPT_PATH" />
+				<ITEM NAME="ARGS" />
+			</ITEMS>
+		</PARAMETER>
+		
+		<PARAMETER NAME="STEP_TABLE" FIELD="TABLE" SHOW_IF="ACTION=='START'" NUM_ROW="80" NB_LINES="5" GROUP="STEPS">
+			<ITEMS>
+				<ITEM NAME="NAME" />
+				<ITEM NAME="ACTION_ON_FAILURE" FIELD="CLOSED_LIST">
+					<ITEMS DEFAULT="CONTINUE">
+						<ITEM NAME="CONTINUE" VALUE="&quot;CONTINUE&quot;"></ITEM>
+						<ITEM NAME="TERMINATE_CLUSTER" VALUE="&quot;TERMINATE_CLUSTER&quot;"></ITEM>
+						<ITEM NAME="CANCEL_AND_WAIT" VALUE="&quot;CANCEL_AND_WAIT&quot;"></ITEM>
+					</ITEMS>
+				</ITEM>
+				<ITEM NAME="MAIN_CLASS" />
+				<ITEM NAME="JAR" />
+				<ITEM NAME="ARGS" />
+			</ITEMS>
+		</PARAMETER>
+		<PARAMETER NAME="KEEP_ALIVE" FIELD="CHECK"
+			NUM_ROW="85" SHOW_IF="ACTION=='START'" GROUP="STEPS">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+		<PARAMETER NAME="WAIT_FOR_STEPS_COMPLETE" FIELD="CHECK"
+			NUM_ROW="90" SHOW_IF="ACTION=='START' AND isShow[WAIT_FOR_CLUSTER_READY] AND (WAIT_FOR_CLUSTER_READY=='true')" GROUP="STEPS">
+			<DEFAULT>true</DEFAULT>
+		</PARAMETER>
+		
+		<PARAMETER NAME="PROPERTY_TABLE" FIELD="TABLE" NUM_ROW="95" NB_LINES="5" GROUP="PROPERTY_GROUP"
+			SHOW_IF="(ACTION=='START') AND (CLUSTER_VERSION!='AMI3_10_0') AND (CLUSTER_VERSION!='AMI3_9_0') AND (CLUSTER_VERSION!='AMI3_8_0') AND (CLUSTER_VERSION!='AMI2_4_11') AND (CLUSTER_VERSION!='AMI2_4_10')
+				AND (USE_MULTIPLE_MASTER_NODES=='false')">
+			<ITEMS>
+				<ITEM NAME="CLASSIFICATION" />
+				<ITEM NAME="KEY" />
+				<ITEM NAME="VALUE" />
+			</ITEMS>
+		</PARAMETER>
+		
+		<PARAMETER NAME="PROPERTY_JSON" FIELD="MEMO" NUM_ROW="95" NB_LINES="15" GROUP="PROPERTY_GROUP"
+			SHOW_IF="(ACTION=='START') AND (CLUSTER_VERSION!='AMI3_10_0') AND (CLUSTER_VERSION!='AMI3_9_0') AND (CLUSTER_VERSION!='AMI3_8_0') AND (CLUSTER_VERSION!='AMI2_4_11') AND (CLUSTER_VERSION!='AMI2_4_10')
+				AND (USE_MULTIPLE_MASTER_NODES=='true')">
+			<DEFAULT>""</DEFAULT>
+		</PARAMETER>
+	</ADVANCED_PARAMETERS>
+
+	<CODEGENERATION>
+		<IMPORTS>
+			<IMPORT NAME="aws-java-sdk-core-1.12.315.jar" MODULE="aws-java-sdk-core-1.12.315.jar"
+				MVN="mvn:com.amazonaws/aws-java-sdk-core/1.12.315"
+				REQUIRED="true" />
+			<IMPORT NAME="aws-java-sdk-sts-1.12.315.jar" MODULE="aws-java-sdk-sts-1.12.315.jar"
+				MVN="mvn:com.amazonaws/aws-java-sdk-sts/1.12.315"
+				REQUIRED="true" />
+			<IMPORT NAME="aws-java-sdk-emr-1.12.315.jar" MODULE="aws-java-sdk-emr-1.12.315.jar"
+				MVN="mvn:com.amazonaws/aws-java-sdk-emr/1.12.315"
+				REQUIRED="true" />
+			<IMPORT NAME="jmespath-java-1.12.315.jar" MODULE="jmespath-java-1.12.315.jar"
+				MVN="mvn:com.amazonaws/jmespath-java/1.12.315"
+				REQUIRED="true" />
+			<IMPORT NAME="jackson-core-2.14.3.jar" MODULE="jackson-core-2.14.3.jar"
+				MVN="mvn:com.fasterxml.jackson.core/jackson-core/2.14.3"
+				REQUIRED="true" />
+			<IMPORT NAME="jackson-databind-2.14.3.jar" MODULE="jackson-databind-2.14.3.jar"
+				MVN="mvn:com.fasterxml.jackson.core/jackson-databind/2.14.3"
+				REQUIRED="true" />
+			<IMPORT NAME="jackson-annotations-2.14.3.jar" MODULE="jackson-annotations-2.14.3.jar"
+				MVN="mvn:com.fasterxml.jackson.core/jackson-annotations/2.14.3"
+				REQUIRED="true" />
+			<IMPORT NAME="httpcore-4.4.13.jar" MODULE="httpcore-4.4.13.jar"
+				MVN="mvn:org.apache.httpcomponents/httpcore/4.4.13"
+				REQUIRED="true" />
+			<IMPORT NAME="httpclient-4.5.13.jar" MODULE="httpclient-4.5.13.jar"
+				MVN="mvn:org.apache.httpcomponents/httpclient/4.5.13"
+				REQUIRED="true" />
+			<IMPORT NAME="joda-time-2.8.1.jar" MODULE="joda-time-2.8.1.jar"
+				MVN="mvn:joda-time/joda-time/2.8.1"
+				REQUIRED="true" />
+			<IMPORT NAME="commons-logging-1.2.jar" MODULE="commons-logging-1.2.jar"
+				MVN="mvn:commons-logging/commons-logging/1.2"
+				REQUIRED="true" />
+			<IMPORT NAME="commons-codec-1.14.jar" MODULE="commons-codec-1.14.jar"
+				MVN="mvn:commons-codec/commons-codec/1.14"
+				REQUIRED="true" />
+		</IMPORTS>
+	</CODEGENERATION>
+
+	<RETURNS>
+		<RETURN NAME="CLUSTER_FINAL_ID" TYPE="id_String" SHOW_IF="ACTION=='START'"
+			AVAILABILITY="AFTER" />
+		<RETURN NAME="CLUSTER_FINAL_NAME" TYPE="id_String" SHOW_IF="ACTION=='START'"
+			AVAILABILITY="AFTER" />
+	</RETURNS>
+
+</COMPONENT>

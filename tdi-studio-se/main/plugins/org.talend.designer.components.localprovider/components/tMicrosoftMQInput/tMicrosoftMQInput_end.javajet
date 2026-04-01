@@ -1,0 +1,85 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.IConnection
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.ElementParameterParser
+    java.util.List
+  " 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();  
+	List< ? extends IConnection> outConns = node.getOutgoingSortedConnections();
+	boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node,"__DIE_ON_ERROR__"));
+	    
+	if (outConns != null && outConns.size() > 0){
+	%>
+			}
+		}catch(java.net.UnknownHostException ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+			<%
+			if(dieOnError){
+			%>
+				throw ex_<%=cid%>;
+			<%
+			}else{
+			%>
+				System.err.println("Unknown host :" + ex_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+		}catch(ionic.Msmq.MessageQueueException e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+			<%
+			if(dieOnError){
+			%>
+				throw e_<%=cid%>;
+			<%
+			}else{
+			%>
+				if (msgu_<%=cid%>.isOpen()){
+					System.out.println("Receive failure: " + e_<%=cid%>.getMessage());
+				}else{
+					System.out.println("Queue open failure: " + e_<%=cid%>.getMessage());
+				}
+			<%
+			}
+			%>
+		}catch(java.io.UnsupportedEncodingException ex_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex_<%=cid%>.getMessage());
+			<%
+			if(dieOnError){
+			%>
+				throw ex_<%=cid%>;
+			<%
+			}else{
+			%>
+				System.out.println("Unsupported encoding: " + ex_<%=cid%>.getMessage());
+			<%
+			}
+			%>
+	    }finally{
+			try{
+		    	if (msgu_<%=cid%>.isOpen()){
+		    		msgu_<%=cid%>.close();
+		  		}
+	    	 }catch(ionic.Msmq.MessageQueueException e_<%=cid%>){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+				<%
+				if(dieOnError){
+				%>
+						throw e_<%=cid%>;
+				<%
+				}else{
+				%>
+						System.out.println("Close failure: " + e_<%=cid%>.getMessage());
+				<%
+				}
+				%>
+	    	}
+	    }
+	<%
+	}
+	%>

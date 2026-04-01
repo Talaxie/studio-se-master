@@ -1,0 +1,123 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    
+"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	String dieOnError = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+		
+	String rejectConnName = null;
+	List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+	if(rejectConns != null && rejectConns.size() > 0) {
+	    IConnection rejectConn = rejectConns.get(0);
+	    rejectConnName = rejectConn.getName();
+	}
+	List<IMetadataColumn> rejectColumnList = null;
+	IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+	if(metadataTable != null) {
+	    rejectColumnList = metadataTable.getListColumns();	    
+	}
+	List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+    for(IConnection conn : outgoingConns) {
+        if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+        <%=conn.getName() %> = null;            
+<%      }
+    }
+    
+	String cid = node.getUniqueName();
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+		
+		List< ? extends IConnection> conns = node.getIncomingConnections();
+		for(IConnection conn:conns){
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.MAIN)) {
+     			String firstConnName = conn.getName();
+    			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {	
+%>
+        			whetherReject_<%=cid%> = false;
+					try{
+				
+						LDAPRenameEntryUtil_<%=cid%> renameUtil<%=cid%> = new LDAPRenameEntryUtil_<%=cid%>();
+						renameUtil<%=cid%>.renameWithChilds(<%=conn.getName() %>.<%=ElementParameterParser.getObjectValue(node, "__REMANE_DN_OLD__")%>.trim(),
+						<%=conn.getName() %>.<%=ElementParameterParser.getObjectValue(node, "__REMANE_DN_NEW__")%>.trim(),
+						ctx_<%=cid%>);
+						<%if(isLog4jEnabled){%>
+							log.trace("<%=cid%> - Content of the record : old entry is '" + <%=conn.getName() %>.<%=ElementParameterParser.getObjectValue(node, "__REMANE_DN_OLD__")%>.trim() + " and new entry is '" + <%=conn.getName() %>.<%=ElementParameterParser.getObjectValue(node, "__REMANE_DN_NEW__")%>.trim() + "'.");
+						<%}%>
+					}catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+       					whetherReject_<%=cid%> = true;
+<%
+        				if (("true").equals(dieOnError)) {
+%>
+					        throw(e);
+<%
+				        } else {
+				            if(rejectConnName != null && rejectColumnList != null && rejectColumnList.size() > 0) {
+%>
+        						<%=rejectConnName %> = new <%=rejectConnName %>Struct();
+<%
+                				for(IMetadataColumn column : columnList) {
+%>
+        							<%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<%
+              					}
+%>
+                				<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+<%
+            				} else {
+%>
+               					System.err.print(e.getMessage());
+<%
+								if(isLog4jEnabled){
+%>
+									log.error("<%=cid%> - " + e.getMessage());
+<%
+								}
+            				}
+				        }
+%>
+    				}
+<%
+    				if(outgoingConns != null && outgoingConns.size() > 0) {
+%>
+        				if(!whetherReject_<%=cid%>) {
+<%
+				            for(IConnection outgoingConn : outgoingConns) {
+				                if(rejectConnName == null || (rejectConnName != null && !outgoingConn.getName().equals(rejectConnName))) {
+				                    if(outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+										<%=outgoingConn.getName()%> = new <%=outgoingConn.getName()%>Struct();
+<%
+                        				for(IMetadataColumn column : columnList) {
+%>
+           									<%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+<% 
+				                        }
+				                    }
+				                }
+				            }
+%>
+        				}
+<%
+    				}
+				}
+			}
+		}
+	}
+%>

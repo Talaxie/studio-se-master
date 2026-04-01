@@ -1,0 +1,160 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String cid = node.getUniqueName();
+        
+        String filename = ElementParameterParser.getValueWithUIFieldKey(node,"__FILENAME__", "FILENAME");
+        
+        boolean rssMode = "true".equals(ElementParameterParser.getValue(node,"__RSS__"));
+        boolean atomMode = "true".equals(ElementParameterParser.getValue(node,"__ATOM__"));
+      	String title= null;
+      	String description= null;
+      	String pubdate= null;
+      	String link= null;
+      	String aTitle= null;
+      	String aLink= null;
+      	String aId= null;
+      	String aUpdated= null;
+      	String aAuthor= null;
+        if(rssMode){
+	      	title= ElementParameterParser.getValue(node,"__TITLE__");
+	      	description= ElementParameterParser.getValue(node,"__DESCRIPTION__");
+	      	pubdate= ElementParameterParser.getValue(node,"__PUBDATE__");
+	      	link= ElementParameterParser.getValue(node,"__LINK__");
+        }
+        if(atomMode){
+	      	aTitle= ElementParameterParser.getValue(node,"__aTITLE__");
+	      	aLink= ElementParameterParser.getValue(node,"__aLINK__");
+	      	aId= ElementParameterParser.getValue(node,"__aID__");
+	      	aUpdated= ElementParameterParser.getValue(node,"__aUPDATED__");
+	      	aAuthor= ElementParameterParser.getValue(node,"__aAUTHOR__");
+        }
+      	
+      	List<Map<String, String>> elements = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__ELEMENTS__");
+      	
+        boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+%>
+		int nb_line_<%=cid%> = 0;
+		java.io.File file<%=cid%>=new java.io.File(<%=filename%>);
+		
+		org.dom4j.Document document<%=cid%> =null;
+<%
+		if(rssMode){
+%>
+			org.dom4j.Element channelElement<%=cid%> =null;
+			org.dom4j.Element titleHElement<%=cid%>=null;
+			org.dom4j.Element descriptionHElement<%=cid%>=null;
+			org.dom4j.Element pubdateHElement<%=cid%>=null;
+			org.dom4j.Element linkHElement<%=cid%>=null;
+<%
+		}
+		if(atomMode){
+%>
+			org.dom4j.Element feedElement<%=cid%> =null;
+			org.dom4j.Element titleHElement<%=cid%>=null;
+			org.dom4j.Element idHElement<%=cid%>=null;
+			org.dom4j.Element updatedHElement<%=cid%>=null;
+			org.dom4j.Element linkHElement<%=cid%>=null;
+			org.dom4j.Element authorHElement<%=cid%>=null;
+<%		
+		}
+		for(Map<String, String> element : elements){
+			String name = element.get("ELEMENT_NAME");
+			if(name.split("/").length > 1){
+%>
+				org.dom4j.Element <%=name.substring(1,name.length()-1).replace("/","")%>_Element_<%=cid%> = null;
+<%
+			}else{
+%>
+				org.dom4j.Element <%=name.substring(1,name.length()-1)%>_Element_<%=cid%> = null;
+<%	
+			}
+		}
+%>	
+		if(<%=isAppend%> && file<%=cid%>.exists()){
+			org.dom4j.io.SAXReader saxReader<%=cid%> = new org.dom4j.io.SAXReader();
+	        document<%=cid%> = saxReader<%=cid%> .read(new java.io.File(<%=filename%>));
+		}else{
+			document<%=cid%> = org.dom4j.DocumentHelper.createDocument();
+<%
+			if(rssMode){
+%>
+				org.dom4j.Element rssElement<%=cid%> = document<%=cid%>.addElement("rss");
+				rssElement<%=cid%>.addAttribute("version","2.0");
+				channelElement<%=cid%> = rssElement<%=cid%>.addElement("channel");
+				titleHElement<%=cid%>=channelElement<%=cid%>.addElement("title");
+				titleHElement<%=cid%>.setText(<%=title%>);
+				descriptionHElement<%=cid%>=channelElement<%=cid%>.addElement("description");
+				descriptionHElement<%=cid%>.setText(<%=description%>);
+				pubdateHElement<%=cid%>=channelElement<%=cid%>.addElement("pubdate");
+				pubdateHElement<%=cid%>.setText(<%=pubdate%>);
+				linkHElement<%=cid%>=channelElement<%=cid%>.addElement("link");
+				linkHElement<%=cid%>.setText(<%=link%>);
+<%
+			}
+			if(atomMode){
+%>
+				feedElement<%=cid%> = document<%=cid%>.addElement("feed","http://www.w3.org/2005/Atom");
+				titleHElement<%=cid%>=feedElement<%=cid%>.addElement("title");
+				titleHElement<%=cid%>.setText(<%=aTitle%>);
+				idHElement<%=cid%>=feedElement<%=cid%>.addElement("id");
+				idHElement<%=cid%>.setText(<%=aId%>);
+				updatedHElement<%=cid%>=feedElement<%=cid%>.addElement("updated");
+				updatedHElement<%=cid%>.setText(<%=aUpdated%>);
+				linkHElement<%=cid%>=feedElement<%=cid%>.addElement("link");
+				linkHElement<%=cid%>.addAttribute("href",<%=aLink%>);
+				authorHElement<%=cid%>=feedElement<%=cid%>.addElement("author").addElement("name");
+				authorHElement<%=cid%>.setText(<%=aAuthor%>);
+<%
+			}
+			for(Map<String, String> element : elements){
+				String name = element.get("ELEMENT_NAME");
+				String value = element.get("ELEMENT_VALUE");
+				if(name.split("/").length > 1){
+%>
+					<%=name.substring(1,name.length()-1).replace("/","")%>_Element_<%=cid%> = <%=name.substring(1,name.length()-1).substring(0,name.lastIndexOf("/")-1)%>_Element_<%=cid%>.addElement("<%=name.substring(1,name.length()-1).split("/")[1]%>");
+<%
+					if(value.trim().length() > 2){
+%>
+						<%=name.substring(1,name.length()-1).replace("/","")%>_Element_<%=cid%>.setText(<%=value%>);
+<%
+					}
+				}else{
+					if(rssMode){
+%>			
+						<%=name.substring(1,name.length()-1)%>_Element_<%=cid%> = channelElement<%=cid%>.addElement(<%=name%>);
+<%
+					}
+					if(atomMode){
+%>
+						<%=name.substring(1,name.length()-1)%>_Element_<%=cid%> = feedElement<%=cid%>.addElement(<%=name%>);
+<%
+					}
+					if(value.trim().length() > 2){
+%>					
+			        	<%=name.substring(1,name.length()-1)%>_Element_<%=cid%>.setText(<%=value%>);
+<%
+					}
+				}
+			}
+%>
+		}
+<%	
+	}
+}
+%>

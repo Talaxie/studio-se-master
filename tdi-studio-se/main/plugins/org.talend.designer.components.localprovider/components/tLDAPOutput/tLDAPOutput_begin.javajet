@@ -1,0 +1,186 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+" 
+class="LDAPInput"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	String baseDN=ElementParameterParser.getValue(node, "__BASEDN__");
+
+	String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+	String exConn= "conn_" + connection;
+	String exConnBaseDN = "connBaseDN_" + connection;
+	String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+	String insertMode =ElementParameterParser.getValue(node, "__INSERT_MODE__");
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+if(("false").equals(useExistingConn)){
+	String host=ElementParameterParser.getValue(node, "__HOST__");
+	String port=ElementParameterParser.getValue(node, "__PORT__");
+	String protocol=ElementParameterParser.getValue(node, "__PROTOCOL__");
+	String advanced=ElementParameterParser.getValue(node, "__ADVANCEDCA__");
+	String storepath=ElementParameterParser.getValue(node, "__STORECA__");
+	String storepwd = ElementParameterParser.getValue(node, "__STORECAPWD__");
+	boolean alwaysTrust = ("true").equals(ElementParameterParser.getValue(node, "__ALWAYS_TRUST__"));
+	String user =ElementParameterParser.getValue(node, "__USER__");
+
+	String referrals=ElementParameterParser.getValue(node, "__REFERRALS__");
+	String aliases=ElementParameterParser.getValue(node, "__ALIASES__");
+	
+	boolean useAuth = true;
+%>
+	java.util.Hashtable env_<%=cid%> = new java.util.Hashtable();
+	env_<%=cid%>.put(javax.naming.Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
+	env_<%=cid%>.put(javax.naming.Context.REFERRAL, "<%=referrals%>");
+	env_<%=cid%>.put("java.naming.ldap.derefAliases","<%=aliases%>");
+	String baseDN_<%=cid %> = <%=baseDN%>;
+<%
+	if(baseDN == null || baseDN.length()<=2){
+%>
+	env_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, "ldap://"+<%=host%>+":"+<%=port%>);
+<%
+	}else{
+%>
+	env_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, "ldap://"+<%=host%>+":"+<%=port%>+"/"+<%=baseDN%>);
+<%
+	}
+    if(("LDAPS").equals(protocol)){
+%>
+	env_<%=cid%>.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
+	env_<%=cid%>.put("java.naming.ldap.factory.socket", "talend.ssl.AdvancedSocketFactory");
+<%
+	}
+	if(("LDAPS").equals(protocol) || ("TLS").equals(protocol)){
+		if(("true").equals(advanced)){
+			if(alwaysTrust) {
+%>
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Adnanced CA trusting all certs.");
+				<%}%>
+				talend.ssl.AdvancedSocketFactory.alwaysTrust();
+<%
+			} else {
+%>
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Advanced CA using a store CA file and Keystore password.");
+					log.debug("Store CA : '" + <%=storepath %> + "'.");
+				<%}%>
+				talend.ssl.AdvancedSocketFactory.setCertStorePath(<%=storepath%>);
+<%
+				if(storepwd !=null && storepwd.length() !=0 ){%>
+				
+                    <%
+                    String passwordFieldName = "__STORECAPWD__";
+                    %>
+            
+                    <%if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {%> 
+                    	final String decryptedPwd_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+                    <%} else {%>
+                    	final String decryptedPwd_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+                    <%}%>				
+				
+				talend.ssl.AdvancedSocketFactory.setCertStorePassword(decryptedPwd_<%=cid%>);
+<%
+				}
+			}
+		}
+    }
+%>
+
+	<%@ include file="../tLDAPConnection/ldapconnect.javajet"%>
+	
+<%
+}else{
+%>
+	javax.naming.ldap.InitialLdapContext ctx_<%=cid%> = (javax.naming.ldap.InitialLdapContext)globalMap.get("<%=exConn%>");
+	<%if(isLog4jEnabled){%>
+		if(ctx_<%=cid%>!=null) {
+			log.info("<%=cid%> - Uses an existing connection ,connection URL is: '" + ctx_<%=cid%>.getEnvironment().get(javax.naming.Context.PROVIDER_URL) + "'."); 
+		}
+	<%}%>
+    String baseDN_<%=cid%> = (String)globalMap.get("<%=exConnBaseDN%>");
+<%
+}
+%>
+boolean whetherReject_<%=cid%> = false;
+int nb_line_<%=cid %> = 0;
+int nb_line_rejected_<%=cid%> = 0;
+<%	if(("DELETE").equals(insertMode)){ %>
+		talend.ssl.ldap.LdapAction ldap_<%=cid %> = new talend.ssl.ldap.LdapAction();
+<%	}%>
+	//check is base64 begin	
+	class CheckBase64_<%=cid%>{
+		public void checkByteArray(boolean isBase64,String columnName,javax.naming.directory.Attributes entry,byte[] bytearray) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+				entry.put(columnName,com.sun.org.apache.xml.internal.security.utils.Base64.decode(bytearray));
+			}
+			else{
+				entry.put(columnName,bytearray);
+			}
+		}
+		
+		public void checkString(boolean isBase64,String columnName,javax.naming.directory.Attributes entry,String inputValue) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+				entry.put(columnName,com.sun.org.apache.xml.internal.security.utils.Base64.decode(inputValue));
+			}
+			else{
+				entry.put(columnName,inputValue);
+			}
+		}
+		
+		public void addToAttribute(boolean isBase64,javax.naming.directory.Attribute attr,String inputValue) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+  				attr.add(com.sun.org.apache.xml.internal.security.utils.Base64.decode(inputValue));
+			}else{
+				attr.add(inputValue);
+			}
+		}
+		
+		public void checkByteArrayUpdate(boolean isBase64,String columnName,List<javax.naming.directory.Attribute> forUpate,byte[] bytearray) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+				forUpate.add(new javax.naming.directory.BasicAttribute(columnName, com.sun.org.apache.xml.internal.security.utils.Base64.decode(bytearray)));
+			}else{
+				forUpate.add(new javax.naming.directory.BasicAttribute(columnName, bytearray));
+			}
+		}
+		public void checkStringUpdate(boolean isBase64,String columnName,List<javax.naming.directory.Attribute> forUpate,String inputValue) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+				forUpate.add(new javax.naming.directory.BasicAttribute(columnName, com.sun.org.apache.xml.internal.security.utils.Base64.decode(inputValue)));
+			}else{
+				forUpate.add(new javax.naming.directory.BasicAttribute(columnName, inputValue));
+			}
+		}
+		
+		public void checkStringUpdateAttr(boolean isBase64,String columnName,javax.naming.directory.Attribute attrForUpdate,String inputValue) throws com.sun.org.apache.xml.internal.security.exceptions.Base64DecodingException{
+			if(isBase64){
+				attrForUpdate.add(com.sun.org.apache.xml.internal.security.utils.Base64.decode(inputValue));
+			}else{
+				attrForUpdate.add(inputValue);
+			}
+		}
+<%
+		//for bug TDI-19611,filter "" or null element
+%>
+		public String filterNullElement(String srcData,String splitStr){
+			String result = "";
+			String[] tempArr = routines.system.StringUtils.splitNotRegex(srcData,splitStr);<%//For TDI-28021%>
+			for (int i = 0 ; i < tempArr.length; i++) {
+				if(tempArr[i] !=null && !"".equals(tempArr[i].trim())) {
+					if(!"".equals(result)) {
+						result = result + splitStr;
+					}
+					result = result + tempArr[i];
+				}
+			}
+			return result;
+		}
+	}
+	CheckBase64_<%=cid%> base64_<%=cid%> = new CheckBase64_<%=cid%>();
+	//check is base64 end

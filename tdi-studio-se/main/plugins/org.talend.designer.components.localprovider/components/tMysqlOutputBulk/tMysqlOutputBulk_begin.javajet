@@ -1,0 +1,90 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+LogUtil logtpl = new LogUtil(node);
+String cid = node.getUniqueName();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+        
+        String rowSeparator = ElementParameterParser.getValue(node,"__ROWSEPARATOR__");
+        
+        String fieldSeparator = ElementParameterParser.getValue(node,"__FIELDSEPARATOR__");
+        
+        String escapeChar = ElementParameterParser.getValue(node, "__ESCAPE_CHAR__");
+        
+        String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+        
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+        
+        boolean checkDiskSpace = ("true").equals(ElementParameterParser.getValue(node,"__CHECK_DISK_SPACE__"));
+        
+        boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+        
+        boolean isCreateDir = ("true").equals(ElementParameterParser.getValue(node,"__CREATE__"));
+        
+        boolean containNULL = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__RECORDS_CONTAIN_NULL_VALUE__"));
+%>
+		int nb_line_<%=cid%> = 0;
+		String rowSeparator_<%=cid %> = <%=rowSeparator.length()==0||("").equals(rowSeparator)?"\"\\n\"" : rowSeparator %>;
+		String fieldSeparator_<%=cid %> = <%=fieldSeparator.length()==0||("").equals(fieldSeparator)?"\",\"" : fieldSeparator %>;
+		char escapeChar_<%=cid %> = <%=escapeChar.length()==0||("").equals(escapeChar)?"'\\\\'" : escapeChar + ".charAt(0)"%>;
+		char textEnclosure_<%=cid %> = <%=textEnclosure.length()==0||("").equals(textEnclosure)?"'\"'" : textEnclosure + ".charAt(0)"%>;
+		
+<%
+		if (containNULL) {//bug 7978 if input have a empty value,tMysqloutputbulk output "\N" instance of "" 
+%>
+			escapeChar_<%=cid %> = '\\';
+<%
+		}
+%>
+		int escape_mode_<%=cid %> = 0;  // 0: double quotes; 1: backslash
+		if(escapeChar_<%=cid %>=='\\'){
+			escape_mode_<%=cid %> = 1;
+		}else if(escapeChar_<%=cid %> == textEnclosure_<%=cid %>){
+			escape_mode_<%=cid %> = 0;
+		}else {
+			throw new RuntimeException("The escape mode only support the '\\' or double text enclosure.");
+		}
+				
+		java.io.File file_<%=cid %> = new java.io.File(<%=filename %>);		
+
+		<%if(isCreateDir) {%>
+        java.io.File parentFile_<%= cid %> = file_<%=cid %>.getParentFile();
+        if(parentFile_<%= cid %> != null && !parentFile_<%= cid %>.exists()){
+            String absolutePath_<%= cid %> = parentFile_<%= cid %>.getAbsolutePath();
+            <% logtpl.info("\"The directory '\"",logtpl.var("absolutePath"),"\"' doesn't exist,try to create it.\""); %>
+            if(parentFile_<%= cid %>.mkdirs()){
+                <% logtpl.info("\"The directory '\"",logtpl.var("absolutePath"),"\"' has been created successfully.\""); %>
+                System.out.println("The directory '"+absolutePath_<%=cid%>+"' has been created successfully.");
+            }else{
+                <% logtpl.error("\"Fail to create directory '\"",logtpl.var("absolutePath"),"\"'.\""); %>
+                System.err.println("Fail to create directory '"+absolutePath_<%=cid%>+"'.");
+            }
+        }
+		<%}%>
+				
+		java.io.BufferedWriter csvWriter_<%=cid%> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+        new java.io.FileOutputStream(file_<%=cid %>, <%=isAppend %>), <%=encoding %>));
+        resourceMap.put("csvWriter_<%=cid%>", csvWriter_<%=cid%>); 
+<%
+		if(checkDiskSpace){
+%>
+      	long diskSpace_<%=cid %> = 0;
+<%
+		}
+    }
+}
+%>

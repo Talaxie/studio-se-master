@@ -1,0 +1,95 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    org.talend.core.model.metadata.types.JavaTypesManager
+" 
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String cid = node.getUniqueName();      
+        String filename = ElementParameterParser.getValue(node,"__FILENAME__");
+    	String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+    	
+        log4jFileUtil.componentStartInfo(node);
+%>		
+		int nb_line_<%=cid%> = 0;
+		int totalLine<%=cid %> = 0;
+		String filename<%=cid%>=<%=filename%>;
+		java.io.BufferedReader bufferedReader_<%=cid%> = null;
+		try{
+			bufferedReader_<%=cid%>=new java.io.BufferedReader(new java.io.FileReader(filename<%=cid%>));
+			weka.core.Instances data<%=cid%> = new weka.core.Instances(bufferedReader_<%=cid%>);
+        	data<%=cid%>.setClassIndex(data<%=cid%>.numAttributes()-1);
+        	
+        	<%log4jFileUtil.startRetriveDataInfo();%>
+        	
+        	//read line
+        	for(int lineNo=0;lineNo<data<%=cid%>.numInstances();lineNo++){
+           	//read column
+            
+            
+            
+ <%
+ 
+ List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+ String firstConnName = "";
+ if (conns!=null) {
+     if (conns.size()>0) {
+         for(IConnection conn:conns){
+         firstConnName = conn.getName();
+         
+         if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {%><%  
+             List<IMetadataColumn> listColumns = metadata.getListColumns();
+             int colNo = 0;
+             for (IMetadataColumn column: listColumns) {
+                 if(("id_String").equals(column.getTalendType())){
+%>          
+                     <%=conn.getName() %>.<%=column.getLabel() %> = data<%=cid%>.instance(lineNo).stringValue(<%=colNo%>);
+<%               }else if(("id_Date").equals(column.getTalendType())){%>
+                     <%=conn.getName() %>.<%=column.getLabel() %> = new java.text.SimpleDateFormat(<%=column.getPattern()%>).parse(data<%=cid%>.instance(lineNo).stringValue(<%=colNo%>));
+<%               }else{%>
+                     <%=conn.getName()%>.<%=column.getLabel()%> = (<%=JavaTypesManager.getJavaTypeFromId(column.getTalendType()).getPrimitiveClass()%>)data<%=cid%>.instance(lineNo).value(<%=colNo%>);
+<%               }
+                 colNo++;
+             }
+             
+             log4jFileUtil.debugRetriveData(node,false);
+             
+         }
+        } 
+     }
+ }
+%>
+
+
+
+
+
+             
+        //}
+<%
+    }// end if (metadata!=null) 
+}// end if ((metadatas!=null)&&(metadatas.size()>0)) 
+%>
+
+		
+		
+		
+		
+		
+		

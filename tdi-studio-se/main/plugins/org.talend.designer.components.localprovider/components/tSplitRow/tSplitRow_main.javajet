@@ -1,0 +1,69 @@
+<%@ jet 
+  imports="
+    java.util.List
+    java.util.Map
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.BlockCode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.process.INode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+  " 
+%>
+<% 
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();  
+//for TDI-23590 deal with FLOW_MERGE connection
+List<? extends IConnection> inConns = node.getIncomingConnections();
+List<? extends IConnection> outConns = node.getOutgoingSortedConnections();
+
+if (inConns == null || inConns.isEmpty() || outConns == null || outConns.isEmpty()){
+  return "";
+}
+IConnection inConn = null, outConn = null;
+inConn = inConns.get(0);
+outConn = outConns.get(0);
+
+if (!inConn.isActivate() || !outConn.isActivate()){
+  return "";
+}
+String inConnName = inConn.getName();
+String outConnName = outConn.getName();
+
+if (!inConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)
+      || !outConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA) ){
+  return "";
+}
+List<IMetadataColumn> outColumns = outConn.getMetadataTable().getListColumns();
+List<Map<String, String>> listColMapping = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node, "__COL_MAPPING__");
+
+if (listColMapping != null && !listColMapping.isEmpty()){
+  int rowNumber = listColMapping.size();
+  %>
+  java.util.List<<%=outConnName%>Struct> rows_<%=cid%> = new java.util.ArrayList<<%=outConnName%>Struct>(<%=rowNumber%>);
+  <%=outConnName%>Struct rowTmp_<%=cid%> = null;
+
+  // cache output rows for the loop
+  <%for (Map<String, String> colMapping : listColMapping) {%>
+    rowTmp_<%=cid%> = new <%=outConnName%>Struct();
+
+    <%for (IMetadataColumn outColumn : outColumns) {
+      String columnName = outColumn.getLabel();
+      String value = colMapping.get(columnName);
+      %>
+      rowTmp_<%=cid%>.<%=columnName%> = <%=value%>;
+    <%}%>
+    rows_<%=cid%>.add(rowTmp_<%=cid%>);
+    nb_line_<%=cid%>++;
+  <%}%>
+
+  for (<%=outConnName%>Struct row_<%=cid%> : rows_<%=cid%>) {// C_01
+    <%=outConnName%> = row_<%=cid%>;
+    <%
+    List<BlockCode> blockCodes = new java.util.ArrayList<BlockCode>(1);
+  blockCodes.add(new BlockCode("C_01"));
+  ((org.talend.core.model.process.AbstractNode) node).setBlocksCodeToClose(blockCodes);
+}
+%> 

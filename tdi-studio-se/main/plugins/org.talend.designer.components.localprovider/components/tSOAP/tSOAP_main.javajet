@@ -1,0 +1,164 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+        java.util.List
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+String endpoint = ElementParameterParser.getValue(node,"__ENDPOINT__");
+String action = ElementParameterParser.getValue(node,"__ACTION__");
+String soapMessageStr = ElementParameterParser.getValue(node,"__SOAPMESSAGE__");
+soapMessageStr = soapMessageStr.replaceAll("[\r\n]", " ");
+        
+String soapVersion = ElementParameterParser.getValue(node,"__SOAP_VERSION__");
+
+boolean useKerberos = ("true").equals(ElementParameterParser.getValue(node,"__USE_KERBEROS__"));
+String kerberosConfiguration = ElementParameterParser.getValue(node,"__KERBEROS_CONFIGURATION__");
+boolean useMessageFromSchema = "true".equals(ElementParameterParser.getValue(node, "__USE_MESSAGE_FROM_SCHEMA__"));
+boolean outputDocument = "true".equals(ElementParameterParser.getValue(node, "__OUTPUT_DOCUMENT__"));
+String soapMessageColumn = ElementParameterParser.getValue(node,"__SOAPMESSAGE_FROM_SCHEMA__");
+String connName = null;
+boolean schemaEmpty = false;
+if(node.getIncomingConnections().size() > 0){
+	IConnection conn = node.getIncomingConnections().get(0);
+	if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+		connName = conn.getName();
+		schemaEmpty = conn.getMetadataTable().getListColumns().size()==0;
+	}
+}
+if(useMessageFromSchema && (connName==null || schemaEmpty)){
+%>
+	if(true)
+		throw new java.lang.Exception("There is no incoming connection or the incoming schema is empty");
+<%
+}else{
+	if(useKerberos){
+	%>
+		class TalendPrivilegedAction implements java.security.PrivilegedAction{
+			String soapVersion;
+			<%
+			if(useMessageFromSchema){
+			%>
+				<%=connName%>Struct <%=connName%>;
+
+				public TalendPrivilegedAction(<%=connName%>Struct rowArg, String soapVersionArg){
+					this.<%=connName%> = rowArg;
+					this.soapVersion = soapVersionArg;
+				}
+			<%
+			}else{
+			%>
+				public TalendPrivilegedAction(String soapVersionArg){
+					this.soapVersion = soapVersionArg;
+				}
+			<%
+			}
+			if(outputDocument){
+			%>
+				String document;
+				public Object run(){
+					try{
+						this.document = soapUtil_<%=cid%>.extractContentAsDocument(org.talend.soap.SOAPUtil.<%=soapVersion.toUpperCase()%>,<%=endpoint%>,<%=action%>,<%=useMessageFromSchema?connName+"."+soapMessageColumn+".toString()":soapMessageStr%>);
+					}catch(java.lang.Exception ex){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+						ex.printStackTrace();
+					}
+					return null;
+				}
+			<%
+			}else{
+			%>
+				public Object run(){
+					try{
+						soapUtil_<%=cid%>.invokeSOAP(org.talend.soap.SOAPUtil.<%=soapVersion.toUpperCase()%>,<%=endpoint%>,<%=action%>,<%=useMessageFromSchema?connName+"."+soapMessageColumn+".toString()":soapMessageStr%>);
+					}catch(java.lang.Exception ex){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ex.getMessage());
+						ex.printStackTrace();
+					}
+					return null;
+				}
+			<%
+			}
+			%>
+		}
+		<%if("Soap12".equals(soapVersion)){%>
+			final String soapVersion_<%=cid%> = org.talend.soap.SOAPUtil.SOAP12;
+		<%}else{%>
+			final String soapVersion_<%=cid%> = org.talend.soap.SOAPUtil.SOAP11;
+		<%}%>
+		javax.security.auth.Subject subject_<%=cid%> = (javax.security.auth.Subject)globalMap.get("kerberos_subject_<%=kerberosConfiguration%>");
+		if(subject_<%=cid%>==null){
+			System.err.println("Subject for Kerberos is null!");
+			<%log.logPrintedException(log.str("Subject for Kerberos is null!"));%>
+		}
+		<%log.info(log.str("Prepare to send soap request to endpoint."));%>
+		TalendPrivilegedAction talendPrivilegedAction_<%=cid%> = new TalendPrivilegedAction(<%=useMessageFromSchema?connName+", ":""%>soapVersion_<%=cid%>);
+		javax.security.auth.Subject.doAs(subject_<%=cid%>,talendPrivilegedAction_<%=cid%>);
+		<%log.info(log.str("Have sent soap request to endpoint."));%>
+		<%
+		if(outputDocument){
+		%>
+			String document_<%=cid%> = talendPrivilegedAction_<%=cid%>.document;
+		<%
+		}
+		%>
+	<%
+	}else{	
+	%>
+		<%log.info(log.str("Prepare to send soap request to endpoint."));%>
+		<%
+		if(outputDocument){
+		%>
+			String document_<%=cid%> = soapUtil_<%=cid%>.extractContentAsDocument(org.talend.soap.SOAPUtil.<%=soapVersion.toUpperCase()%>,<%=endpoint%>,<%=action%>,<%=useMessageFromSchema?connName+"."+soapMessageColumn+".toString()":soapMessageStr%>);
+		<%
+		}else{
+		%>
+			soapUtil_<%=cid%>.invokeSOAP(org.talend.soap.SOAPUtil.<%=soapVersion.toUpperCase()%>,<%=endpoint%>,<%=action%>,<%=useMessageFromSchema?connName+"."+soapMessageColumn+".toString()":soapMessageStr%>);
+		<%
+		}
+		%>
+		<%log.info(log.str("Have sent soap request to endpoint."));%>
+	<%
+	}
+	%>
+
+	// for output
+	<%
+	List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if(conns!=null){//1
+		if(conns.size()>0){//2
+			IConnection conn = conns.get(0); //the first connection
+			if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){//3
+				IMetadataTable metadata = conn.getMetadataTable();
+				List<IMetadataColumn> columnList = metadata.getListColumns();
+				%>		
+				<%=conn.getName()%> = new <%=conn.getName()%>Struct();
+				<%if(outputDocument){%>
+					<%=conn.getName()%>.Soap = ParserUtils.parseTo_Document(document_<%=cid%>);
+				<%}else{%>
+					<%=conn.getName()%>.Header = soapUtil_<%=cid%>.getReHeaderMessage();
+					if(soapUtil_<%=cid%>.hasFault()){
+						<%=conn.getName()%>.Fault = soapUtil_<%=cid%>.getReFaultMessage();
+					}else{
+						<%=conn.getName()%>.Body = soapUtil_<%=cid%>.getReBodyMessage();
+					}
+				<%		
+				}
+			}//3
+		}//2
+	}//1
+} // if(!useMessageFromSchema || connName!=null){
+%>
+        
+

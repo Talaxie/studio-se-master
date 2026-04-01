@@ -1,0 +1,48 @@
+This jar is POI 3.8 with a fix regarding management of dates with T format (like 2012-12-13T10:23:45).
+
+Modified class: org/apache/poi/ss/usermodel/DateUtil.java
+
+(line 415)
+for (int i = 0; i < fs.length(); i++) {
+	char c = fs.charAt(i);
+    if (i < fs.length() - 1) {
+        char nc = fs.charAt(i + 1);
+        if (c == '\\') {
+            switch (nc) {
+                case '-':
+                case ',':
+                case '.':
+                case ' ':
+                case '\\':
+                    // skip current '\' and continue to the next char
+                    continue;
++				case 'T':
++                    i++;
++                    continue;
+            }
+        } else if (c == ';' && nc == '@') {
+            i++;
+            // skip ";@" duplets
+            continue;
+        }
+    }
+	sb.append(c);
+}
+
+
+Modified by jjzhou 2012-11-27 for https://jira.talendforge.org/browse/TDI-23783 :
+change poi-ooxml-3.8-20120326.jar file name to poi-ooxml-3.8-20121127_modified_talend.jar
+class: org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler.java
+(line 26)
++import org.apache.poi.ss.usermodel.DateUtil;
+(line 365)
+-   thisStr = formatter.formatRawCellContents(Double.parseDouble(n), this.formatIndex, this.formatString);
++   if(!DateUtil.isADateFormat(formatIndex,formatString)) {
+        java.text.DecimalFormat df = new java.text.DecimalFormat("#.####################################");
+        thisStr = df.format(Double.parseDouble(n));
+    }else{
+        thisStr = formatter.formatRawCellContents(Double.parseDouble(n), this.formatIndex, this.formatString);
+    }
+    
+class: org.apache.poi.xssf.extractor.TestXSSFEventBasedExcelExtractor.class
+-    assertEquals(expectedOutput, fixture.getText().replace(",", "."));

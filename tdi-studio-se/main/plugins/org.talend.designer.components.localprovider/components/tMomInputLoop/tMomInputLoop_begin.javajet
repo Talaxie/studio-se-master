@@ -1,0 +1,888 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.Map
+" 
+%>
+	<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	cid = cid.replaceAll("_Loop", "");
+    boolean isUseExistConnection = ("true").equals(ElementParameterParser.getValue(node, "__USE_CONNECTION__"));
+    String connectionComponentName = ElementParameterParser.getValue(node, "__CONNECTION__");
+	String serverType=ElementParameterParser.getValue(node, "__SERVER__");
+	String host=ElementParameterParser.getValue(node, "__SERVERADDRESS__");
+	String port=ElementParameterParser.getValue(node, "__SERVERPORT__");
+	String kListen=ElementParameterParser.getValue(node, "__KEEPLISTENING__");
+	String msgBobyType =  ElementParameterParser.getValue(node, "__MESSAGE_BODY_TYPE__");
+	String msgId=ElementParameterParser.getValue(node, "__MSG_ID__");
+	String useMsgId=ElementParameterParser.getValue(node, "__IS_USE_MESSAGE_ID__");
+	String from=ElementParameterParser.getValue(node, "__FROM__");
+	String msgType = ElementParameterParser.getValue(node, "__MSGTYPE__");
+	
+	boolean transacted = "true".equals(ElementParameterParser.getValue(node, "__IS_TRANSACTED__"));
+	String acknowledgmentMode = ElementParameterParser.getValue(node, "__ACKNOWLEDGMENT_MODE__");
+	
+	boolean failover =  ("true").equals(ElementParameterParser.getValue(node, "__FAILOVER__"));
+	
+	boolean staticdiscovery =  ("true").equals(ElementParameterParser.getValue(node, "__STATIC__"));
+	String connectParamFailover = ElementParameterParser.getValue(node, "__CONNECTION_PARAM_FAILOVER__");
+	String connectParamStatic = ElementParameterParser.getValue(node, "__CONNECTION_PARAM_STATIC__");
+	
+	boolean useMax = ("true").equals(ElementParameterParser.getValue(node,"__USEMAX__"));
+	boolean useMaxTimeout = ("true").equals(ElementParameterParser.getValue(node,"__USEMAX_WITH_TIMEOUT__"));
+	String receiveTimeOut = ElementParameterParser.getValue(node,"__TIMEOUT__");
+	String maxiumMessages = ElementParameterParser.getValue(node,"__MAXMSG__");
+	
+	List<Map<String,String>> servers = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SERVERS__");
+	List<Map<String,String>> additionalOpts = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADDITIONAL_OPTIONS__");
+	
+	String dbuser= ElementParameterParser.getValue(node, "__USER__");
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	
+	boolean isUseSSL = ("true").equals(ElementParameterParser.getValue(node, "__USE_SSL__"));
+	String transProtocol="tcp";
+	String connectionCid = cid;
+	if(isUseSSL){
+		transProtocol = "ssl";
+	}
+
+	String strHost = null;
+	String strPort = null;
+	
+	boolean useMqHeader = "true".equals(ElementParameterParser.getValue(node, "__USE_MQ_HEADER__"));
+
+    List<? extends INode> commitNodes=node.getProcess().getNodesOfType("tMomCommit");
+	List<? extends INode> rollBackNodes=node.getProcess().getNodesOfType("tMomRollback");
+	
+	boolean isCommitRollback = false;
+	for(INode cNode:commitNodes){
+		String cNodeName = ElementParameterParser.getValue(cNode,"__CONNECTION__");
+		if(cid.equals(cNodeName) || (isUseExistConnection && connectionComponentName.equals(cNodeName))){
+			isCommitRollback = true;
+			connectionCid = ElementParameterParser.getValue(node,"__CONNECTION__");
+			break;
+		}
+	}
+	if(!isCommitRollback){
+		for(INode rNode:rollBackNodes){
+			String rNodeName = ElementParameterParser.getValue(rNode,"__CONNECTION__");
+			if(cid.equals(rNodeName) || (isUseExistConnection && connectionComponentName.equals(rNodeName))){
+				isCommitRollback = true;
+				break;
+			}
+		}
+	}
+    	
+    if (isUseExistConnection) {
+		for (INode pNode : node.getProcess().getNodesOfType("tMomConnection")) {
+			if (pNode.getUniqueName().equals(connectionComponentName)) {
+				transacted = "true".equals(ElementParameterParser.getValue(pNode, "__IS_TRANSACTED__")); 
+				serverType = ElementParameterParser.getValue(pNode, "__SERVER__");
+                failover =  ("true").equals(ElementParameterParser.getValue(pNode, "__FAILOVER__"));
+			}	
+		}
+	}
+
+	IMetadataTable metadata=null;
+	List<IMetadataColumn> columns = null;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		metadata = metadatas.get(0);
+		columns = metadata.getListColumns();
+	} %>
+
+	int nb_line_<%=cid%> = 0;
+	javax.jms.Connection connection_<%=cid %> = null;
+	
+<%
+	if("ActiveMQ".equals(serverType) || "JBoss".equals(serverType)){
+%>
+		javax.jms.Session session_<%=cid %> = null;
+		javax.jms.MessageConsumer consumer_<%=cid %> = null;
+<%
+	} else {//websphere
+%>
+		com.ibm.mq.MQQueueManager qMgr_<%=cid%>=null;
+		com.ibm.mq.MQQueue remoteQ_<%=cid%>=null;
+<%
+		boolean isRollback = ("true").equals(ElementParameterParser.getValue(node, "__ROLLBACK__"));
+		boolean isAutoBackout = ("true").equals(ElementParameterParser.getValue(node, "__AUTO_BACKOUT__"));
+		
+		boolean isCommit = ("true").equals(ElementParameterParser.getValue(node, "__COMMIT__"));
+		boolean isBrowse = ("true").equals(ElementParameterParser.getValue(node,"__BROWSE__"));
+		
+		isCommit = isCommit && !isBrowse;
+		isBrowse = isBrowse && !isRollback && !isCommit;
+		isAutoBackout = isAutoBackout && !isBrowse && !isRollback && !isCommit;
+		
+		if(isAutoBackout){
+%>
+		com.ibm.mq.MQQueue  backoutQueue_<%=cid%> = null;
+<%
+		}
+	}
+%>
+	
+	try {
+
+        <% if (isUseExistConnection && ("ActiveMQ").equals(serverType)) { %>
+            try {
+	            <%
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - Get a connection from component: <%=connectionComponentName%> .");
+				<%
+				}
+				%>
+		        connection_<%=cid %> = (javax.jms.Connection) globalMap.get("connection_<%=connectionComponentName%>");
+		        <%
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - Activating the connection...");
+				<%
+				}
+				%>
+	            connection_<%=cid %>.start();
+	            <%
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - Activate successfully.");
+					log.info("<%=cid%> - Get a  session from component: <%=connectionComponentName%> .");
+				<%
+				}
+				%>
+				session_<%=cid %> = (javax.jms.Session) globalMap.get("session_<%=connectionComponentName%>");
+		    } catch (NullPointerException npe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",npe.getMessage());
+		    	<%
+				if(isLog4jEnabled){
+				%>	
+					log.error("<%=cid%> - Got connection unsuccessfully.");
+				<%
+				}
+				%>
+		    	throw new RuntimeException("<%=connectionComponentName%> still not initialized. Try to redesign job.");
+		    }
+	    	javax.jms.Destination des_<%=cid %> = null;
+			<%
+			if (("Queue").equals(msgType)) {
+			%>
+				des_<%=cid %> = session_<%=cid %>.createQueue(<%=from %>);
+			<%
+			} else {
+			%>
+		    	des_<%=cid %> = session_<%=cid %>.createTopic(<%=from %>);
+			<%
+			}
+			%>
+
+			javax.jms.MessageProducer replyProducer_<%=cid %> = session_<%=cid %>.createProducer(null);
+			replyProducer_<%=cid %>.setDeliveryMode(javax.jms.DeliveryMode.NON_PERSISTENT);
+			consumer_<%=cid %> = session_<%=cid %>.createConsumer(des_<%=cid %>);
+	
+			globalMap.put("session_<%=cid %>",session_<%=cid %>);
+			globalMap.put("connection_<%=cid %>",connection_<%=cid %>);
+		
+			// Receive message
+			<% 
+			if(("true").equals(kListen)){
+			%>
+				System.out.println("We will consume messages while they continue to be delivered ");
+				javax.jms.Message message_<%=cid%>;
+				while ((message_<%=cid%> = consumer_<%=cid %>.receive()) != null) {
+
+
+				<%if(("ActiveMQ").equals(serverType) && !isCommitRollback && transacted){%>
+		        	try {   // For rollback
+				<%
+				}
+				%>
+			<%
+			}else if (useMax) {
+			%>
+				int maxMsg_<%=cid %> = <%=maxiumMessages %>;
+				System.out.println("We are about to wait until we consume: " + maxMsg_<%=cid %> + " message(s) then we will shutdown");
+				for (int i_<%=cid %> = 0; i_<%=cid %> < maxMsg_<%=cid %> ;) {
+				<%if(("ActiveMQ").equals(serverType) && !isCommitRollback && transacted){%>
+		        	try {   // For rollback
+		
+				<%
+				}
+				%>
+			        	javax.jms.Message message_<%=cid%> = null;
+					<%if(useMaxTimeout){%>
+						message_<%=cid%> = consumer_<%=cid %>.receive(<%=receiveTimeOut%>*1000);
+						if(message_<%=cid%> == null){
+							break;
+						}else{
+					<%}else{%>
+						message_<%=cid%> = consumer_<%=cid %>.receive();
+						if (message_<%=cid%> != null) {
+					<%}%>
+		            	i_<%=cid %>++;
+			<%
+			}else {
+			%>
+			    System.out.println("We will wait for messages within: " + <%=receiveTimeOut%>*1000 + " ms, and then we will shutdown");
+			    javax.jms.Message message_<%=cid%>;
+			    while ((message_<%=cid%> = consumer_<%=cid %>.receive(<%=receiveTimeOut%>*1000)) != null) {
+
+				<%if(("ActiveMQ").equals(serverType) /*&& !isUseExistConnection*/ && !isCommitRollback && transacted){%>
+		        	try {   // For rollback
+		
+				<%
+				}
+				%>
+			<%
+			} %>
+			    
+			/*-----------------------------------------------------------4.judge message body type---------------------------------------*/
+			<%
+			if(("true").equals(useMsgId) && !"Map".equals(msgBobyType)){
+			%>
+				if (message_<%=cid%> instanceof javax.jms.MapMessage) {
+					javax.jms.MapMessage txtMsg_<%=cid%> = (javax.jms.MapMessage) message_<%=cid%>;
+					String msg_<%=cid %> = txtMsg_<%=cid%>.getString(<%=msgId%>);
+					if(msg_<%=cid %> !=null){
+	
+			<%
+			}else{
+				if ("Text".equals(msgBobyType)) {
+				%>
+					javax.jms.TextMessage txtMsg_<%=cid%> = (javax.jms.TextMessage) message_<%=cid%>;
+					String msg_<%=cid %> = txtMsg_<%=cid%>.getText();
+				
+				<%
+				} else if ("Bytes".equals(msgBobyType)) {
+				%>
+					javax.jms.BytesMessage bytesMsg_<%=cid%> = (javax.jms.BytesMessage) message_<%=cid%>;
+					byte[] bytesMsgBody_<%=cid%> = new byte[(int)bytesMsg_<%=cid%>.getBodyLength()];
+					bytesMsg_<%=cid%>.readBytes(bytesMsgBody_<%=cid%>);
+				<%
+				    if(!"id_byte[]".equals(metadata.getColumn("message").getTalendType())){
+				%>
+					String msg_<%=cid %> = new String(bytesMsgBody_<%=cid%>);
+				<%
+				    }
+				} else if ("Map".equals(msgBobyType)) {
+				%>
+					javax.jms.MapMessage  msg_<%=cid %>  = (javax.jms.MapMessage) message_<%=cid%>;
+				<%
+				}
+			}
+			%>
+
+			
+		<%} else if (("JBoss").equals(serverType)||(!isUseExistConnection && ("ActiveMQ").equals(serverType))) {
+	
+			/*---------------------------------------1.initial jms connection factry---------------------------------*/ 
+			if(("JBoss").equals(serverType) ){ // server judgement
+			%>
+				java.util.Hashtable props_<%=cid%>=new java.util.Hashtable();
+				props_<%=cid%>.put(javax.naming.Context.INITIAL_CONTEXT_FACTORY,"org.jnp.interfaces.NamingContextFactory");
+				props_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, <%=host%>+":"+<%=port%>);
+				props_<%=cid%>.put("java.naming.rmi.security.manager", "yes");
+				props_<%=cid%>.put(javax.naming.Context.URL_PKG_PREFIXES, "org.jboss.naming");
+				props_<%=cid%>.put("java.naming.factory.url.pkgs","org.jboss.naming:org.jnp.interfaces");	
+				
+				javax.naming.Context context_<%=cid%>=new javax.naming.InitialContext(props_<%=cid%>);
+				javax.jms.ConnectionFactory factory_<%=cid%>=(javax.jms.ConnectionFactory)context_<%=cid%>.lookup("ConnectionFactory");	
+			<%		
+			}else if(("ActiveMQ").equals(serverType)){
+				boolean startServer = ("true").equals(ElementParameterParser.getValue(node, "__STARTSERVER__"));
+				%>
+					String url_<%=cid %> ="";
+	      		String endParam_<%=cid %>="";
+ 				<%if(failover || staticdiscovery){
+      			if(failover){%>
+					url_<%=cid %> = "failover:(";
+					endParam_<%=cid %>=<%=connectParamFailover%>;
+				<%}else if(staticdiscovery){%>
+					url_<%=cid %> = "discovery://static:(";
+					endParam_<%=cid %>=<%=connectParamStatic%>;
+				<%}
+					int i=0;
+					for(Map<String, String> serversMap : servers) {
+						strHost = serversMap.get("SERVERS_HOST");
+						strPort = serversMap.get("SERVERS_PORT");
+	
+						if(i>0) {
+						%>
+						url_<%=cid %> = url_<%=cid %> +",";
+						<%
+						}
+						%>
+						url_<%=cid %> = url_<%=cid %> +"<%=transProtocol%>://";
+						url_<%=cid %> = url_<%=cid %> +<%=strHost%>;
+						url_<%=cid %> = url_<%=cid %> +":";
+						url_<%=cid %> = url_<%=cid %> +<%=strPort%>;
+						<%if(isUseSSL){%>
+						url_<%=cid %> = url_<%=cid %> +"?verifyHostName=false";
+						<%}%>
+						
+						<%
+						i++;
+					}
+					%>
+					url_<%=cid %> = url_<%=cid %> +")"+endParam_<%=cid %>;
+					<%
+					for(Map<String, String> optrion : additionalOpts) {
+					%>
+						url_<%=cid %> = url_<%=cid %> +"&"+<%=optrion.get("OPTION_NAME")%>+"="+<%=optrion.get("OPTION_VALUE")%>;
+					<%
+					}
+				}else{%>
+					url_<%=cid %> = "<%=transProtocol%>://"+<%=host%>+":"+<%=port%><%if(isUseSSL){%>+"?verifyHostName=false"<%}%>;
+				<%}%>			
+	
+				<%
+				if(startServer){
+				%>
+					org.apache.activemq.broker.BrokerService broker_<%=cid %> = new org.apache.activemq.broker.BrokerService();
+					broker_<%=cid %>.setUseJmx(true);
+					broker_<%=cid %>.addConnector(url_<%=cid %>);
+					broker_<%=cid %>.start();
+				<%
+				}
+				%>
+				System.out.println("Connecting to URL: " + url_<%=cid %>);
+				System.out.println("Consuming " + (<%="Topic".equals(msgType)%> ? "topic" : "queue") + ": " + <%=from%>);
+				<%
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - Attempt to create connection from URL: " + url_<%=cid %> + ".");
+				<%
+				}
+				%>
+				org.apache.activemq.ActiveMQConnectionFactory factory_<%=cid %> = new org.apache.activemq.ActiveMQConnectionFactory(url_<%=cid %>);
+			<%
+			}
+			
+			/*---------------------------------------2.create Queue Or Topic from connection ---------------------------------*/ 
+			
+			if(dbuser == null || ("\"\"").equals(dbuser) || ("").equals(dbuser)) {
+			%>
+				connection_<%=cid %> = factory_<%=cid %>.createConnection();
+			<%
+			} else {
+			%>
+			
+				<%
+				String passwordFieldName = "__PASS__";
+				%>
+	
+				<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+			
+				connection_<%=cid %> = factory_<%=cid %>.createConnection(<%=dbuser%>,decryptedPassword_<%=cid%>);
+			<%
+			}
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Created connection successfully.");
+				log.info("<%=cid%> - Activating the connection...");
+			<%
+			}
+			%>
+			connection_<%=cid %>.start();
+			<%
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Activate successfully.");
+				log.info("<%=cid%> - Creating a session...");
+			<%
+			}
+			%>
+			session_<%=cid %> = connection_<%=cid %>.createSession(<%=transacted%>, javax.jms.Session.<%=acknowledgmentMode%>);
+			<%
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Created session successfully.");
+			<%
+			}
+			%>
+			javax.jms.Destination des_<%=cid %> = null;
+	
+	
+	
+			<%
+			if (("Queue").equals(msgType)) {
+			%>
+				des_<%=cid %> = session_<%=cid %>.createQueue(<%=from %>);
+			<%
+			} else {
+			%>
+		    	des_<%=cid %> = session_<%=cid %>.createTopic(<%=from %>);
+			<%
+			}
+			%>
+			javax.jms.MessageProducer replyProducer_<%=cid %> = session_<%=cid %>.createProducer(null);
+			replyProducer_<%=cid %>.setDeliveryMode(javax.jms.DeliveryMode.NON_PERSISTENT);
+				
+			consumer_<%=cid %> = session_<%=cid %>.createConsumer(des_<%=cid %>);
+			
+			<%	//put session to global map
+			if( ("ActiveMQ").equals(serverType)) {
+			%>
+				globalMap.put("session_<%=cid %>",session_<%=cid %>);
+				globalMap.put("connection_<%=cid %>",connection_<%=cid %>);
+	       	<%
+			}
+			%>
+	
+			<%		
+			/*---------------------------------------3.recevice message form server ---------------------------------*/ 	
+			if(("JBoss").equals(serverType) ){ 
+				if(isLog4jEnabled){
+				%>	
+					log.info("<%=cid%> - Ready to receive message.");
+					log.info("<%=cid%> - Waiting...");
+				<%
+				}
+				%>					
+				System.out.println("Ready to receive message");
+				System.out.println("Waiting...");	
+				javax.jms.Message message_<%=cid%>;
+			
+				while((message_<%=cid%>=consumer_<%=cid %>.receive())!=null){
+	
+			<%		
+			}else if(("ActiveMQ").equals(serverType)){
+				if(("true").equals(kListen)){
+					if(isLog4jEnabled){
+					%>	
+						log.info("<%=cid%> - Listening to receive messages...");
+					<%
+					}
+					%>
+					System.out.println("We will consume messages while they continue to be delivered ");
+					javax.jms.Message message_<%=cid%>;
+					while ((message_<%=cid%> = consumer_<%=cid %>.receive()) != null) {
+	
+					<%if(("ActiveMQ").equals(serverType) /*&& !isUseExistConnection*/ && !isCommitRollback && transacted){%>
+			        	try {   // For rollback
+			
+					<%
+					}
+					%>
+				<%
+				}else if (useMax) {
+					if(isLog4jEnabled){
+					%>	
+						log.info("<%=cid%> - Listening to receive messages...");
+						log.info("<%=cid%> - Consume max message number:  " + <%=maxiumMessages %>);
+					<%
+					}
+					%>
+					int maxMsg_<%=cid %> = <%=maxiumMessages %>;
+					System.out.println("We are about to wait until we consume: " + maxMsg_<%=cid %> + " message(s) then we will shutdown");
+					for (int i_<%=cid %> = 0; i_<%=cid %> < maxMsg_<%=cid %> ;) {
+					<%if(("ActiveMQ").equals(serverType) && !isCommitRollback && transacted){%>
+			        	try {   // For rollback
+			
+					<%
+					}
+					%>
+				        	javax.jms.Message message_<%=cid%> = null;
+				        <%if(useMaxTimeout){%>
+							message_<%=cid%> = consumer_<%=cid %>.receive(<%=receiveTimeOut%>*1000);
+							if(message_<%=cid%> == null){
+								break;
+							}else{
+						<%}else{%>
+							message_<%=cid%> = consumer_<%=cid %>.receive();
+							if (message_<%=cid%> != null) {
+						<%}%>
+			            	i_<%=cid %>++;
+				<%
+				}else {
+					if(isLog4jEnabled){
+					%>	
+						log.info("<%=cid%> - Listening to receive messages...");
+						log.info("<%=cid%> - Listening time last for:  " + <%=receiveTimeOut%>*1000 + " ms, and then stop.");
+					<%
+					}
+					%>
+				    System.out.println("We will wait for messages within: " + <%=receiveTimeOut%>*1000 + " ms, and then we will shutdown");
+				    javax.jms.Message message_<%=cid%>;
+				    while ((message_<%=cid%> = consumer_<%=cid %>.receive(<%=receiveTimeOut%>*1000)) != null) {
+	
+					<%if(("ActiveMQ").equals(serverType) /*&& !isUseExistConnection*/ && !isCommitRollback && transacted){%>
+			        	try {   // For rollback
+					<%
+					}
+					%>
+				<%
+				}
+			}
+			/*-----------------------------------------------------------4.judge message body type---------------------------------------*/
+			if(("true").equals(useMsgId) && !"Map".equals(msgBobyType)){
+			%>
+				if (message_<%=cid%> instanceof javax.jms.MapMessage) {
+					javax.jms.MapMessage txtMsg_<%=cid%> = (javax.jms.MapMessage) message_<%=cid%>;
+					String msg_<%=cid %> = txtMsg_<%=cid%>.getString(<%=msgId%>);
+					if(msg_<%=cid %> !=null){
+	
+			<%
+			}else{
+				if ("Text".equals(msgBobyType)) {
+				%>
+					javax.jms.TextMessage txtMsg_<%=cid%> = (javax.jms.TextMessage) message_<%=cid%>;
+					String msg_<%=cid %> = txtMsg_<%=cid%>.getText();
+				
+				<%
+				} else if ("Bytes".equals(msgBobyType)) {
+				%>
+					javax.jms.BytesMessage bytesMsg_<%=cid%> = (javax.jms.BytesMessage) message_<%=cid%>;
+					byte[] bytesMsgBody_<%=cid%> = new byte[(int)bytesMsg_<%=cid%>.getBodyLength()];
+					bytesMsg_<%=cid%>.readBytes(bytesMsgBody_<%=cid%>);
+				<%
+				    if(!"id_byte[]".equals(metadata.getColumn("message").getTalendType())){
+				%>
+					String msg_<%=cid %> = new String(bytesMsgBody_<%=cid%>);
+				<%
+				    }
+				} else if ("Map".equals(msgBobyType)) {
+				%>
+					javax.jms.MapMessage  msg_<%=cid %>  = (javax.jms.MapMessage) message_<%=cid%>;
+				<%
+				}
+			}
+			%>
+		
+		<%
+		} else if(("WebSphere").equals(serverType)){ //server judgement   /***WebSphere MQ*****/
+			if(isUseExistConnection){
+				String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+				%>
+				qMgr_<%=cid%> = (com.ibm.mq.MQQueueManager)globalMap.get("qMgr_<%=connection%>");
+				globalMap.put("qMgr_<%=cid%>",qMgr_<%=cid%>);
+			<%
+			}else{
+				String channel=ElementParameterParser.getValue(node, "__CHANNEL__");
+				String qm=ElementParameterParser.getValue(node, "__QM__");
+				boolean needSSLCipher = ("true").equals(ElementParameterParser.getValue(node,"__SET_MQ_SSL_CIPHER__"));
+				boolean useIBMCipherMappings = ("true").equals(ElementParameterParser.getValue(node,"__USE_IBM_MAPPING__"));
+		        boolean useCustomCipherSuite = ("true").equals(ElementParameterParser.getValue(node,"__CUSTOM_CIPHER__"));
+		        String customCipherSuite = ElementParameterParser.getValue(node, "__CUSTOM_CIPHER_SUITE__");				String sslCipher = ElementParameterParser.getValue(node, "__MQ_SSL_CIPHER__");
+				%>
+				System.setProperty("com.ibm.mq.cfg.MessageProperties.PropctlToFORCE_RFH2","Yes");
+				java.util.Hashtable properties<%=cid%>=new java.util.Hashtable();
+				properties<%=cid%>.put("hostname", <%=host%>);
+				properties<%=cid%>.put("port", Integer.valueOf(<%=port%>));
+				properties<%=cid%>.put("channel", <%=channel%>);
+				properties<%=cid%>.put("CCSID", new Integer(1208));
+				properties<%=cid%>.put("transport","MQSeries");
+				<%
+		      if(needSSLCipher){
+		          if(useCustomCipherSuite){
+		          %>
+		              System.setProperty("com.ibm.mq.cfg.useIBMCipherMappings","<%=useIBMCipherMappings%>");
+		              com.ibm.mq.MQEnvironment.sslCipherSuite = <%=customCipherSuite%>;
+		          <%
+		          }else{
+		          %>
+		              com.ibm.mq.MQEnvironment.sslCipherSuite = "<%=sslCipher%>";
+		          <%
+		          }
+		      }
+				if(!(dbuser == null) && !("\"\"").equals(dbuser) && !("").equals(dbuser)) {
+				%>
+					properties<%=cid%>.put("userID",<%=dbuser%>);
+					<%
+					String passwordFieldName = "__PASS__";
+					%>
+
+					<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>			
+			
+					properties<%=cid%>.put("password",decryptedPassword_<%=cid%>);
+				<%
+				}
+				%>
+				qMgr_<%=cid%>=new com.ibm.mq.MQQueueManager(<%=qm%>,properties<%=cid%>);
+				globalMap.put("qMgr_<%=cid%>",qMgr_<%=cid%>);
+			<%
+			}
+			String queue = ElementParameterParser.getValue(node, "__QUEUE__");
+			boolean isRollback = ("true").equals(ElementParameterParser.getValue(node, "__ROLLBACK__"));
+			boolean isAutoBackout = ("true").equals(ElementParameterParser.getValue(node, "__AUTO_BACKOUT__"));
+			
+			boolean isCommit = ("true").equals(ElementParameterParser.getValue(node, "__COMMIT__"));
+			boolean isBrowse = ("true").equals(ElementParameterParser.getValue(node,"__BROWSE__"));
+			
+			isCommit = isCommit && !isBrowse;
+			isBrowse = isBrowse && !isRollback && !isCommit;
+			isAutoBackout = isAutoBackout && !isBrowse && !isRollback && !isCommit;
+			
+			if(("true").equals(useMsgId)){
+			%>
+				String msgId_<%=cid%> = <%=msgId%>;
+		    	if (msgId_<%=cid%> != null & !("").equals(msgId_<%=cid%>)) {
+					String padding_<%=cid%> = new String();
+			       	int padlen_<%=cid%> = 24;
+			 
+			       	int len_<%=cid%> = Math.abs(padlen_<%=cid%>) - msgId_<%=cid%>.toString().length();
+			       	if (len_<%=cid%> > 0) {
+			        	for (int i = 0 ; i < len_<%=cid%> ; i++) {
+			           		padding_<%=cid%> = padding_<%=cid%> + " ";
+			         	}
+			        	msgId_<%=cid%> = msgId_<%=cid%> + padding_<%=cid%>;
+			        }
+				}
+			<%
+			}
+			%>
+			try{
+	
+				int openOptions<%=cid%>=com.ibm.mq.MQC.MQOO_INPUT_SHARED | com.ibm.mq.MQC.MQOO_FAIL_IF_QUIESCING | com.ibm.mq.MQC.MQOO_INQUIRE<%if(isBrowse){%> | com.ibm.mq.MQC.MQOO_BROWSE<%}%>;
+			
+				com.ibm.mq.MQGetMessageOptions gmo<%=cid%>=new com.ibm.mq.MQGetMessageOptions();
+				<%if(isBrowse){%>
+					gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.MQGMO_BROWSE_FIRST;
+					int browseCursor_<%=cid%> = 0;
+				<%}else{%>
+					gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.MQGMO_SYNCPOINT;
+				<%}%>
+				gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.<%if(("false").equals(kListen)){%>MQGMO_NO_WAIT<%}else{%>MQGMO_WAIT<%}%>;
+				gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+				gmo<%=cid%>.waitInterval=com.ibm.mq.MQC.MQWI_UNLIMITED;
+				com.ibm.mq.MQException.log = null;
+				boolean flag<%=cid%>=true;
+			
+				remoteQ_<%=cid%>=qMgr_<%=cid%>.accessQueue(<%=queue%>,openOptions<%=cid%>);
+				<%
+				if(isAutoBackout){
+				%>
+					int[] selectors_<%=cid%> = new int[2];
+					int[] intAttrs_<%=cid%> = new int[1];
+					int threshold_<%=cid%> = 0;
+					String backoutQName_<%=cid%> = "";
+					byte[] charAttrs_<%=cid%> = new byte[com.ibm.mq.MQC.MQ_Q_NAME_LENGTH];
+					selectors_<%=cid%>[0] = com.ibm.mq.MQC.MQCA_BACKOUT_REQ_Q_NAME;
+					selectors_<%=cid%>[1] = com.ibm.mq.MQC.MQIA_BACKOUT_THRESHOLD;
+					try{
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - Initing backout queue ...");
+						<%
+						}
+						%>
+						remoteQ_<%=cid%>.inquire(selectors_<%=cid%>, intAttrs_<%=cid%>, charAttrs_<%=cid%>);
+						threshold_<%=cid%> = intAttrs_<%=cid%>[0];
+						backoutQName_<%=cid%> = new String(charAttrs_<%=cid%>);
+						if(threshold_<%=cid%> > 0 && backoutQName_<%=cid%>.trim().length()>0){
+							backoutQueue_<%=cid%> = qMgr_<%=cid%>.accessQueue(backoutQName_<%=cid%>, 16);
+						}else{
+							throw new java.lang.Exception("Init backout queue unsuccessfully!");
+						}
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.info("<%=cid%> - The backout queue of "+<%=queue%>+" is:"+backoutQName_<%=cid%>);
+							log.info("<%=cid%> - The threshold value of messages in "+<%=queue%>+" is:"+threshold_<%=cid%>);
+							log.info("<%=cid%> - Init backout queue successfully.");
+						<%
+						}
+						%>
+					}catch (java.lang.Exception e_<%=cid%>) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+						<%
+						if(isLog4jEnabled){
+						%>	
+							log.warn("<%=cid%> - Init backout queue unsuccessfully, poison messages will remain on the input queue.");
+						<%
+						}else{
+						%>
+							System.err.println("Init backout queue unsuccessfully, poison messages will remain on the input queue.");
+						<%
+						}
+						%>
+					}
+				<%
+				}
+				%>
+	
+			<%
+			if(("false").equals(kListen) && !useMax) {
+			%>
+				if(Integer.valueOf(remoteQ_<%=cid%>.getCurrentDepth()).equals(0))
+				{
+					flag<%=cid%>= false;
+				} 	
+			<%
+			}	
+			if(isLog4jEnabled){
+			%>	
+				log.info("<%=cid%> - Ready to receive message.");
+				log.info("<%=cid%> - Waiting...");
+			<%
+			}
+			%>	
+				System.out.println("Ready to receive message");
+				System.out.println("Waiting...");	
+			    <%
+			    if (useMax) {
+				     if(isLog4jEnabled){
+			        %>	
+			            log.info("<%=cid%> - Consume max message number:  " + <%=maxiumMessages %>);
+			        <%
+			        }
+			        %>
+			        int remainingMaxNum_<%=cid %> = <%=maxiumMessages %>;
+			        <%
+			        if(useMaxTimeout){
+			        %>
+			            boolean hasWaitAndRetry_<%=cid %> = false;
+			        <%
+			        }
+			    }
+			    %>
+				while(flag<%=cid%>){
+			<%
+			if(isAutoBackout){
+			%>
+				globalMap.put("currentMessageIsConsumed_<%=connectionCid%>",false);//if current message has been commited,no need to backout it to the backout queue.
+			<%
+			}
+			
+			if(("false").equals(kListen)){
+		       if (useMax) {
+			   %>
+				     if(remainingMaxNum_<%=cid %> <= 1){
+				         flag<%=cid%>= false;
+				     }
+				 <%
+				 }else{
+				 %>
+				    if(Integer.valueOf(remoteQ_<%=cid%>.getCurrentDepth()).equals(1)) {
+				         flag<%=cid%>= false;
+				    }
+			   <%
+			    }
+			}
+			if(isBrowse){
+			%>
+				if(browseCursor_<%=cid%> > 0){
+					gmo<%=cid%>.options=com.ibm.mq.MQC.MQGMO_BROWSE_NEXT; 
+					gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.<%if(("false").equals(kListen)){%>MQGMO_NO_WAIT<%}else{%>MQGMO_WAIT<%}%>;
+					gmo<%=cid%>.options=gmo<%=cid%>.options+com.ibm.mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+				}
+				browseCursor_<%=cid%>++;
+			<%
+			}
+			%>
+			com.ibm.mq.MQMessage inMessage<%=cid%>=new com.ibm.mq.MQMessage();
+			<%
+			if(("true").equals(useMsgId)&& !"Map".equals(msgBobyType)){
+			%>
+				inMessage<%=cid%>.messageId = msgId_<%=cid%>.getBytes("ISO-8859-15");
+			<%
+			}
+			if((("false").equals(kListen) && ("true").equals(useMsgId) && !"Map".equals(msgBobyType)) || useMax){
+			%>		
+				try{
+					remoteQ_<%=cid%>.get(inMessage<%=cid%>,gmo<%=cid%>);
+					<%
+					if (useMax) {
+					%>
+					    remainingMaxNum_<%=cid %> --;
+					    <%
+			          if(useMaxTimeout){
+			          %>
+					        hasWaitAndRetry_<%=cid %> = false;
+					    <%
+					    }
+					}
+					%>
+				}catch (com.ibm.mq.MQException me_<%=cid%>) {   
+globalMap.put("<%=cid%>_ERROR_MESSAGE",me_<%=cid%>.getMessage());
+		            if (me_<%=cid%>.reasonCode == com.ibm.mq.MQException.MQRC_NO_MSG_AVAILABLE) {
+		                <%
+				         if (useMax && useMaxTimeout) {
+				         %>
+				             if(!hasWaitAndRetry_<%=cid %>){
+				                 <%
+				                 if(isLog4jEnabled){
+			                    %>	
+			                        log.info("<%=cid%> - No message available, would retry after " + <%=receiveTimeOut %>+"s");
+			                    <%
+			                    }
+				                 %>
+				                 Thread.sleep(<%=receiveTimeOut%>*1000);
+				                 hasWaitAndRetry_<%=cid %> = true;
+				                 flag<%=cid%>= true;
+				                 continue;
+				             }else{
+				                 <%
+				                 if(isLog4jEnabled){
+			                    %>	
+			                        log.info("<%=cid%> - No message available after retry, stop to receive message !");
+			                    <%
+			                    }
+				                 %>
+				                 break;
+				             }
+				         <%
+				         }else{
+				         %>
+		            	    break;
+		            	<%
+				         }
+				         %>   
+		            }else{
+		            	throw me_<%=cid%>;
+		            }   
+     			}
+			<%
+			} else {
+			%>
+				remoteQ_<%=cid%>.get(inMessage<%=cid%>,gmo<%=cid%>);
+			<%
+			}
+			%>
+			
+			<%
+			if (useMqHeader) {
+			%>				
+			org.talend.mq.headers.rfh2.MQRFH2 mqrfh2_<%=cid %> = new org.talend.mq.headers.rfh2.MQRFH2(inMessage<%=cid %>);
+			
+			<%}%>
+
+			<%		
+			if ("Text".equals(msgBobyType)) {
+			%>
+	    		String msg_<%=cid%>=inMessage<%=cid%>.readStringOfByteLength(inMessage<%=cid%>.getDataLength());
+			<%
+			} else if ("Bytes".equals(msgBobyType)) {
+			%>
+				byte[] bytesMsgBody_<%=cid%> = new byte[inMessage<%=cid%>.getDataLength()];
+				inMessage<%=cid%>.readFully(bytesMsgBody_<%=cid%>);
+			<%
+		    	if(!"id_byte[]".equals(metadata.getColumn("message").getTalendType())){
+			%>
+				String msg_<%=cid%> = new String(bytesMsgBody_<%=cid%>);
+			<%
+		    	}
+			} else if ("Map".equals(msgBobyType)) {
+			%>
+				java.util.Map msg_<%=cid%> = (java.util.Map)inMessage<%=cid%>.readObject();			  
+			<%
+			}
+			if(isCommit){
+			%>
+				qMgr_<%=cid%>.commit();
+			<%
+			}
+			
+		}
+		%>
+
+
+		

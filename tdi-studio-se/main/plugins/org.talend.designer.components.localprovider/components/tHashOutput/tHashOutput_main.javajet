@@ -1,0 +1,229 @@
+<%@ jet
+	imports="
+        java.util.HashSet
+        java.util.List
+        java.util.Set
+        
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+	"
+%>
+<%
+	class Util{
+		//keep the tHashOutput Name when on the searching patch, in order to avoid the cycle reference problem.
+		Set<String> nodeNames = new HashSet<String>();
+		List<? extends INode> nodes = null;
+		//the parameter node is tHashInput/tHashOutput
+		public INode getOriginaltHashOutputNode(INode node) throws java.lang.Exception{	
+			//initial it only once.
+			if(nodes == null){
+				nodes = node.getProcess().getGeneratingNodes();
+			}
+			
+			String uniqueName = node.getUniqueName();
+			if(nodeNames.contains(uniqueName)){
+				//happen the cycle problem!!!
+				//return null;
+				throw new java.lang.Exception("Problem with " + uniqueName + " caused by cross-linking two tHashOutput components to each other.");
+			}else{
+				nodeNames.add(uniqueName);
+				//1. get the tHashOuput node
+				boolean isLinked = "true".equals(ElementParameterParser.getValue(node, "__LINK_WITH__"));
+				String tHashOutputName = ElementParameterParser.getValue(node, "__LIST__");
+				if(isLinked){
+				
+					//System.out.println("Node:" + uniqueName);
+					//System.out.println("__LINK_WITH__:" + isLinked);
+					//System.out.println("__LIST__:" + tHashOutputName);
+					
+					if(tHashOutputName != null && !tHashOutputName.trim().equals("")){
+						INode tHashOutput = getNodeFromProcess(tHashOutputName);
+						if(tHashOutput != null){
+							//recursive call it!!!
+							return getOriginaltHashOutputNode(tHashOutput);
+						}else{
+							//if go here, it means that user delete the original tHashOutput 
+							//return null;
+							throw new java.lang.Exception("if go here, it means that user delete the original tHashOutput.");
+						}
+					}else{
+						//if go here, it means there should link to a tHashOutput, but user doesn't it.
+						//return null;
+						throw new java.lang.Exception("if go here, it means there should link to a tHashOutput, but user doesn't it.");
+					}
+				}else{
+					//get it!!! it can be a 1).tHashInput(read file directly), 2). tHashOuput (the original one)  
+					return node;
+				}				
+			}			
+		}
+		
+		private INode getNodeFromProcess(String nodeName){			
+	    	for (INode nd : nodes) {
+	     	   if (nd.getUniqueName().equals(nodeName)) {
+	     	      return nd;
+	     	   }
+	     	}			
+			return null;
+		}	
+		
+	}
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	String jobName = codeGenArgument.getJobName();
+	INode node = (INode)codeGenArgument.getArgument();	
+	String cid = node.getUniqueName();
+	
+	//1. get the tHashOuput node
+	boolean isLinked = "true".equals(ElementParameterParser.getValue(node, "__LINK_WITH__"));
+	String tHashOutputName = ElementParameterParser.getValue(node, "__LIST__");
+	INode tHashOutputNode = null;
+	if(isLinked){
+		try{
+			Util util = new Util();
+			tHashOutputNode = util.getOriginaltHashOutputNode(node);	
+			//System.out.println(tHashOutputNode.getUniqueName());
+		}catch(java.lang.Exception e){%>
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+			<%=e.getMessage() %>
+		<%}
+	}
+	
+	//2. get tHashInput medadata
+	IMetadataTable metadata = null;
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if (metadatas != null && metadatas.size() > 0) {
+    	metadata = metadatas.get(0);
+    }
+    
+    //3. get tHashOutput medadata
+	IMetadataTable tHashOutput_metadata = null;	
+	if(tHashOutputNode != null){
+    	List<IMetadataTable> tHashOutput_metadatas = tHashOutputNode.getMetadataList();
+    	if (tHashOutput_metadatas != null && tHashOutput_metadatas.size() > 0) {
+        	tHashOutput_metadata = tHashOutput_metadatas.get(0);
+        }
+	}
+	
+	//5. get tHashInput output connectionName
+	IConnection outputDataConn = null;
+	String outputDataConnName = null;
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+	if (conns != null) {
+		for (IConnection conn : conns) {
+			if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+				outputDataConn = conn;
+				outputDataConnName = outputDataConn.getName();
+				break;
+			}
+		}
+	}
+	
+	//6. get tHashOutput incomming connectionName
+	IConnection tHashOutput_incommingDataConn = null;
+	String tHashOutput_incommingDataConnName = null;
+	if(tHashOutputNode != null){
+    	List< ? extends IConnection> tHashOutput_conns = tHashOutputNode.getIncomingConnections();
+    	if (conns != null) {
+    		for (IConnection conn : tHashOutput_conns) {
+    			if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+    				tHashOutput_incommingDataConn = conn;
+    				tHashOutput_incommingDataConnName = tHashOutput_incommingDataConn.getName();
+    				break;
+    			}
+    		}
+    	}
+	}
+%>
+
+
+<%	
+	String matchingMode = ElementParameterParser.getValue(node,"__KEYS_MANAGEMENT__");
+	
+	//7. get input data connection	
+	IConnection incommingDataConn = null;
+    List< ? extends IConnection> connections = node.getIncomingConnections();
+	if (connections != null) {
+		for (IConnection conn : connections) {
+			if(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)){
+				incommingDataConn = conn;
+				break;
+			}
+		}
+	}
+%>
+
+<%	
+if(!isLinked){//111
+	//////////////////////////////////////////////////////////////
+	//it doesn't link to another tHashOutput, it is a new HashFile.
+	if(incommingDataConn != null){//222
+		String connectionName = incommingDataConn.getName();
+		
+		IMetadataTable metadataTable = incommingDataConn.getMetadataTable();
+		List<IMetadataColumn> listColumns = metadataTable.getListColumns();		
+%>    
+		<%=connectionName %>Struct oneRow_<%=cid %> = new <%=connectionName %>Struct();
+				
+<%
+            for (IMetadataColumn column : listColumns) {
+                String columnName = column.getLabel();
+				if("id_Dynamic".equals(column.getTalendType())) {
+%>
+					oneRow_<%=cid %>.<%=columnName %> = <%=connectionName %>.<%=columnName %>.clone();
+<%
+				} else {
+%>
+					oneRow_<%=cid %>.<%=columnName %> = <%=connectionName %>.<%=columnName %>;
+<%
+				}
+        	}
+%>
+		
+        tHashFile_<%=cid %>.put(oneRow_<%=cid %>);
+        nb_line_<%=cid %> ++;
+<%	
+	}//222
+}else{//111
+	//////////////////////////////////////////////////////////////
+	//it link to another tHashOutput, it works in append model. 
+	if(incommingDataConn != null && tHashOutput_metadata != null){//333
+		String connectionName = incommingDataConn.getName();	
+        List<IMetadataColumn> columns = metadata.getListColumns();
+        List<IMetadataColumn>  tHashOutputcolumns = tHashOutput_metadata.getListColumns();
+//fix bug 21630,use method getAdvancedMemoryHashFile to get a exist AdvancedMemoryHashFile
+%>
+		if(tHashFile_<%=cid %> == null){
+			tHashFile_<%=cid %> = mf_<%=cid %>.getAdvancedMemoryHashFile("tHashFile_<%=jobName %>_" + pid +"_<%=tHashOutputName %>");
+			mf_<%=cid %>.getResourceMap().put("tHashFile_<%=jobName %>_" + pid +"_<%=cid %>", tHashFile_<%=cid %>);
+		}
+		<%=tHashOutput_incommingDataConnName %>Struct oneRow_<%=cid %> = new <%=tHashOutput_incommingDataConnName %>Struct();
+<%      
+    //min
+    int size = Math.min(columns.size(), tHashOutputcolumns.size());
+    for(int i=0; i<size; i++){//444
+		if("id_Dynamic".equals(tHashOutputcolumns.get(i).getTalendType())) {
+%>
+			oneRow_<%=cid %>.<%=tHashOutputcolumns.get(i).getLabel() %> = <%=connectionName %>.<%=columns.get(i).getLabel() %>.clone();
+<%
+		} else {
+%>
+			oneRow_<%=cid %>.<%=tHashOutputcolumns.get(i).getLabel() %> = <%=connectionName %>.<%=columns.get(i).getLabel() %>;
+<%
+		}
+	}//444
+%>
+        tHashFile_<%=cid %>.put(oneRow_<%=cid %>);
+        nb_line_<%=cid%> ++;	
+<%	
+  }//333
+
+}//111
+%>

@@ -1,0 +1,85 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+	java.util.Map
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
+String contextProvider=ElementParameterParser.getValue(node, "__CONTEXT_PROVIDER__");
+String connFacName=ElementParameterParser.getValue(node, "__CONN_FACTORY_NAME__");
+String url=ElementParameterParser.getValue(node, "__SERVER_URL__");
+String userIdentity=ElementParameterParser.getValue(node, "__USER_IDENTITY__");
+String user=ElementParameterParser.getValue(node, "__USER__");
+
+String to=ElementParameterParser.getValue(node, "__TO__");
+String deliverMode = ElementParameterParser.getValue(node, "__DELIVERY_MODE__");
+String msgType = ElementParameterParser.getValue(node, "__MSGTYPE__");
+boolean useJNDILookup="true".equalsIgnoreCase(ElementParameterParser.getValue(node, "__USE_JNDI_LOOKUP__"));
+
+List<Map<String, String>> advProps = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ADVANCED_PROPERTIES__"); 
+
+IMetadataTable metadata=null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+	metadata = metadatas.get(0);
+}
+%>
+	java.util.Hashtable props_<%=cid%> = new java.util.Hashtable();
+	props_<%=cid%>.put(javax.naming.Context.INITIAL_CONTEXT_FACTORY, <%=contextProvider%>);
+	props_<%=cid%>.put(javax.naming.Context.PROVIDER_URL, <%=url%>);
+<% 
+	if(advProps.size() > 0){ 
+		for(Map<String, String> item : advProps){ 
+%> 
+			props_<%=cid%>.put(<%=item.get("PROPERTY") %>, <%=item.get("VALUE") %>); 
+<%  
+		}  
+	}	 
+%>
+	
+	javax.naming.Context context_<%=cid%> = new javax.naming.InitialContext(props_<%=cid%>);
+	javax.jms.ConnectionFactory factory_<%=cid%> = (javax.jms.ConnectionFactory) context_<%=cid%>.lookup(<%=connFacName%>);
+	
+    <%
+    String passwordFieldName = "__PASS__";
+    %>
+        
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	
+	javax.jms.Connection connection_<%=cid %> = factory_<%=cid %>.createConnection(<%if("true".equals(userIdentity)){%><%=user %>, decryptedPassword_<%=cid%><%}%>);
+	connection_<%=cid %>.start();
+    resourceMap.put("connection_<%=cid%>",connection_<%=cid%>);
+	javax.jms.Session session_<%=cid %> = connection_<%=cid %>.createSession(false, javax.jms.Session.AUTO_ACKNOWLEDGE);
+    resourceMap.put("session_<%=cid%>",session_<%=cid%>);
+	<%
+	if(useJNDILookup){
+	%>
+	javax.jms.Destination dest_<%=cid%> = (javax.jms.Destination)context_<%=cid%>.lookup(<%=to %>);
+	<%
+	}else{
+	%>
+	javax.jms.Destination dest_<%=cid %> = session_<%=cid %>.create<%=msgType%>(<%=to %>);
+	<%
+	}
+	%>
+
+	javax.jms.MessageProducer producer_<%=cid %> = session_<%=cid %>.createProducer(dest_<%=cid %>);
+    resourceMap.put("producer_<%=cid%>",producer_<%=cid%>);
+
+	producer_<%=cid %>.setDeliveryMode(javax.jms.DeliveryMode.<%=deliverMode%>);
+
+	int nbline_<%=cid %> = 0;
+
+
+
+		

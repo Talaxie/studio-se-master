@@ -1,0 +1,72 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.Set
+        org.talend.components.api.component.ComponentDefinition
+        org.talend.components.api.component.ConnectorTopology
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.designer.core.generic.model.Component
+        org.talend.core.model.utils.NodeUtil
+        "
+%>
+// finally of generic
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+Component component = (Component)node.getComponent();
+ComponentDefinition def = component.getComponentDefinition();
+
+IMetadataTable metadata = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+    metadata = metadatas.get(0);
+}
+
+// Return at this point if there is no metadata.
+if (metadata == null) {
+    return stringBuffer.toString();
+}
+
+boolean hasInput = !NodeUtil.getIncomingConnections(node, IConnectionCategory.DATA).isEmpty();
+boolean hasOutput = !NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA).isEmpty();
+boolean hasOutputOnly = hasOutput && !hasInput;
+
+Set<ConnectorTopology> connectorTopologies = def.getSupportedConnectorTopologies();
+boolean asInputComponent = connectorTopologies!=null && (connectorTopologies.size() < 3) && connectorTopologies.contains(ConnectorTopology.OUTGOING);
+%>
+
+if(resourceMap.get("finish_<%=cid%>")==null){
+<%
+if(hasOutputOnly || asInputComponent){
+%>
+    if(resourceMap.get("reader_<%=cid%>")!=null){
+		try {
+			((org.talend.components.api.component.runtime.Reader)resourceMap.get("reader_<%=cid%>")).close();
+		} catch (java.io.IOException e_<%=cid %>) {
+			String errorMessage_<%=cid%> = "failed to release the resource in <%=cid %> :" + e_<%=cid %>.getMessage();
+			System.err.println(errorMessage_<%=cid%>);
+		}
+	}
+<%
+}else if(hasInput){
+%>
+    if(resourceMap.get("writer_<%=cid%>")!=null){
+		try {
+			((org.talend.components.api.component.runtime.Writer)resourceMap.get("writer_<%=cid%>")).close();
+		} catch (java.io.IOException e_<%=cid %>) {
+			String errorMessage_<%=cid%> = "failed to release the resource in <%=cid %> :" + e_<%=cid %>.getMessage();
+			System.err.println(errorMessage_<%=cid%>);
+		}
+	}
+<%
+}
+%>
+}

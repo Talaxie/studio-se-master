@@ -1,0 +1,180 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory  
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.metadata.types.JavaTypesManager
+	org.talend.core.model.metadata.types.JavaType
+    java.util.List
+    java.util.Map
+" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas!=null)&&(metadatas.size()>0)) {
+		IMetadataTable metadata = metadatas.get(0);
+		if (metadata!=null) {
+			String cid = node.getUniqueName();
+			List<Map<String, String>> criteria =
+            (List<Map<String,String>>)ElementParameterParser.getObjectValue(
+                node,
+                "__CRITERIA__"
+            );
+
+        String filename = ElementParameterParser.getValue(
+            node,
+            "__FILENAME__"
+        );
+
+        String fieldSeparator = ElementParameterParser.getValue(
+            node,
+            "__FIELDSEPARATOR__"
+        );
+
+        String tempDir = ElementParameterParser.getValue(
+            node,
+            "__TEMP_DIR__"
+        );
+
+        String maxMemory = ElementParameterParser.getValue(
+            node,
+            "__MAX_MEMORY__"
+        );
+        
+        String SortCMDPath = ElementParameterParser.getValue(
+            node,
+            "__SORT_CMDPATH__"
+        );
+%>
+	///////////////////////////////////////////
+	out_<%=cid %>.close();
+
+
+String[] sb_<%=cid %> = new String[] {
+
+<% if (!("").equals(SortCMDPath)) { %> <%=SortCMDPath %>,   <% } else { %> "sort", <% } %>
+
+"--buffer-size="+<%=maxMemory%>,
+<% if (!("").equals(tempDir)) { %>"--temporary-directory="+<%=tempDir %>,<% } %>
+"--field-separator="+<%=fieldSeparator %>,
+<%
+        for(int i=0; i<criteria.size(); i++) {
+            Map<String, String> line = criteria.get(i);
+            
+            String colname = line.get("COLNAME");
+            int colnum = 0;
+
+            int j = 1;
+            for (IMetadataColumn column: metadata.getListColumns()) {
+                if (colname.equals(column.getLabel())) {
+                    colnum = j;
+                }
+                j++;
+            }	
+%>
+"--key=<%=colnum %>,<%=colnum %><% if (("desc").equals(line.get("ORDER").toLowerCase())) { %>r<% } %><% if (line.get("SORT").toLowerCase().startsWith("num")) { %>n<% } %>",
+<% } %>
+"--output="+<%=filename%>,
+""+tempFile_<%=cid %>.getAbsolutePath()+""
+};
+
+Runtime runtime_<%=cid %> = Runtime.getRuntime();
+final Process ps_<%=cid %> = runtime_<%=cid %>.exec(sb_<%=cid %>);
+
+		Thread normal_<%=cid %> = new Thread() {
+			public void run() {
+				try {
+					java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getInputStream()));
+					String line = "";
+					try {
+						while ((line = reader.readLine()) != null) {
+							System.out.println(line);
+						}
+					} finally {
+						reader.close();
+					}
+				} catch (java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+					ioe.printStackTrace();
+				}
+			}
+		};
+		normal_<%=cid %>.start();
+
+		Thread error_<%=cid %> = new Thread() {
+			public void run() {
+				try {
+					java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(ps_<%=cid %>.getErrorStream()));
+					String line = "";
+					try {
+						while ((line = reader.readLine()) != null) {
+							System.err.println(line);
+						}
+					} finally {
+						reader.close();
+					}
+				} catch (java.io.IOException ioe) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",ioe.getMessage());
+					ioe.printStackTrace();
+				}
+			}
+		};
+		error_<%=cid %>.start();
+		ps_<%=cid %>.waitFor();
+		normal_<%=cid %>.join();
+		error_<%=cid %>.join();
+		
+<%	if(("true").equals(ElementParameterParser.getValue(node, "__ADD_EOF__"))){
+%>final java.io.BufferedWriter re_out_<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+        		new java.io.FileOutputStream(<%=filename %>, true)));
+<%	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	for (IConnection conn : conns) {
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    			List<IMetadataColumn> columns = metadata.getListColumns();
+    			int sizeColumns = columns.size();
+    			for (int i = 0; i < sizeColumns; i++) {
+    				IMetadataColumn column = columns.get(i);
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.DATE || javaType == JavaTypesManager.BYTE_ARRAY || javaType == JavaTypesManager.OBJECT) {
+					} else if(javaType == JavaTypesManager.BOOLEAN){
+%>re_out_<%=cid %>.write("false");
+<%					}else if(javaType == JavaTypesManager.BYTE){
+%>re_out_<%=cid %>.write(String.valueOf(Byte.MIN_VALUE));
+<%					}else if(javaType == JavaTypesManager.CHARACTER){
+%>re_out_<%=cid %>.write("T");
+<%					}else if(javaType == JavaTypesManager.INTEGER){
+%>re_out_<%=cid %>.write(String.valueOf(Integer.MIN_VALUE));
+<%					}else if(javaType == JavaTypesManager.LONG){
+%>re_out_<%=cid %>.write(String.valueOf(Long.MIN_VALUE));
+<%					}else if(javaType == JavaTypesManager.SHORT){
+%>re_out_<%=cid %>.write(String.valueOf(Short.MIN_VALUE));
+<%					}else if(javaType == JavaTypesManager.FLOAT){
+%>re_out_<%=cid %>.write(String.valueOf(Float.MIN_VALUE));
+<%					}else if(javaType == JavaTypesManager.DOUBLE){
+%>re_out_<%=cid %>.write(String.valueOf(Double.MIN_VALUE));
+<%					}
+					if(i != sizeColumns - 1) {
+%>re_out_<%=cid %>.write(OUT_DELIM_<%=cid %>);
+<%
+    				}
+				}
+%>re_out_<%=cid %>.write(OUT_DELIM_ROWSEP_<%=cid %>);
+re_out_<%=cid %>.close();
+<%
+    		}
+    	}%><%
+	}%>
+		globalMap.put("<%=cid %>_NB_LINE",nb_line_<%=cid %>);		
+/////////////////////////////////
+
+<%
+		}
+	}
+%>

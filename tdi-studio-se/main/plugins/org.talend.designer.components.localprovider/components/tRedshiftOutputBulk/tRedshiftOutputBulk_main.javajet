@@ -1,0 +1,139 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+    	org.talend.core.model.process.ElementParameterParser		
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+	"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean isLog4jEnabled = "true".equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+	List<IMetadataTable> metadatas = node.getMetadataList();
+	if ((metadatas==null)||(metadatas.isEmpty())) {
+		return "";
+	}
+	
+	IMetadataTable metadata = metadatas.get(0);
+	if (metadata==null) {
+		return "";
+	}
+	
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	if(encoding!=null) {
+		encoding = encoding.replace("UTF16LE","UTF-16LE").replace("UTF16BE","UTF-16BE");
+	}
+	
+	List< ? extends IConnection> conns = node.getIncomingConnections();
+	if(conns==null || conns.isEmpty()){
+		return "";
+	}
+	
+    IConnection conn =conns.get(0);
+    
+	if (!conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		return "";
+	}
+	
+	String nullString = "\"\\\\N\"";
+	
+	List<IMetadataColumn> columns = metadata.getListColumns();
+	int sizeColumns = columns.size();
+	%>
+	String[] row_<%=cid%>=new String[]{<%for(int j=0;j<sizeColumns;j++){if(j != 0) {%>, <%}%><%=nullString%><%}%>};
+	<%
+	for (int i = 0; i < sizeColumns; i++) {
+		IMetadataColumn column = columns.get(i);
+		JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+		String pattern = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+		if(JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable())){
+			if(javaType == JavaTypesManager.BOOLEAN ){
+			%>
+				row_<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+			<%
+			} else {
+		    %>
+		    	row_<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+		    <%
+		    }
+		}else {
+		    %>
+		    if(<%=conn.getName() %>.<%=column.getLabel() %> != null){
+		        <%					
+		        if(javaType == JavaTypesManager.STRING ){
+		            %>
+		            row_<%=cid%>[<%=i%>] = <%=conn.getName() %>.<%=column.getLabel() %>;
+		            <%
+		        }else if(javaType == JavaTypesManager.DATE && pattern != null){
+		            %>
+		            row_<%=cid%>[<%=i%>] = FormatterUtils.format_Date(<%=conn.getName() %>.<%=column.getLabel() %>, <%= pattern %>);
+		            <%
+		        }else if(javaType == JavaTypesManager.BYTE_ARRAY){
+		            %>
+		            row_<%=cid%>[<%=i%>] = java.nio.charset.Charset.forName(<%=encoding %>).decode(java.nio.ByteBuffer.wrap(<%=conn.getName() %>.<%=column.getLabel() %>)).toString();
+		            <%
+		        }else if(javaType == JavaTypesManager.BOOLEAN ){
+				%>
+					row_<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+				<%
+				}
+		        else{
+		            %>
+		            row_<%=cid%>[<%=i%>] = String.valueOf(<%=conn.getName() %>.<%=column.getLabel() %>);
+		            <%
+		        }
+		        %>                			    
+		    }
+	 <% 
+		}
+	}
+	%>
+	
+	for (int i_<%=cid %> = 0; i_<%=cid %> < row_<%=cid %>.length; i_<%=cid %>++) {
+		String temp_<%=cid %> = row_<%=cid %>[i_<%=cid %>];
+		
+	<%
+	String textEnclosure = ElementParameterParser.getValue(node, "__TEXT_ENCLOSURE__");
+	if("EMPTY".equals(textEnclosure)) {//escape by backslash, but we only escape itself and delimiter, delimiter should not be backslash.
+	%>
+		if(!<%=nullString%>.equals(temp_<%=cid %>)) {
+			temp_<%=cid %> = temp_<%=cid %>.replace("\\", "\\\\");
+			temp_<%=cid %> = temp_<%=cid %>.replace(fieldSeparator_<%=cid %>, escapedFieldSeparator_<%=cid %>);
+		}
+	<%
+	} else {//auto escape and only need to escape text enclosure explicitly
+	%>
+		if(!<%=nullString%>.equals(temp_<%=cid %>)) {
+			temp_<%=cid %> = temp_<%=cid %>.replace(textEnclosureReplaced_<%=cid %>, textEnclosureReplacement_<%=cid %>);
+		}
+	<%
+	}
+	%>
+		if(i_<%=cid %> != 0) {
+			csvWriter_<%=cid%>.write(fieldSeparator_<%=cid %>);
+		}
+		
+		if(textEnclosure_<%=cid %>!='\0') {
+			csvWriter_<%=cid%>.append(textEnclosure_<%=cid %>);
+		}
+		
+		csvWriter_<%=cid%>.write(temp_<%=cid %>);
+		
+		if(textEnclosure_<%=cid %>!='\0') {
+			csvWriter_<%=cid%>.append(textEnclosure_<%=cid %>);
+		}
+	}
+	csvWriter_<%=cid%>.write(rowSeparator_<%=cid %>);
+	nb_line_<%=cid %>++;
+    <%if(isLog4jEnabled){%>
+        log.debug("<%=cid%> - Writing the record " + nb_line_<%=cid%> + ".");
+    <%}%>

@@ -1,0 +1,64 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String port = ElementParameterParser.getValue(node,"__PORT__");
+
+String output = ElementParameterParser.getValue(node,"__OUTPUT__");
+
+String print = ElementParameterParser.getValue(node,"__PRINT__");
+
+boolean then = ("continue").equals(ElementParameterParser.getValue(node,"__THEN__"));
+
+String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+%>
+
+java.net.Socket socket<%=cid%>;
+java.io.PrintWriter out<%=cid%>;
+java.io.BufferedReader in<%=cid%>;
+
+java.net.ServerSocket ss<%=cid%> = new java.net.ServerSocket(<%=port%>);
+boolean ifContinue<%=cid%> = true;
+while (ifContinue<%=cid%>) {
+    socket<%=cid%> = ss<%=cid%>.accept();    
+   // new SocketDataProcess(socket);
+    try{       
+        //write data to client
+        out<%=cid%> = new java.io.PrintWriter(socket<%=cid%>.getOutputStream(), true);
+        out<%=cid%>.println(<%=output%>); 
+        
+        in<%=cid%> = new java.io.BufferedReader(new java.io.InputStreamReader(socket<%=cid%>.getInputStream(),<%=encoding%>));
+        StringBuilder sb<%=cid%> = new StringBuilder();
+        char[] target_<%=cid%> = new char[1024];
+        int length_<%=cid%> = -1;
+		while((length_<%=cid%> = in<%=cid%>.read(target_<%=cid%>)) != -1){
+			sb<%=cid%>.append(new String(target_<%=cid%>,0,length_<%=cid%>));
+		}
+        <% if(("true").equals(print)){ %>
+        //get data from client
+            System.out.println(socket<%=cid%>.getInetAddress()+" input is : ");
+            System.out.println(sb<%=cid%>.toString().trim());
+        <%}%>
+        //put in globalMap 
+        globalMap.put("<%=cid %>_INPUT_DATA",sb<%=cid%>.toString().trim());
+        in<%=cid%>.close();
+        out<%=cid%>.close();
+        socket<%=cid%>.close();
+    }catch (java.io.IOException e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+       e.printStackTrace();
+    }   
+    
+    ifContinue<%=cid%> = <%=then%>;
+    
+
+    

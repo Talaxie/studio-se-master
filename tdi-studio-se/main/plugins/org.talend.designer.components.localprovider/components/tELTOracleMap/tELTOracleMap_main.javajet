@@ -1,0 +1,108 @@
+<%@ jet 
+	imports="
+	
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.ElementParameterParser  
+    java.util.List
+	org.talend.core.model.process.IConnection
+	org.talend.designer.dbmap.external.data.ExternalDbMapData
+	org.talend.designer.dbmap.external.data.ExternalDbMapTable
+	org.talend.designer.dbmap.language.IDbLanguage
+	org.talend.designer.dbmap.DbMapComponent
+
+	java.util.HashMap
+	java.util.Map
+
+		java.util.Set
+		java.util.HashSet
+	" 
+%>
+<%
+
+
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	DbMapComponent node = (DbMapComponent) codeGenArgument.getArgument();
+	boolean stats = codeGenArgument.isStatistics(); 
+	
+	///// hint options/////
+	boolean useHintOptions = ("true").equals(ElementParameterParser.getValue(node,"__USE_HINT_OPTIONS__"));
+	Map<String, String> hintsValues = null; 
+	if (useHintOptions) {
+		List<Map<String, String>> hintOptions = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HINT_OPTIONS__");
+		hintsValues = new HashMap<String, String>();
+		String hintValue = null;
+		boolean firstInsert = true;
+		boolean firstUpdate = true;
+		boolean firstDelete = true;
+		boolean firstTableName = true;
+		for(java.util.Map<String, String> option : hintOptions) {
+			//get
+			if(option.get("HINT").matches("\"/\\*NORMALIZED_HINT\\*/\"")) {
+				//String id = cid.replace(node.getComponent().getName() + "_", "");
+				//hintValue = "\"/*\"+" + table + "+\".\" + "  + "\"" + option.get("SQL_STMT")+ ".\"" + "+" +  id   +  "+\"*/\" " ;
+			}else if (option.get("HINT").matches("\"/\\*+.*\\*/\"")) {
+				hintValue = option.get("HINT");	
+			}
+			//set
+			if ("SELECT".equalsIgnoreCase(option.get("SQL_STMT"))){
+				if(firstInsert){
+					hintsValues.put("SELECT", hintValue) ;
+					firstInsert = false;
+				}else {
+					hintsValues.put("SELECT", hintsValues.get("SELECT") + "+" + hintValue) ;
+				}									
+			}
+		}
+	} 
+	//// hint options end ////
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+        org.talend.designer.dbmap.language.oracle.OracleGenerationManager gm = new org.talend.designer.dbmap.language.oracle.OracleGenerationManager();
+        String uniqueNameComponent = null;
+        IDbLanguage currentLanguage = gm.getLanguage();
+
+        List<IConnection> connections = (List<IConnection>) node.getIncomingConnections();
+        List<IConnection> outputConnections = (List<IConnection>) node.getOutgoingConnections();
+        ExternalDbMapData data = (ExternalDbMapData) node.getExternalData();
+        uniqueNameComponent = node.getUniqueName();
+
+        List<ExternalDbMapTable> outputTables = data.getOutputTables();
+
+        Map<String, IConnection> nameToOutputConnection = new HashMap<String, IConnection>();
+        for (IConnection connection : outputConnections) {
+            nameToOutputConnection.put(connection.getUniqueName(), connection);
+        }
+
+		  Set tablesProcessed = new HashSet<String>();
+        int lstOutputTablesSize = outputTables.size();
+        for (int i = 0; i < lstOutputTablesSize; i++) {
+            ExternalDbMapTable outputTable = outputTables.get(i);
+            String outputTableName = outputTable.getName();
+
+				IConnection connection = nameToOutputConnection.get(outputTableName);
+
+            if (connection == null) {
+            	continue;
+            }
+
+            String sqlQuery = gm.buildSqlSelect((DbMapComponent) node, outputTable.getName());
+            
+            if (useHintOptions && hintsValues.get("SELECT")!= null) {
+	            StringBuffer tmpSqlQuery = new StringBuffer(sqlQuery);
+	            tmpSqlQuery.insert("SELECT".length()+1,hintsValues.get("SELECT").substring(1,hintsValues.get("SELECT").length()-1)+" ");
+	            sqlQuery = tmpSqlQuery.toString();
+            }
+            
+				%>
+
+				globalMap.put(
+					"<%=uniqueNameComponent %>"+"QUERY" + "<%= connection.getUniqueName() %>",
+					<%= sqlQuery.replaceAll("[\r\n]", " ") %>
+				);
+				<%
+				tablesProcessed.add(outputTable.getTableName());
+        }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+%>

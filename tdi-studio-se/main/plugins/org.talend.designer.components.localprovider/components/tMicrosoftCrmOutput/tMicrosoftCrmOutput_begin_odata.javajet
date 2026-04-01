@@ -1,0 +1,152 @@
+<%
+    String domain = ElementParameterParser.getValue(node, "__DOMAIN__");
+    String host = ElementParameterParser.getValue(node, "__HOST__");
+	String authType = ElementParameterParser.getValue(node, "__AUTH_TYPE__");
+	String onlineRegisterApp = ElementParameterParser.getValue(node, "__ONLINE_REGISTERED_APP__");
+	String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+	String serviceURL = ElementParameterParser.getValue(node, "__SERVICE_ROOT_URL__");
+	String applicationId = ElementParameterParser.getValue(node, "__APPLICATION_ID__");
+	String oauthTokenEndpoint = ElementParameterParser.getValue(node, "__OAUTH_TOKEN_ENDPOINT__");
+	String premiseOAuthFlow = ElementParameterParser.getValue(node, "__PREMISE_AUTH_FLOW__");
+	if(premiseOAuthFlow == null || premiseOAuthFlow.trim().isEmpty()){
+		// I set a default value
+		premiseOAuthFlow = "AUTHORIZATION_CODE";
+	}
+	String authority = ElementParameterParser.getValue(node, "__AUTHORITY__");
+	
+	String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+	boolean reuseHttpClient = ("true").equals(ElementParameterParser.getValue(node,"__REUSE_HTTP_CLIENT__"));
+
+	String redirectUrl = ElementParameterParser.getValue(node, "__REDIRECT_URL__");
+	String premiseAuth = ElementParameterParser.getValue(node, "__PREMISE_AUTH__");
+
+        boolean force_oauth_resource = ("true").equals(ElementParameterParser.getValue(node, "__FORCE_OAUTH_RESOURCE__"));
+        String oauth_resource = ElementParameterParser.getValue(node, "__OAUTH_RESOURCE__");
+        oauth_resource = force_oauth_resource ? oauth_resource : null;
+
+	%>
+	int nb_line_<%=cid%> = 0;
+	<%
+	String entitySetName = ElementParameterParser.getValue(node, "__ENTITYSET__").trim();
+	boolean isV2018 = ("ONLINE".equals(authenticationType) && "API_2018_ODATA".equals(crmOnlineVersion)) || ("ON_PREMISE".equals(authenticationType) && "CRM_2018".equals(crmVersion));
+	if(isV2018){
+		entitySetName = ElementParameterParser.getValue(node, "__ENTITYSETV2018__").trim();
+	}
+
+ 	String customEntityName = ElementParameterParser.getValue(node, "__CUSTOM_ENTITY_NAME__");
+ 	if("CustomEntitySet".equals(entitySetName)){
+	%>
+		String entitySetName_<%=cid%>=<%=customEntityName%>;
+	<%
+	}else{
+	%>
+		String entitySetName_<%=cid%>="<%=entitySetName%>";
+	<%	
+	}
+	 String action = ElementParameterParser.getValue(node,"__ACTION__");
+	 if("update".equals(action)){
+	    List<IMetadataTable> metadatas = node.getMetadataList();
+	    if ((metadatas!=null)&&(metadatas.size()>0)) {
+	        IMetadataTable metadata = metadatas.get(0);
+	        if (metadata!=null) {
+			      List<IMetadataColumn> columns = metadata.getListColumns();
+			      int sizeColumns = columns.size();
+			      boolean hasKeyColumn=false;
+			      for(int i = 0; i < sizeColumns; i++){
+	        		    IMetadataColumn column = columns.get(i);
+                   if(column.isKey()){
+                        hasKeyColumn = true;
+                        break;
+                    }
+                }
+                if(!hasKeyColumn){
+                %>
+                    if(true){
+                        throw new RuntimeException("No key column is specified in the schema!");
+                    }
+                <%
+                }
+            }
+        }
+    }
+	%>
+	
+	<%String passwordFieldName = "__PASSWORD__";%>
+	String password_<%=cid%>;
+	{
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		password_<%=cid%> = decryptedPassword_<%=cid%>;
+	}
+	<%passwordFieldName = "__CLIENT_SECRET__";%>
+	String clientSecret_<%=cid%>;
+	{
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		clientSecret_<%=cid%> = decryptedPassword_<%=cid%>;
+	}
+
+	<%
+    if(isMsCrm2016OnPremise) {
+       if("NTLM".equals(premiseAuth)){
+    %>
+    org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+            .buildNtlmClientConfiguration(<%=userName%>, password_<%=cid%>, <%=host%>, <%=domain%>);
+    <%
+       }
+       else {
+			if("ROPC".equals(premiseOAuthFlow)) {
+	%>
+			    org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+			.buildOAuthPremiseROPCClientConfiguration(<%=userName%>, password_<%=cid%>, <%=oauthTokenEndpoint%>, <%=serviceURL%>, <%=applicationId%>, clientSecret_<%=cid%>, <%=oauth_resource%>, "");
+	<%
+			}
+			else {
+    %>
+    org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+            .buildOAuthPremiseClientConfiguration(<%=userName%>, password_<%=cid%>, <%=authority%>, <%=serviceURL%>, <%=applicationId%>, clientSecret_<%=cid%>, <%=redirectUrl%>, <%=oauth_resource%>);
+    <%
+		       }
+       }
+    } else {
+    	if("NATIVE".equals(onlineRegisterApp)){
+		%>
+		    org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+                    .buildOAuthNativeClientConfiguration(<%=applicationId%>, <%=userName%>, password_<%=cid%>, <%=authority%>);
+		<%
+		}
+		else {
+			String permission = "org.talend.ms.crm.odata.ClientConfiguration.WebAppPermission.";
+			permission += ("WEB_DELEGATED".equals(onlineRegisterApp)) ?  "DELEGATED" : "APPLICATION";
+		%>
+    		org.talend.ms.crm.odata.ClientConfiguration clientConfig_<%=cid%> = org.talend.ms.crm.odata.ClientConfigurationFactory
+                    .buildOAuthWebClientConfiguration(<%=applicationId%>, clientSecret_<%=cid%>, <%=userName%>, password_<%=cid%>, <%=authority%>, <%=permission%>);
+		<%
+		}
+    }
+    %>
+
+	clientConfig_<%=cid%>.setTimeout(<%=timeout%>);
+	clientConfig_<%=cid%>.setMaxRetry(reConnMaxNum_<%=cid%>,<%=attemptsInterval%>);
+	clientConfig_<%=cid%>.setReuseHttpClient(<%=reuseHttpClient%>);
+	<%
+        boolean returnRepresentation = ("true").equals(ElementParameterParser.getValue(node, "__RETURN_REPRESENTATION__")) && !"delete".equals(action);
+	%>
+	clientConfig_<%=cid%>.setReturnRepresentation(<%=returnRepresentation%>);
+	<%
+
+	List<Map<String, String>> headersArray = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HEADERS__");
+	if(headersArray.size() > 0){
+		    %>
+			java.util.Map<String, String> custom_headers_<%=cid%> = new java.util.HashMap();
+		    <%
+		for(java.util.Map<String, String> e: headersArray) {
+		    %>
+			custom_headers_<%=cid%>.put(<%=e.get("KEY")%>, <%=e.get("VALUE")%>);
+		    <%
+		}
+		    %>
+			clientConfig_<%=cid%>.setCustomHeaders(custom_headers_<%=cid%>);
+		    <%
+	}
+	%>
+
+	org.talend.ms.crm.odata.DynamicsCRMClient client_<%=cid%> = new org.talend.ms.crm.odata.DynamicsCRMClient(clientConfig_<%=cid%>,<%=serviceURL%>,entitySetName_<%=cid%>);

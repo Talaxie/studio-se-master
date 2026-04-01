@@ -1,0 +1,113 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode  
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.List
+	"
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+	boolean exitJVM = ("true").equals(ElementParameterParser.getValue(node, "__EXIT_JVM__"));
+	String code = ElementParameterParser.getValue(node, "__CODE__");
+	final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+	try {
+<%
+	if (node.getProcess().getNodesOfType("tLogCatcher").size() > 0) {
+		List<INode> logCatchers = (List<INode>)node.getProcess().getNodesOfType("tLogCatcher");
+		for (INode logCatcher : logCatchers) {
+			if (("true").equals(ElementParameterParser.getValue(logCatcher, "__CATCH_TDIE__"))) {
+				%>
+				<%=logCatcher.getUniqueName() %>.addMessage("tDie", "<%=cid %>", <%=ElementParameterParser.getValue(node, "__PRIORITY__") %>, <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>, <%=ElementParameterParser.getValue(node, "__CODE__") %>);
+				<%=logCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+				<%
+			}
+		}
+	}
+%>
+	globalMap.put("<%=cid %>_DIE_PRIORITY", <%=ElementParameterParser.getValue(node, "__PRIORITY__") %>);
+	System.err.println(<%=ElementParameterParser.getValue(node, "__MESSAGE__") %>);
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.error("<%=cid%> - The die message: "+<%=ElementParameterParser.getValue(node, "__MESSAGE__") %>);
+	<%
+	}
+	%>
+	globalMap.put("<%=cid %>_DIE_MESSAGE", <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>);
+	globalMap.put("<%=cid %>_DIE_MESSAGES", <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>);
+	
+	} catch (Exception | Error e_<%=cid%>) {
+	    globalMap.put("<%=cid%>_ERROR_MESSAGE",e_<%=cid%>.getMessage());
+		logIgnoredError(String.format("<%=cid%> - tDie failed to log message due to internal error: %s", e_<%=cid%>), e_<%=cid%>);
+	}
+	
+	currentComponent = "<%=cid %>";
+	status = "failure";
+    <%
+    if(isRunInMultiThread ){
+    %>
+    	errorCode = new Integer(<%=code %>);
+        ((java.util.Map)threadLocal.get()).put("errorCode", new Integer(<%=code %>));
+        ((java.util.Map)threadLocal.get()).put("status", "failure");
+        globalMap.put("<%=cid %>_DIE_CODE", errorCode);
+    <%
+        }else {
+    %>
+        errorCode = new Integer(<%=code %>);
+        globalMap.put("<%=cid %>_DIE_CODE", errorCode);        
+    <%
+        }
+    %>
+
+<%
+	List<? extends INode> jobCatcherNodes = node.getProcess().getNodesOfType("tJobStructureCatcher");
+	boolean jobCatcherExists = jobCatcherNodes != null && !jobCatcherNodes.isEmpty();
+	INode jobCatcherNode = jobCatcherExists ? jobCatcherNodes.get(0) : null;
+	boolean enableLogStash = !Boolean.getBoolean("deactivate_extended_component_log") && jobCatcherExists;
+%>
+    
+<% if(exitJVM) {%>
+	<%
+	if(isLog4jEnabled){
+	%>
+		log.fatal("<%=cid%> - Exiting the VM.");
+	<%
+	}
+	%>
+
+	<%
+	if(enableLogStash) {
+	%>
+		if(enableLogStash) {
+			<%=jobCatcherNode.getUniqueName() %>.addJobExceptionMessage(currentComponent, cLabel, <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>, null);
+			<%=jobCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+		}
+	<%
+	}
+	%>
+	
+	System.exit(<%=code %>);
+<%}else{%>
+	if(true){	
+		TDieException e_<%=cid%> = new TDieException();
+
+		<%
+		if(enableLogStash) {
+		%>
+			if(enableLogStash) {
+				<%=jobCatcherNode.getUniqueName() %>.addJobExceptionMessage(currentComponent, cLabel, <%=ElementParameterParser.getValue(node, "__MESSAGE__") %>, e_<%=cid%>);
+				<%=jobCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+			}
+		<%
+		}
+		%>
+
+		throw e_<%=cid%>;
+	}
+<%}%>

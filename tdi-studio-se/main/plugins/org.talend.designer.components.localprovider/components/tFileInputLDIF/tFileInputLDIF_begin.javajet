@@ -1,0 +1,507 @@
+<%@ jet 
+imports="
+    	org.talend.core.model.process.INode 
+    	org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List
+		java.util.Map
+	"
+%>
+
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+	
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+boolean useFieldOptions = ("true").equals(ElementParameterParser.getValue(node, "__USE_FIELD_OPTIONS__"));
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        // component id
+        String cid = node.getUniqueName();
+        String filename = ElementParameterParser.getValue(node,"__FILENAME__"); 
+        String encoding = ElementParameterParser.getValue(node,"__ENCODING__");
+    	String dieOnErrorStr = ElementParameterParser.getValue(node, "__DIE_ON_ERROR__");
+		boolean dieOnError = (dieOnErrorStr!=null&&!("").equals(dieOnErrorStr))?("true").equals(dieOnErrorStr):false;               
+        List<IMetadataColumn> listColumns = metadata.getListColumns();
+        
+        String addprefixStr = ElementParameterParser.getValue(node, "__ADDPREFIX__");
+        boolean addprefix = (addprefixStr!=null&&!("").equals(addprefixStr))?("true").equals(addprefixStr):false;
+        String valueSeparator = ElementParameterParser.getValue(node, "__VALUE_SEPARATOR__");
+		List<Map<String, String>> textEncodingColumns = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__TEXTENCODING__");
+		boolean isBinary = false;
+		boolean isBase64 = false;
+		
+		final boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+    	log4jFileUtil.componentStartInfo(node);
+%>
+///////////////////////////////////
+		java.io.DataInputStream dis_<%=cid%> = null;
+
+        String[] filters_<%=cid %> = new String[] {         
+<%
+        for (IMetadataColumn column: listColumns) {
+%> 
+		"<%=column.getLabel() %>",
+<%
+        }
+%>        
+        };
+        
+        String[] filters_binary_<%=cid %> = new String[] {         
+<%
+        for (IMetadataColumn column: listColumns) {//fix bug TDI17707
+%> 
+		"<%=column.getLabel() %>;binary",
+<%
+        }
+%>        
+        };
+        
+        String[] results_<%=cid %> = null;
+		List<List<byte[]>> resultsBinary_<%=cid %> = null;
+        int nb_line_<%=cid %> = 0;
+        
+        ///////////////////////////////////
+     	<%log4jFileUtil.startRetriveDataInfo();%>
+      
+	  try{
+	  	dis_<%=cid%>=new java.io.DataInputStream(new java.io.FileInputStream(<%=filename %>));
+        netscape.ldap.util.LDIF ldif_<%=cid %> = new netscape.ldap.util.LDIF(dis_<%=cid%>);
+        for (netscape.ldap.util.LDIFRecord record_<%=cid %> = ldif_<%=cid %>.nextRecord(); record_<%=cid %> != null; record_<%=cid %> = ldif_<%=cid %>.nextRecord()) {
+
+            results_<%=cid %> = new String[<%=listColumns.size() %>];
+            resultsBinary_<%=cid %> =  new java.util.ArrayList<List<byte[]>>();
+            
+            netscape.ldap.util.LDIFContent content_<%=cid %> = record_<%=cid %>.getContent();
+			netscape.ldap.LDAPAttribute[] attributes_<%=cid %> = null;
+			
+            switch (content_<%=cid %>.getType()) {
+            
+            case netscape.ldap.util.LDIFContent.ATTRIBUTE_CONTENT:
+            
+                netscape.ldap.util.LDIFAttributeContent attrContent_<%=cid %> = (netscape.ldap.util.LDIFAttributeContent) content_<%=cid %>;
+                attributes_<%=cid %> = attrContent_<%=cid %>.getAttributes();
+                
+                for (int i_<%=cid %> = 0; i_<%=cid %> < filters_<%=cid %>.length; i_<%=cid %>++) {
+                
+					resultsBinary_<%=cid %>.add(new java.util.ArrayList<byte[]>());
+
+                    for (int j_<%=cid %> = 0; j_<%=cid %> < attributes_<%=cid %>.length; j_<%=cid %>++) {
+                    
+                        netscape.ldap.LDAPAttribute attribute_<%=cid %> = attributes_<%=cid %>[j_<%=cid %>];
+                        
+						if("dn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+							results_<%=cid %>[i_<%=cid %>] = record_<%=cid %>.getDN();
+							
+						}else{
+						
+                            if (filters_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())
+                            || filters_binary_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())) {
+                            
+                                byte[][] values_<%=cid %> = attribute_<%=cid %>.getByteValueArray();
+<%
+								if(useFieldOptions){
+									for(Map<String, String> line:textEncodingColumns){// search in the configuration table
+										String columnName = line.get("SCHEMA_COLUMN");
+										isBase64 = "true".equals(line.get("BASE64"));
+%>
+										if(attribute_<%=cid %>.getBaseName().equalsIgnoreCase("<%=columnName%>")){
+											for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+		                           				String value_<%=cid%> = null;
+												if(<%=isBase64%>){
+		                             	   			value_<%=cid%> = new String(byteValue_<%=cid%>,<%=encoding%>);
+												}else{
+                                					value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+												}
+		 											resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+                                					results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+                                			}
+                                		}
+<%
+	                                	isBase64 = false;
+	                               	}
+	                           	}else{
+%>
+										for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+	                           				String value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+											resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+                           					results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+                            			}
+<%
+	                           	}
+%>
+                            }
+                        }
+                    }
+
+                }
+                
+                break;
+
+            case netscape.ldap.util.LDIFContent.ADD_CONTENT:
+            
+                netscape.ldap.util.LDIFAddContent addContent_<%=cid %> = (netscape.ldap.util.LDIFAddContent) content_<%=cid %>;
+                attributes_<%=cid %> = addContent_<%=cid %>.getAttributes();
+                
+                for (int i_<%=cid %> = 0; i_<%=cid %> < filters_<%=cid %>.length; i_<%=cid %>++) {
+                
+					resultsBinary_<%=cid %>.add(new java.util.ArrayList<byte[]>());
+
+                    for (int j_<%=cid %> = 0; j_<%=cid %> < attributes_<%=cid %>.length; j_<%=cid %>++) {
+                    
+                        netscape.ldap.LDAPAttribute attribute_<%=cid %> = attributes_<%=cid %>[j_<%=cid %>];
+                        
+						if("dn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+							results_<%=cid %>[i_<%=cid %>] = record_<%=cid %>.getDN();
+							
+						}else if("changetype".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+							results_<%=cid %>[i_<%=cid %>] = "add";
+							
+						}else{
+						
+                            if (filters_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())
+                            || filters_binary_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())) {
+                            
+                                byte[][] values_<%=cid %> = attribute_<%=cid %>.getByteValueArray();
+<%
+								if(useFieldOptions){
+									for(Map<String, String> line:textEncodingColumns){// search in the configuration table
+										String columnName = line.get("SCHEMA_COLUMN");
+										isBase64 = "true".equals(line.get("BASE64"));
+%>
+										if(attribute_<%=cid %>.getBaseName().equalsIgnoreCase("<%=columnName%>")){
+											for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+		                           				String value_<%=cid%> = null;
+												if(<%=isBase64%>){
+		                             		   		value_<%=cid%> = new String(byteValue_<%=cid%>,<%=encoding%>);
+												}else{
+                                					value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+												}
+													resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+                                					results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+                                			}
+                                		}
+<%
+                            			isBase64 = false;
+                            		}
+                           	 	}else{
+%>
+										for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+	    	                       			String value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+											resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+            	                			results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+                	            		}
+<%
+                    	        }
+%>
+                            }
+                        }
+                    }
+
+                }                
+                break;
+                
+            case netscape.ldap.util.LDIFContent.MODIFICATION_CONTENT:
+
+					netscape.ldap.util.LDIFModifyContent modifyContent_<%=cid %> = (netscape.ldap.util.LDIFModifyContent) content_<%=cid %>;
+					netscape.ldap.LDAPModification[] modifications_<%=cid %> = modifyContent_<%=cid %>.getModifications();
+
+					for (int i_<%=cid %> = 0; i_<%=cid %> < filters_<%=cid %>.length; i_<%=cid %>++) {
+					
+						resultsBinary_<%=cid %>.add(new java.util.ArrayList<byte[]>());
+
+						for (netscape.ldap.LDAPModification modification_<%=cid %> : modifications_<%=cid %>) {
+							netscape.ldap.LDAPAttribute attribute_<%=cid %> = modification_<%=cid %>.getAttribute();
+
+							if ("dn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])) {
+								results_<%=cid %>[i_<%=cid %>] = record_<%=cid %>.getDN();
+
+							} else if ("changetype".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])) {
+								results_<%=cid %>[i_<%=cid %>] = "modify";
+
+							} else {
+
+								if (filters_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())
+								|| filters_binary_<%=cid %>[i_<%=cid %>].equalsIgnoreCase(attribute_<%=cid %>.getName())) {
+
+								<%if(addprefix){%>									
+									int op_<%=cid %> = modification_<%=cid %>.getOp();
+									switch(op_<%=cid %>){
+										case netscape.ldap.LDAPModification.ADD: 
+											results_<%=cid %>[i_<%=cid %>] = "add";
+											break;
+										case netscape.ldap.LDAPModification.DELETE: 
+											results_<%=cid %>[i_<%=cid %>] = "delete";
+											break;
+										case netscape.ldap.LDAPModification.REPLACE:
+											results_<%=cid %>[i_<%=cid %>] = "replace";
+											break;
+										default:
+											results_<%=cid %>[i_<%=cid %>] = "";
+									}
+								<%}%>									
+
+									byte[][] values_<%=cid %> = attribute_<%=cid %>.getByteValueArray();
+                                
+                                	boolean firstLoop_<%=cid %> = true;
+<%
+									if(useFieldOptions){
+										for(Map<String, String> line:textEncodingColumns){// search in the configuration table
+											String columnName = line.get("SCHEMA_COLUMN");
+											isBase64 = "true".equals(line.get("BASE64"));
+%>
+											if(attribute_<%=cid %>.getBaseName().equalsIgnoreCase("<%=columnName%>")){
+			                          	 		for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+				                        	  	 	String value_<%=cid%> = null;
+													if(<%=isBase64%>){
+														value_<%=cid%> = new String(byteValue_<%=cid%>,<%=encoding%>);
+													}else{
+		        	                   	    			value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+													}
+													resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+	                                				if(firstLoop_<%=cid %>){
+														results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + ":" + value_<%=cid %>;
+													}else{
+														results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+													}
+													firstLoop_<%=cid %> = false;
+	                          				 	}
+                                			}
+<%
+											isBase64 = false;
+										}
+                            		}else{
+%>
+	                          	 		for(byte[] byteValue_<%=cid%> : values_<%=cid %>) {
+		                        	  	 	String value_<%=cid%> = netscape.ldap.util.LDIF.toPrintableString(byteValue_<%=cid%>);
+											resultsBinary_<%=cid %>.get(i_<%=cid %>).add(value_<%=cid%>.getBytes(<%=encoding%>));
+                            				if(firstLoop_<%=cid %>){
+												results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] == null ? value_<%=cid %> : results_<%=cid %>[i_<%=cid %>] + ":" + value_<%=cid %>;
+											}else{
+												results_<%=cid %>[i_<%=cid %>] = results_<%=cid %>[i_<%=cid %>] + <%=valueSeparator%> + value_<%=cid %>;
+											}
+											firstLoop_<%=cid %> = false;
+                      					 }
+<%
+                            		}
+%>
+
+									
+								}
+							}
+
+						}
+					}                
+                break;
+                
+            case netscape.ldap.util.LDIFContent.DELETE_CONTENT:
+                //netscape.ldap.util.LDIFDeleteContent deleteContent_<%=cid %> = (netscape.ldap.util.LDIFDeleteContent) content_<%=cid %>;
+                for (int i_<%=cid %> = 0; i_<%=cid %> < filters_<%=cid %>.length; i_<%=cid %>++) {
+					if("dn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = record_<%=cid %>.getDN();						
+					}else if("changetype".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = "delete";
+					}                
+                }                
+                break;
+                
+			case netscape.ldap.util.LDIFContent.MODDN_CONTENT:
+				netscape.ldap.util.LDIFModDNContent moddnContent_<%=cid %> = (netscape.ldap.util.LDIFModDNContent) content_<%=cid %>;
+                for (int i_<%=cid %> = 0; i_<%=cid %> < filters_<%=cid %>.length; i_<%=cid %>++) {
+					if("dn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = record_<%=cid %>.getDN();						
+					}else if("changetype".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = "modrdn";
+					}else if("newrdn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = moddnContent_<%=cid %>.getRDN();
+					}else if("deleteoldrdn".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = Boolean.toString(moddnContent_<%=cid %>.getDeleteOldRDN());
+					}else if("newsuperior".equalsIgnoreCase(filters_<%=cid %>[i_<%=cid %>])){
+						results_<%=cid %>[i_<%=cid %>] = moddnContent_<%=cid %>.getNewParent();
+					}					                
+                }
+				break;
+			default:                
+            }
+            nb_line_<%=cid %>++;
+            
+            
+// for output
+<%
+	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
+
+    String rejectConnName = "";
+    List<? extends IConnection> rejectConns = node.getOutgoingConnections("REJECT");
+    if(rejectConns != null && rejectConns.size() > 0) {
+        IConnection rejectConn = rejectConns.get(0);
+        rejectConnName = rejectConn.getName();
+    }
+    List<IMetadataColumn> rejectColumnList = null;
+    IMetadataTable metadataTable = node.getMetadataFromConnector("REJECT");
+    if(metadataTable != null) {
+        rejectColumnList = metadataTable.getListColumns();      
+    }
+
+    	if (conns!=null) {
+    		if (conns.size()>0) {
+    			for (int i=0;i<conns.size();i++) {
+    				IConnection connTemp = conns.get(i);
+    				if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+    		<%=connTemp.getName() %> = null;			
+<%
+    				}
+    			}
+    		}
+    	}
+    	
+	String firstConnName = "";
+	if (conns!=null) {//1
+		if (conns.size()>0) {//2
+		
+			IConnection conn = conns.get(0); //the first connection
+			firstConnName = conn.getName();		
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//3
+
+				%>
+
+			boolean whetherReject_<%=cid %> = false;
+			<%=firstConnName %> = new <%=conn.getName() %>Struct();
+			try {			
+<%
+			List<IMetadataColumn> columns=metadata.getListColumns();
+			int columnSize = columns.size();
+			for (int i=0;i<columnSize;i++) {//4
+					IMetadataColumn column=columns.get(i);
+					String typeToGenerate = JavaTypesManager.getTypeToGenerate(column.getTalendType(), column.isNullable());
+					JavaType javaType = JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+					String patternValue = column.getPattern() == null || column.getPattern().trim().length() == 0 ? null : column.getPattern();
+			%>
+						
+			
+			if(<%=i %> < results_<%=cid %>.length && results_<%=cid %>[<%=i %>]!=null ){				
+<%
+					if(javaType == JavaTypesManager.STRING || javaType == JavaTypesManager.OBJECT) { //String or Object
+%>
+					<%=firstConnName %>.<%=column.getLabel() %> = results_<%=cid %>[<%=i %>];
+<%
+					} else if(javaType == JavaTypesManager.DATE) { //Date
+%>
+					<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_Date(results_<%=cid %>[<%=i %>], <%= patternValue %>);
+<%
+					} else if(javaType == JavaTypesManager.BYTE_ARRAY) { //byte[]
+%>
+					<%=firstConnName %>.<%=column.getLabel() %> = resultsBinary_<%=cid %>.get(<%=i %>).get(0);
+<%
+					} else if(javaType == JavaTypesManager.LIST)  { // List<byte[]>
+%>						
+					<%=firstConnName %>.<%=column.getLabel() %> = resultsBinary_<%=cid %>.get(<%=i %>);
+<%
+					} else  { //other
+%>						
+					<%=firstConnName %>.<%=column.getLabel() %> = ParserUtils.parseTo_<%= typeToGenerate %>(results_<%=cid %>[<%=i %>]);
+<%
+					}
+%>
+			
+			} else { 
+			
+					<%=firstConnName %>.<%=column.getLabel() %> = <%=JavaTypesManager.getDefaultValueFromJavaType(typeToGenerate)%>;
+			}
+			
+			
+<%			
+			} //4
+			
+			log4jFileUtil.debugRetriveData(node);
+%>
+			
+<%if(rejectConnName.equals(firstConnName)) {%> <%=firstConnName %> = null; <%}%>			
+			
+    } catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        whetherReject_<%=cid%> = true;
+        <%
+        if (dieOnError) {
+            %>
+            throw(e);
+            <%
+        } else {
+            if(!("").equals(rejectConnName)&&!rejectConnName.equals(firstConnName)&&rejectColumnList != null && rejectColumnList.size() > 0) {
+
+                %>
+                    <%=rejectConnName %> = new <%=rejectConnName %>Struct();
+                <%
+                for(IMetadataColumn column : metadata.getListColumns()) {
+                    %>
+                    <%=rejectConnName%>.<%=column.getLabel()%> = <%=firstConnName%>.<%=column.getLabel()%>;
+                    <%
+                }
+                %>
+                <%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+                <%=firstConnName %> = null;
+                <%
+            } else if(("").equals(rejectConnName)){
+	        	if(isLog4jEnabled){
+	        	%>
+	        	log.error("<%=cid%> - " +e.getMessage());
+	        	<%
+	        	}
+                %>
+                System.err.println(e.getMessage());
+                <%=firstConnName %> = null;
+                <%
+            } else if(rejectConnName.equals(firstConnName)){%>
+            	<%=rejectConnName%>.errorMessage = e.getMessage() + " - Line: " + tos_count_<%=node.getUniqueName() %>;
+            <%}
+        } 
+        %>
+    }
+			
+<%
+		}//3
+		
+		
+		if (conns.size()>0) {	
+			boolean isFirstEnter = true;
+			for (int i=0;i<conns.size();i++) {
+				conn = conns.get(i);
+				if ((conn.getName().compareTo(firstConnName)!=0)&&(conn.getName().compareTo(rejectConnName)!=0)&&(conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))) {
+%>
+		<% if(isFirstEnter) {%>if(!whetherReject_<%=cid%>) { <% isFirstEnter = false; } %>      
+             if(<%=conn.getName() %> == null){ 
+            	 <%=conn.getName() %> = new <%=conn.getName() %>Struct();
+             }				
+<%
+			    	 for (IMetadataColumn column: metadata.getListColumns()) {
+%>
+	    	 <%=conn.getName() %>.<%=column.getLabel() %> = <%=firstConnName %>.<%=column.getLabel() %>;    				
+<%
+				 	}
+				}
+			}
+%>
+		<% if(!isFirstEnter) {%> } <% } %>	
+<%
+		}
+		
+		
+	}//2
+	
+}//1
+
+%>
+///////////////////////////////////        
+<%
+  }
+}  
+ %>

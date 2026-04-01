@@ -1,0 +1,288 @@
+<%@ jet
+imports="
+	org.talend.core.model.process.INode
+	org.talend.core.model.process.ElementParameterParser
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.MetadataTalendType
+	org.talend.core.model.metadata.MappingTypeRetriever
+	java.util.List
+	java.util.ArrayList
+	java.util.Map
+	java.util.HashMap
+"
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+<%@ include file="../templates/Log4j/Log4jDBConnUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String charset = "\"utf8\"";
+if(("\"GBK\"").equals(encoding)){
+	charset = "\"gbk\"";
+}else if(("\"GB2312\"").equals(encoding)){
+	charset = "\"gb2312\"";
+}else if(("\"ISO-8859-1\"").equals(encoding)){
+	charset = "\"latin1\"";
+}else if(("\"ISO-8859-2\"").equals(encoding)){
+	charset = "\"latin2\"";
+}else if(("\"ISO-8859-15\"").equals(encoding)){
+	charset = "\"latin1\"";//?not sure if this is true for iso-8859-15
+}else if(("\"Big5\"").equals(encoding)){
+	charset = "\"big5\"";
+}else if(("\"UCS-2\"").equals(encoding)){
+	charset = "\"ucs2\"";
+}else if(("\"UTF-8\"").equals(encoding)){
+	charset = "\"utf8\"";
+}else {
+	charset = encoding;
+}
+
+String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+String dbport = ElementParameterParser.getValue(node, "__PORT__");
+String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+String dbproperties = ElementParameterParser.getValue(node, "__PROPERTIES__");
+String table = ElementParameterParser.getValue(node, "__TABLE__");
+String userName = ElementParameterParser.getValue(node, "__USER__");
+
+boolean convertToUppercase = false; // not active this function
+boolean useExistingConnection = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__USE_EXISTING_CONNECTION__"));
+List<IMetadataColumn> columnList = getColumnList(node);
+
+boolean containNULL = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__RECORDS_CONTAIN_NULL_VALUE__"));
+%>
+String charset_<%=cid %> = <%=charset %>;
+String tableName_<%=cid%> = <%=table%>;
+
+int deletedCount_<%=cid%>=0;
+java.sql.Connection conn_<%=cid%> = null;
+	<%
+	if(useExistingConnection) {
+		String conn = "conn_" + ElementParameterParser.getValue(node,"__CONNECTION__");
+	%>
+	 	conn_<%=cid%> = (java.sql.Connection)globalMap.get("<%=conn%>");
+	<%
+		log4jCodeGenerateUtil.useExistConnection(node);
+	} else {
+		String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+		String drverClass= "com.mysql.jdbc.Driver";
+		String jdbcURL = "jdbc:mysql";
+		if("MARIADB".equals(dbVersion)){
+			drverClass = "org.mariadb.jdbc.Driver";
+			jdbcURL = "jdbc:mariadb";
+		} else if ("MYSQL_8".equals(dbVersion)){
+			drverClass = "com.mysql.cj.jdbc.Driver";
+		}
+		%>
+		String driverClass_<%=cid%> = "<%=drverClass%>";
+		Class.forName(driverClass_<%=cid%>).newInstance();
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Mysql/jdbcurl4bulk.javajet"%>
+		
+		<%
+		String passwordFieldName = "__PASS__";
+		%>
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		String dbUser_<%=cid %> = <%=userName%>;
+		String dbPwd_<%=cid %> = decryptedPassword_<%=cid%>;
+		<%
+		log4jCodeGenerateUtil.connect(node);
+	}
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+List<Column> stmtStructure = null;
+Manager manager = null;
+if(columnList != null && columnList.size() > 0) {
+	stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+%>
+	<%@ include file="../templates/_tableActionForBulk.javajet"%>
+<%
+}
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+StringBuilder loadingCols = new StringBuilder();
+List<String> bitCols = new ArrayList();
+if(columnList != null && columnList.size() > 0) {
+	loadingCols.append("(");
+	int sizeColumns = columnList.size();
+	for (int i = 0; i < sizeColumns; i++) {
+		IMetadataColumn column = columnList.get(i);
+		if ("BIT".equalsIgnoreCase(column.getType())) {//bit type
+			bitCols.add(column.getOriginalDbColumnName());
+			loadingCols.append("@" + cid +"_"+ column.getOriginalDbColumnName());
+		}else {//others type
+			loadingCols.append("`" + column.getOriginalDbColumnName() + "`");
+		}
+		if(i != sizeColumns - 1) {
+			loadingCols.append(",");
+		}
+
+	}
+	loadingCols.append(")");
+}
+%>
+String lines_separator_<%=cid %> = <%=ElementParameterParser.getValue(node, "__LINES_TERMINATED_BY__") %>;
+String field_separator_<%=cid %> = <%=ElementParameterParser.getValue(node, "__FIELDS_TERMINATED_BY__") %>;
+String escaped_str_<%=cid %> = <%=containNULL?"\"\\\\\"":ElementParameterParser.getValue(node, "__ESCAPED_BY__") %>;
+String enclosed_str_<%=cid %> = <%=ElementParameterParser.getValue(node, "__ENCLOSED_BY__") %>;
+String file_<%=cid %> = <%=ElementParameterParser.getValue(node, "__FILENAME__") %>;
+file_<%=cid %> = file_<%=cid %>.replaceAll("\\\\", "/");
+String replace_<%=cid%> = null;
+<%
+String dataAction = ElementParameterParser.getValue(node, "__DATA_ACTION__");
+if(("UPDATE").equals(dataAction)) {
+	if(columnList != null && columnList.size() > 0) {
+		int keyCount = 0;
+		for(IMetadataColumn column : columnList) {
+			if(column.isKey()) {
+				keyCount++;
+			}
+		}
+		%>
+		int keyCount_<%=cid%> = <%=keyCount%>;
+		if(keyCount_<%=cid%> == 0) {
+			throw new RuntimeException("For bulk update, Schema must have a key at least.");
+		}
+		tableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+		java.sql.Statement stmtTmpCreate_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Creating temp table " + tableName_<%=cid%> + "." );
+		<%}%>
+		stmtTmpCreate_<%=cid%>.execute("<%=manager.getCreateTableSQL(stmtStructure)%>)");
+		stmtTmpCreate_<%=cid%>.close();
+
+		java.sql.Statement stmtTmpBulk_<%=cid %> = conn_<%=cid %>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Create temp table " + tableName_<%=cid%> + " has succeeded.");
+			log.info("<%=cid%> - Bulk inserting data into " + tableName_<%=cid%> + "." );
+		<%}%>
+		stmtTmpBulk_<%=cid %>.execute(
+			"LOAD DATA LOCAL INFILE '" + file_<%=cid %> + "' "
+			+ " INTO TABLE " + tableName_<%=cid %>
+			+ " CHARACTER SET " + charset_<%=cid %>
+			+ " FIELDS TERMINATED BY '" + field_separator_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "'"
+			+ " ENCLOSED BY '"+("'".equals(enclosed_str_<%=cid %>)?"\\":"")+ enclosed_str_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "'"
+			+ " ESCAPED BY '" +("'".equals(escaped_str_<%=cid %>)?"\\":"")+ escaped_str_<%=cid %>.replaceAll("\\\\", "\\\\\\\\")+ "'"
+			+ " LINES TERMINATED BY '" + lines_separator_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "' <%=loadingCols.toString()%>"
+<%
+	int bitColsSize = bitCols.size();
+	if (bitColsSize!=0) {
+%>
+			+ " SET"
+<%
+		for(int i = 0; i < bitColsSize; i++) {
+%>
+			+ " <%=bitCols.get(i)%>=CAST(@<%=cid %>_<%=bitCols.get(i)%> AS UNSIGNED)"
+<%
+			if(i != bitColsSize - 1) {
+%>
+			+ ","
+<%
+			}
+		}
+	}
+%>
+		);
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Bulk insert data into " + tableName_<%=cid%> + " has finished.");
+		<%}%>
+		tableName_<%=cid%> = <%=table%>;
+		String tmpTableName_<%=cid%> = "tmp_<%=cid%>" + "_" + pid + Thread.currentThread().getId();
+		java.sql.Statement stmtUpdateBulk_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Updating " + tableName_<%=cid%> + " from "+tmpTableName_<%=cid%>+".");
+		<%}%>
+		stmtUpdateBulk_<%=cid%>.executeUpdate("<%=manager.getUpdateBulkSQL(columnList)%>");
+		<%log4jCodeGenerateUtil.logInfo(node,"info",cid+" - Update has finished.");%>
+		stmtUpdateBulk_<%=cid%>.close();
+		tableName_<%=cid%> = tmpTableName_<%=cid%>;
+		java.sql.Statement stmtTmpDrop_<%=cid%> = conn_<%=cid%>.createStatement();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Droping temp table " + tableName_<%=cid%> + ".");
+		<%}%>
+		stmtTmpDrop_<%=cid%>.execute("<%=manager.getDropTableSQL()%>");
+		stmtTmpDrop_<%=cid%>.close();
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Drop temp table " + tableName_<%=cid%>+ " has succeeded.");
+		<%}%>
+		<%
+	}
+} else {
+	if(("REPLACE").equals(dataAction)) {
+%>
+		replace_<%=cid%> = "REPLACE";
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Replacing records in table " + tableName_<%=cid%> + ".");
+		<%}%>
+<%
+	} else if (("IGNORE").equals(dataAction)) {
+%>
+		replace_<%=cid%> = "IGNORE";
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Loading data ignore records in table " + tableName_<%=cid%> + ".");
+		<%}%>
+<%
+	} else {
+%>
+		replace_<%=cid%> = "";
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Inserting records in table " + tableName_<%=cid%> + ".");
+		<%}%>
+<%
+	}
+	%>
+	String bulkSQL_<%=cid%> = "LOAD DATA LOCAL INFILE '" + file_<%=cid %> + "' "
+		+ replace_<%=cid%>
+		+ " INTO TABLE " + tableName_<%=cid %>
+		+ " CHARACTER SET " + charset_<%=cid %>
+		+ " FIELDS TERMINATED BY '" + field_separator_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "'"
+		+ " ENCLOSED BY '"+("'".equals(enclosed_str_<%=cid %>)?"\\":"") + enclosed_str_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "'"
+		+ " ESCAPED BY '" + ("'".equals(escaped_str_<%=cid %>)?"\\":"")+ escaped_str_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "'"
+		+ " LINES TERMINATED BY '" + lines_separator_<%=cid %>.replaceAll("\\\\", "\\\\\\\\") + "' <%=loadingCols.toString()%>"
+<%
+	int bitColsSize = bitCols.size();
+	if (bitColsSize!=0) {
+%>
+		+ " SET"
+<%
+		for(int i = 0; i < bitColsSize; i++) {
+%>
+		+ " <%=bitCols.get(i)%>=CAST(@<%=cid %>_<%=bitCols.get(i)%> AS UNSIGNED)"
+<%
+			if(i != bitColsSize - 1) {
+%>
+		+ ","
+<%
+			}
+		}
+	}
+%>;
+	<%log4jCodeGenerateUtil.logInfo(node,"debug",cid+" - Bulk SQL:\"+bulkSQL_"+cid+"+\".");%>
+	java.sql.Statement stmt_<%=cid %>=conn_<%=cid %>.createStatement();
+	
+	stmt_<%=cid %>.execute(bulkSQL_<%=cid%>);
+	<%if(isLog4jEnabled){
+		if(("REPLACE").equals(dataAction)) {
+		%>
+			log.info("<%=cid%> - Replace records in table " + tableName_<%=cid%> + " has finished.");
+		<%
+		} else if (("IGNORE").equals(dataAction)) {
+		%>
+			log.info("<%=cid%> - Load data ignore records in table " + tableName_<%=cid%> + " has finished.");
+		<%
+		} else {
+		%>
+			log.info("<%=cid%> - Insert records in table " + tableName_<%=cid%> + " has finished.");
+		<%
+		}
+		%>
+	<%}%>
+<%
+}
+	if(!useExistingConnection) {
+		log4jCodeGenerateUtil.close(node);
+	}
+%>

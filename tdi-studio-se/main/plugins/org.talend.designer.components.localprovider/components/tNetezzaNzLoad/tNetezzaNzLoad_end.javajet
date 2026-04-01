@@ -1,0 +1,135 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.MetadataTalendType    
+    org.talend.core.model.metadata.MappingTypeRetriever 
+    org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+    java.util.ArrayList    
+    java.lang.StringBuilder
+    java.util.Map
+    java.util.HashMap
+
+" 
+skeleton="../templates/db_output_bulk.skeleton"
+%>
+
+<% 
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+
+	String dbhost = ElementParameterParser.getValue(node, "__HOST__");
+	String dbport = ElementParameterParser.getValue(node, "__PORT__");
+	String dbname = ElementParameterParser.getValue(node, "__DBNAME__");
+	String dbuser = ElementParameterParser.getValue(node, "__USER__");
+	String dbtable = ElementParameterParser.getValue(node, "__TABLE__");
+	String tableAction = ElementParameterParser.getValue(node, "__TABLE_ACTION__");
+	String dataFile = ElementParameterParser.getValue(node, "__DATA_FILE__");
+	boolean useNamedPiped = ElementParameterParser.getValue(node, "__USE_NAMED_PIPE__").equals("true");
+	String namedPipeName = ElementParameterParser.getValue(node, "__NAMED_PIPE__");
+	boolean useExistingCtrlFile = ElementParameterParser.getValue(node, "__USE_EXISTING_CLT_FILE__").equals("true");
+	String ctrlFile = ElementParameterParser.getValue(node, "__CLT_FILE__");
+	String fieldSeparator = ElementParameterParser.getValue(node, "__FIELD_SEPARATOR__");
+	String quoteFields = ElementParameterParser.getValue(node, "__QUOTE_FIELDS__");
+	List<Map<String, String>> options = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__OPTIONS__");
+	String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+	String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+	boolean showLog = ("true").equals(ElementParameterParser.getValue(node,"__SHOW_LOG__"));
+	List<IMetadataColumn> columnList = getColumnList(node);
+	List<Column> stmtStructure = null;
+	if (columnList != null && columnList.size() > 0) {
+		stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+	}
+	
+	List< ? extends IConnection> inputConns = node.getIncomingConnections();
+	List< ? extends IConnection> outputConns = node.getOutgoingSortedConnections();
+	boolean hasInputRow = false;
+	boolean hasOutputRow = false;
+	if (inputConns != null || inputConns.size() > 0) {
+		for(IConnection conn : inputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasInputRow)
+					hasInputRow = true;
+		}
+	}
+	if (outputConns != null || outputConns.size() > 0) {
+		for(IConnection conn : outputConns) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA))
+				if(!hasOutputRow)
+					hasOutputRow = true;
+		}
+	}
+	
+	boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+
+<%
+	if (hasInputRow) {
+	%>
+		outputStream_<%=cid%>.flush();
+		outputStream_<%=cid%>.close();
+				<%if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Executing '"+command_<%=cid %>.toString()+"'");
+				<%}%>
+	<%
+		if (useNamedPiped) { // wait for nzload thread to finish
+			%>
+			nzloadThread_<%=cid%>.join(0);
+			//TODO: clean up named pipe
+			<%
+		} else { // start the nzload thread and wait
+			%>
+			nzloadThread_<%=cid%>.start();
+			nzloadThread_<%=cid%>.join(0);
+			<%
+		}
+%>
+		globalMap.put("<%=cid%>_NB_LINE", nb_line_<%=cid%>.get());
+<%
+		if(isLog4jEnabled){%>
+					log.info("<%=cid%> - Execute '"+command_<%=cid %>.toString()+"' has finished.");
+				<%}
+	}
+%>
+				// added "show log output" feature
+				<%
+				for(Map<String, String> option : options) {
+					 String option_key = option.get("KEY");
+					 String file_location = option.get("VALUE");
+					if( "-lf".equals(option_key) && showLog == true ) {
+					%>
+					
+						// System.out.println("reading log file :" + <%=file_location%> );
+						try {
+							// Open the file and print contents 
+							 java.io.FileInputStream fstream = new java.io.FileInputStream(<%=file_location%>);
+							 java.io.DataInputStream in = new java.io.DataInputStream(fstream);
+							 java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(in));
+							 String strLine;
+							
+							while ((strLine = br.readLine()) != null)   {
+								System.out.println (strLine);
+							}
+							
+							in.close();
+						}
+						catch (java.lang.Exception e) {
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+							<%if(isLog4jEnabled){%>
+								log.error("<%=cid%> - " + e.getMessage());
+							<%}%>
+							// System.err.println("Error Reading Log File " + e.getMessage());
+							
+						}
+					
+					<%
+					}
+				}
+				%>
+				// end "show log output"
+				

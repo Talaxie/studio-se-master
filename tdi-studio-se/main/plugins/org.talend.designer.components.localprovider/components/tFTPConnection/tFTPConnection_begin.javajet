@@ -1,0 +1,101 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IElementParameter
+    org.talend.core.model.utils.NodeUtil 
+    java.util.List
+	java.util.Map
+  " 
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String port = ElementParameterParser.getValue(node, "__PORT__");
+String ftpsPort = ElementParameterParser.getValue(node, "__FTPS_PORT__");
+String user = ElementParameterParser.getValue(node, "__USER__");
+boolean use_encoding = "true".equals(ElementParameterParser.getValue(node, "__USE_ENCODING__"));
+
+String connectMode = ElementParameterParser.getValue(node, "__CONNECT_MODE__");
+boolean useProxy = ("true").equals(ElementParameterParser.getValue(node, "__USE_PROXY__"));
+String proxyHost = ElementParameterParser.getValue(node, "__PROXY_HOST__");
+String proxyPort = ElementParameterParser.getValue(node, "__PROXY_PORT__");
+String proxyUser = ElementParameterParser.getValue(node, "__PROXY_USERNAME__");
+boolean sftp = ("true").equals(ElementParameterParser.getValue(node, "__SFTP__"));
+String authMethod = ElementParameterParser.getValue(node, "__AUTH_METHOD__");
+String privateKey = ElementParameterParser.getValue(node, "__PRIVATEKEY__");
+boolean ftps = ("true").equals(ElementParameterParser.getValue(node, "__FTPS__"));
+String keystoreFile = ElementParameterParser.getValue(node, "__KEYSTORE_FILE__");
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String securityMode = ElementParameterParser.getValue(node, "__SECURITY_MODE__");
+String protectionLevel = ElementParameterParser.getValue(node, "__FTPS_PROT__");
+String protectionBufferSize = ElementParameterParser.getValue(node, "__FTPS_PROTECTION_BUFF_SIZE__");
+String timeoutValue = ElementParameterParser.getValue(node, "__CONNECTION_TIMEOUT__");
+boolean useRemoteVerification = ("true").equals(ElementParameterParser.getValue(node, "__REMOTE_VERIFICATION__"));
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+boolean useStrictReplyParsing = ("true").equals(ElementParameterParser.getValue(node, "__USE_STRICT_REPLY_PARSING__"));
+boolean isConfigClient = "true".equals(ElementParameterParser.getValue(node, "__CONFIG_CLIENT__"));
+List<Map<String, String>> clientParams = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CLIENT_PARAMETERS__");
+String passwordFieldName = "";
+
+if (useProxy) {
+%>  
+  java.util.Properties props_<%=cid%> = System.getProperties();
+  props_<%=cid%>.put("socksProxyPort", <%=proxyPort %>);
+  props_<%=cid%>.put("socksProxyHost", <%=proxyHost %>);
+  props_<%=cid%>.put("java.net.socks.username", <%=proxyUser %>);
+  
+<%
+passwordFieldName = "__PROXY_PASSWORD__";
+if (ElementParameterParser.canEncrypt(node, passwordFieldName)) {
+%> 
+  String decryptedProxyPassword_<%=cid%> = routines.system.PasswordEncryptUtil.decryptPassword(<%=ElementParameterParser.getEncryptedValue(node, passwordFieldName)%>);
+<%} else {%>
+  String decryptedProxyPassword_<%=cid%> = <%= ElementParameterParser.getValue(node, passwordFieldName)%>; 
+<%}%>
+
+  props_<%=cid%>.put("java.net.socks.password", decryptedProxyPassword_<%=cid%>);
+  java.net.Authenticator.setDefault(new java.net.Authenticator() {
+        public java.net.PasswordAuthentication getPasswordAuthentication() {
+            return new java.net.PasswordAuthentication(<%=proxyUser %>, decryptedProxyPassword_<%=cid%>.toCharArray());
+        }
+  });
+<%
+}
+%>
+int connectionTimeout_<%=cid %> = Integer.valueOf(<%=timeoutValue %>);
+<%
+if (!sftp && !ftps) { // *** ftp *** //
+%>
+    org.apache.commons.net.ftp.FTPClient ftp_<%=cid %> = null;
+<%
+    passwordFieldName = "__PASS__";
+%>
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftp_connect.javajet"%>
+
+    globalMap.put("conn_<%=cid%>",ftp_<%=cid %>);
+<%
+} else if (!ftps) { // *** sftp *** //
+	final String passwordFieldKey = "__PASS__";
+%>	
+	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/sftp_connect.javajet"%>
+	
+	<%if(use_encoding) {%>
+		c_<%=cid%>.setFilenameEncoding(<%=encoding%>);
+	<%}%>
+	
+	globalMap.put("conn_<%=cid%>", c_<%=cid%>);
+<%
+} else {  // *** ftps *** //
+%>
+    org.apache.commons.net.ftp.FTPSClient ftp_<%=cid %> = null;
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/FTP/ftps_connect.javajet"%>
+    globalMap.put("conn_<%=cid%>", ftp_<%=cid %>);
+<%
+}
+%>

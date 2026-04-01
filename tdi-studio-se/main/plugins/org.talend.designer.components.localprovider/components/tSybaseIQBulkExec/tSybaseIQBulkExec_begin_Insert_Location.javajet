@@ -1,0 +1,428 @@
+<%
+    boolean useInsertLoad = false;
+    String srcTableSchema = ElementParameterParser.getValue(node, "__SOURCE_TABLE_SCHEMA__");
+    String sourceTable = ElementParameterParser.getValue(node,"__SOURCE_TABLE__");
+%>
+    String srcTable_<%= cid %> = <%= sourceTable %>;
+    if(<%= srcTableSchema %> != null && !"".equals(<%= srcTableSchema %>) && !"\"\"".equals(<%= srcTableSchema %>)){
+        srcTable_<%= cid %> = <%= srcTableSchema %> + "." + srcTable_<%= cid %>;
+    }
+<%
+    boolean useFilter = "true".equals(ElementParameterParser.getValue(node,"__USE_FILTER__"));
+    String whereClause = ElementParameterParser.getValue(node,"__WHERE_CLAUSE__");
+    String srcServerName = ElementParameterParser.getValue(node,"__SOURCE_SERVER_NAME__");
+    String srcDatabaseName = ElementParameterParser.getValue(node,"__SOURCE_DATABASE__");
+    String destDBSchema = ElementParameterParser.getValue(node,"__DB_SCHEMA__");
+    if(useExistingConn){
+      String reusedConn = ElementParameterParser.getValue(node,"__CONNECTION__");
+      INode nodeY = NodeUtil.getNodeByUniqueName(node.getProcess(), reusedConn);
+      destDBSchema = ElementParameterParser.getValue(nodeY,"__SCHEMA_DB__");
+    }
+    String destTableName = ElementParameterParser.getValue(node,"__TABLE__");
+    List<Map<String, String>> mappingList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__MAPPING_INPUT__");
+
+    //group: location options
+    boolean useLocationOptions = "true".equals(ElementParameterParser.getValue(node,"__LOCATION_OPTIONS__"));
+    boolean quotedIdentifier = "true".equals(ElementParameterParser.getValue(node,"__QUOTED_IDENTIFIER__"));
+            quotedIdentifier = useLocationOptions && quotedIdentifier;
+    String quotedIdentifierStatus = ElementParameterParser.getValue(node,"__QUOTED_IDENTIFIER_STATUS__");
+
+    boolean encryptedPassword = "true".equals(ElementParameterParser.getValue(node,"__ENCRYPTED_PASSWORD__"));
+            encryptedPassword = useLocationOptions && encryptedPassword;
+
+    boolean useTdsPacketSize = "true".equals(ElementParameterParser.getValue(node,"__USE_TDS_PACKET_SIZE__"));
+            useTdsPacketSize = useLocationOptions && useTdsPacketSize;
+    String packetSize = ElementParameterParser.getValue(node,"__PACKET_SIZE__");
+
+    boolean setIsolationLevel = "true".equals(ElementParameterParser.getValue(node,"__SET_ISOLATION_LEVEL__"));
+            setIsolationLevel = useLocationOptions && setIsolationLevel;
+    String isolationLevel = ElementParameterParser.getValue(node,"__ISOLATION_LEVEL__");
+
+    //group: insert-select-load-option
+    boolean useInsertSelectLoadOptions = "true".equals(ElementParameterParser.getValue(node,"__INSERT_SELECT_LOAD_OPTIONS__"));
+    boolean ignoreConstraint = "true".equals(ElementParameterParser.getValue(node,"__IGNORE_CONSTRAINT__"));
+            ignoreConstraint = useInsertSelectLoadOptions && ignoreConstraint;
+    List<Map<String, String>> constraintMap = null;
+    if(ignoreConstraint){
+        constraintMap = (List<Map<String, String>>)ElementParameterParser.getObjectValue(node,"__IGNORE_CONSTRAINT_TABLE__");
+        %>
+           java.util.Map<String, Integer> constraintMap_<%= cid %> = new java.util.HashMap<>();
+           <%
+              for(Map<String, String> map: constraintMap){
+                  String constraintType = map.get("CONSTRAINT_TYPE");
+                  String constraintNum = map.get("IGNORE_CONSTRAINT_NUMBER");
+                  %>
+                  constraintMap_<%= cid %>.put("<%= constraintType %>", Integer.valueOf(<%= constraintNum %>));
+                  <%
+              }
+            %>
+        <%
+    }
+
+    boolean willLogInFile = "true".equals(ElementParameterParser.getValue(node,"__LOG_IN_FILE__"));
+            willLogInFile = useInsertSelectLoadOptions && willLogInFile;
+    String workSkipNumber = ElementParameterParser.getValue(node,"__WORD_SKIP_NUMBER__");
+    String msgLog = ElementParameterParser.getValue(node,"__MESSAGE_LOG__");
+    String rowLog = ElementParameterParser.getValue(node,"__ROW_LOG__");
+    String logDelimitedBy = ElementParameterParser.getValue(node,"__LOG_DELIMITED_BY__");
+    boolean useLogFilter = "true".equals(ElementParameterParser.getValue(node,"__ONLY_LOG__"));
+            useLogFilter = willLogInFile && useLogFilter;
+    String onlyLogType = ElementParameterParser.getValue(node,"__ONLY_LOG_TYPE__");
+
+    //group: insert-load-option
+    boolean useInsertLoadOptions = "true".equals(ElementParameterParser.getValue(node,"__INSERT_LOAD_OPTIONS__"));
+    String limitNumber = ElementParameterParser.getValue(node,"__LIMIT__");
+    String notifyNumber = ElementParameterParser.getValue(node,"__NOTIFY__");
+    String skipNumber = ElementParameterParser.getValue(node,"__SKIP__");
+    String startRowId = ElementParameterParser.getValue(node,"__START_ROW_ID__");
+%>
+
+<%
+    List<IMetadataTable> metadataList = node.getMetadataList();
+    if ((metadataList != null) && (metadataList.size() > 0)) {//-> TagQ
+        IMetadataTable destTableMetadata = metadataList.get(0);
+        if(mappingList != null){//-> TagA
+            if(mappingList.size() <= 0){
+                useInsertLoad = true;
+            }
+                %>
+                   String columnDelimiter_<%= cid %> = ", ";
+
+                   StringBuilder selectStatement_<%= cid %> = new StringBuilder(" 'select ");
+                   <%
+                   if(!useInsertLoad){
+                       int counter = 0;
+                       for(Map<String, String> map: mappingList){
+                            if(counter != 0){
+                                %>
+                                   selectStatement_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                                <%
+                            }
+                                String srcTableColumnName = map.get("PARAMETER_NAME");
+                                String destTableColumnName = map.get("SCHEMA_COLUMN");
+                                  %>
+                                if(<%= srcTableColumnName %> != null && !"".equals(<%= srcTableColumnName %>) && !"\"\"".equals(<%= srcTableColumnName %>)){
+                                     selectStatement_<%= cid %>.append(<%= srcTableColumnName %>);
+                                }else{
+                                     selectStatement_<%= cid %>.append("<%= destTableColumnName %>");
+                                }
+                                  <%
+                                counter ++;
+                       }
+                   }else{
+                        %>
+                                     selectStatement_<%= cid %>.append("*");
+                        <%
+                   }
+                   %>
+                             selectStatement_<%= cid %>.append(" from ");
+                             selectStatement_<%= cid %>.append(srcTable_<%= cid %>);
+                   <%
+                      if(useFilter){
+                        %>
+                            selectStatement_<%= cid %>.append(" ");
+                            selectStatement_<%= cid %>.append(<%= whereClause %>);
+                        <%
+                      }
+                   %>
+                           selectStatement_<%= cid %>.append(" commit'");
+                <%
+        }//-> TagA
+
+        if(destTableMetadata != null){
+            List<IMetadataColumn> destColumnList = destTableMetadata.getListColumns();
+            if(destColumnList.size() <= 0){
+               useInsertLoad = true;
+            }
+              %>
+
+                 StringBuilder valStatement_<%= cid %> = new StringBuilder();
+                 <%
+                 if(!useInsertLoad){
+                     %>
+                             valStatement_<%= cid %>.append("(");
+                     <%
+                     int index = 0;
+                     for(IMetadataColumn imetadataColumn: destColumnList){
+                        if(index != 0){
+                           %>
+                              valStatement_<%= cid %>.append(columnDelimiter_<%= cid %>);
+                           <%
+                        }
+                        %>
+                             valStatement_<%= cid %>.append("<%= imetadataColumn.getOriginalDbColumnName() %>");
+                        <%
+                        index ++;
+                     }
+                     %>
+                             valStatement_<%= cid %>.append(")");
+                     <%
+                 }
+                 %>
+
+                            //insert-load-options
+                            <%
+                            if(useInsertLoadOptions){
+                                if(limitNumber != null && !"".equals(limitNumber)){
+                                     %>
+                            valStatement_<%= cid %>.append(" limit ");
+                            valStatement_<%= cid %>.append(Integer.valueOf(<%= limitNumber %>));
+                                     <%
+                                }
+                                if(notifyNumber != null && !"".equals(notifyNumber)){
+                                     %>
+                            valStatement_<%= cid %>.append(" notify ");
+                            valStatement_<%= cid %>.append(Integer.valueOf(<%= notifyNumber %>));
+                                     <%
+                                }
+                                if(skipNumber != null && !"".equals(skipNumber)){
+                                     %>
+                            valStatement_<%= cid %>.append(" skip ");
+                            valStatement_<%= cid %>.append(Integer.valueOf(<%= skipNumber %>));
+                                     <%
+                                }
+                                if(startRowId != null && !"".equals(startRowId)){
+                                     %>
+                            valStatement_<%= cid %>.append(" start row id ");
+                            valStatement_<%= cid %>.append(<%= startRowId %>);
+                                     <%
+                                }
+                            }
+                            %>
+
+                            //insert-select-load-options
+                            <%
+                            if(useInsertSelectLoadOptions){
+                                if(workSkipNumber != null && !"".equals(workSkipNumber)){
+                                   %>
+                            valStatement_<%= cid %>.append(" word skip ");
+                            valStatement_<%= cid %>.append(Integer.valueOf(<%= workSkipNumber %>));
+                                   <%
+                                }
+                                  if(ignoreConstraint){
+                                    %>
+                                    java.util.Set<String> keySet_<%= cid %> = constraintMap_<%= cid %>.keySet();
+                                    if(keySet_<%= cid %>.size() > 0){
+                                       valStatement_<%= cid %>.append(" ignore constraint");
+                                    }
+                                    int counter_<%= cid %> = 0;
+                                    for(String key: keySet_<%= cid %>){
+                                      if(counter_<%= cid %> > 0){
+                                        valStatement_<%= cid %>.append(",");
+                                      }
+                                      valStatement_<%= cid %>.append(" ");
+                                      valStatement_<%= cid %>.append(key);
+                                      valStatement_<%= cid %>.append(" ");
+                                      valStatement_<%= cid %>.append(constraintMap_<%= cid %>.get(key));
+                                      counter_<%= cid %> ++;
+                                    }
+                                    <%
+                                  }
+                            if(willLogInFile){
+                                 %>
+                               boolean applyMsgLog_<%= cid %> = (<%= msgLog %> != null && !"".equals(<%= msgLog %>) && !"\"\"".equals(<%= msgLog %>));
+                               boolean applyRowLog_<%= cid %> = (<%= rowLog %> != null && !"".equals(<%= rowLog %>) && !"\"\"".equals(<%= rowLog %>));
+                               if(applyMsgLog_<%= cid %>){
+                            valStatement_<%= cid %>.append(" message log '");
+                            valStatement_<%= cid %>.append(<%= msgLog %>);
+                            valStatement_<%= cid %>.append("'");
+                               }
+                               if(applyRowLog_<%= cid %>){
+                            valStatement_<%= cid %>.append(" row log '");
+                            valStatement_<%= cid %>.append(<%= rowLog %>);
+                            valStatement_<%= cid %>.append("'");
+                               }
+                                 <%
+                               if(useLogFilter){
+                                %>
+                            valStatement_<%= cid %>.append(" only log <%= onlyLogType %>");
+                                <%
+                               }
+                                %>
+                               if(applyMsgLog_<%= cid %> || applyRowLog_<%= cid %>){
+                               if(<%= logDelimitedBy %> != null && !"".equals(<%= logDelimitedBy %>) && !"\"\"".equals(<%= logDelimitedBy %>)){
+                               valStatement_<%= cid %>.append(" log delimited by '");
+                               valStatement_<%= cid %>.append(<%= logDelimitedBy %>);
+                               valStatement_<%= cid %>.append("'");
+                               }
+                               }
+                                <%
+                            }
+                        }
+                            %>
+
+                            valStatement_<%= cid %>.append(" location '");
+                            valStatement_<%= cid %>.append(<%= srcServerName %>);
+                            valStatement_<%= cid %>.append(".");
+                            valStatement_<%= cid %>.append(<%= srcDatabaseName %>);
+                            valStatement_<%= cid %>.append("'");
+
+                            //location options
+                            <%
+                            if(useLocationOptions){
+                                if(encryptedPassword){
+                                %>
+                                valStatement_<%= cid %>.append(" encrypted password");
+                                <%
+                                }
+                                if(useTdsPacketSize){
+                                      %>
+                               valStatement_<%= cid %>.append(" packetsize ");
+                               valStatement_<%= cid %>.append(Integer.valueOf(<%= packetSize %>));
+                                      <%
+                                 }
+                                if(quotedIdentifier){
+                                %>
+                                valStatement_<%= cid %>.append(" quoted_identifier");
+                                valStatement_<%= cid %>.append(" <%= quotedIdentifierStatus %>");
+                                <%
+                                }
+                                if(setIsolationLevel){
+                                %>
+                                valStatement_<%= cid %>.append(" isolation level");
+                                valStatement_<%= cid %>.append(" <%= isolationLevel %>");
+                                <%
+                                }
+                            }
+                            %>
+                 <%
+        }
+                 %>
+
+                           StringBuilder insertLocationSql_<%= cid %> = new StringBuilder("insert into ");
+                           insertLocationSql_<%= cid %>.append(<%= destDBSchema %>);
+                           insertLocationSql_<%= cid %>.append(".");
+                           insertLocationSql_<%= cid %>.append(<%= destTableName %>);
+                           insertLocationSql_<%= cid %>.append(" ");
+                           insertLocationSql_<%= cid %>.append(valStatement_<%= cid %>.toString());
+                           insertLocationSql_<%= cid %>.append(selectStatement_<%= cid %>.toString());
+              <%
+    }//-> TagQ
+%>
+
+<%
+List<IMetadataColumn> columnList = getColumnList(node);
+if(useExistingConn) {
+    String connection = ElementParameterParser.getValue(node,"__CONNECTION__");
+    String conn = "conn_" + connection;
+    String schema = "dbschema_" + connection;
+    String user = "user_"+connection;
+%>
+    java.sql.Connection conn_<%=cid %> = (java.sql.Connection)globalMap.get("<%=conn %>");
+    String dbschema_<%=cid%>= (String)globalMap.get("<%=schema%>");
+    String dbUser_<%=cid%> = (String)globalMap.get("<%=user%>");
+<%
+    log4jCodeGenerateUtil.useExistConnection(node);
+}else{
+%>
+    String dbschema_<%=cid%> = <%=dbschema%>;
+    String dbUser_<%=cid%> = <%=userName %>;
+<%
+    if ("SYBSEIQ_12_15".equals(dbVersion)||"SYBSEIQ_16".equals(dbVersion)) {//sybase IQ 12/16
+%>
+
+<%
+        if(dbproperties == null || ("\"\"").equals(dbproperties) || ("").equals(dbproperties)) {
+%>
+            String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=host %> + ":" + <%=port %> + "/" + <%=dbName %>;
+<%
+        } else {
+%>
+            String url_<%=cid %> = "jdbc:sybase:Tds:" + <%=host %> + ":" + <%=port %> + "/" + <%=dbName %> + "?" + <%=dbproperties%>;
+<%
+        }
+        if("SYBSEIQ_12_15".equals(dbVersion)){
+%>
+         String driverClass_<%=cid%> = "com.sybase.jdbc3.jdbc.SybDriver";
+       <%}else{%>
+         String driverClass_<%=cid%> = "com.sybase.jdbc4.jdbc.SybDriver";
+<%
+         }
+    } else {//sybase IQ 15
+        if ("DSN".equals(ElementParameterParser.getValue(node,"__DATA_SOURCE__"))) {
+%>
+            String url_<%=cid %> = "jdbc:odbc:dsn="+<%=ElementParameterParser.getValue(node,"__DATA_SOURCE_NAME__")%>;
+<%
+        }else {//FileDSN
+%>
+            String url_<%=cid %> = "jdbc:odbc:FileDSN="+<%=ElementParameterParser.getValue(node,"__FILE_DATA_SOURCE_NAME__")%>;
+<%
+        }
+        //set database
+        if (0 != dbName.trim().length()) {
+%>
+            url_<%=cid %> +=";DatabaseName="+<%=dbName%>;
+<%
+        }
+%>
+        String driverClass_<%=cid%> = "ianywhere.ml.jdbcodbc.IDriver";
+<%
+    }//end sybase IQ 15
+%>
+
+    java.lang.Class jdbcclazz_<%=cid%> = java.lang.Class.forName(driverClass_<%=cid%>);
+   	<%if("SYBSEIQ_16".equals(dbVersion)){%>
+	jdbcclazz_<%=cid%>.newInstance();
+	<%}%>
+
+    <%
+    String passwordFieldName = "__PASS__";
+    %>
+
+    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+    String dbPwd_<%=cid%> = decryptedPassword_<%=cid%>;
+    java.sql.Connection conn_<%=cid %> = null;
+
+<%
+    log4jCodeGenerateUtil.debugConnectionParams(node);
+    log4jCodeGenerateUtil.connect(node);
+}
+%>
+
+    String tableName_<%=cid%> = dbUser_<%=cid%> + "." + <%=table%>;
+    if(dbschema_<%=cid%> != null && !"".equals(dbschema_<%=cid%>) && !"\"\"".equals(dbschema_<%=cid%>)) {
+        tableName_<%=cid%> = dbschema_<%=cid%> + "." + <%=table%>;
+    }
+<%
+String tableAction = ElementParameterParser.getValue(node,"__TABLE_ACTION__");
+String dbmsId = ElementParameterParser.getValue(node,"__MAPPING__");
+List<Column> stmtStructure = null;
+Manager manager = null;
+if(columnList != null && columnList.size() > 0) {
+    stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, false, null, null);
+    manager = getManager(dbmsId, cid);
+}
+if((columnList != null && columnList.size() > 0) || "CLEAR".equals(tableAction) || "TRUNCATE".equals(tableAction)){
+%>
+int deletedCount_<%=cid%> = 0;
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/_tableActionForBulk.javajet"%>
+<%
+}else{//TDI-29007
+    manager = getManager(dbmsId, cid);
+    manager.setNode(node);
+}
+%>
+    java.sql.Statement stmt_<%=cid %> = conn_<%=cid %>.createStatement();
+    stmt_<%=cid %>.execute(insertLocationSql_<%= cid %>.toString());
+/*
+    try{
+       if(!stmt_<%=cid %>.isClosed()){
+           stmt_<%=cid %>.close();
+       }
+    }catch(Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+        e.printStackTrace();
+    }catch(java.lang.Error err){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",err.getMessage());
+        err.printStackTrace();
+    }
+*/
+<%
+   if(!useExistingConn){
+     %>
+        if(conn_<%= cid %> != null && !conn_<%= cid %>.isClosed()) {
+            conn_<%= cid %>.close();
+        }
+     <%
+    }
+%>

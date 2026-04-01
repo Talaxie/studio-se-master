@@ -1,0 +1,134 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.core.model.metadata.IMetadataColumn
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.IConnectionCategory
+    org.talend.core.model.utils.TalendTextUtils
+    java.util.List
+    java.util.Map
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+
+List<String> connList = new java.util.ArrayList<String>();
+List< ? extends IConnection> conns = node.getIncomingConnections();
+if(conns!=null){
+	for(int i=0;i<conns.size();i++){
+		IConnection connTemp = conns.get(i);
+	    if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	   		connList.add(connTemp.getName());
+	    }
+	}
+}
+
+
+if (connList.size()>0) {//HSS_____0
+    	
+    List<Map<String, String>> schemas_o = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__SCHEMAS__");
+	
+	List<Map<String, String>> schemas = new java.util.ArrayList<Map<String, String>>();
+	List<String> connections = new java.util.ArrayList<String>();
+    Map<String, List<IMetadataColumn>> connectionMapColumnList = new java.util.HashMap<String, List<IMetadataColumn>>();
+	
+	for(Map<String, String> schema_o : schemas_o){//HSS_____0_____1
+		Map<String, String> schema = new java.util.HashMap<String, String>();
+		schema.put("SCHEMA", TalendTextUtils.removeQuotes(schema_o.get("SCHEMA")));
+		schema.put("PARENT_ROW", TalendTextUtils.removeQuotes(schema_o.get("PARENT_ROW")));
+		schema.put("KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("KEY_COLUMN")));
+		schema.put("PARENT_KEY_COLUMN", TalendTextUtils.removeQuotes(schema_o.get("PARENT_KEY_COLUMN")));
+		schema.put("PATTERN", TalendTextUtils.removeQuotes(schema_o.get("PATTERN")));
+		schema.put("PADDING_CHAR", TalendTextUtils.removeQuotes(schema_o.get("PADDING_CHAR")));
+		schema.put("KEEP", TalendTextUtils.removeQuotes(schema_o.get("KEEP")));
+		schema.put("ALIGN", TalendTextUtils.removeQuotes(schema_o.get("ALIGN")));
+		if(("").equals(schema.get("PARENT_ROW"))){//put the root schema in the first place on list.
+			for(int i=0;i<conns.size();i++){//HSS_____0_____1_____1
+	    		IConnection connTemp = conns.get(i);
+	    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	    			IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+					if(tempMetadataTable.getTableName().equals(schema.get("SCHEMA"))){
+						schema.put("CONNECTION", connTemp.getName());
+		    			List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+		    			connections.add(0, connTemp.getName());
+		    			connectionMapColumnList.put(connTemp.getName(), listColumns);
+					}
+	    		}
+	    	}//HSS_____0_____1_____1
+			schemas.add(0, schema);
+		}else{
+			for(int i=0;i<conns.size();i++){//HSS_____0_____1_____1
+	    		IConnection connTemp = conns.get(i);
+	    		if (connTemp.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+	    			IMetadataTable tempMetadataTable = connTemp.getMetadataTable();
+					if(tempMetadataTable.getTableName().equals(schema.get("SCHEMA"))){
+						schema.put("CONNECTION", connTemp.getName());
+		    			List<IMetadataColumn> listColumns = tempMetadataTable.getListColumns();
+		    			connections.add(connTemp.getName());
+		    			connectionMapColumnList.put(connTemp.getName(), listColumns);
+					}
+	    		}
+	    	}//HSS_____0_____1_____1
+			schemas.add(schema);
+		}
+	}//HSS_____0_____1
+    
+    
+    String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+    if (encoding!=null) {
+    	if (("").equals(encoding)) {
+        	encoding = "undef";
+        }
+    }
+        
+	String filename = ElementParameterParser.getValue(node, "__FILE_NAME__");
+        
+%>
+		String fileNewName_<%=cid%> = <%=filename%>;
+		java.io.File createFile<%=cid%> = new java.io.File(fileNewName_<%=cid%>);
+<%
+	if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){//HSS_____0_____2
+%>
+        //create directory only if not exists
+        java.io.File parentFile_<%=cid%> = createFile<%=cid%>.getParentFile();
+        if(parentFile_<%=cid%> != null && !parentFile_<%=cid%>.exists()) {
+            parentFile_<%=cid%>.mkdirs();
+        }
+<%
+	}//HSS_____0_____2
+%>
+  
+	int nb_line_<%=cid%> = 0;
+	final java.io.BufferedWriter out<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new java.io.FileOutputStream(<%=filename %>),<%= encoding%>));
+        
+        
+<%
+	for(int i=0; i < connections.size(); i++){//HSS_____0_____3
+		String conn = connections.get(i);
+		if(i==0){
+%>
+	java.util.List<<%=conn %>Struct> <%=conn %>List_<%=cid %> = new java.util.ArrayList<<%=conn %>Struct>();
+<%
+		}else{
+%>
+	org.talend.commons.utils.data.map.MultiLazyValuesMap <%=conn %>Map_<%=cid %> = new org.talend.commons.utils.data.map.MultiLazyValuesMap(
+                    new java.util.HashMap()) {
+
+                public java.util.Collection instanciateNewCollection() {
+                    return new org.apache.commons.collections.list.GrowthList(3);
+                }
+
+            };
+   final <%=conn %>Struct[] EMPTY_ARRAY_<%=conn %>_<%=cid %> = new <%=conn %>Struct[0];
+<%
+		}
+    }//HSS_____0_____3
+}//HSS_____0
+%>

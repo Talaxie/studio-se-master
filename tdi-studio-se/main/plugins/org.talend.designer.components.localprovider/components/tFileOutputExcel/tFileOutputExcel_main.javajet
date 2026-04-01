@@ -1,0 +1,165 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory 
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.ElementParameterParser		
+		org.talend.core.model.utils.NodeUtil
+	    java.util.List
+	    java.util.Map
+	    java.util.HashMap
+		
+	"
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+
+String cid = node.getUniqueName();
+boolean version07 = ("true").equals(ElementParameterParser.getValue(node,"__VERSION_2007__"));
+String advancedSeparatorStr = ElementParameterParser.getValue(node, "__ADVANCED_SEPARATOR__");
+boolean advancedSeparator = (advancedSeparatorStr!=null&&!("").equals(advancedSeparatorStr))?("true").equals(advancedSeparatorStr):false;
+String thousandsSeparator = ElementParameterParser.getValueWithJavaType(node, "__THOUSANDS_SEPARATOR__", JavaTypesManager.CHARACTER);
+String decimalSeparator = ElementParameterParser.getValueWithJavaType(node, "__DECIMAL_SEPARATOR__", JavaTypesManager.CHARACTER); 
+String font = ElementParameterParser.getValue(node, "__FONT__"); 
+boolean isIncludeHeader = ("true").equals(ElementParameterParser.getValue(node, "__INCLUDEHEADER__"));
+//modif start
+boolean firstCellYAbsolute = ("true").equals(ElementParameterParser.getValue(node, "__FIRST_CELL_Y_ABSOLUTE__"));
+String firstCellXStr = ElementParameterParser.getValue(node, "__FIRST_CELL_X__");
+String firstCellYStr = ElementParameterParser.getValue(node, "__FIRST_CELL_Y__");
+//modif end
+boolean keepCellFormating =  ElementParameterParser.getValue(node, "__KEEP_CELL_FORMATING__").equals("true");
+boolean flushOnRow=("true").equals(ElementParameterParser.getValue(node, "__FLUSHONROW__" ));
+boolean useStream = ("true").equals(ElementParameterParser.getValue(node,"__USESTREAM__"));
+boolean isAppendFile = ("true").equals(ElementParameterParser.getValue(node, "__APPEND_FILE__" ));
+
+int schemaOptNum=100;
+String schemaOptNumStr=ElementParameterParser.getValue(node, "__SCHEMA_OPT_NUM__");
+if(schemaOptNumStr!=null && !"".equals(schemaOptNumStr) && !"\"\"".equals(schemaOptNumStr)){
+	schemaOptNum  = Integer.parseInt(schemaOptNumStr);
+}
+
+boolean isAllColumnAutoSize = ("true").equals(ElementParameterParser.getValue(node, "__IS_ALL_AUTO_SZIE__" ));
+List<Map<String, String>> autoSizeList = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__AUTO_SZIE_SETTING__");
+Map<String,String> autColSizeMaping=new HashMap<String,String>();
+
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+		List<IMetadataColumn> columns = metadata.getListColumns();
+		boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+		
+		boolean hasDynamic = false;
+		int dynamic_index = 0;
+		String datePattern = "\"dd-MM-yyyy\"";
+		for(int i=0; columns!=null && i< columns.size(); i++) {
+			IMetadataColumn column = columns.get(i);
+	        if(!hasDynamic && column.getTalendType().equals("id_Dynamic")){
+	            dynamic_index = i+1;
+	            hasDynamic = true;
+	            datePattern= column.getPattern();
+	        }
+	        if(isAllColumnAutoSize){
+	        	autColSizeMaping.put(column.getLabel(),"true");
+	        }else{
+	        	autColSizeMaping.put(column.getLabel(),autoSizeList.get(i).get("IS_AUTO_SIZE"));
+	        	
+	        }
+		}
+		if(!version07){//version judgement
+    	
+    	List< ? extends IConnection> conns = node.getIncomingConnections();
+    	for (IConnection conn : conns) {
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    			if(hasDynamic && isIncludeHeader){
+    			%>
+    				int inserted_<%=cid%> = excelDynamicUtil_<%=cid%>.writeHeaderToExcelFile(writableSheet_<%=cid%>,<%=firstCellYAbsolute?firstCellXStr:"0"%>,
+						<%if(firstCellYAbsolute){%>startRowNum_<%=cid %>+nb_line_<%=cid%><%}else{%>nb_line_<%=cid%><%}%>,<%=conn.getName()%>,fitWidth_<%=cid%>);
+						
+					headerIsInserted_<%=cid%> |= inserted_<%=cid%>==1;
+						
+					nb_line_<%=cid%> += inserted_<%=cid%>;
+    			<%
+    			}
+    			int sizeColumns = columns.size();
+    			for (int i = 0; i < sizeColumns; i++) {
+    				IMetadataColumn column = columns.get(i);
+    				if(sizeColumns > schemaOptNum) {
+    					if(i%schemaOptNum==0){
+%>
+				fileOutputExcelUtil_<%=cid%>.putValue_<%=i/schemaOptNum%>(<%=conn.getName() %>,writableSheet_<%=cid %>,
+					startRowNum_<%=cid %>,nb_line_<%=cid%>,
+					<%if (font !=null && font.length()!=0) {%>format_<%=cid %><%} else {%>null<%}%>,fitWidth_<%=cid%>);
+<%
+    					}
+    					continue;
+    				}
+%>
+				<%@ include file="./putValue.javajet"%>
+<%
+				}
+%>
+    			nb_line_<%=cid %>++;
+				<%log4jFileUtil.debugWriteData(node);%>
+    <%
+    		}
+    	}
+    	}else{ //version judgement /***excel 2007 xlsx*****/
+
+		List< ? extends IConnection> conns = node.getIncomingConnections();
+    	for (IConnection conn : conns) {
+    		if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+    			if(hasDynamic && isIncludeHeader){
+    			%>
+    				int inserted_<%=cid%> = excelDynamicUtil_<%=cid%>.writeHeaderToExcelFile(<%=conn.getName() %>, xlsxTool_<%=cid%>, nb_line_<%=cid%>);
+    				
+    				headerIsInserted_<%=cid%> |= inserted_<%=cid%>==1;
+    				
+    				nb_line_<%=cid%> += inserted_<%=cid%>;
+    			<%
+    			}
+    			int sizeColumns = columns.size();
+%>
+				xlsxTool_<%=cid%>.addRow();
+<%
+    			for (int i = 0; i < sizeColumns; i++) {
+    				IMetadataColumn column = columns.get(i);
+    				if(sizeColumns > schemaOptNum) {
+    					if(i%schemaOptNum==0){
+%>
+   				fileOutputExcelUtil_<%=cid%>.putValue_<%=i/schemaOptNum%>(<%=conn.getName() %>,xlsxTool_<%=cid%>);
+<%
+    					}
+    					continue;
+	        		}
+%>
+				<%@ include file="./putValue2007.javajet"%>
+<%
+    			}
+    			%>
+    			nb_line_<%=cid %>++;
+				<%log4jFileUtil.debugWriteData(node);%>
+<%
+				if(flushOnRow && (useStream || !isAppendFile)){
+%>
+					bufferCount_<%=cid%>++;
+					if(bufferCount_<%=cid%> >= flushRowNum_<%=cid%>){
+    					xlsxTool_<%=cid%>.flushRowInMemory();
+    					bufferCount_<%=cid%>=0;
+    				}
+<%
+				}
+    		}
+    	}
+
+    	}
+    }
+}
+%>

@@ -1,0 +1,99 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.metadata.IMetadataTable
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+" 
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+LogUtil logtpl = new LogUtil(node);
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas!=null)&&(metadatas.size()>0)) {
+    IMetadataTable metadata = metadatas.get(0);
+    if (metadata!=null) {
+        String filename = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__FILENAME__",
+            "FILENAME"
+        );
+        
+        String fieldSeparator = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__FIELDSEPARATOR__",
+            "FIELDSEPARATOR"
+        );
+        
+        String rowSeparator = ElementParameterParser.getValueWithUIFieldKey(
+            node,
+            "__ROWSEPARATOR__",
+            "ROWSEPARATOR"
+        );
+
+        String encoding = ElementParameterParser.getValue(
+            node,
+            "__ENCODING__"
+        );
+        
+        boolean isAppend = ("true").equals(ElementParameterParser.getValue(node,"__APPEND__"));
+        
+        boolean useFieldsEnclosure = ("true").equals(ElementParameterParser.getValue(node,"__USE_FIELDS_ENCLOSURE__"));
+        String fieldsEnclosureLift = ElementParameterParser.getValue(node,"__FIELDS_ENCLOSURE_LEFT__");
+        String fieldsEnclosureRight = ElementParameterParser.getValue(node,"__FIELDS_ENCLOSURE_RIGHT__");
+        String bufferSize = ElementParameterParser.getValue(node,"__BUFFER_SIZE__");
+%>
+		String fileName_<%=cid%> = (new java.io.File(<%=filename %>)).getAbsolutePath().replace("\\","/");
+<%
+	if(("true").equals(ElementParameterParser.getValue(node,"__CREATE__"))){
+%>
+		String directory_<%=cid%> = null;
+		if((fileName_<%=cid%>.indexOf("/") != -1)) {     
+		    directory_<%=cid%> = fileName_<%=cid%>.substring(0, fileName_<%=cid%>.lastIndexOf("/"));            
+		} else {
+		    directory_<%=cid%> = "";
+		}
+		//create directory only if not exists
+		if(directory_<%=cid%> != null && directory_<%=cid%>.trim().length() != 0) {
+ 			java.io.File dir_<%=cid%> = new java.io.File(directory_<%=cid%>);
+			if(!dir_<%=cid%>.exists()) {
+                <% logtpl.info("\"The directory '\"",logtpl.var("directory"),"\"' doesn't exist,try to create it.\""); %>
+                if(dir_<%=cid%>.mkdirs()){
+                <% logtpl.info("\"The directory '\"",logtpl.var("directory"),"\"' has been created successfully.\""); %>
+                    System.out.println("The directory '"+directory_<%=cid%>+"' has been created successfully.");
+                }else{
+                    <% logtpl.error("\"Fail to create directory '\"",logtpl.var("directory"),"\"'.\""); %>
+                    System.err.println("Fail to create directory '"+directory_<%=cid%>+"'.");
+                }
+            }
+		}
+<%
+    }
+%>
+		int nb_line_<%=cid%> = 0;
+		
+		final String OUT_DELIM_<%=cid %> = <%=fieldSeparator %>;
+		
+		final String OUT_DELIM_ROWSEP_<%=cid %> = <%=rowSeparator%>;
+		
+		final String OUT_DELIM_ROWSEP_WITH_LOB_<%=cid %> = "|";
+<%
+	if (useFieldsEnclosure) {
+%>				
+		final String OUT_FIELDS_ENCLOSURE_LEFT_<%=cid %> = <%=fieldsEnclosureLift%>;
+		
+		final String OUT_FIELDS_ENCLOSURE_RIGHT_<%=cid %> = <%=fieldsEnclosureRight%>;
+<%
+	}
+%>		
+		final java.io.BufferedWriter out<%=cid %> = new java.io.BufferedWriter(new java.io.OutputStreamWriter(
+        		new java.io.FileOutputStream(fileName_<%=cid%>, <%= isAppend%>),<%= encoding%>),<%=bufferSize%>);
+       	resourceMap.put("out<%=cid%>", out<%=cid%>); 
+<%
+    }
+}
+%>

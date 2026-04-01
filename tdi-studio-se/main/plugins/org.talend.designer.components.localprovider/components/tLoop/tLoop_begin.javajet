@@ -1,0 +1,72 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+boolean forLoop = ("true").equals(ElementParameterParser.getValue(node,"__FORLOOP__"));
+
+boolean whileLoop = ("true").equals(ElementParameterParser.getValue(node,"__WHILELOOP__"));
+
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+%>
+int current_iteration_<%=cid%> = 0;
+<%
+if (forLoop) {
+
+String from = ElementParameterParser.getValue(node, "__FROM__");
+if (("").equals(from)) from = "1";
+String to   = ElementParameterParser.getValue(node, "__TO__");
+if (("").equals(to)) to = "1";
+String step   = ElementParameterParser.getValue(node, "__STEP__");
+if (("").equals(step)) step = "1";
+boolean increase = ("true").equals(ElementParameterParser.getValue(node, "__INCREASE__"));
+if(isLog4jEnabled){
+%>
+	log.info("<%=cid%> - Start to loop from " + (<%=from%>) + " to " + (<%=to%>) + " with a step of " + (<%=step%>) + " (" + <%=increase?"\"Increasing\"":"\"Decreasing\""%> + ").");
+<%
+}
+if(increase){%>
+
+for(int loop<%=cid%> =<%=from%>; loop<%=cid%><=<%=to%>; loop<%=cid%>=loop<%=cid%>+<%=step%>){
+<%
+}else{%>
+for(int loop<%=cid%> =<%=from%>; loop<%=cid%>>=<%=to%>; loop<%=cid%>=loop<%=cid%>+<%=step%>){
+<%}%>
+	<%if(isLog4jEnabled){%>
+		log.debug("<%=cid%> - Iteration value is " + loop<%=cid%>);
+	<%}%>
+current_iteration_<%=cid%>++;
+globalMap.put("<%=cid%>_CURRENT_VALUE",loop<%=cid%>);
+globalMap.put("<%=cid%>_CURRENT_ITERATION",current_iteration_<%=cid%>);
+
+<%
+}else{// While type
+
+String condition = ElementParameterParser.getValue(node, "__CONDITION__");
+String declaration = ElementParameterParser.getValue(node, "__DECLARATION__");
+
+%>
+
+<%=declaration%>;
+	<%if(isLog4jEnabled){
+	%>
+		log.info("<%=cid%> - Start to loop using a while loop. Initial declaration: '" + <%=org.talend.core.model.utils.NodeUtil.getNormalizeParameterValue(node, "DECLARATION")%> + "'. Condition: '" + <%=org.talend.core.model.utils.NodeUtil.getNormalizeParameterValue(node, "CONDITION")%> + "'.");
+	<%}%>
+while(<%=condition%>){
+	<%if(isLog4jEnabled){%>
+		log.debug("<%=cid%> - Current iteration value: " + current_iteration_<%=cid%>);
+	<%}%>
+current_iteration_<%=cid%>++;
+globalMap.put("<%=cid%>_CURRENT_ITERATION",current_iteration_<%=cid%>);
+
+<%
+}
+%>

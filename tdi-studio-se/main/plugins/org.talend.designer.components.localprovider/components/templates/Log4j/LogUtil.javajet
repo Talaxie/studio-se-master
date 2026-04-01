@@ -1,0 +1,254 @@
+<%@jet%>
+
+<%
+class BasicLogUtil{
+    protected String cid  = "";
+    protected org.talend.core.model.process.INode node = null;
+    protected boolean log4jEnabled = false;
+    private String logID = "";
+    
+    private BasicLogUtil(){}
+    
+    public BasicLogUtil(org.talend.core.model.process.INode node){
+        this.node = node;
+        String cidx = this.node.getUniqueName();
+        this.cid = cidx;
+        this.log4jEnabled = ("true").equals(org.talend.core.model.process.ElementParameterParser.getValue(this.node.getProcess(), "__LOG4J_ACTIVATE__"));
+        this.log4jEnabled = this.log4jEnabled &&
+                            this.node.getComponent().isLog4JEnabled() && !"JOBLET".equals(node.getComponent().getComponentType().toString());
+        this.logID = this.cid;
+    }
+    
+    public String var(String varName){
+        return varName + "_" + this.cid;
+    }
+	
+	public String varForTableName(String varName, String dbmsId) {
+		if ("id_MSSQL".equals(dbmsId) || cid.startsWith("tMSSQL")) {
+			return "\"[\" +" + var(varName) + " + \"]\"";
+		} else if ("ibmdb2_id".equals(dbmsId) || "redshift_id".equals(dbmsId) || "postgres_id".equals(dbmsId) || cid.startsWith("tDB2") || 
+			cid.startsWith("tRedshift") || cid.startsWith("tGreenplum")){
+			return new StringBuilder().append("\"\\\"\" +").append(var(varName)).append("+ \"\\\"\"").toString();
+		} else {
+			return var(varName);
+		}
+	}
+    public String str(String content){
+        return "\"" + content + "\"";
+    }
+    
+    public void info(String... message){
+        log4j("info", message);
+    }
+    
+    public void debug(String... message){
+        log4j("debug", message);
+    }
+    
+    public void warn(String... message){
+        log4j("warn", message);
+    }
+    
+    public void error(String... message){
+        log4j("error", message);
+    }
+    
+    public void fatal(String... message){
+        log4j("fatal", message);
+    }
+    
+    public void trace(String... message){
+        log4j("trace", message);
+    }
+    java.util.List<String> checkableList = java.util.Arrays.asList(new String[]{"info", "debug", "trace"});     
+    public void log4j(String level, String... messages){
+        if(this.log4jEnabled){
+            if(checkableList.contains(level)){
+            %>
+                if(log.is<%=level.substring(0, 1).toUpperCase() + level.substring(1)%>Enabled())
+            <%
+            }
+            %>
+            log.<%=level%>("<%=logID%> - " <%for(String message : messages){%> + (<%=message%>) <%}%>);
+        <%
+        }
+    }
+    
+    public boolean isActive(){
+        return this.log4jEnabled;
+    }
+}
+
+class LogUtil extends BasicLogUtil{
+    
+    private LogUtil(){
+    }
+    
+    public LogUtil(org.talend.core.model.process.INode node){
+        super(node);
+    }
+    
+    public void startWork(){
+        debug(str("Start to work."));
+    }
+    
+    public void endWork(){
+        debug(str("Done."));
+    }
+    
+    public void logIgnoredException(String exception){
+        warn(exception);
+    }
+    
+    public void logPrintedException(String exception){
+        error(exception);
+    }
+    
+    public void logException(String exception){
+        fatal(exception);
+    }
+    
+    public void logCompSetting(){
+    %>
+        <%
+        if(log4jEnabled){
+        %>
+            if (log.isDebugEnabled()) {
+                class BytesLimit65535_<%=cid%>{
+                    public void limitLog4jByte() throws Exception{
+                    StringBuilder <%=var("log4jParamters")%> = new StringBuilder();
+                    <%=var("log4jParamters")%>.append("Parameters:");
+                    <%
+                    java.util.Set<org.talend.core.model.process.EParameterFieldType> ignoredParamsTypes = new java.util.HashSet<org.talend.core.model.process.EParameterFieldType>(); 
+                    ignoredParamsTypes.addAll(
+                        java.util.Arrays.asList(
+                            org.talend.core.model.process.EParameterFieldType.SCHEMA_TYPE,
+                            org.talend.core.model.process.EParameterFieldType.LABEL,
+                            org.talend.core.model.process.EParameterFieldType.EXTERNAL,
+                            org.talend.core.model.process.EParameterFieldType.MAPPING_TYPE,
+                            org.talend.core.model.process.EParameterFieldType.IMAGE,
+                            org.talend.core.model.process.EParameterFieldType.TNS_EDITOR,
+                            org.talend.core.model.process.EParameterFieldType.WSDL2JAVA,
+                            org.talend.core.model.process.EParameterFieldType.GENERATEGRAMMARCONTROLLER,
+                            org.talend.core.model.process.EParameterFieldType.GENERATE_SURVIVORSHIP_RULES_CONTROLLER,
+                            org.talend.core.model.process.EParameterFieldType.REFRESH_REPORTS,
+                            org.talend.core.model.process.EParameterFieldType.BROWSE_REPORTS,
+                            org.talend.core.model.process.EParameterFieldType.PALO_DIM_SELECTION,
+                            org.talend.core.model.process.EParameterFieldType.GUESS_SCHEMA,
+                            org.talend.core.model.process.EParameterFieldType.MATCH_RULE_IMEX_CONTROLLER,
+                            org.talend.core.model.process.EParameterFieldType.MEMO_PERL,
+                            org.talend.core.model.process.EParameterFieldType.DBTYPE_LIST,
+                            org.talend.core.model.process.EParameterFieldType.VERSION,
+                            org.talend.core.model.process.EParameterFieldType.TECHNICAL,
+                            org.talend.core.model.process.EParameterFieldType.ICON_SELECTION,
+                            org.talend.core.model.process.EParameterFieldType.JAVA_COMMAND,
+                            org.talend.core.model.process.EParameterFieldType.TREE_TABLE,
+                            org.talend.core.model.process.EParameterFieldType.VALIDATION_RULE_TYPE,
+                            org.talend.core.model.process.EParameterFieldType.DCSCHEMA,
+                            org.talend.core.model.process.EParameterFieldType.SURVIVOR_RELATION,
+                            org.talend.core.model.process.EParameterFieldType.REST_RESPONSE_SCHEMA_TYPE
+                            )
+                    );
+                    for(org.talend.core.model.process.IElementParameter ep : org.talend.core.model.utils.NodeUtil.getDisplayedParameters(node)){
+                        if(!ep.isLog4JEnabled() || ignoredParamsTypes.contains(ep.getFieldType())){
+                            continue;
+                        }
+                        String name = ep.getName();
+                        if(org.talend.core.model.process.EParameterFieldType.PASSWORD.equals(ep.getFieldType())){
+                            String epName = "__" + name + "__";
+                            String password = "";
+                            if(org.talend.core.model.process.ElementParameterParser.canEncrypt(node, epName)){
+                                password = org.talend.core.model.process.ElementParameterParser.getEncryptedValue(node, epName);
+                            }else{
+                                String passwordValue = org.talend.core.model.process.ElementParameterParser.getValue(node, epName);
+                                if (passwordValue == null || "".equals(passwordValue.trim())) {// for the value which empty
+                                    passwordValue = "\"\"";
+                                } 
+                                password = "routines.system.PasswordEncryptUtil.encryptPassword(" + passwordValue + ")";
+                            } 
+                            %>
+                            <%=var("log4jParamters")%>.append("<%=name%>" + " = " + String.valueOf(<%=password%>).substring(0, 4) + "...");     
+                        <%
+                        }else{
+                            String value = org.talend.core.model.utils.NodeUtil.getNormalizeParameterValue(node, ep);
+                            if(value.length()>10000){
+                            value = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(value);
+                            }
+                            %>
+                            <%=var("log4jParamters")%>.append("<%=name%>" + " = " + <%=value%>);
+                        <%
+                        }   
+                        %>
+                        <%=var("log4jParamters")%>.append(" | ");
+                    <%
+                    }
+                    debug(var("log4jParamters")); 
+                    %>
+                    } 
+                } 
+            new BytesLimit65535_<%=cid%>().limitLog4jByte();
+            }
+        <%
+        } 
+        %>
+        <%
+    } 
+    
+    //no use for now, because we log the data by rowStruct
+    public void traceData(String rowStruct, java.util.List<org.talend.core.model.metadata.IMetadataColumn> columnList, String nbline){
+        if(log4jEnabled){
+        %>
+            StringBuilder <%=var("log4jSb")%> = new StringBuilder();    
+            <%
+            for(org.talend.core.model.metadata.IMetadataColumn column : columnList){
+                org.talend.core.model.metadata.types.JavaType javaType = org.talend.core.model.metadata.types.JavaTypesManager.getJavaTypeFromId(column.getTalendType());
+                String columnName = column.getLabel();
+                boolean isPrimit = org.talend.core.model.metadata.types.JavaTypesManager.isJavaPrimitiveType(column.getTalendType(), column.isNullable());
+                if(isPrimit){
+                %>
+                    <%=var("log4jSb")%>.append(<%=rowStruct%>.<%=columnName%>);
+                <%
+                }else{
+                %>
+                    if(<%=rowStruct%>.<%=columnName%> == null){
+                        <%=var("log4jSb")%>.append("<null>");
+                    }else{
+                        <%=var("log4jSb")%>.append(<%=rowStruct%>.<%=columnName%>);
+                    }   
+                <%
+                }
+                %>
+                <%=var("log4jSb")%>.append("|");
+            <%
+            }
+        }
+        trace(str("Content of the record "), nbline, str(": "), var("log4jSb"));
+        %>
+    <%
+    }
+}
+
+class LogHelper{
+    
+    java.util.Map<String, String> pastDict = null;
+    
+    public LogHelper(){
+        pastDict = new java.util.HashMap<String, String>();
+        pastDict.put("insert", "inserted");
+        pastDict.put("update", "updated");
+        pastDict.put("delete", "deleted");
+        pastDict.put("upsert", "upserted");
+    }   
+    
+    public String upperFirstChar(String data){ 
+        return data.substring(0, 1).toUpperCase() + data.substring(1);
+    }
+    
+    public String toPastTense(String data){
+        return pastDict.get(data);
+    }
+}
+LogHelper logHelper = new LogHelper();
+
+LogUtil log = null;
+%>

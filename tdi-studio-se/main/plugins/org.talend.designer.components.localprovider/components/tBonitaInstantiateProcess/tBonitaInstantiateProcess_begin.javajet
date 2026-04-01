@@ -1,0 +1,154 @@
+<%@ jet 
+imports="
+			org.talend.core.model.process.INode 
+			org.talend.core.model.process.ElementParameterParser 
+			org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	INode node = (INode)codeGenArgument.getArgument();
+	String cid = node.getUniqueName();
+	
+	String clientMode = ElementParameterParser.getValue(node, "__CLIENT_MODE__");
+	if ("HTTP_CLIENT".equals(clientMode)) {
+		String url = ElementParameterParser.getValue(node, "__BONITA_URL__");
+		String authUserName = ElementParameterParser.getValue(node, "__AUTH_USERNAME__");
+		String process_name = ElementParameterParser.getValue(node, "__PROCESS_NAME__");
+		String process_version = ElementParameterParser.getValue(node, "__PROCESS_VERSION__");
+		String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+		
+		String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+		
+		if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+%>
+			String processInstanceUUID_<%=cid%> = null;
+			java.util.Map<String,String> vars_<%=cid%> = new java.util.HashMap<String,String>();
+			
+			org.talend.bonita.RestClient client_<%=cid%> = new org.talend.bonita.RestClient(<%=url%>);
+			
+			resourceMap.put("client_<%=cid%>", client_<%=cid%>); 
+<%
+			String passwordFieldName = "__PASSWORD__";
+%>
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		
+			client_<%=cid%>.loginAs(<%=userName%>, decryptedPassword_<%=cid%>);
+<%
+			boolean use_process_id = "true".equals(ElementParameterParser.getValue(node, "__USE_PROCESS_ID__"));
+			if(use_process_id) {
+				String processID = ElementParameterParser.getValue(node, "__PROCESS_ID__");
+%>
+				String processID_<%=cid%> = <%=processID%>;
+<%
+			} else {
+%>
+				String processID_<%=cid%> = client_<%=cid%>.getProcessID(<%=process_name%>,<%=process_version%>);
+<%
+			}
+			
+			return stringBuffer.toString();
+		}
+%>
+		String processInstanceUUID_<%=cid%> = null;
+		StringBuilder parameters_<%=cid%> = new StringBuilder("options=user:");
+		parameters_<%=cid%>.append(<%=userName%>);
+		String url_<%=cid %> = <%=url%> + "API/runtimeAPI/instantiateProcessWithVariables/" + <%=process_name%> +"--" +<%=process_version%>;
+		java.net.HttpURLConnection httpConn_<%=cid %> = null;
+	
+		httpConn_<%=cid %> = (java.net.HttpURLConnection) new java.net.URL(url_<%=cid%>).openConnection();
+		resourceMap.put("httpConn_<%=cid%>", httpConn_<%=cid%>); 
+		httpConn_<%=cid %>.setUseCaches (false);
+	    httpConn_<%=cid %>.setDoInput(true);
+	    httpConn_<%=cid %>.setDoOutput(true);
+	    httpConn_<%=cid %>.setInstanceFollowRedirects(false);
+	    httpConn_<%=cid %>.setRequestMethod("POST");
+	    httpConn_<%=cid %>.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+	        
+		<%
+		String passwordFieldName = "__AUTH_PASSWD__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		   	
+	    httpConn_<%=cid %>.setRequestProperty("Authorization", "Basic " + new String(org.apache.commons.codec.binary.Base64.encodeBase64((<%=authUserName%>+ ":"+ decryptedPassword_<%=cid%>).getBytes(utf8Charset)),utf8Charset));
+	<%
+	} else { // JAVA CLIENT
+	
+		String processID = ElementParameterParser.getValue(node, "__PROCESS_ID__");
+		String userName = ElementParameterParser.getValue(node, "__USERNAME__");
+	
+		String use_process_id = ElementParameterParser.getValue(node, "__USE_PROCESS_ID__");
+	
+		String process_name = ElementParameterParser.getValue(node, "__PROCESS_NAME__");
+		String process_version = ElementParameterParser.getValue(node, "__PROCESS_VERSION__");
+		
+		boolean dieOnError = ("true").equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+		
+		String bonitaEnvironmentFile = ElementParameterParser.getValue(node, "__BONITA_ENVIRONMENT_FILE__");
+		String jassFile = ElementParameterParser.getValue(node, "__JASS_STANDARD_FILE__");
+		String loggingFile = ElementParameterParser.getValue(node, "__LOGGING_FILE__");
+		String loginModule = ElementParameterParser.getValue(node, "__LOGIN_MODULE__");
+		String dbVersion = ElementParameterParser.getValue(node, "__DB_VERSION__");
+		String bonitaHome = ElementParameterParser.getValue(node, "__BONITA_HOME__");
+		
+		if("BONITA_652".equals(dbVersion) || "BONITA_724".equals(dbVersion)) {
+%>
+			String processInstanceUUID_<%=cid%> = null;
+			java.util.Map<String, Object> parameters_<%=cid%>=new java.util.HashMap<String, Object>();
+			
+			org.talend.bonita.Client client_<%=cid%> = new org.talend.bonita.Client(<%=bonitaHome%>);
+			resourceMap.put("client_<%=cid%>", client_<%=cid%>); 
+<%
+			String passwordFieldName = "__PASSWORD__";
+%>
+			<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+		
+			client_<%=cid%>.login(<%=userName%>, decryptedPassword_<%=cid%>);
+<%
+			return stringBuffer.toString();
+		}
+		
+		if("BONITA_561".equals(dbVersion) || "BONITA_5101".equals(dbVersion)){
+		%>
+			System.setProperty("BONITA_HOME", <%=bonitaHome%>);
+		<%
+		}else if("BONITA_531".equals(dbVersion)||"BONITA_523".equals(dbVersion)){
+		%>
+			System.setProperty("org.ow2.bonita.environment", <%=bonitaEnvironmentFile%> );
+		<%
+		}
+		%>
+		System.setProperty("java.security.auth.login.config", <%=jassFile%> );
+		System.setProperty("java.util.logging.config.file", new java.io.File(<%=loggingFile%>).toURI().toURL().toString());
+		
+		
+		org.ow2.bonita.facade.RuntimeAPI runtimeAPI_<%=cid%> = org.ow2.bonita.util.AccessorUtil.getAPIAccessor().getRuntimeAPI();
+		javax.security.auth.login.LoginContext loginContext_<%=cid%> = null;
+		org.ow2.bonita.facade.uuid.ProcessDefinitionUUID processID_<%=cid%> =null;
+		
+		String processInstanceUUID_<%=cid%> = null;
+		java.util.Map<String, Object> parameters_<%=cid%>=new java.util.HashMap<String, Object>();
+	        
+		<%
+		String passwordFieldName = "__PASSWORD__";
+		%>
+		
+		<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+	   	
+		loginContext_<%=cid%> = new javax.security.auth.login.LoginContext(<%=loginModule%>, new org.ow2.bonita.util.SimpleCallbackHandler(<%=userName%>, decryptedPassword_<%=cid%>));
+		resourceMap.put("loginContext_<%=cid%>", loginContext_<%=cid%>); 
+		loginContext_<%=cid%>.login();
+		<%
+		if("true".equals(use_process_id)) {
+		%>
+			processID_<%=cid%> = new org.ow2.bonita.facade.uuid.ProcessDefinitionUUID(<%=processID%>);
+		<%
+		} else {
+		%>
+			processID_<%=cid%> = new org.ow2.bonita.facade.uuid.ProcessDefinitionUUID(<%=process_name%>, <%=process_version%>);
+		<%
+		}
+	}
+	%>

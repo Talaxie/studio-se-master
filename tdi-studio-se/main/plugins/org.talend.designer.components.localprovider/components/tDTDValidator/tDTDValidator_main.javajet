@@ -1,0 +1,140 @@
+<%@ jet 
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+"
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String dtdfile = ElementParameterParser.getValue(node, "__DTDFILE__");
+Boolean print = new Boolean(ElementParameterParser.getValue(node, "__PRINT__"));
+String validMessage = ElementParameterParser.getValue(node, "__VALID_MESSAGE__");
+String invalidMessage = ElementParameterParser.getValue(node, "__INVALID_MESSAGE__");
+String xmlfile = ElementParameterParser.getValue(node, "__XMLFILE__");
+%>
+
+		String message<%=cid %> = "";
+		int validate<%=cid %> = 0;
+		
+		java.io.InputStream is<%=cid %>=null;
+		javax.xml.parsers.DocumentBuilderFactory dbf<%=cid %>=null;
+		javax.xml.parsers.DocumentBuilder db<%=cid %>=null;
+		message<%=cid%>=<%=validMessage%>;
+		
+		<%
+		// Protocol defined ?
+		if (xmlfile.matches("\\\"[\\w]+://.*")) {
+		%>
+		java.net.URL url<%=cid %> = new java.net.URL(<%=xmlfile%>);
+		<%
+		} else {
+		%>
+		java.net.URL url<%=cid %> = new java.io.File(<%=xmlfile%>).toURI().toURL();
+		<%
+		}
+		%>
+		
+		java.io.BufferedReader br<%=cid %> = null;
+		java.lang.StringBuilder sb<%=cid %>=new java.lang.StringBuilder("");
+		
+		try{
+    		br<%=cid %> = new java.io.BufferedReader(new UnicodeReader(url<%=cid %>.openStream(), null));
+
+    		char[] buffer<%=cid %> = new char[1024];
+    		int length<%=cid %> = -1;
+    		while ((length<%=cid %> = br<%=cid %>.read(buffer<%=cid %>)) != -1)
+    			sb<%=cid %>.append(buffer<%=cid %>, 0, length<%=cid %>);//read xml document
+    	}finally{
+    		br<%=cid %>.close();
+    	}
+		
+		String doctype<%=cid%> = null;
+		int start<%=cid%>=sb<%=cid%>.indexOf("<!DOCTYPE");
+		if(start<%=cid%>!=-1){
+			int end<%=cid%>=sb<%=cid%>.indexOf(">", start<%=cid%>);
+			doctype<%=cid%> = sb<%=cid%>.substring(start<%=cid %>, end<%=cid %>+1);
+			sb<%=cid%>.replace(start<%=cid %>, end<%=cid %>+1, "");	
+		}
+		
+		dbf<%=cid %> = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+		dbf<%=cid %>.setValidating(false);
+		db<%=cid %> = dbf<%=cid %>.newDocumentBuilder(); 
+		org.w3c.dom.Document doc<%=cid %> = db<%=cid %>.parse(
+			new java.io.ByteArrayInputStream(sb<%=cid%>.toString().getBytes("UTF-8")));
+
+		String rootnode<%=cid %>=doc<%=cid %>.getDocumentElement().getNodeName();
+		
+		String encoding=null;
+		if(doc<%=cid%>.getXmlEncoding()==null) {
+			encoding="ISO-8859-1";
+		} else {
+			encoding=doc<%=cid%>.getXmlEncoding();
+		}
+		<%
+		if (dtdfile.length() > 2) {
+		%>
+		String reference<%=cid %>="<?xml version='"+doc<%=cid%>.getXmlVersion()+"' encoding='"+encoding+"'?>\n<!DOCTYPE "+rootnode<%=cid %>+" SYSTEM '"+<%=dtdfile%>+"'>\n";
+		<%
+		} else {
+		%>
+		String reference<%=cid %>="<?xml version='"+doc<%=cid%>.getXmlVersion()+"' encoding='"+encoding+"'?>\n"+doctype<%=cid%>+"\n";
+		<%
+		}
+		%>
+		
+		int offsetRoot<%=cid %>=sb<%=cid %>.indexOf("<"+rootnode<%=cid %>);
+		sb<%=cid%>.replace(0, offsetRoot<%=cid %>, reference<%=cid %>);		
+		is<%=cid %> = new java.io.ByteArrayInputStream(sb<%=cid%>.toString().getBytes("UTF-8"));
+
+		class MyHandler<%=cid %> extends org.xml.sax.helpers.DefaultHandler{
+		    String errorMessage = null;
+		    public void error(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException {
+		    	errorMessage = e.getMessage();
+		    }
+		    public void fatalError(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException {
+		    	errorMessage = e.getMessage();
+		    }
+		}
+		
+		MyHandler<%=cid %> handler<%=cid %> = new MyHandler<%=cid %>();
+		dbf<%=cid %>.setValidating(true);
+		db<%=cid %> = dbf<%=cid %>.newDocumentBuilder(); 
+		db<%=cid %>.setErrorHandler(handler<%=cid %>);
+		doc<%=cid %> = db<%=cid %>.parse(is<%=cid %>);
+		
+		if (handler<%=cid %>.errorMessage == null) {
+			message<%=cid %>= <%=validMessage%>;
+			validate<%=cid %> = 1;
+		} else {
+			message<%=cid %>= <%=invalidMessage%>;
+		}					
+		globalMap.put("<%=cid %>_DIFFERENCE", "" + validate<%=cid %>);
+		globalMap.put("<%=cid %>_VALID", (validate<%=cid %> == 1)?true:false);	
+		<%
+		if (print) {
+		%>
+		   System.out.println(message<%=cid %>);
+		<%
+		}
+		
+		for (IConnection conn : node.getOutgoingConnections()) {
+			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		%>
+				<%=conn.getName() %>.dtdfile = <%=dtdfile %>;
+				<%=conn.getName() %>.xmlfile = <%=xmlfile %>;	
+		    	<%=conn.getName() %>.moment = java.util.Calendar.getInstance().getTime();
+		    	<%=conn.getName() %>.job = jobName;
+				<%=conn.getName() %>.component = currentComponent;
+				<%=conn.getName() %>.validate = validate<%=cid %>;
+				<%=conn.getName() %>.message = message<%=cid %>;
+		<%
+			}
+		}
+		%>

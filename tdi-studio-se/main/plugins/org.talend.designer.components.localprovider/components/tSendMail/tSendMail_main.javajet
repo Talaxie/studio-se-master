@@ -1,0 +1,270 @@
+<%@ jet 
+  imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+	java.util.Map
+	java.util.List
+  "
+%>
+<%@ include file="../templates/Log4j/Log4jFileUtil.javajet"%> 
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String authMode = ElementParameterParser.getValue(node, "__AUTH_MODE__");
+String authUsername = ElementParameterParser.getValue(node, "__AUTH_USERNAME__");
+String authPassword = ElementParameterParser.getValue(node, "__AUTH_PASSWORD__");
+String message = org.talend.core.model.utils.NodeUtil.replaceCRLFInMEMO_SQL(ElementParameterParser.getValue(node, "__MESSAGE__"));
+String importance = ElementParameterParser.getValue(node, "__IMPORTANCE__");
+String priority = "Normal".equals(importance) ? "3" : (("High").equals(importance) ? "1" : "5");
+boolean ifSSL = "true".equals(ElementParameterParser.getValue(node, "__SSL__"));
+boolean startTLS = "true".equals(ElementParameterParser.getValue(node, "__STARTTLS__"));
+boolean checkAttachementOnSend = "true".equals(ElementParameterParser.getValue(node, "__CHECK_ATTACHMENT__"));
+boolean needPersonalName = "true".equals(ElementParameterParser.getValue(node, "__NEED_PERSONAL_NAME__"));
+String personalName = needPersonalName ? ElementParameterParser.getValue(node, "__PERSONAL_NAME__") : null;
+String encoding = ElementParameterParser.getValue(node, "__ENCODING__");
+String mimesubtype = ElementParameterParser.getValue(node, "__TEXT_SUBTYPE__");  
+boolean setLocalhost = "true".equals(ElementParameterParser.getValue(node, "__SET_LOCALHOST__"));  
+String localhost = ElementParameterParser.getValue(node, "__LOCALHOST__");  
+boolean isDieOnError = "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+List<Map<String, String>> configs = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__CONFIGS__");
+boolean use2LineToken = "true".equals(ElementParameterParser.getValue(node, "__USE_TWO_LINE_TOKEN__"));
+	//Bug12952, move all begin part to here below
+	String smtpHost    = ElementParameterParser.getValue(node, "__SMTP_HOST__");
+	String smtpPort    = ElementParameterParser.getValue(node, "__SMTP_PORT__");
+	String to          = ElementParameterParser.getValue(node, "__TO__");
+	String from        = ElementParameterParser.getValue(node, "__FROM__");
+	String cc          = ElementParameterParser.getValue(node, "__CC__");
+	String bcc          = ElementParameterParser.getValue(node, "__BCC__");
+	String subject     = ElementParameterParser.getValue(node, "__SUBJECT__");
+	
+	List<Map<String, String>> tableValues = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__ATTACHMENTS__");
+	List<Map<String, String>> headers = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HEADERS__");
+	
+	// component id
+	to = to.replace(";",",");
+
+	//in order to be compatible with TOS 2.4.1, @see:issue:6282
+	if(cc == null || cc.trim().length()==0){
+		cc = "\"\"";
+	}
+	if(bcc == null || bcc.trim().length()==0){
+		bcc = "\"\"";
+	}
+%>
+
+	String smtpHost_<%=cid %> = <%=smtpHost %>;
+<%
+    try {
+        int port = Integer.parseInt(smtpPort);
+%>
+        String smtpPort_<%=cid %> = "<%=smtpPort %>";
+<%
+    } catch (java.lang.Exception e) {
+%>
+        String smtpPort_<%=cid %> = <%=smtpPort %>;
+<%
+    }
+%>
+	String from_<%=cid %> = (<%=from %>);
+    String to_<%=cid %> = (<%=to %>).replace(";",",");
+    String cc_<%=cid %> = ((<%=cc %>)==null || "".equals(<%=cc %>))?null:(<%=cc %>).replace(";",",");
+    String bcc_<%=cid %> = ((<%=bcc %>)==null || "".equals(<%=bcc %>))?null:(<%=bcc %>).replace(";",",");
+    String subject_<%=cid %> = (<%=subject %>);
+    
+	java.util.List<java.util.Map<String, String>> headers_<%=cid %> = new java.util.ArrayList<java.util.Map<String,String>>();
+<%
+	for (int i = 0; i < headers.size(); i++) {
+   		Map<String, String> header = headers.get(i);
+%>
+		java.util.Map<String,String> headerMap_<%=cid %>_<%=i %> = new java.util.HashMap<String,String>();
+		headerMap_<%=cid %>_<%=i %>.put("KEY", <%=header.get("KEY")%>);
+		headerMap_<%=cid %>_<%=i %>.put("VALUE", <%=header.get("VALUE")%>);
+		headers_<%=cid %>.add(headerMap_<%=cid %>_<%=i %>);	
+<%
+	}
+%>
+	java.util.List<String> attachments_<%=cid %> = new java.util.ArrayList<String>();
+	java.util.List<String> contentTransferEncoding_<%=cid %> = new java.util.ArrayList<String>();
+<%
+	for (int i = 0; i < tableValues.size(); i++) {
+    	Map<String,String> attachment = tableValues.get(i);
+%>
+		attachments_<%=cid %>.add(<%=attachment.get("FILE") %>);
+		contentTransferEncoding_<%=cid %>.add("<%=attachment.get("CONTENT_TRANSFER_ENCODING") %>");	
+<%
+	}
+	//end of the former begin part
+%>
+
+	String message_<%=cid %> = ((<%=message %>) == null || "".equals(<%=message %>)) ? "\"\"" : (<%=message %>) ;
+	java.util.Properties props_<%=cid %> = System.getProperties();     
+	props_<%=cid %>.put("mail.smtp.host", smtpHost_<%=cid %>);
+	props_<%=cid %>.put("mail.smtp.port", smtpPort_<%=cid %>);
+	<%
+	  for (int i = 0; i < configs.size(); i++) {
+		    Map<String, String> line = configs.get(i);
+	%>
+	props_<%=cid %>.put(<%=line.get("KEY")%>, <%=line.get("VALUE")%>);
+	<%}%>
+<% 
+	if (setLocalhost){%>
+		props_<%=cid %>.put("mail.smtp.localhost", <%=localhost%>);
+<% }%>
+		props_<%=cid %>.put("mail.mime.encodefilename", "true");
+<% 
+	if (startTLS){%>
+		props_<%=cid %>.put("mail.smtp.starttls.enable","true");
+<%
+	}
+	if (ifSSL){
+%>  
+		props_<%=cid %>.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+		props_<%=cid %>.put("mail.smtp.socketFactory.fallback", "false");
+		props_<%=cid %>.put("mail.smtp.socketFactory.port", smtpPort_<%=cid %>);
+<%
+	}
+	if("OAUTH2".equals(authMode)) {
+		%>
+		props_<%=cid %>.put("mail.smtp.auth.mechanisms", "XOAUTH2");
+		<%
+	}
+	if(use2LineToken) {
+		%>
+		props_<%=cid %>.put("mail.smtp.auth.xoauth2.two.line.authentication.format", "true");
+		<%
+		
+	}
+%>     
+	try {
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection attempt to '" + smtpHost_<%=cid %> +"'.");
+		<%}%>
+		<%if ("NO_AUTH".equals(authMode)) { %>  
+			props_<%=cid %>.put("mail.smtp.auth", "false");
+			javax.mail.Session session_<%=cid %> = javax.mail.Session.getInstance(props_<%=cid %>, null);    
+		<%} else{%>
+			props_<%=cid %>.put("mail.smtp.auth", "true");
+			javax.mail.Session session_<%=cid %> = javax.mail.Session.getInstance(props_<%=cid %>, new javax.mail.Authenticator(){         
+				protected javax.mail.PasswordAuthentication getPasswordAuthentication() {
+				
+                <%
+                String passwordFieldName = "BASIC".equals(authMode)?"__AUTH_PASSWORD__":"__TOKEN__";
+                %>
+                
+                <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>				
+				
+				return new javax.mail.PasswordAuthentication(<%=authUsername %>, decryptedPassword_<%=cid%>); 
+				}         
+			});   
+		<%}%>
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Connection to '" + smtpHost_<%=cid %> + "' has succeeded.");
+		<%}%>
+		javax.mail.Message msg_<%=cid %> = new javax.mail.internet.MimeMessage(session_<%=cid %>);
+		msg_<%=cid %>.setFrom(new javax.mail.internet.InternetAddress(from_<%=cid %>, <%=personalName%>));
+		msg_<%=cid %>.setRecipients(javax.mail.Message.RecipientType.TO,javax.mail.internet.InternetAddress.parse(to_<%=cid %>, false));
+		if (cc_<%=cid %> != null) msg_<%=cid %>.setRecipients(javax.mail.Message.RecipientType.CC, javax.mail.internet.InternetAddress.parse(cc_<%=cid %>, false));
+		if (bcc_<%=cid %> != null) msg_<%=cid %>.setRecipients(javax.mail.Message.RecipientType.BCC, javax.mail.internet.InternetAddress.parse(bcc_<%=cid %>, false));
+		msg_<%=cid %>.setSubject(subject_<%=cid %>);
+
+		for (int i_<%=cid %> = 0; i_<%=cid %> < headers_<%=cid %>.size(); i_<%=cid %>++) {
+			java.util.Map<String, String> header_<%=cid %> = headers_<%=cid %>.get(i_<%=cid %>);
+			msg_<%=cid %>.setHeader(header_<%=cid %>.get("KEY"), header_<%=cid %>.get("VALUE"));    
+		}  
+		msg_<%=cid %>.setSentDate(new Date());
+		msg_<%=cid %>.setHeader("X-Priority", "<%=priority %>"); //High->1 Normal->3 Low->5
+		javax.mail.Multipart mp_<%=cid %> = new javax.mail.internet.MimeMultipart();
+		javax.mail.internet.MimeBodyPart mbpText_<%=cid %> = new javax.mail.internet.MimeBodyPart();
+		mbpText_<%=cid %>.setText(message_<%=cid %>,<%=encoding %>, "<%=mimesubtype %>");
+		mp_<%=cid %>.addBodyPart(mbpText_<%=cid %>);
+  
+		javax.mail.internet.MimeBodyPart mbpFile_<%=cid %> = null;
+
+		for (int i_<%=cid %> = 0; i_<%=cid %> < attachments_<%=cid %>.size(); i_<%=cid %>++){
+			String filename_<%=cid %> = attachments_<%=cid %>.get(i_<%=cid %>);
+			javax.activation.FileDataSource fds_<%=cid %> = null;
+			java.io.File file_<%=cid %> = new java.io.File(filename_<%=cid %>);
+			<%if (!checkAttachementOnSend) {%>
+				if (!file_<%=cid %>.exists()){
+					continue;
+				}
+			<%}%>
+    		if (file_<%=cid%>.isDirectory()){
+				java.io.File[] subFiles_<%=cid%> = file_<%=cid%>.listFiles();
+				for(java.io.File subFile_<%=cid%> : subFiles_<%=cid%>){
+					if (subFile_<%=cid%>.isFile()){
+						fds_<%=cid %> = new javax.activation.FileDataSource(subFile_<%=cid%>.getAbsolutePath());
+						mbpFile_<%=cid %> = new javax.mail.internet.MimeBodyPart();
+						mbpFile_<%=cid %>.setDataHandler(new javax.activation.DataHandler(fds_<%=cid %>));
+						mbpFile_<%=cid %>.setFileName(javax.mail.internet.MimeUtility.encodeText(fds_<%=cid %>.getName()));
+						if(contentTransferEncoding_<%=cid %>.get(i_<%=cid %>).equalsIgnoreCase("base64")){
+							mbpFile_<%=cid %>.setHeader("Content-Transfer-Encoding", "base64");
+						}
+						mp_<%=cid %>.addBodyPart(mbpFile_<%=cid %>);
+					}
+				}
+    		}else{
+				mbpFile_<%=cid %> = new javax.mail.internet.MimeBodyPart();
+				fds_<%=cid %> = new javax.activation.FileDataSource(filename_<%=cid %>);
+				mbpFile_<%=cid %>.setDataHandler(new javax.activation.DataHandler(fds_<%=cid %>)); 
+				mbpFile_<%=cid %>.setFileName(javax.mail.internet.MimeUtility.encodeText(fds_<%=cid %>.getName()));
+				if(contentTransferEncoding_<%=cid %>.get(i_<%=cid %>).equalsIgnoreCase("base64")){
+					mbpFile_<%=cid %>.setHeader("Content-Transfer-Encoding", "base64");
+				}
+				mp_<%=cid %>.addBodyPart(mbpFile_<%=cid %>);
+			}
+		}
+		// -- set the content --
+		msg_<%=cid %>.setContent(mp_<%=cid %>);
+		// add handlers for main MIME types
+		javax.activation.MailcapCommandMap mc_<%=cid%> = ( javax.activation.MailcapCommandMap)javax.activation.CommandMap.getDefaultCommandMap();
+		mc_<%=cid%>.addMailcap("text/html;; x-java-content-handler=com.sun.mail.handlers.text_html");
+		mc_<%=cid%>.addMailcap("text/xml;; x-java-content-handler=com.sun.mail.handlers.text_xml");
+		mc_<%=cid%>.addMailcap("text/plain;; x-java-content-handler=com.sun.mail.handlers.text_plain");
+		mc_<%=cid%>.addMailcap("multipart/*;; x-java-content-handler=com.sun.mail.handlers.multipart_mixed");
+		mc_<%=cid%>.addMailcap("message/rfc822;; x-java-content-handler=com.sun.mail.handlers.message_rfc822");
+		javax.activation.CommandMap.setDefaultCommandMap(mc_<%=cid%>);
+		// add com.sun.mail.handlers to job imports / depenencies (TESB-27110)
+		com.sun.mail.handlers.text_plain text_plain_h_<%=cid%> = null;
+		// -- Send the message --
+		javax.mail.Transport.send(msg_<%=cid %>);
+	} catch(java.lang.Exception e){
+globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
+  		<%if (isDieOnError){%>
+			throw(e);
+		<%}else{%>
+			<%if(isLog4jEnabled){%>
+				log.error("<%=cid%> - " + e.toString());
+			<%}%>
+  			System.err.println(e.toString());
+		<%}%>
+	}finally{
+		props_<%=cid %>.remove("mail.smtp.host");
+		props_<%=cid %>.remove("mail.smtp.port");
+		<% 
+		if (setLocalhost){
+		%>
+			props_<%=cid %>.remove("mail.smtp.localhost");
+		<% 
+		}
+		%>
+		props_<%=cid %>.remove("mail.mime.encodefilename");
+		<% 
+			if (startTLS){
+		%>
+			props_<%=cid %>.remove("mail.smtp.starttls.enable");
+		<%
+		}
+		if (ifSSL){
+		%>  
+			props_<%=cid %>.remove("mail.smtp.socketFactory.class");
+			props_<%=cid %>.remove("mail.smtp.socketFactory.fallback");
+			props_<%=cid %>.remove("mail.smtp.socketFactory.port");
+		<%
+		}
+		%>
+		props_<%=cid %>.remove("mail.smtp.auth");     
+	}

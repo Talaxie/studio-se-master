@@ -1,0 +1,67 @@
+<%@ jet 
+imports="
+        org.talend.core.model.process.INode 
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+" 
+%>
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+String protocol = ElementParameterParser.getValue(node, "__PROTOCOL__");
+String host = ElementParameterParser.getValue(node, "__HOST__");
+String timeoutInterval = ElementParameterParser.getValue(node, "__TIMEOUT_INTERVAL__");
+boolean isEnableProxy = ("true").equals(ElementParameterParser.getValue(node, "__ENABLE_PROXY_SERVER__"));
+if(("PING").equals(protocol)) {
+    %>
+    try {
+        java.net.InetAddress address_<%=cid%> = java.net.InetAddress.getByName(<%=host%>);
+        boolean isAlive_<%=cid%> = address_<%=cid%>.isReachable(<%=timeoutInterval%> * 1000);
+        if(isAlive_<%=cid%>) {
+            globalMap.put("<%=cid %>_SERVER_ALIVE_RESULT",true);
+        } else {
+            globalMap.put("<%=cid %>_SERVER_ALIVE_RESULT",false);
+        }
+    } catch(java.lang.Exception e) {
+        globalMap.put("<%=cid %>_SERVER_ALIVE_RESULT",false);
+    }
+    <%
+} else {
+    String port = ElementParameterParser.getValue(node, "__PORT__");
+    %>
+    try {
+        <%
+        if(isEnableProxy) {
+            String proxyHost = ElementParameterParser.getValue(node, "__PROXY_HOST__");
+            String proxyPort = ElementParameterParser.getValue(node, "__PROXY_PORT__");
+            String userName = ElementParameterParser.getValue(node, "__PROXY_USER__");
+            String password = ElementParameterParser.getValue(node, "__PROXY_PASS__");
+            %>
+            java.util.Properties properties_<%=cid%> = System.getProperties();
+            properties_<%=cid%>.put("socksProxyHost",<%=proxyHost%>);
+            properties_<%=cid%>.put("socksProxyPort",<%=proxyPort%>);
+            properties_<%=cid%>.put("java.net.socks.username", <%=userName%>);
+            
+            <%
+            String passwordFieldName = "__PROXY_PASS__";
+            %>
+            
+            <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>            
+            
+            properties_<%=cid%>.put("java.net.socks.password", decryptedPassword_<%=cid%>);
+            <%
+        }
+        %>
+        java.net.Socket server_<%=cid%> = new java.net.Socket();
+        java.net.InetSocketAddress address_<%=cid%> = new java.net.InetSocketAddress(<%=host%>, <%=port%>);
+        server_<%=cid%>.connect(address_<%=cid%>, <%=timeoutInterval%> * 1000);
+        server_<%=cid%>.close();
+        globalMap.put("<%=cid %>_SERVER_ALIVE_RESULT",true);
+    } catch(java.lang.Exception e) {
+        globalMap.put("<%=cid %>_SERVER_ALIVE_RESULT",false);
+    }
+    <%
+}
+%>

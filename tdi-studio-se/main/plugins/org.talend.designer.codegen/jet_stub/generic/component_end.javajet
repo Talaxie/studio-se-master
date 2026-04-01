@@ -1,0 +1,112 @@
+<%@ jet
+imports="
+        java.util.List
+        java.util.Set
+        org.talend.components.api.component.ComponentDefinition
+        org.talend.components.api.component.ConnectorTopology
+        org.talend.core.model.metadata.IMetadataColumn
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.process.ElementParameterParser
+        org.talend.core.model.process.IConnection
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.process.IConnectionCategory
+        org.talend.core.model.process.INode
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.designer.core.generic.model.Component
+        org.talend.core.model.utils.NodeUtil
+        "
+%>
+// end of generic
+
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+Component component = (Component)node.getComponent();
+ComponentDefinition def = component.getComponentDefinition();
+
+IMetadataTable metadata = null;
+List<IMetadataTable> metadatas = node.getMetadataList();
+if ((metadatas != null) && (metadatas.size() > 0)) {
+    metadata = metadatas.get(0);
+}
+
+// Return at this point if there is no metadata.
+if (metadata == null) {
+    return stringBuffer.toString();
+}
+
+boolean hasInput = !NodeUtil.getIncomingConnections(node, IConnectionCategory.DATA).isEmpty();
+boolean hasOutput = !NodeUtil.getOutgoingConnections(node, IConnectionCategory.DATA).isEmpty();
+boolean hasOutputOnly = hasOutput && !hasInput;
+
+Set<ConnectorTopology> connectorTopologies = def.getSupportedConnectorTopologies();
+boolean asInputComponent = connectorTopologies!=null && (connectorTopologies.size() < 3) && connectorTopologies.contains(ConnectorTopology.OUTGOING);
+%>
+
+resourceMap.put("finish_<%=cid%>", Boolean.TRUE);
+
+<%
+List< ? extends IConnection> iterateLine = node.getOutgoingConnections(EConnectionType.ITERATE);
+boolean hasIterateLine = iterateLine!=null && !iterateLine.isEmpty();
+boolean isTopologyNone = !hasOutput && !hasInput && !hasIterateLine;
+
+if(isTopologyNone) {
+    return stringBuffer.toString();
+}
+
+else if(hasOutputOnly || asInputComponent){
+%>
+    } // while
+<%
+    if (hasOutputOnly || asInputComponent) {
+%>  
+    } // end of "if (sourceOrSink_<%=cid%> instanceof ...Source)"
+<% } %>
+    java.util.Map<String, Object> resultMap_<%=cid%> = null;
+    if (reader_<%=cid%> != null) {
+        reader_<%=cid%>.close();
+        resultMap_<%=cid%> = reader_<%=cid%>.getReturnValues();
+    }
+<%
+}else if(hasInput){
+%>
+    java.util.Map<String, Object> resultMap_<%=cid%> = null;
+    if (writer_<%=cid%> != null) {
+        org.talend.components.api.component.runtime.Result resultObject_<%=cid%> = (org.talend.components.api.component.runtime.Result)writer_<%=cid%>.close();
+        resultMap_<%=cid%> = writer_<%=cid%>.getWriteOperation().finalize(java.util.Arrays.<org.talend.components.api.component.runtime.Result>asList(resultObject_<%=cid%>), container_<%=cid%>);
+    }
+<%
+} else {
+	return stringBuffer.toString();
+}
+%>
+if(resultMap_<%=cid%>!=null) {
+	for(java.util.Map.Entry<String,Object> entry_<%=cid%> : resultMap_<%=cid%>.entrySet()) {
+		switch(entry_<%=cid%>.getKey()) {
+		case org.talend.components.api.component.ComponentDefinition.RETURN_ERROR_MESSAGE :
+			container_<%=cid%>.setComponentData("<%=cid%>", "ERROR_MESSAGE", entry_<%=cid%>.getValue());
+			break;
+		case org.talend.components.api.component.ComponentDefinition.RETURN_TOTAL_RECORD_COUNT :
+			container_<%=cid%>.setComponentData("<%=cid%>", "NB_LINE", entry_<%=cid%>.getValue());
+			break;
+		case org.talend.components.api.component.ComponentDefinition.RETURN_SUCCESS_RECORD_COUNT :
+			container_<%=cid%>.setComponentData("<%=cid%>", "NB_SUCCESS", entry_<%=cid%>.getValue());
+			break;
+		case org.talend.components.api.component.ComponentDefinition.RETURN_REJECT_RECORD_COUNT :
+			container_<%=cid%>.setComponentData("<%=cid%>", "NB_REJECT", entry_<%=cid%>.getValue());
+			break;
+		default :
+            StringBuilder studio_key_<%=cid%> = new StringBuilder();
+            for (int i_<%=cid%> = 0; i_<%=cid%> < entry_<%=cid%>.getKey().length(); i_<%=cid%>++) {
+                char ch_<%=cid%> = entry_<%=cid%>.getKey().charAt(i_<%=cid%>);
+                if(Character.isUpperCase(ch_<%=cid%>) && i_<%=cid%>> 0) {
+                	studio_key_<%=cid%>.append('_');
+                }
+                studio_key_<%=cid%>.append(ch_<%=cid%>);
+            }
+			container_<%=cid%>.setComponentData("<%=cid%>", studio_key_<%=cid%>.toString().toUpperCase(java.util.Locale.ENGLISH), entry_<%=cid%>.getValue());
+			break;
+		}
+	}
+}

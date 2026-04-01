@@ -1,0 +1,77 @@
+<%@ jet
+imports="
+    org.talend.core.model.process.INode 
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.utils.NodeUtil
+"
+%>
+
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    INode node = (INode)codeGenArgument.getArgument();
+    String cid = node.getUniqueName();
+   	String fromName = ElementParameterParser.getValue(node, "__FROMNAME__");
+   	String toName = ElementParameterParser.getValue(node,"__TONAME__");
+        String fileExists = ElementParameterParser.getValue(node,"__EXISTFILE__");
+        String authMethod = ElementParameterParser.getValue(node,"__AUTH_METHOD__");
+        boolean isLog4jEnabled = ("true").equals(ElementParameterParser.getValue(node.getProcess(), "__LOG4J_ACTIVATE__"));
+        String useExistingConn = ElementParameterParser.getValue(node, "__USE_EXISTING_CONNECTION__");
+             	if(("true").equals(useExistingConn)){
+             	    String connection = ElementParameterParser.getValue(node, "__CONNECTION__");
+             	    INode connectionNode = NodeUtil.getNodeByUniqueName(node.getProcess(), connection);
+             		authMethod = ElementParameterParser.getValue(connectionNode,"__AUTH_METHOD__");
+             		}
+%>
+		
+	//initial the command
+	StringBuilder command_<%=cid %> = new StringBuilder();
+    command_<%=cid %>.append("mv \"").append(<%=fromName%>).append("\" \"").append(<%=toName%>).append("\"");
+
+	//execute the command
+
+            org.apache.sshd.client.channel.ClientChannel channel_<%=cid %> = session_<%=cid %>.createExecChannel((command_<%=cid %>).toString());
+
+            
+            channel_<%=cid%>.open();
+            java.util.Set<org.apache.sshd.client.channel.ClientChannelEvent> clientChannelEvents_<%=cid %> =
+            channel_<%=cid%>.waitFor(java.util.EnumSet.of(
+            org.apache.sshd.client.channel.ClientChannelEvent.CLOSED,org.apache.sshd.client.channel.ClientChannelEvent.EXIT_STATUS), 0L);
+            exit_code_<%=cid%> = channel_<%=cid%>.getExitStatus();
+            
+
+            <%if(isLog4jEnabled){%>
+                log.debug("Channel Events: "+ java.util.Arrays.toString(clientChannelEvents_<%=cid %>.toArray()));
+            <%}%>
+            
+            final java.io.InputStream invertedOut_<%=cid%> = channel_<%=cid%>.getInvertedOut();
+            final List<String> outLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedOut_<%=cid%>);
+    		
+            final java.io.InputStream invertedErr_<%=cid%> = channel_<%=cid%>.getInvertedErr();
+            final List<String> errorLines_<%=cid%> = org.apache.sshd.common.util.io.IoUtils.readAllLines(invertedErr_<%=cid%>);
+            
+    		stringStdout_<%=cid%>.append(outLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+    		stringStderr_<%=cid%>.append(errorLines_<%=cid%>.stream().collect(java.util.stream.Collectors.joining("\n")));
+            
+            channel_<%=cid%>.close();
+
+            if(stringStdout_<%=cid%>.length() >0 && stringStdout_<%=cid%>.charAt(stringStdout_<%=cid%>.length()-1) == '\n'){
+                stringStdout_<%=cid%>.deleteCharAt(stringStdout_<%=cid%>.length()-1);
+            }
+
+            <%if(isLog4jEnabled){%>
+                log.debug("<%=cid%> - Command line standard result: " + stringStdout_<%=cid%>.toString());
+                log.debug("<%=cid%> - Command line error result: " + stringStderr_<%=cid%>.toString());
+            <%}%>
+	
+	if(("").equals(stringStderr_<%=cid %>.toString()) || (stringStderr_<%=cid %>.toString() == null)){
+		<%if(isLog4jEnabled){%>
+			log.info("<%=cid%> - Rename '" + <%=fromName%> + "'  to '" + <%=toName%> + "' successfully.");
+		<%}%>
+		globalMap.put("<%=cid %>_STATUS","File rename OK");
+	}else{
+		<%if(isLog4jEnabled){%>
+			log.warn("<%=cid%> - Fail to rename '" + <%=fromName%> + "' to '" + <%=toName%> + "':" + stringStderr_<%=cid %>.toString());
+		<%}%>
+		globalMap.put("<%=cid %>_STATUS",stringStderr_<%=cid %>.toString());
+	}
