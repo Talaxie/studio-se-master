@@ -40,12 +40,9 @@ import org.eclipse.core.runtime.IExtension;
 import org.eclipse.core.runtime.IExtensionPoint;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.PlatformObject;
 import org.eclipse.core.runtime.RegistryFactory;
-import org.eclipse.core.runtime.Status;
-import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.emf.common.notify.Notification;
 import org.eclipse.emf.common.notify.impl.AdapterImpl;
 import org.eclipse.gef.EditPart;
@@ -151,6 +148,7 @@ import org.talend.core.views.IComponentSettingsView;
 import org.talend.designer.core.DesignerPlugin;
 import org.talend.designer.core.IMultiPageTalendEditor;
 import org.talend.designer.core.ISyntaxCheckableEditor;
+import org.talend.designer.core.generator.CodeGenerator;
 import org.talend.designer.core.i18n.Messages;
 import org.talend.designer.core.model.components.EParameterName;
 import org.talend.designer.core.model.process.AbstractProcessProvider;
@@ -1441,37 +1439,10 @@ public abstract class AbstractMultiPageTalendEditor extends MultiPageEditorPart 
                 }
             }
         }
-        // if some code has been generated already, for the editor we should need only the main job, not the childs.
+		// if some code has been generated already, for the editor we should need only
+		// the main job, not the children.
         boolean codeGenerated = processor.isCodeGenerated();
-        Job job = new Job("Generating code") {
-
-            @Override
-            protected IStatus run(IProgressMonitor monitor) {
-                Display.getDefault().syncExec(() -> {
-                    try {
-                        monitor.beginTask("Generating code", IProgressMonitor.UNKNOWN);
-                        boolean lastGeneratedWithStats = ProcessorUtilities.getLastGeneratedWithStats(process.getId());
-                        boolean lastGeneratedWithTrace = ProcessorUtilities.getLastGeneratedWithTrace(process.getId());
-
-                        if (codeGenerated) {
-                            ProcessorUtilities.generateCode(process, process.getContextManager().getDefaultContext(),
-                                    lastGeneratedWithStats, lastGeneratedWithTrace, true, ProcessorUtilities.GENERATE_MAIN_ONLY,
-                                    monitor);
-                        } else {
-                            ProcessorUtilities.generateCode(process, process.getContextManager().getDefaultContext(),
-                                    lastGeneratedWithStats, lastGeneratedWithTrace, true,
-                                    ProcessorUtilities.GENERATE_WITH_FIRST_CHILD, monitor);
-                        }
-                    } catch (ProcessorException e) {
-                        ExceptionHandler.process(e);
-                    }
-                });
-                return Status.OK_STATUS;
-            }
-        };
-        job.setUser(false);
-        job.setPriority(Job.INTERACTIVE);
-        job.schedule();
+		new CodeGenerator(() -> process, Display.getDefault()::syncExec).schedule();
     }
 
     /**
