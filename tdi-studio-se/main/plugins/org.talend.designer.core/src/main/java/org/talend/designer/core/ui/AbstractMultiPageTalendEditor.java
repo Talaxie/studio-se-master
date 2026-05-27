@@ -1442,7 +1442,8 @@ public abstract class AbstractMultiPageTalendEditor extends MultiPageEditorPart 
 		// if some code has been generated already, for the editor we should need only
 		// the main job, not the children.
         boolean codeGenerated = processor.isCodeGenerated();
-		new CodeGenerator(() -> process, Display.getDefault()::syncExec).schedule();
+		new CodeGenerator(() -> process).withLock(Display.getDefault()::syncExec).withProcessorSupplier(() -> processor)
+				.schedule();
     }
 
     /**

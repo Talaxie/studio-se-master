@@ -9,6 +9,8 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.core.model.process.IProcess;
+import org.talend.core.model.repository.IRepositoryObject;
+import org.talend.designer.runprocess.IProcessor;
 import org.talend.designer.runprocess.ProcessorException;
 import org.talend.designer.runprocess.ProcessorUtilities;
 
@@ -20,7 +22,14 @@ public class CodeGenerator extends Job {
 	/** Provides the process for which to generate code */
 	private Supplier<IProcess> processSupplier;
 	/** Synchronize access during code generation (e.g. on SWT Display) */
-	private Consumer<Runnable> lock;
+	private Consumer<Runnable> lock = Runnable::run;
+	/** Provides the processor to use for code generation */
+	private Supplier<IProcessor> processorSupplier = () -> {
+		// create a processor for the process to generate code
+		var process = processSupplier.get();
+		var property = (process instanceof IRepositoryObject r) ? r.getProperty() : null;
+		return ProcessorUtilities.getProcessor(process, property, process.getContextManager().getDefaultContext());
+	};
 
 	/**
 	 * Creates a new code generator job.
@@ -48,13 +57,37 @@ public class CodeGenerator extends Job {
 		setPriority(Job.INTERACTIVE);
 	}
 
+	/**
+	 * Sets the lock object to synchronize access (e.g. on SWT Display) during code
+	 * generation.
+	 * 
+	 * @param lock a lock object executing the generation runnable
+	 * @return this code generator for chaining
+	 */
+	public CodeGenerator withLock(Consumer<Runnable> lock) {
+		this.lock = lock;
+		return this;
+	}
+
+	/**
+	 * Sets the processor supplier to use for code generation.
+	 * 
+	 * @param processorSupplier a supplier that provides the processor to use
+	 * @return this code generator for chaining
+	 */
+	public CodeGenerator withProcessorSupplier(Supplier<IProcessor> processorSupplier) {
+		this.processorSupplier = processorSupplier;
+		return this;
+	}
+
 	@Override
 	protected IStatus run(IProgressMonitor monitor) {
 		var process = processSupplier.get();
 		if (process == null) {
 			return Status.error("Process not found for code generation.");
 		}
-		boolean codeGenerated = false;
+		var processor = ProcessorUtilities.getProcessor(process, null, process.getContextManager().getDefaultContext());
+		boolean codeGenerated = processor.isCodeGenerated();
 		lock.accept(() -> {
 			try {
 				monitor.beginTask("Generating code", IProgressMonitor.UNKNOWN);
