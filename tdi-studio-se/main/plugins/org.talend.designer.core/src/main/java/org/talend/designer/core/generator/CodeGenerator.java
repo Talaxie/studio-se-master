@@ -30,6 +30,8 @@ public class CodeGenerator extends Job {
 		var property = (process instanceof IRepositoryObject r) ? r.getProperty() : null;
 		return ProcessorUtilities.getProcessor(process, property, process.getContextManager().getDefaultContext());
 	};
+	/** The exception that occurred during code generation, if any */
+	private ProcessorException exception;
 
 	/**
 	 * Creates a new code generator job.
@@ -99,10 +101,21 @@ public class CodeGenerator extends Job {
 				ProcessorUtilities.generateCode(process, process.getContextManager().getDefaultContext(),
 						lastGeneratedWithStats, lastGeneratedWithTrace, true, option, monitor);
 			} catch (ProcessorException e) {
-				ExceptionHandler.process(e);
+				handleException(e);
 			}
 		});
-		return Status.OK_STATUS;
+		return exception != null ? Status.error("Code generation failed: " + exception.getMessage(), exception)
+				: Status.OK_STATUS;
+	}
+
+	/**
+	 * Handle the exception: log it and keep it for result status.
+	 * 
+	 * @param e exception
+	 */
+	private void handleException(ProcessorException e) {
+		ExceptionHandler.process(e);
+		this.exception = e;
 	}
 
 }
