@@ -234,13 +234,15 @@ public class ComponentsFactory implements IComponentsFactory {
             if (StringUtils.isEmpty(componentName)) {
                 continue;
             }
+            var tckJdbcType = ITCKUIService.get().getTCKJDBCType();
+            String tckJdbcLabel = tckJdbcType == null ? null : tckJdbcType.getLabel();
             if (IGenericService.getService().isTcompv0(component)
                     && (UnifiedComponentUtil.isAdditionalJDBCComponent(component.getName())
-                            || component.getName().contains(ITCKUIService.get().getTCKJDBCType().getLabel()))) {
+                            || (tckJdbcLabel != null && component.getName().contains(tckJdbcLabel)))) {
                 continue;
             }
             String componentNameLowerCase = componentName.toLowerCase();
-            if (componentNameLowerCase.startsWith(ITCKUIService.get().getTCKJDBCType().getLabel().toLowerCase())) {
+            if (tckJdbcLabel != null && componentNameLowerCase.startsWith(tckJdbcLabel.toLowerCase())) {
                 componentNameLowerCase = "t" + componentNameLowerCase;
             }
             Map<String, Set<IComponent>> map = componentNameMap.get(componentNameLowerCase);

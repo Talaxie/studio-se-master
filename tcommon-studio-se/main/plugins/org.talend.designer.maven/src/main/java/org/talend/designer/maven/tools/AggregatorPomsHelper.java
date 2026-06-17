@@ -654,7 +654,20 @@ public class AggregatorPomsHelper {
 
     public void syncAllPomsWithoutProgress(IProgressMonitor monitor, String pomFilter, boolean withDependencies)
             throws Exception {
-        LOGGER.info("syncAllPomsWithoutProgress, pomFilter: " + pomFilter);
+        syncAllPomsWithoutProgress(monitor, pomFilter, withDependencies, true);
+    }
+
+    /**
+     * Write all poms (root + code + job) without forking Maven (no installRootPom, no code-project
+     * build); the downstream Maven reactor compiles instead.
+     */
+    public void syncAllPomsNoBuild(IProgressMonitor monitor) throws Exception {
+        syncAllPomsWithoutProgress(monitor, PomIdsHelper.getPomFilter(), false, false);
+    }
+
+    public void syncAllPomsWithoutProgress(IProgressMonitor monitor, String pomFilter, boolean withDependencies,
+            boolean fork) throws Exception {
+        LOGGER.info("syncAllPomsWithoutProgress, pomFilter: " + pomFilter + ", fork: " + fork);
         IRunProcessService runProcessService = IRunProcessService.get();
         if (runProcessService == null) {
             return;
@@ -719,7 +732,9 @@ public class AggregatorPomsHelper {
         }
 
         createRootPom(model, true, monitor);
-        installRootPom(true);
+        if (fork) {
+            installRootPom(true);
+        }
         monitor.worked(1);
         if (monitor.isCanceled()) {
             return;
@@ -729,8 +744,10 @@ public class AggregatorPomsHelper {
         monitor.subTask("Synchronize code poms"); //$NON-NLS-1$
 
         System.setProperty("ignore.ci.mode", isCIMode.toString());
-        updateCodeProjects(monitor, true);
-        CodesJarM2CacheManager.updateCodesJarProject(monitor, true, true, true);
+        if (fork) {
+            updateCodeProjects(monitor, true);
+            CodesJarM2CacheManager.updateCodesJarProject(monitor, true, true, true);
+        }
         System.setProperty("ignore.ci.mode", Boolean.FALSE.toString());
 
         monitor.worked(1);
@@ -763,7 +780,9 @@ public class AggregatorPomsHelper {
             collectCodeModules(modules);
             model.getModules().addAll(modules);
             createRootPom(model, true, monitor);
-            installRootPom(true);
+            if (fork) {
+                installRootPom(true);
+            }
         }
         monitor.worked(1);
         if (monitor.isCanceled()) {
