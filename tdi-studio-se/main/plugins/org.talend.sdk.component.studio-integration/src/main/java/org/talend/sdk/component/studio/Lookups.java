@@ -136,7 +136,12 @@ public final class Lookups {
     }
 
     public static TaCoKitCache taCoKitCache() {
-        return lookup(TaCoKitCache.class);
+        try {
+            return lookup(TaCoKitCache.class);
+        } catch (final Exception e) {
+            // no TaCoKit component server (e.g. headless) -> no cache
+            return null;
+        }
     }
 
     public static ProcessManager manager() {

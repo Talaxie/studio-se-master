@@ -96,6 +96,8 @@ public class CodeGenerator extends Job {
 
 				int option = codeGenerated ? ProcessorUtilities.GENERATE_MAIN_ONLY
 						: ProcessorUtilities.GENERATE_WITH_FIRST_CHILD;
+				// emit source only; the generated Maven project is compiled by the downstream build
+				option |= ProcessorUtilities.GENERATE_WITHOUT_COMPILING;
 				ProcessorUtilities.generateCode(process, process.getContextManager().getDefaultContext(),
 						lastGeneratedWithStats, lastGeneratedWithTrace, true, option, monitor);
 			} catch (ProcessorException e) {

@@ -66,6 +66,10 @@ public class TCKUIService implements ITCKUIService {
     @Override
     public ERepositoryObjectType getTCKRepositoryType(String componentName) {
         TaCoKitCache cache = Lookups.taCoKitCache();
+        // no cache -> no TCK config types
+        if (cache == null) {
+            return null;
+        }
         Map<String, ConfigTypeNode> configTypeNodeMap = cache.getConfigTypeNodeMap();
         ConfigTypeNode configTypeNode = configTypeNodeMap.values().stream().filter(n -> componentName.equals(n.getName()))
                 .findFirst().orElse(null);
