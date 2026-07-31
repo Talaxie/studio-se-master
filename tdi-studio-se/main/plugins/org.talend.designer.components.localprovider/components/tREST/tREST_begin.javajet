@@ -1,190 +1,169 @@
 <%@ jet 
 imports="
-    	org.talend.core.model.process.INode 
-    	org.talend.core.model.process.ElementParameterParser 
-		org.talend.designer.codegen.config.CodeGeneratorArgument
-		org.talend.core.model.process.IConnection
-		org.talend.core.model.process.IConnectionCategory
-        java.util.Map
-        java.util.List
-		org.talend.core.model.metadata.IMetadataTable
-		org.talend.core.model.metadata.IMetadataColumn      
+	org.talend.core.model.process.INode 
+	org.talend.core.model.process.ElementParameterParser 
+	org.talend.designer.codegen.config.CodeGeneratorArgument
+	org.talend.core.model.process.IConnection
+	org.talend.core.model.process.IConnectionCategory
+	java.util.Map
+	java.util.List
+	org.talend.core.model.metadata.IMetadataTable
+	org.talend.core.model.metadata.IMetadataColumn      
 " 
 %>
-	<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
-	<%
-	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
-	INode node = (INode)codeGenArgument.getArgument();
-	String cid = node.getUniqueName();
-	log = new LogUtil(node);
-	
-	String url = ElementParameterParser.getValue(node,"__URL__");
-	String method = ElementParameterParser.getValue(node,"__METHOD__");
-	List<Map<String, String>> headers = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node,"__HEADERS__");
-	        
-	String body = ElementParameterParser.getValue(node,"__BODY__");
-	body = body.replaceAll("[\r\n]", " ");
-	%>
-	String endpoint_<%=cid%> = <%=url%>;
-	
-	String trustStoreFile_<%=cid%> = System.getProperty("javax.net.ssl.trustStore");
-	String trustStoreType_<%=cid%> = System.getProperty("javax.net.ssl.trustStoreType");
-	String trustStorePWD_<%=cid%> = System.getProperty("javax.net.ssl.trustStorePassword");
-	
-	String keyStoreFile_<%=cid%> = System.getProperty("javax.net.ssl.keyStore");
-	String keyStoreType_<%=cid%> = System.getProperty("javax.net.ssl.keyStoreType");
-	String keyStorePWD_<%=cid%> = System.getProperty("javax.net.ssl.keyStorePassword");
-	
-	com.sun.jersey.api.client.config.ClientConfig config_<%=cid%> = new com.sun.jersey.api.client.config.DefaultClientConfig();
-	
-	// APPINT-33909: add entitiy providers (for OSGi deployment)
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.StringProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.ByteArrayProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.FileProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.InputStreamProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.DataSourceProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.MimeMultipartProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.FormProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.ReaderProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.DocumentProvider.class);
-	config_<%=cid%>.getClasses().add(com.sun.jersey.core.impl.provider.entity.StreamingOutputProvider.class);
-	
-	javax.net.ssl.SSLContext ctx_<%=cid%> = javax.net.ssl.SSLContext.getInstance("SSL");
-	
-	javax.net.ssl.TrustManager[] tms_<%=cid%> = null;
-	if(trustStoreFile_<%=cid%>!=null && trustStoreType_<%=cid%>!=null){
-		char[] password_<%=cid%> = null;
-		if(trustStorePWD_<%=cid%>!=null)
-			password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
-		java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
-		trustStore_<%=cid%>.load(new java.io.FileInputStream(trustStoreFile_<%=cid%>), password_<%=cid%>);
-		
-		javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
-        tmf_<%=cid%>.init(trustStore_<%=cid%>);
-        tms_<%=cid%> = tmf_<%=cid%>.getTrustManagers();
-	}
-	
-	javax.net.ssl.KeyManager[] kms_<%=cid%> = null;
-	if(keyStoreFile_<%=cid%>!=null && keyStoreType_<%=cid%>!=null){
-		char[] password_<%=cid%> = null;
-		if(keyStorePWD_<%=cid%>!=null)
-			password_<%=cid%> = keyStorePWD_<%=cid%>.toCharArray();
-		java.security.KeyStore keyStore_<%=cid%> = java.security.KeyStore.getInstance(keyStoreType_<%=cid%>);
-		keyStore_<%=cid%>.load(new java.io.FileInputStream(keyStoreFile_<%=cid%>), password_<%=cid%>);
-		
-		javax.net.ssl.KeyManagerFactory kmf_<%=cid%> = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
-        kmf_<%=cid%>.init(keyStore_<%=cid%>,password_<%=cid%>);
-        kms_<%=cid%> = kmf_<%=cid%>.getKeyManagers();
-	}
-	
-    ctx_<%=cid%>.init(kms_<%=cid%>, tms_<%=cid%> , null);
-    config_<%=cid%>.getProperties().put(com.sun.jersey.client.urlconnection.HTTPSProperties.PROPERTY_HTTPS_PROPERTIES,
-                new com.sun.jersey.client.urlconnection.HTTPSProperties(new javax.net.ssl.HostnameVerifier() {
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/LogUtil.javajet"%>
 
-                    public boolean verify(String hostName, javax.net.ssl.SSLSession session) {
-                        return true;
-                    }
-                }, ctx_<%=cid%>));
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+log = new LogUtil(node);
 
-	com.sun.jersey.api.client.Client restClient_<%=cid%> = com.sun.jersey.api.client.Client.create(config_<%=cid%>);
+String url = ElementParameterParser.getValue(node, "__URL__");
+String method = ElementParameterParser.getValue(node, "__METHOD__");
+List<Map<String, String>> headers = (List<Map<String,String>>)ElementParameterParser.getObjectValue(node, "__HEADERS__");
+
+String body = ElementParameterParser.getValue(node, "__BODY__");
+body = body.replaceAll("[\r\n]", " ");
+%>
+
+String endpoint_<%=cid%> = <%=url%>;
+
+String trustStoreFile_<%=cid%> = System.getProperty("javax.net.ssl.trustStore");
+String trustStoreType_<%=cid%> = System.getProperty("javax.net.ssl.trustStoreType");
+String trustStorePWD_<%=cid%> = System.getProperty("javax.net.ssl.trustStorePassword");
+
+String keyStoreFile_<%=cid%> = System.getProperty("javax.net.ssl.keyStore");
+String keyStoreType_<%=cid%> = System.getProperty("javax.net.ssl.keyStoreType");
+String keyStorePWD_<%=cid%> = System.getProperty("javax.net.ssl.keyStorePassword");
+
+org.glassfish.jersey.client.ClientConfig config_<%=cid%> = new org.glassfish.jersey.client.ClientConfig();
+
+javax.net.ssl.SSLContext ctx_<%=cid%> = javax.net.ssl.SSLContext.getInstance("SSL");
+
+javax.net.ssl.TrustManager[] tms_<%=cid%> = null;
+if (trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null) {
+	char[] password_<%=cid%> = null;
+	if (trustStorePWD_<%=cid%> != null) {
+		password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
+	}
+	java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
+	trustStore_<%=cid%>.load(new java.io.FileInputStream(trustStoreFile_<%=cid%>), password_<%=cid%>);
 	
-	java.util.Map<String, Object> headers_<%=cid%> = new java.util.HashMap<String, Object>();
-	<%
-    for (int i = 0; i < headers.size(); i++) {
-        Map<String, String> line = headers.get(i);
-		%>
-    	headers_<%=cid%>.put(<%= line.get("NAME") %>,<%= line.get("VALUE") %>);
-	<%
-    }
-    %>
+	javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
+	tmf_<%=cid%>.init(trustStore_<%=cid%>);
+	tms_<%=cid%> = tmf_<%=cid%>.getTrustManagers();
+}
+
+javax.net.ssl.KeyManager[] kms_<%=cid%> = null;
+if (keyStoreFile_<%=cid%> != null && keyStoreType_<%=cid%> != null) {
+	char[] password_<%=cid%> = null;
+	if (keyStorePWD_<%=cid%> != null) {
+		password_<%=cid%> = keyStorePWD_<%=cid%>.toCharArray();
+	}
+	java.security.KeyStore keyStore_<%=cid%> = java.security.KeyStore.getInstance(keyStoreType_<%=cid%>);
+	keyStore_<%=cid%>.load(new java.io.FileInputStream(keyStoreFile_<%=cid%>), password_<%=cid%>);
 	
+	javax.net.ssl.KeyManagerFactory kmf_<%=cid%> = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
+	kmf_<%=cid%>.init(keyStore_<%=cid%>, password_<%=cid%>);
+	kms_<%=cid%> = kmf_<%=cid%>.getKeyManagers();
+}
+
+ctx_<%=cid%>.init(kms_<%=cid%>, tms_<%=cid%>, null);
+
+javax.net.ssl.HostnameVerifier hostnameVerifier_<%=cid%> = new javax.net.ssl.HostnameVerifier() {
+	@Override
+	public boolean verify(String hostname, javax.net.ssl.SSLSession sslSession) {
+		return true; // Accept any hostname
+	}
+};
+
+javax.ws.rs.client.Client restClient_<%=cid%> = new org.glassfish.jersey.client.JerseyClientBuilder()
+	.withConfig(config_<%=cid%>)
+	.sslContext(ctx_<%=cid%>)
+	.hostnameVerifier(hostnameVerifier_<%=cid%>)
+	.build();
+
+java.util.Map<String, Object> headers_<%=cid%> = new java.util.HashMap<String, Object>();
+
+<%
+for (int i = 0; i < headers.size(); i++) {
+	Map<String, String> line = headers.get(i);
+%>
+	headers_<%=cid%>.put(<%= line.get("NAME") %>, <%= line.get("VALUE") %>);
+<%
+}
+%>
+
+javax.ws.rs.client.WebTarget restResource_<%=cid%>;
+if (endpoint_<%=cid%> != null && !("").equals(endpoint_<%=cid%>)) {
+	restResource_<%=cid%> = restClient_<%=cid%>.target(endpoint_<%=cid%>);
+} else {
+	throw new IllegalArgumentException("url can't be empty!");
+}
+
+javax.ws.rs.core.Response errorResponse_<%=cid%> = null;
+String restResponse_<%=cid%> = "";
+
+try {
+	<% log.info(log.str("Prepare to send request to rest server.")); %>
+	javax.ws.rs.client.Invocation.Builder builder_<%=cid%> = restResource_<%=cid%>.request();
+	
+	for (java.util.Map.Entry<String, Object> header_<%=cid%> : headers_<%=cid%>.entrySet()) {
+		builder_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
+	}
+
 	Object transfer_encoding_<%=cid%> = headers_<%=cid%>.get("Transfer-Encoding");
-	if(transfer_encoding_<%=cid%>!=null && "chunked".equals(transfer_encoding_<%=cid%>)) {
-		restClient_<%=cid%>.setChunkedEncodingSize(4096);
+	if (transfer_encoding_<%=cid%> != null && "chunked".equals(transfer_encoding_<%=cid%>)) {
+		builder_<%=cid%>.property(org.glassfish.jersey.client.ClientProperties.REQUEST_ENTITY_PROCESSING, "CHUNKED");
+		builder_<%=cid%>.property(org.glassfish.jersey.client.ClientProperties.CHUNKED_ENCODING_SIZE, 4096);
 	}
-	
-	com.sun.jersey.api.client.WebResource restResource_<%=cid%>;
-	if(endpoint_<%=cid%>!=null && !("").equals(endpoint_<%=cid%>)){
-		restResource_<%=cid%> = restClient_<%=cid%>.resource(endpoint_<%=cid%>);
-	}else{
-		throw new IllegalArgumentException("url can't be empty!");
+
+<%
+	if ("GET".equals(method)) {
+%>
+		restResponse_<%=cid%> = builder_<%=cid%>.get(String.class);
+<%
+	} else if ("POST".equals(method)) {
+%>
+		restResponse_<%=cid%> = builder_<%=cid%>.post(javax.ws.rs.client.Entity.entity(<%=body%>, headers_<%=cid%>.getOrDefault("Content-Type", "text/plain").toString()), String.class);
+<%
+	} else if ("PUT".equals(method)) {
+%>
+		restResponse_<%=cid%> = builder_<%=cid%>.put(javax.ws.rs.client.Entity.entity(<%=body%>, headers_<%=cid%>.getOrDefault("Content-Type", "text/plain").toString()), String.class);
+<%
+	} else if ("DELETE".equals(method)) {
+%>
+		restResponse_<%=cid%> = builder_<%=cid%>.delete(String.class);
+<%
 	}
-	
-	com.sun.jersey.api.client.ClientResponse errorResponse_<%=cid%> = null;
-	String restResponse_<%=cid%> = "";
-	try{
-		<%log.info(log.str("Prepare to send request to rest server."));%>
-		com.sun.jersey.api.client.WebResource.Builder builder_<%=cid%> = null;
-		for(java.util.Map.Entry<String, Object> header_<%=cid%> : headers_<%=cid%>.entrySet()) {
-			if(builder_<%=cid%> == null) {
-				builder_<%=cid%> = restResource_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
-			} else {
-				builder_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
+%>
+} catch (javax.ws.rs.WebApplicationException ue) {
+	globalMap.put("<%=cid%>_ERROR_MESSAGE", ue.getMessage());
+	errorResponse_<%=cid%> = ue.getResponse();
+}
+
+<% log.info(log.str("Has sent request to rest server.")); %>
+
+// for output
+<%
+List<? extends IConnection> conns = node.getOutgoingSortedConnections();
+if (conns != null && conns.size() > 0) {
+	IConnection conn = conns.get(0);
+	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+		IMetadataTable metadata = conn.getMetadataTable();
+		List<IMetadataColumn> columnList = metadata.getListColumns();
+%>		
+		<%=conn.getName() %> = new <%=conn.getName() %>Struct();
+		if (errorResponse_<%=cid%> != null) {
+			<%=conn.getName() %>.ERROR_CODE = errorResponse_<%=cid%>.getStatus();
+			if (<%=conn.getName() %>.ERROR_CODE != 204) {
+				<%=conn.getName() %>.Body = errorResponse_<%=cid%>.readEntity(String.class);
 			}
+		} else {
+			<%=conn.getName() %>.Body = restResponse_<%=cid%>;
 		}
-		
-		<%
-		if("GET".equals(method)){
-		%>
-			if(builder_<%=cid%>!=null) {
-				restResponse_<%=cid%> = builder_<%=cid%>.get(String.class);
-			} else {
-				restResponse_<%=cid%> = restResource_<%=cid%>.get(String.class);
-			} 
-			
-		<%
-		}else if("POST".equals(method)){
-		%>
-			if(builder_<%=cid%>!=null) {
-				restResponse_<%=cid%> = builder_<%=cid%>.post(String.class,<%=body%>);
-			} else {
-				restResponse_<%=cid%> = restResource_<%=cid%>.post(String.class,<%=body%>);
-			}
-		<%
-		}else if("PUT".equals(method)){
-		%>
-			if(builder_<%=cid%>!=null) {
-				restResponse_<%=cid%> = builder_<%=cid%>.put(String.class,<%=body%>);
-			} else {
-				restResponse_<%=cid%> = restResource_<%=cid%>.put(String.class,<%=body%>);
-			}
-		<%
-		}else if("DELETE".equals(method)){
-		%>
-			if(builder_<%=cid%>!=null) {
-				restResponse_<%=cid%> = builder_<%=cid%>.delete(String.class);
-			} else {
-				restResponse_<%=cid%> = restResource_<%=cid%>.delete(String.class);
-			}
-		<%
-		}
-		%>
-	}catch (com.sun.jersey.api.client.UniformInterfaceException ue) {
-globalMap.put("<%=cid%>_ERROR_MESSAGE",ue.getMessage());
-        errorResponse_<%=cid%> = ue.getResponse();
-    }
-	<%log.info(log.str("Has sent request to rest server."));%>
-	// for output
-	<%
-	List< ? extends IConnection> conns = node.getOutgoingSortedConnections();
-	if (conns!=null) {//1
-		if (conns.size()>0) {//2
-			IConnection conn = conns.get(0); //the first connection
-			if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {//3
-				IMetadataTable metadata = conn.getMetadataTable();
-				List<IMetadataColumn> columnList = metadata.getListColumns();
-				%>		
-				<%=conn.getName() %> = new <%=conn.getName() %>Struct();
-				if(errorResponse_<%=cid%>!=null){
-					<%=conn.getName() %>.ERROR_CODE = errorResponse_<%=cid%>.getStatus();
-					if(<%=conn.getName() %>.ERROR_CODE!=204){
-					    <%=conn.getName() %>.Body = errorResponse_<%=cid%>.getEntity(String.class);
-					}
-				}else{
-					<%=conn.getName() %>.Body = restResponse_<%=cid%>;
-				}
-			<%		
-			}//3
-		}//2
-	}//1
-	%>
+<%		
+	}
+}
+%>
