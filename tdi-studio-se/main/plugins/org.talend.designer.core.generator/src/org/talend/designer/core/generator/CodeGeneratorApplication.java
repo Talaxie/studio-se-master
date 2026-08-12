@@ -1,7 +1,18 @@
+/**
+ * Copyright (c) 2026 Talaxie.
+ * 
+ * This program and the accompanying materials
+ * are made available under the terms of the Apache v2 License
+ * which accompanies this distribution, and is available at
+ * https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package org.talend.designer.core.generator;
 
-import java.text.MessageFormat;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -40,6 +51,11 @@ import org.talend.core.runtime.CoreRuntimePlugin;
 import org.talend.core.runtime.util.URIHelper;
 import org.talend.core.ui.branding.IBrandingService;
 import org.talend.designer.codegen.CodeGeneratorActivator;
+import org.talend.designer.core.generator.cli.CLIDefinition;
+import org.talend.designer.core.generator.cli.CLIDefinition.Parsed;
+import org.talend.designer.core.generator.cli.CommandDefinition;
+import org.talend.designer.core.generator.cli.HelpBuilder;
+import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.designer.runprocess.RunProcessPlugin;
 import org.talend.login.ILoginTask;
 import org.talend.repository.RepositoryWorkUnit;
@@ -49,6 +65,33 @@ import org.talend.repository.ui.login.LoginHelper;
  * Generates code for the process which URI is provided as argument.
  */
 public class CodeGeneratorApplication implements IApplication {
+
+	/**
+	 * The help option for the CLI, which prints usage instructions.
+	 */
+	private final OptionDefinition helpOption = new OptionDefinition("h", Optional.of("help"),
+			"Prints this help message.", false, Optional.empty());
+	/**
+	 * The process option for the generate command, which specifies the path to a
+	 * properties file in the workspace.
+	 */
+	private final OptionDefinition processOption = new OptionDefinition("process", Optional.empty(),
+			"The path to a properties file in workspace, such as `MY_PROJECT/process/myJob_0.1.properties`.", true,
+			Optional.of("process path"));
+	/**
+	 * The command to generate code for a process.
+	 */
+	private final CommandDefinition generateCommand = new CommandDefinition("generate", "Generates code for a process.",
+			List.of(processOption));
+	/**
+	 * The CLI definition for this application, including global options and
+	 * commands.
+	 */
+	private final CLIDefinition cliDefinition = new CLIDefinition(
+			// global options
+			List.of(helpOption),
+			// commands
+			List.of(generateCommand));
 
 	/**
 	 * Fails the application with an error message and usage reminder.
@@ -76,11 +119,19 @@ public class CodeGeneratorApplication implements IApplication {
 
 	@Override
 	public Object start(IApplicationContext context) throws Exception {
-		// get the process URI from the application arguments
+		// parse application arguments
 		CommonsPlugin.setHeadless(true);
 		String[] args = (String[]) context.getArguments().get(IApplicationContext.APPLICATION_ARGS);
-		if (args == null || args.length == 0) {
-			return fail("No process path provided as argument.");
+		Parsed parsed;
+		try {
+			parsed = cliDefinition.parseArguments(args);
+		} catch (IllegalArgumentException e) {
+			return fail("Invalid arguments: " + e.getMessage(), e);
+		}
+
+		// print usage if needed
+		if (parsed.parsedGlobalOptions().containsKey(helpOption)) {
+			printUsage();
 		}
 
 		preStartup();
@@ -91,8 +142,24 @@ public class CodeGeneratorApplication implements IApplication {
 					+ Platform.getInstanceLocation().getURL().getPath());
 		}
 
+		// run commands sequentially, in the recommended order
+		if (parsed.parsedCommandsWithOptions().containsKey(generateCommand)) {
+			generateCode(parsed.parsedCommandsWithOptions().get(generateCommand), wsProjects);
+		}
+		return IApplication.EXIT_OK;
+	}
+
+	/**
+	 * Generates code for the process specified in the options.
+	 * 
+	 * @param options    the options for the generate command
+	 * @param wsProjects the workspace projects in the workspace
+	 * @return the exit code for application
+	 * @throws Exception exception during code generation
+	 */
+	private int generateCode(Map<OptionDefinition, Optional<String>> options, Project[] wsProjects) throws Exception {
 		// check process path argument points to an existing file in workspace
-		var path = args[0];
+		var path = options.get(processOption).orElseThrow();
 		URI uri = URI.createPlatformResourceURI(path, true);
 		var rset = new TalendResourceSet();
 		if (!rset.getURIConverter().exists(uri, null)) {
@@ -144,13 +211,9 @@ public class CodeGeneratorApplication implements IApplication {
 	 * Prints usage instructions for this application.
 	 */
 	private void printUsage() {
-		String suffix = Platform.getOS().equals(Platform.OS_WIN32) ? "c.exe" : "";
-		System.out.println(MessageFormat.format("Usage: TOS_CLI_GEN{0} -data <workspace path> <process path>\n"
-				+ "or alternatively: TOS_DI{0} -product org.talaxie.cli.branding.generator.product -data <workspace path> <process path>\n"
-				+ "You should provide:\n"
-				+ " - the <workspace path> to an existing Talaxie workspace, such as `C:/TOS_DI-X.Y.Z/workspace`\n"
-				+ " - the <process path> to a properties file in workspace, such as `MY_PROJECT/process/myJob_0.1.properties`",
-				suffix));
+		String help = HelpBuilder.buildHelpMessage(cliDefinition, "TOS_CLI_GEN", "TOS_DI",
+				"org.talaxie.cli.branding.generator.product");
+		System.out.println(help);
 	}
 
 	/**
