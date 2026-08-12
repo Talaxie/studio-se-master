@@ -12,7 +12,6 @@
 // ============================================================================
 package org.talend.repository.ui.wizards.newproject;
 
-import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
@@ -114,7 +113,6 @@ public class ImportProjectAsWizard extends Wizard {
             final String technicalName = mainPage.getTechnicalName();
             final String sourcePath = mainPage.getSourcePath();
             final boolean isArchive = mainPage.isArchive();
-            List<File> tempFolders = mainPage.getTempFolders();
 
             // see bug 4600, update the external lib path, make it possible to
             // copy external jar files into tos
@@ -139,8 +137,7 @@ public class ImportProjectAsWizard extends Wizard {
                             throw new InvocationTargetException(e);
                         }
                     }
-                    AfterImportProjectUtil.deleteTempFolderAfterImport(tempFolders);
-                    tempFolders.clear();
+                    mainPage.cleanTempFolders();
                     monitorWrap.done();
                     try {
                         IProject project = ResourceUtils.getProject(technicalName);

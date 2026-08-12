@@ -46,6 +46,25 @@ public class HelpBuilder {
 	private static final int SPACING = 2;
 
 	/**
+	 * Builds a help message for the CLI command based on the provided CLI
+	 * definition.
+	 * 
+	 * @param commandDefinition the definition of the command with its options
+	 * @return generated help message as a string
+	 */
+	public static String buildHelpMessage(CommandDefinition commandDefinition) {
+		StringBuilder helpMessage = new StringBuilder();
+
+		// Display command header
+		helpMessage.append(format("Help for command {0}:\n", commandDefinition.formattedName()));
+		String commandFormat = computeCommandsFormat(List.of(commandDefinition));
+		helpMessage.append(commandFormat.formatted(COMMAND, COMMAND_EFFECT));
+
+		helpMessage.append(doBuildCommandHelp(commandFormat, commandDefinition));
+		return helpMessage.toString();
+	}
+
+	/**
 	 * Builds a help message for the CLI application based on the provided CLI
 	 * definition.
 	 * 
@@ -100,23 +119,39 @@ public class HelpBuilder {
 
 		// Display commands list
 		for (CommandDefinition command : cliDefinition.commands()) {
-			helpMessage.append(commandFormat.formatted(command.formattedName(), command.description()));
-			if (!command.options().isEmpty()) {
-				// Display options header
-				helpMessage.append(commandFormat.formatted("", "With Command Options:"));
-				String optionsFormat = computeOptionsFormat(command.options(), 3);
-				helpMessage.append(optionsFormat.formatted(OPTION, LONG_OPTION, MEANING));
-
-				// Display options list
-				for (OptionDefinition option : command.options()) {
-					String required = option.required() ? "*Required* " : "";
-					helpMessage.append(optionsFormat.formatted(option.formattedFullName(),
-							option.formattedFullAlternativeName(), required + option.description()));
-				}
-			}
+			helpMessage.append(doBuildCommandHelp(commandFormat, command));
 			helpMessage.append("\n");
 		}
 
+		return helpMessage.toString();
+	}
+
+	/**
+	 * Builds a help message entry for a specific command based on the provided
+	 * command.
+	 * 
+	 * @param commandFormat the format string for displaying commands in the help
+	 *                      message
+	 * @param command       the command definition for which to build the help
+	 *                      message entry
+	 * @return the generated help message entry for the command as a string
+	 */
+	private static String doBuildCommandHelp(String commandFormat, CommandDefinition command) {
+		StringBuilder helpMessage = new StringBuilder();
+		helpMessage.append(commandFormat.formatted(command.formattedName(), command.description()));
+		if (!command.options().isEmpty()) {
+			// Display options header
+			helpMessage.append(commandFormat.formatted("", "With Command Options:"));
+			String optionsFormat = computeOptionsFormat(command.options(), 3);
+			helpMessage.append(optionsFormat.formatted(OPTION, LONG_OPTION, MEANING));
+
+			// Display options list
+			for (OptionDefinition option : command.options()) {
+				String required = option.required() ? "*Required* " : "";
+				helpMessage.append(optionsFormat.formatted(option.formattedFullName(),
+						option.formattedFullAlternativeName(), required + option.description()));
+			}
+		}
 		return helpMessage.toString();
 	}
 
@@ -152,17 +187,6 @@ public class HelpBuilder {
 				.mapToInt(o -> o.formattedName().length()).max().orElse(0)) + SPACING;
 		String prefix = " ".repeat(SPACING);
 		return prefix + "%-" + shortWidth + "s %s%n";
-	}
-
-	/**
-	 * Get extra length for the value of an option, if it has one.
-	 * 
-	 * @param option the option definition
-	 * @return the extra length for displaying the value of the option
-	 */
-	private static Integer getExtraLengthForValue(OptionDefinition option) {
-		// <valueName>
-		return option.valueName().map(v -> v.length() + 3).orElse(0);
 	}
 
 }
