@@ -10,45 +10,16 @@
  */
 package org.talend.designer.core.generator;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
-import org.eclipse.core.resources.IFile;
-import org.eclipse.core.resources.ResourcesPlugin;
-import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.Platform;
-import org.eclipse.core.runtime.SubMonitor;
-import org.eclipse.emf.codegen.util.CodeGenUtil;
-import org.eclipse.emf.common.util.URI;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.talend.commons.CommonsPlugin;
-import org.talend.commons.exception.LoginException;
 import org.talend.commons.exception.PersistenceException;
-import org.talend.commons.utils.time.TimeMeasurePerformance;
-import org.talend.core.CorePlugin;
 import org.talend.core.GlobalServiceRegister;
-import org.talend.core.ICoreService;
-import org.talend.core.context.Context;
-import org.talend.core.context.RepositoryContext;
-import org.talend.core.model.general.Project;
-import org.talend.core.model.process.IProcess;
-import org.talend.core.model.properties.ProcessItem;
-import org.talend.core.model.properties.Property;
-import org.talend.core.repository.i18n.Messages;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.core.repository.model.RepositoryFactoryProvider;
-import org.talend.core.repository.utils.LoginTaskRegistryReader;
-import org.talend.core.repository.utils.TalendResourceSet;
-import org.talend.core.runtime.CoreRuntimePlugin;
-import org.talend.core.runtime.util.URIHelper;
 import org.talend.core.ui.branding.IBrandingService;
 import org.talend.designer.codegen.CodeGeneratorActivator;
 import org.talend.designer.core.generator.cli.CLIDefinition;
@@ -56,9 +27,10 @@ import org.talend.designer.core.generator.cli.CLIDefinition.Parsed;
 import org.talend.designer.core.generator.cli.CommandDefinition;
 import org.talend.designer.core.generator.cli.HelpBuilder;
 import org.talend.designer.core.generator.cli.OptionDefinition;
+import org.talend.designer.core.generator.commands.CLICommand;
+import org.talend.designer.core.generator.commands.GenerateCodeCommand;
+import org.talend.designer.core.generator.commands.ImportCommand;
 import org.talend.designer.runprocess.RunProcessPlugin;
-import org.talend.login.ILoginTask;
-import org.talend.repository.RepositoryWorkUnit;
 import org.talend.repository.ui.login.LoginHelper;
 
 /**
@@ -71,18 +43,9 @@ public class CodeGeneratorApplication implements IApplication {
 	 */
 	private final OptionDefinition helpOption = new OptionDefinition("h", Optional.of("help"),
 			"Prints this help message.", false, Optional.empty());
-	/**
-	 * The process option for the generate command, which specifies the path to a
-	 * properties file in the workspace.
-	 */
-	private final OptionDefinition processOption = new OptionDefinition("process", Optional.empty(),
-			"The path to a properties file in workspace, such as `MY_PROJECT/process/myJob_0.1.properties`.", true,
-			Optional.of("process path"));
-	/**
-	 * The command to generate code for a process.
-	 */
-	private final CommandDefinition generateCommand = new CommandDefinition("generate", "Generates code for a process.",
-			List.of(processOption));
+
+	/** CLI commands to support */
+	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new GenerateCodeCommand());
 	/**
 	 * The CLI definition for this application, including global options and
 	 * commands.
@@ -91,7 +54,7 @@ public class CodeGeneratorApplication implements IApplication {
 			// global options
 			List.of(helpOption),
 			// commands
-			List.of(generateCommand));
+			supportedCommands.stream().map(CLICommand::getDefinition).toList());
 
 	/**
 	 * Fails the application with an error message and usage reminder.
@@ -102,19 +65,9 @@ public class CodeGeneratorApplication implements IApplication {
 	 */
 	private Integer fail(String message, Exception e) {
 		System.err.println(message);
-		printUsage();
+		printGlobalUsage();
 		Optional.ofNullable(e).ifPresent(Exception::printStackTrace);
 		return IApplication.EXIT_OK;
-	}
-
-	/**
-	 * Fails the application with an error message and usage reminder.
-	 * 
-	 * @param message the error message to print
-	 * @return the exit code for application
-	 */
-	private Integer fail(String message) {
-		return fail(message, null);
 	}
 
 	@Override
@@ -131,78 +84,20 @@ public class CodeGeneratorApplication implements IApplication {
 
 		// print usage if needed
 		if (parsed.parsedGlobalOptions().containsKey(helpOption)) {
-			printUsage();
+			printGlobalUsage();
 		}
 
 		preStartup();
-		// check workspace location is an existing workspace
-		var wsProjects = ProxyRepositoryFactory.getInstance().readProject();
-		if (wsProjects.length == 0) {
-			return fail("The workspace provided does not contain any Talaxie project: "
-					+ Platform.getInstanceLocation().getURL().getPath());
-		}
 
 		// run commands sequentially, in the recommended order
-		if (parsed.parsedCommandsWithOptions().containsKey(generateCommand)) {
-			generateCode(parsed.parsedCommandsWithOptions().get(generateCommand), wsProjects);
-		}
-		return IApplication.EXIT_OK;
-	}
-
-	/**
-	 * Generates code for the process specified in the options.
-	 * 
-	 * @param options    the options for the generate command
-	 * @param wsProjects the workspace projects in the workspace
-	 * @return the exit code for application
-	 * @throws Exception exception during code generation
-	 */
-	private int generateCode(Map<OptionDefinition, Optional<String>> options, Project[] wsProjects) throws Exception {
-		// check process path argument points to an existing file in workspace
-		var path = options.get(processOption).orElseThrow();
-		URI uri = URI.createPlatformResourceURI(path, true);
-		var rset = new TalendResourceSet();
-		if (!rset.getURIConverter().exists(uri, null)) {
-			return fail("The process path provided as argument does not point an existing file: " + path);
-		}
-		Supplier<IProcess> processSupplier = () -> {
-			var resource = rset.getResource(uri, true);
-			var property = resource.getContents().stream().filter(Property.class::isInstance).map(Property.class::cast)
-					.findFirst();
-			var processItem = property.map(Property::getItem).filter(ProcessItem.class::isInstance)
-					.map(ProcessItem.class::cast);
-			// handle error cases which do not point to a valid process item
-			if (!property.isPresent()) {
-				fail("The process path provided as argument does not point to a valid properties file: "
-						+ uri.toFileString());
-			} else if (!processItem.isPresent()) {
-				fail("The process path provided as argument points to a properties file which property does not point to a ProcessItem: "
-						+ uri.toFileString());
+		for (CLICommand command : supportedCommands) {
+			CommandDefinition definition = command.getDefinition();
+			if (parsed.parsedCommandsWithOptions().containsKey(definition)) {
+				int code = command.execute(parsed.parsedCommandsWithOptions().get(definition));
+				if (code != IApplication.EXIT_OK) {
+					return code;
+				}
 			}
-
-			// In headless CLI, ensure repository context and provider are initialized
-			// before Process creation.
-			processItem.ifPresent(item -> {
-				ensureProjectExploitable(item, wsProjects);
-			});
-
-			return processItem.map(CorePlugin.getDefault().getDesignerCoreService()::getProcessFromProcessItem)
-					.orElse(null);
-		};
-		var generator = new CodeGenerator(processSupplier);
-		generator.schedule();
-		generator.join();
-		// make sure the generated resources are not lost on exit, whatever the outcome
-		ResourcesPlugin.getWorkspace().save(true, new NullProgressMonitor());
-		// inform the user of the resulting outcome
-		IStatus result = generator.getResult();
-		if (result.isOK()) {
-			System.out.println("Code generation completed successfully: " + result.getMessage());
-		} else {
-			if (result.getException() != null) {
-				result.getException().printStackTrace();
-			}
-			return fail("Code generation failed: " + result.getMessage());
 		}
 		return IApplication.EXIT_OK;
 	}
@@ -210,101 +105,10 @@ public class CodeGeneratorApplication implements IApplication {
 	/**
 	 * Prints usage instructions for this application.
 	 */
-	private void printUsage() {
+	private void printGlobalUsage() {
 		String help = HelpBuilder.buildHelpMessage(cliDefinition, "TOS_CLI_GEN", "TOS_DI",
 				"org.talaxie.cli.branding.generator.product");
 		System.out.println(help);
-	}
-
-	/**
-	 * Ensure project can be exploited and that all required services are correctly
-	 * initialized.
-	 * 
-	 * <ul>
-	 * <li>{@link Context#REPOSITORY_CONTEXT_KEY} is associated to a repository
-	 * context</li>
-	 * <li>This context contains a user</li>
-	 * <li>This context contains the project (avoids NPE in project-based preference
-	 * lookups during Process initialization).</li>
-	 * <li>Execute login tasks created using the extension point
-	 * <code>org.talend.core.repository.login.task</code></li>
-	 * </ul>
-	 * 
-	 * @param processItem the process item to find the project for
-	 * @param wsProjects  workspace projects to find the project of the process item
-	 */
-	private void ensureProjectExploitable(ProcessItem processItem, Project[] wsProjects) {
-		var ctx = CoreRuntimePlugin.getInstance().getContext();
-		// initialize repository context
-		var repoCtx = Optional.ofNullable(ctx.getProperty(Context.REPOSITORY_CONTEXT_KEY))
-				.map(RepositoryContext.class::cast).orElseGet(() -> {
-					var res = new RepositoryContext();
-					ctx.putProperty(Context.REPOSITORY_CONTEXT_KEY, res);
-					return res;
-				});
-		// set user
-		if (repoCtx.getUser() == null) {
-			repoCtx.setUser(LoginHelper.getUser(LoginHelper.createDefaultLocalConnection()));
-		}
-		// set fields
-		if (repoCtx.getFields() == null) {
-			repoCtx.setFields(new HashMap<String, String>());
-		}
-		// set the appropriate project
-		if (repoCtx.getProject() == null) {
-			IFile itemFile = URIHelper.getFile(URIHelper.convert(processItem.eResource().getURI()));
-			// repoCtx::setProject is not enough, we must also log on the project to
-			// initialize all services
-			Consumer<Project> setTheProject = p -> {
-				repoCtx.setProject(p);
-				// we won't actually open a dialog as headless mode is active
-				try {
-					ProxyRepositoryFactory.getInstance().logOnProject(p, new NullProgressMonitor());
-				} catch (LoginException | PersistenceException e) {
-					fail("Failed to log on the project of the process item: " + p.getLabel());
-					e.printStackTrace();
-				}
-			};
-			Stream.of(wsProjects).filter(p -> p.getTechnicalLabel().equals(itemFile.getProject().getName())).findFirst()
-					.ifPresentOrElse(setTheProject, () -> {
-						fail("The project of the process item cannot be found in the workspace projects: "
-								+ itemFile.getProject().getName());
-					});
-			;
-		}
-		/*
-		 * Handle login tasks
-		 */
-		LoginTaskRegistryReader loginTaskRegistryReader = new LoginTaskRegistryReader();
-		ILoginTask[] allLoginTasks = loginTaskRegistryReader.getAllTaskListInstance();
-		IProgressMonitor monitor = new CodeGenUtil.EclipseUtil.StreamProgressMonitor(System.out);
-		SubMonitor subMonitor = SubMonitor.convert(monitor, allLoginTasks.length + 1);
-		ProxyRepositoryFactory.getInstance()
-				.executeRepositoryWorkUnit(new RepositoryWorkUnit<Void>("Applying login tasks") {
-
-					@Override
-					protected void run() throws LoginException, PersistenceException {
-						for (ILoginTask toBeRun : allLoginTasks) {
-							try {
-								toBeRun.execute(subMonitor.newChild(1, SubMonitor.SUPPRESS_NONE));
-							} catch (Exception e) {
-								// log but do not propagate
-								fail("Error while executing a login task.", e);
-							}
-						}
-					}
-				});
-		/*
-		 * Login tasks may have changed the Maven settings. Reinstall components in the
-		 * correct repository.
-		 */
-		ICoreService coreService = GlobalServiceRegister.getDefault().getService(ICoreService.class);
-		if (coreService != null) {
-			SubMonitor subMonitor2 = SubMonitor.convert(monitor, 3);
-			subMonitor2.beginTask(Messages.getString("ProxyRepositoryFactory.installComponents"), 1);
-			coreService.installComponents(subMonitor2);
-			TimeMeasurePerformance.step("logOnProject", "Install components");
-		}
 	}
 
 	/**

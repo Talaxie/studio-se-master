@@ -491,7 +491,7 @@ public class TalendWizardProjectsImportPage extends AbstractWizardProjectsImport
     }
 
     public boolean collectProjectFilesFromDirectory(Collection files, File directory, Set directoriesVisited) {
-
+		// FIXME check for possibility to use ProjectHelper method instead
         File[] contents = directory.listFiles();
         if (contents == null) {
             return false;

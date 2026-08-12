@@ -10,9 +10,12 @@ import org.eclipse.jface.resource.ImageDescriptor;
 import org.osgi.framework.Bundle;
 import org.talaxie.cli.branding.generator.i18n.Messages;
 import org.talend.core.branding.AbstractTalendBrandingService;
+import org.talend.core.branding.DefaultBrandingConfiguration;
 import org.talend.core.ui.branding.IBrandingConfiguration;
 
 public class CliBrandingService extends AbstractTalendBrandingService {
+
+	private IBrandingConfiguration brandingConfiguration;
 
 	@Override
 	public String getStartingBrowserId() {
@@ -49,7 +52,17 @@ public class CliBrandingService extends AbstractTalendBrandingService {
 
 	@Override
 	public IBrandingConfiguration getBrandingConfiguration() {
-		return null;
+		/*
+		 * The return result is expected NonNullable.
+		 * 
+		 * It is used without null check e.g. in
+		 * org.talend.repository.items.importexport.handlers.model.ImportItem.
+		 * getItemName()
+		 */
+		if (brandingConfiguration == null) {
+			brandingConfiguration = new DefaultBrandingConfiguration();
+		}
+		return brandingConfiguration;
 	}
 
 	@Override

@@ -60,6 +60,7 @@ import org.eclipse.ui.wizards.datatransfer.IImportStructureProvider;
 import org.eclipse.ui.wizards.datatransfer.ImportOperation;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.commons.exception.PersistenceException;
+import org.talend.commons.runtime.xml.XMLFileUtil;
 import org.talend.core.model.properties.Project;
 import org.talend.core.model.properties.PropertiesPackage;
 import org.talend.core.model.properties.Property;
@@ -74,6 +75,12 @@ import org.talend.core.runtime.repository.item.ItemProductValuesHelper;
 import org.talend.repository.i18n.Messages;
 import org.talend.repository.items.importexport.ui.managers.TalendZipLeveledStructureProvider;
 import org.talend.repository.ui.utils.AfterImportProjectUtil;
+import org.talend.repository.ui.wizards.newproject.copyfromeclipse.TalendWizardProjectsImportPage;
+import org.talend.utils.files.FileUtils;
+import org.talend.utils.io.FilesUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
 
 /**
  * DOC ggu class global comment. Detailled comment
@@ -506,4 +513,80 @@ public class ImportProjectHelper {
             ExceptionHandler.process(e);
         }
     }
+
+	/**
+	 * Check if the package is compressed, if yes, unzip it to a temp folder and
+	 * return the temp folder path.
+	 *
+	 * @param path                            path to the package
+	 * @param cleanupOperationsListToComplete list of cleanup operations to complete
+	 *                                        and execute after the import.
+	 */
+	public String checkPackageIsCompressed(String path, List<Runnable> cleanupOperationsListToComplete) {
+		if (ArchiveFileManipulations.isZipFile(path)) {
+			File tmpPath = FileUtils.createTmpFolder("talendImportTmp", null);
+			String tmpPathStr = tmpPath.getPath();
+			// add cleanup operation to delete the temp folder after the import
+			cleanupOperationsListToComplete.add(() -> FilesUtils.deleteFolder(tmpPath, true));
+			try {
+				FilesUtils.unzip(path, tmpPathStr);
+			} catch (Exception e) {
+				ExceptionHandler.process(e);
+			}
+			path = tmpPathStr;
+		}
+		return path;
+	}
+
+	/**
+	 * Inspect items in the sourcePath, to extract projects as a folder.
+	 * 
+	 * @param sourcePath                      path to the source zip file or folder.
+	 * @param cleanupOperationsListToComplete list of cleanup operations to complete
+	 *                                        and execute after the import.
+	 * @throws Exception
+	 */
+	public String items2Projects(String sourcePath, List<Runnable> cleanupOperationsListToComplete) throws Exception {
+		TalendWizardProjectsImportPage tp = new TalendWizardProjectsImportPage();
+		Collection files = new ArrayList();
+		// find the talend.project file
+		tp.collectProjectFilesFromDirectory(files, new File(sourcePath), null);
+		File tmpPath = FileUtils.createTmpFolder("talendImportTmp", null);
+		// add cleanup operation to delete the temp folder after the import
+		cleanupOperationsListToComplete.add(() -> FilesUtils.deleteFolder(tmpPath, true));
+		Iterator filesIterator = files.iterator();
+		String tepPath = "";
+		while (filesIterator.hasNext()) {
+			File file = (File) filesIterator.next();
+			String talendFilePath = file.getPath();
+			String projectPath = talendFilePath.substring(0, talendFilePath.lastIndexOf(File.separator));
+			FilesUtils.copyDirectory(new File(projectPath), tmpPath);
+		}
+		// loop the tmp file
+		files = new ArrayList();
+		tp.collectProjectFilesFromDirectory(files, tmpPath, null);
+		Iterator tmpFilesIterator = files.iterator();
+		while (tmpFilesIterator.hasNext()) {
+			File file = (File) tmpFilesIterator.next();
+			String tmpTalendFilePath = file.getPath();
+			String tmpProjectPath = tmpTalendFilePath.substring(0, tmpTalendFilePath.lastIndexOf(File.separator));
+			String tmpProjectFileStr = tmpProjectPath + File.separator + ".project";
+			File tmpProjectFile = new File(tmpProjectFileStr);
+			String projectName = "";
+			if (!tmpProjectFile.exists()) {
+				Document document = XMLFileUtil.loadDoc(new File(tmpTalendFilePath));
+				Node node = document.getChildNodes().item(0).getChildNodes().item(1);
+				NamedNodeMap map = node.getAttributes();
+				for (int i = 0; i < map.getLength(); i++) {
+					if ("technicalLabel".equals(map.item(i).getNodeName())) {
+						projectName = map.item(i).getNodeValue();
+					}
+				}
+				FileUtils.createProjectFile(projectName, tmpProjectFile);
+			}
+			String talendFilePath = file.getPath();
+			tepPath = talendFilePath.substring(0, talendFilePath.lastIndexOf(File.separator));
+		}
+		return tepPath;
+	}
 }

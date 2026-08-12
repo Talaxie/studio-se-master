@@ -986,6 +986,7 @@ public class AbstractWizardProjectsImportPage extends WizardDataTransferPage {
      */
     static boolean collectProjectFilesFromDirectory(Collection<File> files, File directory, Set<String> directoriesVisited,
             boolean nestedProjects, IProgressMonitor monitor) {
+		// FIXME check for possibility to use ProjectHelper method instead
 
         if (monitor.isCanceled()) {
             return false;

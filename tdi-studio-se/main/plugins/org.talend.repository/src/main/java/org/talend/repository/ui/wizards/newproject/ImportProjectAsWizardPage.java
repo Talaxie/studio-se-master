@@ -15,8 +15,6 @@ package org.talend.repository.ui.wizards.newproject;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
@@ -46,8 +44,6 @@ import org.eclipse.ui.internal.wizards.datatransfer.TarException;
 import org.eclipse.ui.internal.wizards.datatransfer.TarFile;
 import org.talend.commons.CommonsPlugin;
 import org.talend.commons.exception.ExceptionHandler;
-import org.talend.commons.runtime.xml.XMLFileUtil;
-import org.talend.commons.utils.io.FilesUtils;
 import org.talend.core.GlobalServiceRegister;
 import org.talend.core.model.general.Project;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
@@ -57,12 +53,7 @@ import org.talend.repository.RepositoryPlugin;
 import org.talend.repository.i18n.Messages;
 import org.talend.repository.model.IProxyRepositoryFactory;
 import org.talend.repository.ui.actions.importproject.ImportProjectHelper;
-import org.talend.repository.ui.wizards.newproject.copyfromeclipse.TalendWizardProjectsImportPage;
 import org.talend.repository.utils.ZipFileUtils;
-import org.talend.utils.files.FileUtils;
-import org.w3c.dom.Document;
-import org.w3c.dom.NamedNodeMap;
-import org.w3c.dom.Node;
 
 /**
  * Page for new project details. <br/>
@@ -106,7 +97,7 @@ public class ImportProjectAsWizardPage extends WizardPage {
 
     private String lastPath;
 
-    private List<File> tempFolders = new ArrayList<>();
+	private List<Runnable> tempFoldersClean = new ArrayList<>();
 
     // constant from WizardArchiveFileResourceImportPage1
     private static final String[] FILE_IMPORT_MASK = { "*.jar;*.zip;*.tar;*.tar.gz;*.tgz", "*.*" }; //$NON-NLS-1$ //$NON-NLS-2$
@@ -355,8 +346,9 @@ public class ImportProjectAsWizardPage extends WizardPage {
         String selectedArchiveTemp = selectedDirectory;
         if (selectedDirectory != null) {
             try {
-                selectedArchiveTemp = checkPackageIsCompressed(selectedArchiveTemp);
-                selectedArchiveTemp = items2Projects(selectedArchiveTemp);
+				ImportProjectHelper helper = new ImportProjectHelper();
+				selectedArchiveTemp = helper.checkPackageIsCompressed(selectedArchiveTemp, tempFoldersClean);
+				selectedArchiveTemp = helper.items2Projects(selectedArchiveTemp, tempFoldersClean);
             } catch (Exception e) {
                 ExceptionHandler.process(e);
             }
@@ -390,8 +382,9 @@ public class ImportProjectAsWizardPage extends WizardPage {
         String selectedArchiveTmp = selectedArchive;
         if (selectedArchive != null) {
             try {
-                selectedArchiveTmp = checkPackageIsCompressed(selectedArchive);
-                selectedArchiveTmp = items2Projects(selectedArchiveTmp);
+				ImportProjectHelper helper = new ImportProjectHelper();
+				selectedArchiveTmp = helper.checkPackageIsCompressed(selectedArchive, tempFoldersClean);
+				selectedArchiveTmp = helper.items2Projects(selectedArchiveTmp, tempFoldersClean);
                 ZipFileUtils.zip(selectedArchiveTmp, selectedArchiveTmp + ".zip", false);
 
             } catch (Exception e) {
@@ -458,78 +451,6 @@ public class ImportProjectAsWizardPage extends WizardPage {
 
         }
         checkFieldsValue();
-    }
-
-    /**
-     *
-     * DOC xlwang Comment method "createProjectFile".
-     *
-     * @param path
-     */
-    public String checkPackageIsCompressed(String path) {
-        if (ArchiveFileManipulations.isZipFile(path)) {
-            File tmpPath = FileUtils.createTmpFolder("talendImportTmp", null);
-            String tmpPathStr = tmpPath.getPath();
-            tempFolders.add(tmpPath);
-            try {
-                FilesUtils.unzip(path, tmpPathStr);
-            } catch (Exception e) {
-                ExceptionHandler.process(e);
-            }
-            path = tmpPathStr;
-        }
-        return path;
-    }
-
-    /**
-     *
-     * DOC xlwang Comment method "items2Projects".
-     *
-     * @param sourcePath
-     * @return
-     * @throws Exception
-     */
-    public String items2Projects(String sourcePath) throws Exception {
-        TalendWizardProjectsImportPage tp = new TalendWizardProjectsImportPage();
-        Collection files = new ArrayList();
-        // find the talend.project file
-        tp.collectProjectFilesFromDirectory(files, new File(sourcePath), null);
-        File tmpPath = FileUtils.createTmpFolder("talendImportTmp", null);
-        tempFolders.add(tmpPath);
-        Iterator filesIterator = files.iterator();
-        String tepPath = "";
-        while (filesIterator.hasNext()) {
-            File file = (File) filesIterator.next();
-            String talendFilePath = file.getPath();
-            String projectPath = talendFilePath.substring(0, talendFilePath.lastIndexOf(File.separator));
-            FilesUtils.copyDirectory(new File(projectPath), tmpPath);
-        }
-        // loop the tmp file
-        files = new ArrayList();
-        tp.collectProjectFilesFromDirectory(files, tmpPath, null);
-        Iterator tmpFilesIterator = files.iterator();
-        while (tmpFilesIterator.hasNext()) {
-            File file = (File) tmpFilesIterator.next();
-            String tmpTalendFilePath = file.getPath();
-            String tmpProjectPath = tmpTalendFilePath.substring(0, tmpTalendFilePath.lastIndexOf(File.separator));
-            String tmpProjectFileStr = tmpProjectPath + File.separator + ".project";
-            File tmpProjectFile = new File(tmpProjectFileStr);
-            String projectName = "";
-            if (!tmpProjectFile.exists()) {
-                Document document = XMLFileUtil.loadDoc(new File(tmpTalendFilePath));
-                Node node = document.getChildNodes().item(0).getChildNodes().item(1);
-                NamedNodeMap map = node.getAttributes();
-                for (int i = 0; i < map.getLength(); i++) {
-                    if ("technicalLabel".equals(map.item(i).getNodeName())) {
-                        projectName = map.item(i).getNodeValue();
-                    }
-                }
-                FileUtils.createProjectFile(projectName, tmpProjectFile);
-            }
-            String talendFilePath = file.getPath();
-            tepPath = talendFilePath.substring(0, talendFilePath.lastIndexOf(File.separator));
-        }
-        return tepPath;
     }
 
     /**
@@ -716,10 +637,6 @@ public class ImportProjectAsWizardPage extends WizardPage {
         return lastPath;
     }
 
-    public List<File> getTempFolders() {
-        return tempFolders;
-    }
-
     public boolean isArchive() {
         return projectFromArchiveRadio.getSelection();
     }
@@ -727,4 +644,14 @@ public class ImportProjectAsWizardPage extends WizardPage {
     private static IStatus createOkStatus() {
         return new Status(IStatus.OK, RepositoryPlugin.PLUGIN_ID, IStatus.OK, "", null); //$NON-NLS-1$
     }
+
+	/**
+	 * Clean the temporary folders created during the import process. This method
+	 * should be called after the import is complete to ensure that any temporary
+	 * files or directories are properly deleted.
+	 */
+	public void cleanTempFolders() {
+		tempFoldersClean.forEach(Runnable::run);
+		tempFoldersClean.clear();
+	}
 }
