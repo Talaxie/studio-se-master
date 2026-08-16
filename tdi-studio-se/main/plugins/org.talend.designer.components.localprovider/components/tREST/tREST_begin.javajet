@@ -37,54 +37,7 @@ String keyStoreFile_<%=cid%> = System.getProperty("javax.net.ssl.keyStore");
 String keyStoreType_<%=cid%> = System.getProperty("javax.net.ssl.keyStoreType");
 String keyStorePWD_<%=cid%> = System.getProperty("javax.net.ssl.keyStorePassword");
 
-org.glassfish.jersey.client.ClientConfig config_<%=cid%> = new org.glassfish.jersey.client.ClientConfig();
-
-javax.net.ssl.SSLContext ctx_<%=cid%> = javax.net.ssl.SSLContext.getInstance("SSL");
-
-javax.net.ssl.TrustManager[] tms_<%=cid%> = null;
-if (trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null) {
-	char[] password_<%=cid%> = null;
-	if (trustStorePWD_<%=cid%> != null) {
-		password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
-	}
-	java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
-	trustStore_<%=cid%>.load(new java.io.FileInputStream(trustStoreFile_<%=cid%>), password_<%=cid%>);
-	
-	javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
-	tmf_<%=cid%>.init(trustStore_<%=cid%>);
-	tms_<%=cid%> = tmf_<%=cid%>.getTrustManagers();
-}
-
-javax.net.ssl.KeyManager[] kms_<%=cid%> = null;
-if (keyStoreFile_<%=cid%> != null && keyStoreType_<%=cid%> != null) {
-	char[] password_<%=cid%> = null;
-	if (keyStorePWD_<%=cid%> != null) {
-		password_<%=cid%> = keyStorePWD_<%=cid%>.toCharArray();
-	}
-	java.security.KeyStore keyStore_<%=cid%> = java.security.KeyStore.getInstance(keyStoreType_<%=cid%>);
-	keyStore_<%=cid%>.load(new java.io.FileInputStream(keyStoreFile_<%=cid%>), password_<%=cid%>);
-	
-	javax.net.ssl.KeyManagerFactory kmf_<%=cid%> = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
-	kmf_<%=cid%>.init(keyStore_<%=cid%>, password_<%=cid%>);
-	kms_<%=cid%> = kmf_<%=cid%>.getKeyManagers();
-}
-
-ctx_<%=cid%>.init(kms_<%=cid%>, tms_<%=cid%>, null);
-
-javax.net.ssl.HostnameVerifier hostnameVerifier_<%=cid%> = new javax.net.ssl.HostnameVerifier() {
-	@Override
-	public boolean verify(String hostname, javax.net.ssl.SSLSession sslSession) {
-		return true; // Accept any hostname
-	}
-};
-
-javax.ws.rs.client.Client restClient_<%=cid%> = new org.glassfish.jersey.client.JerseyClientBuilder()
-	.withConfig(config_<%=cid%>)
-	.sslContext(ctx_<%=cid%>)
-	.hostnameVerifier(hostnameVerifier_<%=cid%>)
-	.build();
-
-java.util.Map<String, Object> headers_<%=cid%> = new java.util.HashMap<String, Object>();
+java.util.Map<String, String> headers_<%=cid%> = new java.util.HashMap<String, String>();
 
 <%
 for (int i = 0; i < headers.size(); i++) {
@@ -95,57 +48,89 @@ for (int i = 0; i < headers.size(); i++) {
 }
 %>
 
-javax.ws.rs.client.WebTarget restResource_<%=cid%>;
-if (endpoint_<%=cid%> != null && !("").equals(endpoint_<%=cid%>)) {
-	restResource_<%=cid%> = restClient_<%=cid%>.target(endpoint_<%=cid%>);
-} else {
+if (endpoint_<%=cid%> == null || ("").equals(endpoint_<%=cid%>)) {
 	throw new IllegalArgumentException("url can't be empty!");
 }
 
-javax.ws.rs.core.Response errorResponse_<%=cid%> = null;
 String restResponse_<%=cid%> = "";
+int statusCode_<%=cid%> = 200;
 
 try {
 	<% log.info(log.str("Prepare to send request to rest server.")); %>
-	javax.ws.rs.client.Invocation.Builder builder_<%=cid%> = restResource_<%=cid%>.request();
-	
-	for (java.util.Map.Entry<String, Object> header_<%=cid%> : headers_<%=cid%>.entrySet()) {
-		builder_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
+
+	// Client HTTP natif Java 11+
+	java.net.http.HttpClient.Builder clientBuilder_<%=cid%> = java.net.http.HttpClient.newBuilder();
+
+	// Support SSL TrustStore / KeyStore
+	if (trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null) {
+		char[] password_<%=cid%> = null;
+		if (trustStorePWD_<%=cid%> != null) {
+			password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
+		}
+		java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
+		trustStore_<%=cid%>.load(new java.io.FileInputStream(trustStoreFile_<%=cid%>), password_<%=cid%>);
+		
+		javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
+		tmf_<%=cid%>.init(trustStore_<%=cid%>);
+		
+		javax.net.ssl.SSLContext sslContext_<%=cid%> = javax.net.ssl.SSLContext.getInstance("TLS");
+		sslContext_<%=cid%>.init(null, tmf_<%=cid%>.getTrustManagers(), null);
+		clientBuilder_<%=cid%>.sslContext(sslContext_<%=cid%>);
 	}
 
-	Object transfer_encoding_<%=cid%> = headers_<%=cid%>.get("Transfer-Encoding");
-	if (transfer_encoding_<%=cid%> != null && "chunked".equals(transfer_encoding_<%=cid%>)) {
-		builder_<%=cid%>.property(org.glassfish.jersey.client.ClientProperties.REQUEST_ENTITY_PROCESSING, "CHUNKED");
-		builder_<%=cid%>.property(org.glassfish.jersey.client.ClientProperties.CHUNKED_ENCODING_SIZE, 4096);
+	java.net.http.HttpClient nativeClient_<%=cid%> = clientBuilder_<%=cid%>.build();
+	java.net.http.HttpRequest.Builder reqBuilder_<%=cid%> = java.net.http.HttpRequest.newBuilder()
+		.uri(java.net.URI.create(endpoint_<%=cid%>));
+
+	// Construction du body pour les méthodes avec payload
+	java.net.http.HttpRequest.BodyPublisher bodyPublisher_<%=cid%>;
+<%
+	if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method)) {
+%>
+		String requestBody_<%=cid%> = String.valueOf(<%=body%>);
+		bodyPublisher_<%=cid%> = java.net.http.HttpRequest.BodyPublishers.ofString(requestBody_<%=cid%>, java.nio.charset.StandardCharsets.UTF_8);
+
+		// Ajout automatique du Content-Type JSON si non spécifié
+		if (!headers_<%=cid%>.containsKey("Content-Type") && !headers_<%=cid%>.containsKey("content-type")) {
+			reqBuilder_<%=cid%>.header("Content-Type", "application/json");
+		}
+<%
+	} else {
+%>
+		bodyPublisher_<%=cid%> = java.net.http.HttpRequest.BodyPublishers.noBody();
+<%
+	}
+%>
+
+	// Assignation du verbe HTTP
+	reqBuilder_<%=cid%>.method("<%=method%>", bodyPublisher_<%=cid%>);
+
+	// Ajout des en-têtes personnalisés
+	for (java.util.Map.Entry<String, String> header_<%=cid%> : headers_<%=cid%>.entrySet()) {
+		reqBuilder_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
 	}
 
-<%
-	if ("GET".equals(method)) {
-%>
-		restResponse_<%=cid%> = builder_<%=cid%>.get(String.class);
-<%
-	} else if ("POST".equals(method)) {
-%>
-		restResponse_<%=cid%> = builder_<%=cid%>.post(javax.ws.rs.client.Entity.entity(<%=body%>, headers_<%=cid%>.getOrDefault("Content-Type", "text/plain").toString()), String.class);
-<%
-	} else if ("PUT".equals(method)) {
-%>
-		restResponse_<%=cid%> = builder_<%=cid%>.put(javax.ws.rs.client.Entity.entity(<%=body%>, headers_<%=cid%>.getOrDefault("Content-Type", "text/plain").toString()), String.class);
-<%
-	} else if ("DELETE".equals(method)) {
-%>
-		restResponse_<%=cid%> = builder_<%=cid%>.delete(String.class);
-<%
+	// Exécution de la requête HTTP
+	java.net.http.HttpResponse<String> nativeResponse_<%=cid%> = nativeClient_<%=cid%>.send(
+		reqBuilder_<%=cid%>.build(), 
+		java.net.http.HttpResponse.BodyHandlers.ofString()
+	);
+
+	statusCode_<%=cid%> = nativeResponse_<%=cid%>.statusCode();
+	restResponse_<%=cid%> = nativeResponse_<%=cid%>.body();
+
+	if (statusCode_<%=cid%> >= 400) {
+		globalMap.put("<%=cid%>_ERROR_MESSAGE", nativeResponse_<%=cid%>.body());
 	}
-%>
-} catch (javax.ws.rs.WebApplicationException ue) {
-	globalMap.put("<%=cid%>_ERROR_MESSAGE", ue.getMessage());
-	errorResponse_<%=cid%> = ue.getResponse();
+
+} catch (Exception e) {
+	globalMap.put("<%=cid%>_ERROR_MESSAGE", e.getMessage());
+	throw e;
 }
 
 <% log.info(log.str("Has sent request to rest server.")); %>
 
-// for output
+// Affectation aux flux de sortie Talend
 <%
 List<? extends IConnection> conns = node.getOutgoingSortedConnections();
 if (conns != null && conns.size() > 0) {
@@ -155,12 +140,8 @@ if (conns != null && conns.size() > 0) {
 		List<IMetadataColumn> columnList = metadata.getListColumns();
 %>		
 		<%=conn.getName() %> = new <%=conn.getName() %>Struct();
-		if (errorResponse_<%=cid%> != null) {
-			<%=conn.getName() %>.ERROR_CODE = errorResponse_<%=cid%>.getStatus();
-			if (<%=conn.getName() %>.ERROR_CODE != 204) {
-				<%=conn.getName() %>.Body = errorResponse_<%=cid%>.readEntity(String.class);
-			}
-		} else {
+		<%=conn.getName() %>.ERROR_CODE = statusCode_<%=cid%>;
+		if (statusCode_<%=cid%> != 204) {
 			<%=conn.getName() %>.Body = restResponse_<%=cid%>;
 		}
 <%		
