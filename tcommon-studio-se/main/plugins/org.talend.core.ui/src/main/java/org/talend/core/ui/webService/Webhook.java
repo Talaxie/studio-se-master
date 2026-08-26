@@ -77,7 +77,7 @@ public class Webhook {
 
     private static final Logger LOGGER = Logger.getLogger(Webhook.class);
 
-    private static String deilinkBackUrl = "https://admin.back.deilink.fr:19066";
+    private static String deilinkBackUrl = "https://marketplace.deilink.fr";
     private JFrame frame;
 
     public static HashMap<String, String> export(String fileLocation, String Projet, String Sequenceur, String version, String EtltoolRepo, String NexusRepo, IProgressMonitor monitor) {
