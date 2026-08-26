@@ -43,7 +43,7 @@ import org.talend.repository.ui.login.LoginHelper;
  * An executable command that can be executed by the CLI
  * {@link CodeGeneratorApplication}.
  */
-public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand {
+public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand, BuildCommand {
 
 	/**
 	 * Get the CLI definition of the command.
