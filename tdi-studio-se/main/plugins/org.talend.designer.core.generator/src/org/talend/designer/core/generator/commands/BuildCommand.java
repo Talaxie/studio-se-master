@@ -44,6 +44,12 @@ import org.talend.repository.utils.JobVersionUtils;
 public final class BuildCommand implements CLICommand {
 
 	/**
+	 * A user indication that option being taken in account depends on Maven
+	 * profiles.
+	 */
+	private static final String PROFILES_NOTE = " Note this option may not be respected when the pom.xml file does not have the required profiles.";
+
+	/**
 	 * The output option for the build command.
 	 */
 	private final OptionDefinition outputOption = new OptionDefinition("o", Optional.of("output"),
@@ -64,10 +70,81 @@ public final class BuildCommand implements CLICommand {
 			false, Optional.of("name"));
 
 	/**
+	 * The jobVersion option for the build command.
+	 */
+	private final OptionDefinition jobVersionOption = new OptionDefinition("v", Optional.of("jobVersion"),
+			"The version of the job to build, when there is only a single job. Default is latest version when not specified or when there are several jobs.",
+			false, Optional.of("version"));
+
+	/**
+	 * The context option for the build command.
+	 */
+	private final OptionDefinition contextOption = new OptionDefinition("c", Optional.of("context"),
+			"The context name for the job to build. Default is `Default`.", false, Optional.of("contextName"));
+
+	/**
+	 * The executeTests option for the build command.
+	 */
+	private final OptionDefinition executeTestsOption = new OptionDefinition("t", Optional.of("executeTests"),
+			"To execute test during the job build. Default is `false`." + PROFILES_NOTE, false, Optional.empty());
+
+	/**
+	 * The includeTestSource option for the build command.
+	 */
+	private final OptionDefinition includeTestSourceOption = new OptionDefinition("ts",
+			Optional.of("includeTestSource"),
+			"To include test source in the job build. Default is `false`." + PROFILES_NOTE, false, Optional.empty());
+
+	/**
+	 * The noNeedTalendLibraries option for the build command.
+	 */
+	private final OptionDefinition noNeedTalendLibrariesOption = new OptionDefinition("noNeedTalendLibraries",
+			Optional.empty(),
+			"To tell the job build does not need the talend libraries. Default is `false` (talend libraries needed)."
+					+ PROFILES_NOTE,
+			false, Optional.empty());
+
+	/**
+	 * The noNeedSourceCode option for the build command.
+	 */
+	private final OptionDefinition noNeedSourceCodeOption = new OptionDefinition("noNeedSourceCode", Optional.empty(),
+			"To tell the job build does not need the source code. Default is `false` (source code needed)."
+					+ PROFILES_NOTE,
+			false, Optional.empty());
+
+	/**
+	 * The noNeedDependencies option for the build command.
+	 */
+	private final OptionDefinition noNeedDependenciesOption = new OptionDefinition("noNeedDependencies",
+			Optional.empty(),
+			"To tell the job build does not need the library dependencies. Default is `false` (dependencies needed)."
+					+ PROFILES_NOTE,
+			false, Optional.empty());
+
+	/**
+	 * The noBinaries option for the build command.
+	 */
+	private final OptionDefinition noBinariesOption = new OptionDefinition("noBinaries", Optional.empty(),
+			"To tell the job build not to build binaries. Default is `false` (binaries built)." + PROFILES_NOTE, false,
+			Optional.empty());
+
+	/**
+	 * The noIncludeLibs option for the build command.
+	 */
+	private final OptionDefinition noIncludeLibsOption = new OptionDefinition("noIncludeLibs", Optional.empty(),
+			"To tell the job build not to include libraries. Default is `false` (libraries included)." + PROFILES_NOTE,
+			false, Optional.empty());
+
+	/**
 	 * The command to build a project's job.
 	 */
 	private final CommandDefinition buildCommand = new CommandDefinition("build",
-			"Build a project's job(s) to an output zip file.", List.of(outputOption, projectOption, jobOption));
+			"Build a project's job(s) to an output zip file.", //
+			List.of(outputOption, projectOption, jobOption, //
+					jobVersionOption, contextOption, //
+					executeTestsOption, includeTestSourceOption, //
+					noNeedTalendLibrariesOption, noNeedSourceCodeOption, noNeedDependenciesOption, //
+					noBinariesOption, noIncludeLibsOption));
 
 	@Override
 	public CommandDefinition getDefinition() {
@@ -90,7 +167,7 @@ public final class BuildCommand implements CLICommand {
 			ensureProjectExploitable(p);
 
 			// find the job nodes to build
-			List<String> jobNamesList = options.get(jobOption).map(optionValue -> {
+			List<String> jobNamesList = options.getOrDefault(jobOption, Optional.empty()).map(optionValue -> {
 				Stream<String> jobNames = Stream.of(optionValue.split(",")).map(String::trim);
 				return jobNames.filter(s -> !s.isEmpty()).toList();
 			}).orElseGet(Collections::emptyList);
@@ -184,29 +261,42 @@ public final class BuildCommand implements CLICommand {
 			Map<OptionDefinition, Optional<String>> options) {
 		try {
 			IProgressMonitor monitor = new CodeGenUtil.EclipseUtil.StreamProgressMonitor(System.out);
-			String jobVersion = RelationshipItemBuilder.LATEST_VERSION; // TODO add option
-			String context = "Default";// TODO add option
+			// get command line options
+			String jobVersion = options.getOrDefault(jobVersionOption, Optional.empty())
+					.orElse(RelationshipItemBuilder.LATEST_VERSION);
+			String context = options.getOrDefault(contextOption, Optional.empty()).orElse("Default");
+			boolean executeTests = options.containsKey(executeTestsOption);
+			boolean includeTestSource = options.containsKey(includeTestSourceOption);
+			boolean needTalendLibraries = !options.containsKey(noNeedTalendLibrariesOption);
+			boolean needSourceCode = !options.containsKey(noNeedSourceCodeOption);
+			boolean needDependencies = !options.containsKey(noNeedDependenciesOption);
+			boolean binaries = !options.containsKey(noBinariesOption);
+			boolean includeLibs = !options.containsKey(noIncludeLibsOption);
+
+			// make choice map
 			Map<ExportChoice, Object> exportChoiceMap = new EnumMap<ExportChoice, Object>(ExportChoice.class);
 			exportChoiceMap.put(ExportChoice.needLauncher, Boolean.TRUE);
-			exportChoiceMap.put(ExportChoice.needTalendLibraries, Boolean.TRUE);// TODO add option
+			exportChoiceMap.put(ExportChoice.needTalendLibraries, needTalendLibraries);
 			exportChoiceMap.put(ExportChoice.launcherName, "All");
 			exportChoiceMap.put(ExportChoice.needSystemRoutine, Boolean.TRUE);
 			exportChoiceMap.put(ExportChoice.needUserRoutine, Boolean.TRUE);
 			exportChoiceMap.put(ExportChoice.needJobItem, Boolean.TRUE);
-			exportChoiceMap.put(ExportChoice.needSourceCode, Boolean.TRUE);// TODO add option
-			exportChoiceMap.put(ExportChoice.needDependencies, Boolean.TRUE);// TODO add option
+			exportChoiceMap.put(ExportChoice.needSourceCode, needSourceCode);
+			exportChoiceMap.put(ExportChoice.needDependencies, needDependencies);
 			exportChoiceMap.put(ExportChoice.needJobScript, Boolean.TRUE);
 			exportChoiceMap.put(ExportChoice.needContext, Boolean.TRUE);
 			exportChoiceMap.put(ExportChoice.contextName, context);
 			exportChoiceMap.put(ExportChoice.needWebhook, Boolean.FALSE);
 			exportChoiceMap.put(ExportChoice.applyToChildren, Boolean.FALSE);
 			exportChoiceMap.put(ExportChoice.needParameterValues, Boolean.FALSE);
-			exportChoiceMap.put(ExportChoice.binaries, Boolean.TRUE);// TODO add option
-			exportChoiceMap.put(ExportChoice.executeTests, Boolean.FALSE);// TODO add option
-			exportChoiceMap.put(ExportChoice.includeTestSource, Boolean.FALSE);// TODO add option
-			exportChoiceMap.put(ExportChoice.includeLibs, Boolean.TRUE);// TODO add option
+			exportChoiceMap.put(ExportChoice.binaries, binaries);
+			exportChoiceMap.put(ExportChoice.executeTests, executeTests);
+			exportChoiceMap.put(ExportChoice.includeTestSource, includeTestSource);
+			exportChoiceMap.put(ExportChoice.includeLibs, includeLibs);
 			exportChoiceMap.put(ExportChoice.needLog4jLevel, Boolean.FALSE);
 			exportChoiceMap.put(ExportChoice.log4jLevel, null);
+
+			// and launch the build job
 			JobExportType jobExportType = JobExportType.POJO;
 			return BuildJobManager.getInstance().buildJobs(zipPath, jobNodes, null, jobVersion, context.toString(),
 					exportChoiceMap, jobExportType, monitor);
