@@ -27,6 +27,7 @@ import org.talend.designer.core.generator.cli.CLIDefinition.Parsed;
 import org.talend.designer.core.generator.cli.CommandDefinition;
 import org.talend.designer.core.generator.cli.HelpBuilder;
 import org.talend.designer.core.generator.cli.OptionDefinition;
+import org.talend.designer.core.generator.commands.BuildCommand;
 import org.talend.designer.core.generator.commands.CLICommand;
 import org.talend.designer.core.generator.commands.GenerateCodeCommand;
 import org.talend.designer.core.generator.commands.ImportCommand;
@@ -45,7 +46,8 @@ public class CodeGeneratorApplication implements IApplication {
 			"Prints this help message.", false, Optional.empty());
 
 	/** CLI commands to support */
-	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new GenerateCodeCommand());
+	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new GenerateCodeCommand(),
+			new BuildCommand());
 	/**
 	 * The CLI definition for this application, including global options and
 	 * commands.
