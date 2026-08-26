@@ -47,13 +47,16 @@ public record CLIDefinition(List<OptionDefinition> globalOptions, List<CommandDe
 	/**
 	 * Parses the command line arguments according to the CLI definition.
 	 * 
-	 * @param args the command line arguments to parse
+	 * @param args                         the command line arguments to parse
+	 * @param globalOptionIgnoringCommands a global option that tells the parser
+	 *                                     commands are not mandatory (e.g. help
+	 *                                     option)
 	 * @return a {@link Parsed} object containing the parsed global options and
 	 *         commands with their respective options
 	 * @throws IllegalArgumentException if the arguments are invalid or do not match
 	 *                                  the CLI definition
 	 */
-	public Parsed parseArguments(String[] args) {
+	public Parsed parseArguments(String[] args, OptionDefinition globalOptionIgnoringCommands) {
 		Map<OptionDefinition, Optional<String>> parseGlobalOptions = new HashMap<>();
 		Map<CommandDefinition, Map<OptionDefinition, Optional<String>>> parseCommandsWithOptions = new HashMap<>();
 
@@ -106,7 +109,7 @@ public record CLIDefinition(List<OptionDefinition> globalOptions, List<CommandDe
 				.ifPresent(option -> {
 					throw new IllegalArgumentException("Missing required global option: " + option.formattedName());
 				});
-		if (parseCommandsWithOptions.isEmpty()) {
+		if (parseCommandsWithOptions.isEmpty() && !parseGlobalOptions.containsKey(globalOptionIgnoringCommands)) {
 			throw new IllegalArgumentException("No command provided. At least one command is required.");
 		}
 		parseCommandsWithOptions.forEach((command, options) -> {

@@ -11,6 +11,7 @@
 package org.talend.designer.core.generator;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.eclipse.equinox.app.IApplication;
@@ -79,7 +80,7 @@ public class CodeGeneratorApplication implements IApplication {
 		String[] args = (String[]) context.getArguments().get(IApplicationContext.APPLICATION_ARGS);
 		Parsed parsed;
 		try {
-			parsed = cliDefinition.parseArguments(args);
+			parsed = cliDefinition.parseArguments(args, helpOption);
 		} catch (IllegalArgumentException e) {
 			return fail("Invalid arguments: " + e.getMessage(), e);
 		}
@@ -89,18 +90,22 @@ public class CodeGeneratorApplication implements IApplication {
 			printGlobalUsage();
 		}
 
-		preStartup();
-
-		// run commands sequentially, in the recommended order
-		for (CLICommand command : supportedCommands) {
-			CommandDefinition definition = command.getDefinition();
-			if (parsed.parsedCommandsWithOptions().containsKey(definition)) {
-				int code = command.execute(parsed.parsedCommandsWithOptions().get(definition));
-				if (code != IApplication.EXIT_OK) {
-					return code;
+		Map<CommandDefinition, Map<OptionDefinition, Optional<String>>> parsedCommandsWithOptions = parsed
+				.parsedCommandsWithOptions();
+		if (!parsedCommandsWithOptions.isEmpty()) {
+			preStartup();
+			// run commands sequentially, in the recommended order
+			for (CLICommand command : supportedCommands) {
+				CommandDefinition definition = command.getDefinition();
+				if (parsedCommandsWithOptions.containsKey(definition)) {
+					int code = command.execute(parsedCommandsWithOptions.get(definition));
+					if (code != IApplication.EXIT_OK) {
+						return code;
+					}
 				}
 			}
 		}
+
 		return IApplication.EXIT_OK;
 	}
 
