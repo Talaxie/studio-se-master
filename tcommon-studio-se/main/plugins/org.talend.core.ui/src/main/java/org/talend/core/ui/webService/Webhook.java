@@ -267,8 +267,12 @@ public class Webhook {
         return result;
     }
 
-    public static String getJobUrl(HashMap<String, String> jobData) {
-        String jobURL = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_FRONT_HOST) + "/#/Job/View/";
+    public static String getJobUrl(HashMap<String, String> jobData, String JobType) {
+        String JobTypeUrl = "Job";
+        if (JobType.equals("ESB")) {
+            JobTypeUrl = "ESB";
+        }
+        String jobURL = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_FRONT_HOST) + "/#/" + JobTypeUrl + "/View/";
         jobURL += "?Environnement=ref_DEV";
         jobURL += "&Projet=" + jobData.get("Projet");
         jobURL += "&Sequenceur=" + jobData.get("Sequenceur");

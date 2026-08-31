@@ -31,6 +31,7 @@ import org.apache.log4j.Logger;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.jface.dialogs.Dialog;
@@ -192,11 +193,11 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
 
     protected Button chkButton;
 
-    String selectedJobVersion = "0.1"; //$NON-NLS-1$
+    String selectedJobVersion = "0.1";
 
-    String selectedEtltoolRepo = "ref_DEV"; //$NON-NLS-1$
+    String selectedEtltoolRepo = "ref_DEV";
 
-    String selectedNexusRepo = "Snapshot"; //$NON-NLS-1$
+    String selectedNexusRepo = "Snapshot";
 
     private String originalRootFolderName;
 
@@ -618,9 +619,14 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         jobScriptGD.horizontalSpan = 3;
         jobScriptButton.setLayoutData(jobScriptGD);
 
+        updateOptionStates();
+    }
+
+    protected void createWebhookOption(Font font, Composite optionsComposite) {
         if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED)
                 || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)
                 || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_SCRIPT_ENABLED)) {
+            
             webhookButton = new Button(optionsComposite, SWT.CHECK | SWT.LEFT);
             webhookButton.setText("Webhook"); //$NON-NLS-1$
             webhookButton.setFont(font);
@@ -635,17 +641,15 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                 etltoolCombo.setItems(etltoolRepo);
                 etltoolCombo.setText(selectedEtltoolRepo);
                 etltoolCombo.addSelectionListener(new SelectionListener() {
-
                     @Override
                     public void widgetSelected(SelectionEvent e) {
-                    	selectedEtltoolRepo = etltoolCombo.getText();
+                        selectedEtltoolRepo = etltoolCombo.getText();
                     }
 
                     @Override
                     public void widgetDefaultSelected(SelectionEvent e) {
                         widgetSelected(e);
                     }
-
                 });
             }
 
@@ -655,7 +659,6 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                 nexusCombo.setItems(nexusRepo);
                 nexusCombo.setText(selectedNexusRepo);
                 nexusCombo.addSelectionListener(new SelectionListener() {
-
                     @Override
                     public void widgetSelected(SelectionEvent e) {
                         selectedNexusRepo = nexusCombo.getText();
@@ -665,12 +668,9 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                     public void widgetDefaultSelected(SelectionEvent e) {
                         widgetSelected(e);
                     }
-
                 });
             }
         }
-
-        updateOptionStates();
     }
 
     protected void createContextOptions(Font font, Composite optionsComposite) {
@@ -1497,9 +1497,13 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
 
         final AtomicBoolean isBuildJobWithMavenOk = new AtomicBoolean(true);
         JobExportType jobExportType = getCurrentExportType1();
-        if (JobExportType.POJO.equals(jobExportType) || JobExportType.MSESB.equals(jobExportType)
-                || JobExportType.OSGI.equals(jobExportType) || JobExportType.IMAGE.equals(jobExportType)
-                || JobExportType.MSESB_IMAGE.equals(jobExportType)) {
+        if (
+            JobExportType.POJO.equals(jobExportType) ||
+            JobExportType.MSESB.equals(jobExportType) ||
+            JobExportType.OSGI.equals(jobExportType) ||
+            JobExportType.IMAGE.equals(jobExportType) ||
+            JobExportType.MSESB_IMAGE.equals(jobExportType)
+        ) {
             // TODO Jean Cazaux
             /*
              * String message = "Info export job #1\n"; //$NON-NLS-1$ // message += "getCheckNodes: " +
@@ -1922,6 +1926,7 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
     }
 
     protected Boolean exportWebhook(IProgressMonitor monitor) {
+        // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "Export Webhook démarré !"));
         IProgressMonitor pMonitor = new NullProgressMonitor();
         if (monitor != null) {
             pMonitor = monitor;
@@ -1930,6 +1935,31 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         pMonitor.worked(1);
 
         try {
+            // Synchronisation avec le UI Thread pour récupérer le type d'export sans SWTException
+            final JobExportType[] jobExportTypeHolder = new JobExportType[1];
+            Display.getDefault().syncExec(new Runnable() {
+                @Override
+                public void run() {
+                    jobExportTypeHolder[0] = getCurrentExportType1();
+                }
+            });
+            String calculatedJobType = "Talend";
+            JobExportType jobExportType = jobExportTypeHolder[0];
+            if (JobExportType.POJO.equals(jobExportType)) {
+                // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "exportWebhook start POJO !"));
+            } else if (JobExportType.MSESB.equals(jobExportType)) {
+                // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "exportWebhook start MSESB !"));
+                calculatedJobType = "ESB";
+            } else if (JobExportType.OSGI.equals(jobExportType)) {
+                // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "exportWebhook start OSGI !"));
+                calculatedJobType = "ESB";
+            } else if (JobExportType.IMAGE.equals(jobExportType)) {
+                // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "exportWebhook start IMAGE !"));
+            } else if (JobExportType.MSESB_IMAGE.equals(jobExportType)) {
+                // CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.INFO, CoreUIPlugin.PLUGIN_ID, "exportWebhook start MSESB_IMAGE !"));
+            }
+            final String JobType = calculatedJobType;
+
             String projectLabel = ProjectManager.getInstance().getCurrentProject().getTechnicalLabel();
             List<String> defaultFileName = getDefaultFileName();
             HashMap<String, String> jobData = Webhook.export(
@@ -1947,20 +1977,36 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                 @Override
                 public void run() {
                     try {
-                        if (CoreUIPlugin.getDefault().getPreferenceStore()
-                                .getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
-                            String message = "Voulez-vous ouvrir le job sur EtlTool ?\n"; //$NON-NLS-1$
-                            message += "Projet: " + jobData.get("Projet") + "\n";
-                            message += "Sequenceur: " + jobData.get("Sequenceur") + "\n";
-                            message += "Version: " + jobData.get("JobVersion") + "\n";
-                            MessageDialog messageDialog = new MessageDialog(getShell(),
-                                    "Talaxie - export de la build vers EtlTool", //$NON-NLS-1$
-                                    null, message, // $NON-NLS-1$
+                        if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
+                            if (
+                                jobData.get("Projet") == null ||
+                                jobData.get("Projet").trim().isEmpty() ||
+                                jobData.get("Sequenceur") == null ||
+                                jobData.get("Sequenceur").trim().isEmpty()
+                            ) {
+                                MessageDialog.openError(
+                                    getShell(),
+                                    "Erreur - Export EtlTool",
+                                    "L'export vers EtlTool a échoué !"
+                                );
+                            } else {
+                                String message = "Voulez-vous ouvrir le job sur EtlTool ?\n";
+                                message += "Projet: " + jobData.get("Projet") + "\n";
+                                message += "Sequenceur: " + jobData.get("Sequenceur") + "\n";
+                                message += "Version: " + jobData.get("JobVersion") + "\n";
+                                MessageDialog messageDialog = new MessageDialog(
+                                    getShell(),
+                                    "Talaxie - export de la build vers EtlTool",
+                                    null,
+                                    message,
                                     MessageDialog.CONFIRM,
-                                    new String[] { IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL }, 0); // $NON-NLS-1$
-                            if (messageDialog.open() == 0) {
-                                URL jobURL = new URL(Webhook.getJobUrl(jobData));
-                                PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(jobURL);
+                                    new String[] { IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL },
+                                    0
+                                );
+                                if (messageDialog.open() == 0) {
+                                    URL jobURL = new URL(Webhook.getJobUrl(jobData, JobType));
+                                    PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(jobURL);
+                                }
                             }
                         }
                     } catch (Exception e) {
@@ -1974,10 +2020,7 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             });
         } catch (Exception e) {
             e.printStackTrace();
-            if (LOGGER.isInfoEnabled()) {
-                LOGGER.info("Webhook");
-                LOGGER.info(e);
-            }
+            CoreUIPlugin.getDefault().getLog().log(new Status(IStatus.ERROR, CoreUIPlugin.PLUGIN_ID, "Export Webhook error!", e));
         }
         pMonitor.worked(7);
         pMonitor.done();

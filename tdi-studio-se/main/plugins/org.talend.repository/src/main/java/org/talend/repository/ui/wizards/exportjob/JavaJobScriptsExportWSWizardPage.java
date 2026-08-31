@@ -1330,6 +1330,9 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
         default:
             break;
         }
+
+        // Create the webhook option only if at least one of the webhook preferences is enabled
+        createWebhookOption(font, optionsGroupComposite);
     }
 
     @Override
