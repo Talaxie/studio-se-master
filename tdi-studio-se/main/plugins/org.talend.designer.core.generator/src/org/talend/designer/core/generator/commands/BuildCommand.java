@@ -29,7 +29,6 @@ import org.talend.core.model.properties.ProcessItem;
 import org.talend.core.model.relationship.RelationshipItemBuilder;
 import org.talend.core.model.repository.ERepositoryObjectType;
 import org.talend.core.repository.model.ProjectRepositoryNode;
-import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.designer.core.generator.cli.CommandDefinition;
 import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.repository.model.IRepositoryNode;
@@ -155,14 +154,9 @@ public final class BuildCommand implements CLICommand {
 	public int execute(Map<OptionDefinition, Optional<String>> options) throws Exception {
 		String outputPath = options.get(outputOption).orElseThrow();
 		String projectName = options.get(projectOption).orElseThrow();
-		String projectTechnicalName = Project.createTechnicalName(projectName);
-		// find matching existing project
-		var wsProjects = ProxyRepositoryFactory.getInstance().readProject();
-		Optional<Project> matchingProject = Stream.of(wsProjects)
-				.filter(p -> p.getTechnicalLabel().equals(projectTechnicalName)).findFirst();
 
 		AtomicReference<String> successfullZip = new AtomicReference<>();
-		matchingProject.ifPresentOrElse(p -> {
+		executeWithOpenedProject(projectName, p -> {
 			// open the project
 			ensureProjectExploitable(p);
 
@@ -187,15 +181,11 @@ public final class BuildCommand implements CLICommand {
 			// build and export the project's jobs
 			boolean exportOK = buildAndExportProject(p, zipPath, jobNodes, options);
 			successfullZip.set(exportOK ? zipPath : null);
-		}, () -> {
-			// project does not exist
-			fail(format("Project `{0}` does not exist in the workspace.", projectName));
 		});
 
 		// display result and return exit code
 		if (successfullZip.get() != null) {
-			System.out.println(
-					format("`{0}` project build completed successfully. The resulting archive is located at `{1}`.",
+			log(format("`{0}` project build completed successfully. The resulting archive is located at `{1}`.",
 							projectName, successfullZip.get()));
 		}
 		return successfullZip.get() != null ? IApplication.EXIT_OK : fail("Project build failed.");

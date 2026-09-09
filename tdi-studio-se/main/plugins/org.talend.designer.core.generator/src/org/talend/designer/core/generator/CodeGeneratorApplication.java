@@ -30,6 +30,7 @@ import org.talend.designer.core.generator.cli.HelpBuilder;
 import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.designer.core.generator.commands.BuildCommand;
 import org.talend.designer.core.generator.commands.CLICommand;
+import org.talend.designer.core.generator.commands.EditPropertiesCommand;
 import org.talend.designer.core.generator.commands.GenerateCodeCommand;
 import org.talend.designer.core.generator.commands.ImportCommand;
 import org.talend.designer.runprocess.RunProcessPlugin;
@@ -48,7 +49,7 @@ public class CodeGeneratorApplication implements IApplication {
 
 	/** CLI commands to support */
 	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new GenerateCodeCommand(),
-			new BuildCommand());
+			new BuildCommand(), new EditPropertiesCommand());
 	/**
 	 * The CLI definition for this application, including global options and
 	 * commands.

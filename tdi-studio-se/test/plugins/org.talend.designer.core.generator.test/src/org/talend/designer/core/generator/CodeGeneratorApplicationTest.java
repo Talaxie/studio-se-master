@@ -163,6 +163,46 @@ public class CodeGeneratorApplicationTest {
 //		assertThat(Files.exists(outputZip)).isTrue();
 //	}
 
+	/**
+	 * Tests that the application updates the project version "-editProperties" command.
+	 * 
+	 * @throws Exception exception
+	 */
+	@Test
+	public void testRunApplicationEditVersion() throws Exception {
+		// first, import and update major version
+		
+		// given
+		assertThat(ResourcesPlugin.getWorkspace().getRoot().getProject("MyTest").exists()).isFalse();
+		String[] args = { "-import", "--project", "MyTest", "--file",
+				extractResourceToTempFile(getClass().getResource("/resources/MyTestJob_0.1.zip")), "-editProperties",
+				"--project", "MyTest", "--item", "process/MyTestJob", "--updateMajor" };
+		// when
+		Object result = runApplicationWithArgs(args);
+
+		// then process version is updated to 1.0
+		String output = capturedOut.toString(StandardCharsets.UTF_8);
+		assertThat(output).contains("Version updated from 0.1 to 1.0");
+		assertEquals(IApplication.EXIT_OK, result);
+		String techName = Project.createTechnicalName("MyTest");
+		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(techName);
+		assertThat(project.exists()).isTrue();
+		assertThat(project.getFile(IPath.fromPortableString("process/MyTestJob_1.0.item")).exists()).isTrue();
+		
+		// now, update minor version
+
+		// given
+		String[] args2 = { "-editProperties", "--project", "MyTest", "--item", "process/MyTestJob", "--updateMinor" };
+		// when
+		Object result2 = runApplicationWithArgs(args2);
+
+		// then process version is updated to 1.0
+		output = capturedOut.toString(StandardCharsets.UTF_8);
+		assertThat(output).contains("Version updated from 1.0 to 1.1");
+		assertEquals(IApplication.EXIT_OK, result2);
+		assertThat(project.getFile(IPath.fromPortableString("process/MyTestJob_1.1.item")).exists()).isTrue();
+	}
+
 	private String extractResourceToTempFile(URL resourceEntry) throws Exception {
 		String fileName = Path.of(resourceEntry.getPath()).getFileName().toString();
 

@@ -10,9 +10,14 @@
  */
 package org.talend.designer.core.generator.commands;
 
+import static java.text.MessageFormat.format;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -43,7 +48,7 @@ import org.talend.repository.ui.login.LoginHelper;
  * An executable command that can be executed by the CLI
  * {@link CodeGeneratorApplication}.
  */
-public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand, BuildCommand {
+public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand, BuildCommand, EditPropertiesCommand {
 
 	/**
 	 * Get the CLI definition of the command.
@@ -86,11 +91,47 @@ public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand, B
 	}
 
 	/**
+	 * Log a user message.
+	 * 
+	 * @param message message to log.
+	 */
+	default void log(String message) {
+		System.out.println(message);
+	}
+
+	/**
 	 * Prints usage instructions for this command.
 	 */
 	private void printCommandUsage() {
 		String help = HelpBuilder.buildHelpMessage(getDefinition());
-		System.out.println(help);
+		log(help);
+	}
+
+	/**
+	 * Executes an operation, while ensuring the the project is opened and all
+	 * required services are correctly initialized.
+	 * 
+	 * @param projectName the name of the existing project to open.
+	 * @param operation   the operation to execute (most probably updating an
+	 *                    {@link AtomicReference} with the result of the operation).
+	 * @throws Exception exception during command execution
+	 */
+	default void executeWithOpenedProject(String projectName, Consumer<Project> operation) throws Exception {
+		String projectTechnicalName = Project.createTechnicalName(projectName);
+		// find matching existing project
+		var wsProjects = ProxyRepositoryFactory.getInstance().readProject();
+		Optional<Project> matchingProject = Stream.of(wsProjects)
+				.filter(p -> p.getTechnicalLabel().equals(projectTechnicalName)).findFirst();
+
+		matchingProject.ifPresentOrElse(p -> {
+			// open the project
+			ensureProjectExploitable(p);
+			// execute the operation
+			operation.accept(p);
+		}, () -> {
+			// project does not exist
+			fail(format("Project `{0}` does not exist in the workspace.", projectName));
+		});
 	}
 
 	/**

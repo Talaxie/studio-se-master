@@ -105,7 +105,7 @@ public final class GenerateCodeCommand implements CLICommand {
 		// inform the user of the resulting outcome
 		IStatus result = generator.getResult();
 		if (result.isOK()) {
-			System.out.println("Code generation completed successfully: " + result.getMessage());
+			log("Code generation completed successfully: " + result.getMessage());
 		} else {
 			if (result.getException() != null) {
 				result.getException().printStackTrace();
