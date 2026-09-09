@@ -10,9 +10,13 @@
  */
 package org.talend.designer.core.generator.commands;
 
+import static java.text.MessageFormat.format;
+
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -21,7 +25,6 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Platform;
-import org.eclipse.emf.common.util.URI;
 import org.eclipse.equinox.app.IApplication;
 import org.talend.core.CorePlugin;
 import org.talend.core.context.Context;
@@ -29,8 +32,9 @@ import org.talend.core.model.general.Project;
 import org.talend.core.model.process.IProcess;
 import org.talend.core.model.properties.ProcessItem;
 import org.talend.core.model.properties.Property;
+import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.core.model.repository.IRepositoryViewObject;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
-import org.talend.core.repository.utils.TalendResourceSet;
 import org.talend.core.runtime.util.URIHelper;
 import org.talend.designer.core.generator.CodeGenerator;
 import org.talend.designer.core.generator.cli.CommandDefinition;
@@ -42,16 +46,22 @@ import org.talend.designer.core.generator.cli.OptionDefinition;
 public final class GenerateCodeCommand implements CLICommand {
 
 	/**
+	 * The project option for the generate command.
+	 */
+	private final OptionDefinition projectOption = new OptionDefinition("p", Optional.of("project"),
+			"The name of the existing project to look into.`.", true, Optional.of("name"));
+
+	/**
 	 * The process option for the generate command.
 	 */
 	private final OptionDefinition processOption = new OptionDefinition("process", Optional.empty(),
-			"The path to a properties file in workspace, such as `MY_PROJECT/process/myJob_0.1.properties`.", true,
+			"The functional path to the process without the `process/` prefix, e.g. `myFolder/myJob`.", true,
 			Optional.of("process path"));
 	/**
 	 * The command to generate code for a process.
 	 */
 	private final CommandDefinition generateCommand = new CommandDefinition("generate", "Generates code for a process.",
-			List.of(processOption));
+			List.of(projectOption, processOption));
 
 	@Override
 	public CommandDefinition getDefinition() {
@@ -66,34 +76,35 @@ public final class GenerateCodeCommand implements CLICommand {
 			return fail("The workspace provided does not contain any Talaxie project: "
 					+ Platform.getInstanceLocation().getURL().getPath());
 		}
-		// check process path argument points to an existing file in workspace
-		var path = options.get(processOption).orElseThrow();
-		URI uri = URI.createPlatformResourceURI(path, true);
-		var rset = new TalendResourceSet();
-		if (!rset.getURIConverter().exists(uri, null)) {
-			return fail("The process path provided as argument does not point an existing file: " + path);
+		// check process path argument points to an existing process item
+		String projectName = options.get(projectOption).orElseThrow();
+		String processPath = options.get(processOption).orElseThrow();
+
+		List<String> segments = Arrays.asList(processPath.split("/"));
+		if (segments.isEmpty()) {
+			return fail(format("The process path {0} is invalid. It should be of the form <folder(s)>/<processName>",
+					processPath));
 		}
+
+		AtomicReference<IRepositoryViewObject> processItemRef = new AtomicReference<>();
+		executeWithOpenedProject(projectName, p -> {
+			Optional<IRepositoryViewObject> item = findItem(p, ERepositoryObjectType.PROCESS, segments);
+			item.ifPresent(processItemRef::set);
+		});
+		if (processItemRef.get() == null) {
+			return fail(format("Could not find process {0} in project {1}", processPath, projectName));
+		}
+
 		Supplier<IProcess> processSupplier = () -> {
-			var resource = rset.getResource(uri, true);
-			var property = resource.getContents().stream().filter(Property.class::isInstance).map(Property.class::cast)
-					.findFirst();
+			var property = Optional.ofNullable(processItemRef.get()).map(IRepositoryViewObject::getProperty);
 			var processItem = property.map(Property::getItem).filter(ProcessItem.class::isInstance)
 					.map(ProcessItem.class::cast);
-			// handle error cases which do not point to a valid process item
-			if (!property.isPresent()) {
-				fail("The process path provided as argument does not point to a valid properties file: "
-						+ uri.toFileString());
-			} else if (!processItem.isPresent()) {
-				fail("The process path provided as argument points to a properties file which property does not point to a ProcessItem: "
-						+ uri.toFileString());
+			// handle error case which do not point to a valid process item
+			if (!processItem.isPresent()) {
+				fail(format(
+						"The properties file does not point to a ProcessItem. The {0} process is probably corrupted.",
+						processPath));
 			}
-
-			// In headless CLI, ensure repository context and provider are initialized
-			// before Process creation.
-			processItem.ifPresent(item -> {
-				ensureProjectExploitable(item, wsProjects);
-			});
-
 			return processItem.map(CorePlugin.getDefault().getDesignerCoreService()::getProcessFromProcessItem)
 					.orElse(null);
 		};

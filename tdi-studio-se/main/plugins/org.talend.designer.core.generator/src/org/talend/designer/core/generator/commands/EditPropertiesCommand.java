@@ -47,7 +47,6 @@ import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.expressionbuilder.ExpressionPersistance;
 import org.talend.repository.ProjectManager;
 import org.talend.repository.model.IProxyRepositoryFactory;
-import org.talend.repository.model.IProxyRepositoryService;
 
 /**
  * This command edits properties of an item (process, context, ...).
@@ -147,67 +146,55 @@ public final class EditPropertiesCommand implements CLICommand {
 					"The item path {0} is invalid. The repository type {1} is not supported. It should be one of {2}",
 					itemPath, firstSegment, SUPPORTED_REPOSITORIES_LIST_MESSAGE));
 		}
+		List<String> pathSegments = segments.subList(1, segments.size());
 
 		AtomicBoolean successFulUpdate = new AtomicBoolean(false);
 
 		executeWithOpenedProject(projectName, p -> {
-			IProxyRepositoryService service = (IProxyRepositoryService) GlobalServiceRegister.getDefault()
-					.getService(IProxyRepositoryService.class);
-			IProxyRepositoryFactory factory = service.getProxyRepositoryFactory();
-			try {
-				String lastSegment = segments.get(segments.size() - 1);
-				List<IRepositoryViewObject> candidates = factory.getAll(repoType.get());
-				Stream<IRepositoryViewObject> labelMatchinCandidates = candidates.stream()
-						.filter(o -> lastSegment.equals(o.getLabel()));
-				Stream<IRepositoryViewObject> matchingCandidates = labelMatchinCandidates.filter(o -> segments
-						.subList(1, segments.size() - 1).stream().collect(Collectors.joining("/")).equals(o.getPath()));
-				Optional<IRepositoryViewObject> item = matchingCandidates.findFirst();
-				item.ifPresentOrElse(i -> {
-					Property propertyToUpdate = i.getProperty();
-					Assert.isNotNull(propertyToUpdate);
-					final String originalLabel = propertyToUpdate.getLabel();
-					final String originalVersion = propertyToUpdate.getVersion();
-					// update version
-					if (updateMajor) {
-						propertyToUpdate.setVersion(VersionUtils.upMajor(originalVersion));
-						log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
-					} else if (updateMinor) {
-						propertyToUpdate.setVersion(VersionUtils.upMinor(originalVersion));
-						log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
-					}
-					// update other properties
-					newName.ifPresent(newValue -> {
-						propertyToUpdate.setDisplayName(newValue);
-						log(format("Name updated from {0} to {1}", originalLabel, newValue));
-					});
-					newPurpose.ifPresent(newValue -> {
-						propertyToUpdate.setPurpose(newValue);
-						log(format("Purpose updated tor {0}", newValue));
-					});
-					newDescription.ifPresent(newValue -> {
-						propertyToUpdate.setDescription(newValue);
-						log(format("Description updated tor {0}", newValue));
-					});
-					/*
-					 * TDI-19527, label=displayName (see
-					 * org.talend.metadata.managment.ui.wizard.PropertiesWizard.performFinish())
-					 */
-					propertyToUpdate.setLabel(propertyToUpdate.getDisplayName());
-					// save changes
-					boolean success;
-					try {
-						success = savePropertyChanges(propertyToUpdate, originalLabel, originalVersion, repoType.get());
-						successFulUpdate.set(success);
-					} catch (CoreException e) {
-						fail(format("Error occurred while saving changes for item {0} in project {1}", itemPath,
-								projectName), e);
-					}
-				}, () -> {
-					fail(format("Could not find item {0} in project {1}", itemPath, projectName));
+			Optional<IRepositoryViewObject> item = findItem(p, repoType.get(), pathSegments);
+			item.ifPresentOrElse(i -> {
+				Property propertyToUpdate = i.getProperty();
+				Assert.isNotNull(propertyToUpdate);
+				final String originalLabel = propertyToUpdate.getLabel();
+				final String originalVersion = propertyToUpdate.getVersion();
+				// update version
+				if (updateMajor) {
+					propertyToUpdate.setVersion(VersionUtils.upMajor(originalVersion));
+					log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
+				} else if (updateMinor) {
+					propertyToUpdate.setVersion(VersionUtils.upMinor(originalVersion));
+					log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
+				}
+				// update other properties
+				newName.ifPresent(newValue -> {
+					propertyToUpdate.setDisplayName(newValue);
+					log(format("Name updated from {0} to {1}", originalLabel, newValue));
 				});
-			} catch (PersistenceException e) {
-				fail(format("Could not recover items from project {0}", projectName), e);
-			}
+				newPurpose.ifPresent(newValue -> {
+					propertyToUpdate.setPurpose(newValue);
+					log(format("Purpose updated tor {0}", newValue));
+				});
+				newDescription.ifPresent(newValue -> {
+					propertyToUpdate.setDescription(newValue);
+					log(format("Description updated tor {0}", newValue));
+				});
+				/*
+				 * TDI-19527, label=displayName (see
+				 * org.talend.metadata.managment.ui.wizard.PropertiesWizard.performFinish())
+				 */
+				propertyToUpdate.setLabel(propertyToUpdate.getDisplayName());
+				// save changes
+				boolean success;
+				try {
+					success = savePropertyChanges(propertyToUpdate, originalLabel, originalVersion, repoType.get());
+					successFulUpdate.set(success);
+				} catch (CoreException e) {
+					fail(format("Error occurred while saving changes for item {0} in project {1}", itemPath,
+							projectName), e);
+				}
+			}, () -> {
+				fail(format("Could not find item {0} in project {1}", itemPath, projectName));
+			});
 		});
 
 		return successFulUpdate.get() ? IApplication.EXIT_OK : fail("Properties update failed.");
