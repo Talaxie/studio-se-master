@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
+import java.util.Optional;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -45,15 +46,23 @@ public class CodeGeneratorApplicationTest {
 
 	/** Original out. */
 	private PrintStream originalOut;
+	/** Original err. */
+	private PrintStream originalErr;
 	/** Captured out for testing. */
 	private ByteArrayOutputStream capturedOut;
+	/** Tee out. */
+	private PrintStream teeOut;
+	/** Tee err. */
+	private PrintStream teeErr;
 
 	@Before
 	public void setup() {
+		System.setProperty("talend.test.component.filter", "true");
 		originalOut = System.out;
+		originalErr = System.err;
 		// capture the output and keep printing it to the console
 		capturedOut = new ByteArrayOutputStream();
-		PrintStream tee = new PrintStream(new OutputStream() {
+		teeOut = new PrintStream(new OutputStream() {
 			@Override
 			public void write(int b) throws IOException {
 				originalOut.write(b);
@@ -66,16 +75,31 @@ public class CodeGeneratorApplicationTest {
 				capturedOut.flush();
 			}
 		}, true);
-		System.setOut(tee);
-		/*
-		 * The org.talaxie.cli.branding.generator dependency registers
-		 * CliBrandingService as IBrandingService.
-		 */
+		System.setOut(teeOut);
+		teeErr = new PrintStream(new OutputStream() {
+			@Override
+			public void write(int b) throws IOException {
+				originalErr.write(b);
+				capturedOut.write(b);
+			}
+
+			@Override
+			public void flush() throws IOException {
+				originalErr.flush();
+				capturedOut.flush();
+			}
+		}, true);
+		System.setErr(teeErr);
 	}
 
 	@After
-	public void teardown() throws CoreException {
-		System.setOut(originalOut);
+	public void teardown() throws CoreException, IOException {
+		System.setProperty("talend.test.component.filter", "false");
+		// restore original out and close streams
+		Optional.ofNullable(originalOut).ifPresent(System::setOut);
+		Optional.ofNullable(originalErr).ifPresent(System::setErr);
+		Optional.ofNullable(teeOut).ifPresent(PrintStream::close);
+		Optional.ofNullable(teeErr).ifPresent(PrintStream::close);
 		// clean up any existing project to avoid interference with tests
 		ResourcesPlugin.getWorkspace().getRoot().delete(true, null);
 	}
@@ -142,6 +166,21 @@ public class CodeGeneratorApplicationTest {
 //	 */
 //	@Test
 //	public void testRunApplicationBuild() throws Exception {
+//		/*
+//		 * The org.talaxie.cli.branding.generator dependency registers
+//		 * CliBrandingService as IBrandingService.
+//		 */
+//		/*
+//		 * Register the required ComponentService.
+//		 */
+//		BundleContext bundleContext = FrameworkUtil.getBundle(ComponentsUtils.class).getBundleContext();
+//		ServiceReference<ComponentService> compServiceRef = bundleContext.getServiceReference(ComponentService.class);
+//		if (compServiceRef == null) {
+//			System.out.println("Registering mock ComponentService for testing.");
+//			ComponentService componentService = Mockito.mock(ComponentService.class);
+//			Mockito.when(componentService.getTopLevelComponentWizards()).thenReturn(Collections.emptySet());
+//			bundleContext.registerService(ComponentService.class, componentService, null);
+//		}
 //		// given
 //		assertThat(ResourcesPlugin.getWorkspace().getRoot().getProject("MyTest").exists()).isFalse();
 //		Path outDir = Files.createTempDirectory("out");
@@ -172,7 +211,7 @@ public class CodeGeneratorApplicationTest {
 	@Test
 	public void testRunApplicationEditVersion() throws Exception {
 		// first, import and update major version
-		
+
 		// given
 		assertThat(ResourcesPlugin.getWorkspace().getRoot().getProject("MyTest").exists()).isFalse();
 		String[] args = { "-import", "--project", "MyTest", "--file",
@@ -189,7 +228,7 @@ public class CodeGeneratorApplicationTest {
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(techName);
 		assertThat(project.exists()).isTrue();
 		assertThat(project.getFile(IPath.fromPortableString("process/MyTestJob_1.0.item")).exists()).isTrue();
-		
+
 		// now, update minor version
 
 		// given
@@ -222,7 +261,7 @@ public class CodeGeneratorApplicationTest {
 
 		// then process version is updated to 1.0
 		String output = capturedOut.toString(StandardCharsets.UTF_8);
-		assertThat(output).contains("Label updated from MyTestJob to MyNewTestJob");
+		assertThat(output).contains("Name updated from MyTestJob to MyNewTestJob");
 		assertEquals(IApplication.EXIT_OK, result);
 		String techName = Project.createTechnicalName("MyTest");
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(techName);
