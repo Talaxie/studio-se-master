@@ -55,8 +55,11 @@ public final class EditPropertiesCommand implements CLICommand {
 
 	/** The supported repository object types which we may look into. */
 	private static final ERepositoryObjectType[] SUPPORTED_REPOSITORIES = new ERepositoryObjectType[] {
-			ERepositoryObjectType.PROCESS, ERepositoryObjectType.CONTEXT, ERepositoryObjectType.ROUTINES,
-			ERepositoryObjectType.DOCUMENTATION };
+			ERepositoryObjectType.PROCESS, ERepositoryObjectType.CONTEXT, ERepositoryObjectType.ROUTINES };
+	/*
+	 * ERepositoryObjectType.DOCUMENTATION may be null, e.g. during tests. Leave it
+	 * out for now.
+	 */
 
 	/**
 	 * The user-friendly list of supported repository object types, e.g.
