@@ -164,7 +164,8 @@ public class CodeGeneratorApplicationTest {
 //	}
 
 	/**
-	 * Tests that the application updates the project version "-editProperties" command.
+	 * Tests that the application updates the process version with the
+	 * "-editProperties" command.
 	 * 
 	 * @throws Exception exception
 	 */
@@ -201,6 +202,32 @@ public class CodeGeneratorApplicationTest {
 		assertThat(output).contains("Version updated from 1.0 to 1.1");
 		assertEquals(IApplication.EXIT_OK, result2);
 		assertThat(project.getFile(IPath.fromPortableString("process/MyTestJob_1.1.item")).exists()).isTrue();
+	}
+
+	/**
+	 * Tests that the application updates the process name with the
+	 * "-editProperties" command.
+	 * 
+	 * @throws Exception exception
+	 */
+	@Test
+	public void testRunApplicationEditName() throws Exception {
+		// given
+		assertThat(ResourcesPlugin.getWorkspace().getRoot().getProject("MyTest").exists()).isFalse();
+		String[] args = { "-import", "--project", "MyTest", "--file",
+				extractResourceToTempFile(getClass().getResource("/resources/MyTestJob_0.1.zip")), "-editProperties",
+				"--project", "MyTest", "--item", "process/MyTestJob", "--name", "MyNewTestJob" };
+		// when
+		Object result = runApplicationWithArgs(args);
+
+		// then process version is updated to 1.0
+		String output = capturedOut.toString(StandardCharsets.UTF_8);
+		assertThat(output).contains("Label updated from MyTestJob to MyNewTestJob");
+		assertEquals(IApplication.EXIT_OK, result);
+		String techName = Project.createTechnicalName("MyTest");
+		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(techName);
+		assertThat(project.exists()).isTrue();
+		assertThat(project.getFile(IPath.fromPortableString("process/MyNewTestJob_0.1.item")).exists()).isTrue();
 	}
 
 	private String extractResourceToTempFile(URL resourceEntry) throws Exception {
