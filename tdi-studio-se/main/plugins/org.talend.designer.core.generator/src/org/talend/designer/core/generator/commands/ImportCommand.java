@@ -95,7 +95,7 @@ public final class ImportCommand implements CLICommand {
 
 		// display result and return exit code
 		if (importOK.get()) {
-			System.out.println(format("`{0}` project import completed successfully.", projectName));
+			log(format("`{0}` project import completed successfully.", projectName));
 		}
 		return importOK.get() ? IApplication.EXIT_OK : fail("Project import failed.");
 	}
