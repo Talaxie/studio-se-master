@@ -94,11 +94,29 @@ public final class EditPropertiesCommand implements CLICommand {
 			"Updates the major version in the item's properties.", false, Optional.empty());
 
 	/**
+	 * The name option for the editProperties command.
+	 */
+	private final OptionDefinition nameOption = new OptionDefinition("name", Optional.empty(),
+			"Updates the name in the item's properties.", false, Optional.of("new value"));
+
+	/**
+	 * The purpose option for the editProperties command.
+	 */
+	private final OptionDefinition purposeOption = new OptionDefinition("purpose", Optional.empty(),
+			"Updates the purpose in the item's properties.", false, Optional.of("new value"));
+
+	/**
+	 * The description option for the editProperties command.
+	 */
+	private final OptionDefinition descriptionOption = new OptionDefinition("description", Optional.empty(),
+			"Updates the description in the item's properties.", false, Optional.of("new value"));
+
+	/**
 	 * The command to edit properties of an item (process, context, ...).
 	 */
 	private final CommandDefinition editPropertiesCommand = new CommandDefinition("editProperties",
-			"Edit properties of an item (process, context, ...).",
-			List.of(projectOption, itemOption, updateMinorOption, updateMajorOption));
+			"Edit properties of an item (process, context, ...).", List.of(projectOption, itemOption, updateMinorOption,
+					updateMajorOption, nameOption, purposeOption, descriptionOption));
 
 	@Override
 	public CommandDefinition getDefinition() {
@@ -111,6 +129,9 @@ public final class EditPropertiesCommand implements CLICommand {
 		String itemPath = options.get(itemOption).orElseThrow();
 		boolean updateMinor = options.containsKey(updateMinorOption);
 		boolean updateMajor = options.containsKey(updateMajorOption);
+		Optional<String> newName = options.getOrDefault(nameOption, Optional.empty());
+		Optional<String> newPurpose = options.getOrDefault(purposeOption, Optional.empty());
+		Optional<String> newDescription = options.getOrDefault(descriptionOption, Optional.empty());
 
 		List<String> segments = Arrays.asList(itemPath.split("/"));
 		if (segments.size() < 2) {
@@ -149,13 +170,24 @@ public final class EditPropertiesCommand implements CLICommand {
 					// update version
 					if (updateMajor) {
 						propertyToUpdate.setVersion(VersionUtils.upMajor(originalVersion));
-						log(format("Version updated from {0} to {1}", originalVersion,
-								propertyToUpdate.getVersion()));
+						log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
 					} else if (updateMinor) {
 						propertyToUpdate.setVersion(VersionUtils.upMinor(originalVersion));
-						log(format("Version updated from {0} to {1}", originalVersion,
-								propertyToUpdate.getVersion()));
+						log(format("Version updated from {0} to {1}", originalVersion, propertyToUpdate.getVersion()));
 					}
+					// update other properties
+					newName.ifPresent(newValue -> {
+						propertyToUpdate.setDisplayName(newValue);
+						log(format("Name updated from {0} to {1}", originalLabel, newValue));
+					});
+					newPurpose.ifPresent(newValue -> {
+						propertyToUpdate.setPurpose(newValue);
+						log(format("Purpose updated tor {0}", newValue));
+					});
+					newDescription.ifPresent(newValue -> {
+						propertyToUpdate.setDescription(newValue);
+						log(format("Description updated tor {0}", newValue));
+					});
 					/*
 					 * TDI-19527, label=displayName (see
 					 * org.talend.metadata.managment.ui.wizard.PropertiesWizard.performFinish())
