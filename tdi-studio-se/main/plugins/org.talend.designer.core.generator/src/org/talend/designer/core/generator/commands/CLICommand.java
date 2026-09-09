@@ -13,10 +13,12 @@ package org.talend.designer.core.generator.commands;
 import static java.text.MessageFormat.format;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -32,6 +34,8 @@ import org.talend.core.ICoreService;
 import org.talend.core.context.Context;
 import org.talend.core.context.RepositoryContext;
 import org.talend.core.model.general.Project;
+import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.core.model.repository.IRepositoryViewObject;
 import org.talend.core.repository.i18n.Messages;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.core.repository.utils.LoginTaskRegistryReader;
@@ -42,6 +46,8 @@ import org.talend.designer.core.generator.cli.HelpBuilder;
 import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.login.ILoginTask;
 import org.talend.repository.RepositoryWorkUnit;
+import org.talend.repository.model.IProxyRepositoryFactory;
+import org.talend.repository.model.IProxyRepositoryService;
 import org.talend.repository.ui.login.LoginHelper;
 
 /**
@@ -229,6 +235,39 @@ public sealed interface CLICommand permits ImportCommand, GenerateCodeCommand, B
 			repoCtx.setFields(new HashMap<String, String>());
 		}
 		return repoCtx;
+	}
+
+	/**
+	 * Find an item in the given project, matching the given repository type and
+	 * path segments.
+	 * 
+	 * @param project        the opened project containing the item to find.
+	 * @param repositoryType the type of the item to find.
+	 * @param pathSegments   the path segments of the item to find, with folders and
+	 *                       the item label only (not the respository type segment).
+	 * @return the found matching item, if any.
+	 */
+	default Optional<IRepositoryViewObject> findItem(Project project, ERepositoryObjectType repositoryType,
+			List<String> pathSegments) {
+		if (pathSegments.isEmpty()) {
+			return Optional.empty();
+		}
+		IProxyRepositoryService service = (IProxyRepositoryService) GlobalServiceRegister.getDefault()
+				.getService(IProxyRepositoryService.class);
+		IProxyRepositoryFactory factory = service.getProxyRepositoryFactory();
+		try {
+			String lastSegment = pathSegments.get(pathSegments.size() - 1);
+			List<String> folderSegments = pathSegments.subList(0, pathSegments.size() - 1);
+			List<IRepositoryViewObject> candidates = factory.getAll(repositoryType);
+			Stream<IRepositoryViewObject> labelMatchinCandidates = candidates.stream()
+					.filter(o -> lastSegment.equals(o.getLabel()));
+			Stream<IRepositoryViewObject> matchingCandidates = labelMatchinCandidates
+					.filter(o -> folderSegments.stream().collect(Collectors.joining("/")).equals(o.getPath()));
+			return matchingCandidates.findFirst();
+		} catch (PersistenceException e) {
+			fail(format("Could not recover items from project {0}", project.getLabel()), e);
+			return Optional.empty();
+		}
 	}
 
 }
