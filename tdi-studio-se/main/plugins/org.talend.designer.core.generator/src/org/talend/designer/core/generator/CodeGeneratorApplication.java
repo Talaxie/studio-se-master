@@ -48,8 +48,8 @@ public class CodeGeneratorApplication implements IApplication {
 			"Prints this help message.", false, Optional.empty());
 
 	/** CLI commands to support */
-	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new GenerateCodeCommand(),
-			new BuildCommand(), new EditPropertiesCommand());
+	private List<CLICommand> supportedCommands = List.of(new ImportCommand(), new EditPropertiesCommand(),
+			new GenerateCodeCommand(), new BuildCommand());
 	/**
 	 * The CLI definition for this application, including global options and
 	 * commands.

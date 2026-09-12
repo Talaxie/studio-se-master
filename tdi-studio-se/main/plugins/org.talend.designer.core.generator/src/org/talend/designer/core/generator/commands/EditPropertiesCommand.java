@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.runtime.Assert;
 import org.eclipse.core.runtime.CoreException;
@@ -32,16 +31,13 @@ import org.talend.commons.utils.VersionUtils;
 import org.talend.commons.utils.workbench.resources.ResourceUtils;
 import org.talend.core.GlobalServiceRegister;
 import org.talend.core.IESBService;
-import org.talend.core.context.Context;
 import org.talend.core.model.general.Project;
-import org.talend.core.model.properties.ProcessItem;
 import org.talend.core.model.properties.Property;
 import org.talend.core.model.relationship.RelationshipItemBuilder;
 import org.talend.core.model.repository.ERepositoryObjectType;
 import org.talend.core.model.repository.IRepositoryViewObject;
 import org.talend.core.repository.utils.RoutineUtils;
 import org.talend.core.runtime.CoreRuntimePlugin;
-import org.talend.core.runtime.util.URIHelper;
 import org.talend.designer.core.generator.cli.CommandDefinition;
 import org.talend.designer.core.generator.cli.OptionDefinition;
 import org.talend.expressionbuilder.ExpressionPersistance;
@@ -259,32 +255,6 @@ public final class EditPropertiesCommand implements CLICommand {
 			}
 		}
 
-	}
-
-	/**
-	 * Ensure project can be exploited and that all required services are correctly
-	 * initialized.
-	 * 
-	 * <ul>
-	 * <li>{@link Context#REPOSITORY_CONTEXT_KEY} is associated to a repository
-	 * context</li>
-	 * <li>This context contains a user</li>
-	 * <li>This context contains the project (avoids NPE in project-based preference
-	 * lookups during Process initialization).</li>
-	 * <li>Execute login tasks created using the extension point
-	 * <code>org.talend.core.repository.login.task</code></li>
-	 * </ul>
-	 * 
-	 * @param processItem the process item to find the project for
-	 * @param wsProjects  workspace projects to find the project of the process item
-	 */
-	private void ensureProjectExploitable(ProcessItem processItem, Project[] wsProjects) {
-		IFile itemFile = URIHelper.getFile(URIHelper.convert(processItem.eResource().getURI()));
-		Stream.of(wsProjects).filter(p -> p.getTechnicalLabel().equals(itemFile.getProject().getName())).findFirst()
-				.ifPresentOrElse(this::ensureProjectExploitable, () -> {
-					fail("The project of the process item cannot be found in the workspace projects: "
-							+ itemFile.getProject().getName());
-				});
 	}
 
 }
