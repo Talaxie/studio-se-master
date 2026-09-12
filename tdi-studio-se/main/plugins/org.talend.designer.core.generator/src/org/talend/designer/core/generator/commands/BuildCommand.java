@@ -157,9 +157,6 @@ public final class BuildCommand implements CLICommand {
 
 		AtomicReference<String> successfullZip = new AtomicReference<>();
 		executeWithOpenedProject(projectName, p -> {
-			// open the project
-			ensureProjectExploitable(p);
-
 			// find the job nodes to build
 			List<String> jobNamesList = options.getOrDefault(jobOption, Optional.empty()).map(optionValue -> {
 				Stream<String> jobNames = Stream.of(optionValue.split(",")).map(String::trim);
