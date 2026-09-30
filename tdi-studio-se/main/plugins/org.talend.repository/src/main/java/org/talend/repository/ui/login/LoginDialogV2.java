@@ -345,9 +345,15 @@ public class LoginDialogV2 extends TrayDialog {
         GridData brandingAreaGridData = (GridData) brandingArea.getLayoutData();
         GridData loginInfoAreaGridData = new GridData(GridData.FILL_BOTH);
         // loginInfoAreaGridData.minimumWidth = 350;
-        // loginInfoAreaGridData.minimumHeight = brandingAreaGridData.minimumHeight;
         loginInfoAreaGridData.widthHint = (int) Math.ceil(realWidthRate * logonInfoAreaWidth);
-        loginInfoAreaGridData.heightHint = brandingAreaGridData.heightHint;
+		/*
+		 * Use default height hint to let the login area grow bigger with form layout,
+		 * 
+		 * but use the branding area height as minimum height to have it as big as the
+		 * image.
+		 */
+		loginInfoAreaGridData.heightHint = SWT.DEFAULT;
+		loginInfoAreaGridData.minimumHeight = brandingAreaGridData.heightHint;
         loginInfoArea.setLayoutData(loginInfoAreaGridData);
         loginInfoArea.setLayout(new FormLayout());
 
