@@ -56,7 +56,7 @@
     //params=process.getContextManager().getDefaultContext().getContextParameterList();
     boolean isTestContainer = ProcessUtils.isTestContainer(process);
     String className = isTestContainer ? process.getName() + "Test" : process.getName();
-    String extendsClassName = isTestContainer ? "org.apache.camel.test.junit4.CamelTestSupport" : "org.apache.camel.builder.RouteBuilder";
+    String extendsClassName = isTestContainer ? "org.apache.camel.test.junit5.CamelTestSupport" : "org.apache.camel.builder.RouteBuilder";
 %>
 <%
 IBrandingService service = (IBrandingService) GlobalServiceRegister.getDefault().getService(IBrandingService.class);
@@ -541,7 +541,7 @@ public class <%=className%> extends org.apache.camel.builder.RouteBuilder implem
                 String cid = node.getUniqueName();
 %>
 
-    private org.apache.activemq.pool.PooledConnectionFactory pooledConnectionFactory_<%=cid%>;
+    private org.messaginghub.pooled.jms.JmsPoolConnectionFactory pooledConnectionFactory_<%=cid%>;
 
 <%
             }
@@ -665,14 +665,14 @@ final Map<String, String> contentTypes = new java.util.HashMap<String, String>()
                     String produces = mapping.get("PRODUCES");
                     String beanClass = mapping.get("BEAN");
 %>
-        @javax.ws.rs.Path(<%=uriPattern%>)
-        @javax.ws.rs.<%=httpVerb%>()
+        @jakarta.ws.rs.Path(<%=uriPattern%>)
+        @jakarta.ws.rs.<%=httpVerb%>()
 <%
             String consumesContentTypes = null;
             if (contentTypes.containsKey(consumes)) {
                 consumesContentTypes = contentTypes.get(consumes);
 %>
-        @javax.ws.rs.Consumes(<%=consumesContentTypes%>)
+        @jakarta.ws.rs.Consumes(<%=consumesContentTypes%>)
 <%
             }
 
@@ -681,7 +681,7 @@ final Map<String, String> contentTypes = new java.util.HashMap<String, String>()
             if (contentTypes.containsKey(produces)) {
                 producesContentTypes = contentTypes.get(produces);
 %>
-        @javax.ws.rs.Produces(<%=producesContentTypes%>)
+        @jakarta.ws.rs.Produces(<%=producesContentTypes%>)
 <%
             }            
 %>
@@ -1102,7 +1102,7 @@ final Map<String, String> contentTypes = new java.util.HashMap<String, String>()
                     %>, <%
                 }
 %>
-                @javax.ws.rs.PathParam("<%=uriVariable%>") String <%=uriVariable%>
+                @jakarta.ws.rs.PathParam("<%=uriVariable%>") String <%=uriVariable%>
 <%
             }
             if (contentTypes.containsKey(consumes)) {
@@ -1262,26 +1262,26 @@ final Map<String, String> contentTypes = new java.util.HashMap<String, String>()
         return endpointUrl;
     }
 
-static class CxfPayloadProvider implements javax.ws.rs.ext.MessageBodyWriter<org.apache.camel.component.cxf.common.CxfPayload<javax.xml.transform.Source>> {
-    public boolean isWriteable(Class<?> cls, java.lang.reflect.Type type, java.lang.annotation.Annotation[] anns, javax.ws.rs.core.MediaType mt) {
+static class CxfPayloadProvider implements jakarta.ws.rs.ext.MessageBodyWriter<org.apache.camel.component.cxf.common.CxfPayload<javax.xml.transform.Source>> {
+    public boolean isWriteable(Class<?> cls, java.lang.reflect.Type type, java.lang.annotation.Annotation[] anns, jakarta.ws.rs.core.MediaType mt) {
         return cls == org.apache.camel.component.cxf.common.CxfPayload.class;
     }
     public long getSize(org.apache.camel.component.cxf.common.CxfPayload<javax.xml.transform.Source> obj, Class<?> cls, java.lang.reflect.Type type,
-            java.lang.annotation.Annotation[] anns, javax.ws.rs.core.MediaType mt) {
+            java.lang.annotation.Annotation[] anns, jakarta.ws.rs.core.MediaType mt) {
         return -1;
     }
     public void writeTo(org.apache.camel.component.cxf.common.CxfPayload<javax.xml.transform.Source> obj, Class<?> cls, java.lang.reflect.Type type,
-            java.lang.annotation.Annotation[] anns, javax.ws.rs.core.MediaType mt,
-            javax.ws.rs.core.MultivaluedMap<String, Object> headers, java.io.OutputStream os)
-            throws java.io.IOException, javax.ws.rs.WebApplicationException {
+            java.lang.annotation.Annotation[] anns, jakarta.ws.rs.core.MediaType mt,
+            jakarta.ws.rs.core.MultivaluedMap<String, Object> headers, java.io.OutputStream os)
+            throws java.io.IOException, jakarta.ws.rs.WebApplicationException {
         java.util.List<javax.xml.transform.Source> bodySource = obj.getBodySources();
         if (bodySource == null || bodySource.size() != 1) {
-            throw new javax.ws.rs.InternalServerErrorException();
+            throw new jakarta.ws.rs.InternalServerErrorException();
         }
         try {
             org.apache.cxf.staxutils.StaxUtils.copy(bodySource.get(0), os);
         } catch (javax.xml.stream.XMLStreamException ex) {
-            throw new javax.ws.rs.InternalServerErrorException(ex);
+            throw new jakarta.ws.rs.InternalServerErrorException(ex);
         }
 
     }
@@ -2317,7 +2317,7 @@ if (isProvider) {
                 
                 DefaultRegistry registry = new DefaultRegistry(realRegistry);
                 
-                ((org.apache.camel.impl.DefaultCamelContext) camelContext).setRegistry(realRegistry);
+                camelContext.getCamelContextExtension().setRegistry(realRegistry);
                 
                 // add notifier
                 java.util.Collection<org.apache.camel.management.JmxNotificationEventNotifier> jmxEventNotifiers = camelContext
@@ -2350,8 +2350,8 @@ if (isProvider) {
                 %>
 
                     java.util.List<Object> providers = new java.util.ArrayList<Object>();
-                    providers.add(new com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider());
-                    providers.add(new com.fasterxml.jackson.jaxrs.xml.JacksonJaxbXMLProvider());
+                    providers.add(new com.fasterxml.jackson.jakarta.rs.json.JacksonXmlBindJsonProvider());
+                    providers.add(new com.fasterxml.jackson.jakarta.rs.xml.JacksonXmlBindXMLProvider());
                     registry.put("providers", providers);
 
                 <%}%>
@@ -3010,7 +3010,7 @@ if (isProvider) {
                         String passwordFieldName = "__AMQ_PASSWORD__";
 %>
                         <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
-                        javax.jms.ConnectionFactory jmsConnectionFactory_<%=cid%> =
+                        jakarta.jms.ConnectionFactory jmsConnectionFactory_<%=cid%> =
                             new org.apache.activemq.ActiveMQConnectionFactory( <%=username%>, decryptedPassword_<%=cid%> ,<%=amqUri%>);
 <%
                     } else {
@@ -3024,7 +3024,7 @@ if (isProvider) {
                             <%
                                 } else {
                             %>
-                                javax.jms.ConnectionFactory jmsConnectionFactory_<%=cid%> =
+                                jakarta.jms.ConnectionFactory jmsConnectionFactory_<%=cid%> =
                                     new org.apache.activemq.ActiveMQConnectionFactory(<%=amqUri%>);
                             <%
                                 }
@@ -3066,12 +3066,13 @@ if (isProvider) {
                         }
 %>
                         pooledConnectionFactory_<%=cid%>
-                            = new org.apache.activemq.pool.PooledConnectionFactory();
+                            = new org.messaginghub.pooled.jms.JmsPoolConnectionFactory();
                         pooledConnectionFactory_<%=cid%>.setConnectionFactory(jmsConnectionFactory_<%=cid%>);
-                        pooledConnectionFactory_<%=cid%>.setExpiryTimeout(Long.valueOf(<%=amq_pool_expiry_timeout%>));
-                        pooledConnectionFactory_<%=cid%>.setIdleTimeout(<%=amq_pool_idle_timeout%>);
+                        // pooled-jms n'expose pas d'expiryTimeout : la durée de vie d'une
+                        // connexion est pilotée par le seul connectionIdleTimeout.
+                        pooledConnectionFactory_<%=cid%>.setConnectionIdleTimeout(<%=amq_pool_idle_timeout%>);
                         pooledConnectionFactory_<%=cid%>.setMaxConnections(<%=amq_pool_max_connections%>);
-                        pooledConnectionFactory_<%=cid%>.setMaximumActiveSessionPerConnection(<%=amq_pool_max_active%>);
+                        pooledConnectionFactory_<%=cid%>.setMaxSessionsPerConnection(<%=amq_pool_max_active%>);
 
                         if(camelContext.getComponent(<%=name%>)==null){
                                                     camelContext.addComponent(<%=name%>,
@@ -3113,7 +3114,7 @@ if (isProvider) {
 
 %>
                     {
-                    javax.jms.ConnectionFactory jmsConnectionFactory = new com.ibm.mq.jms.MQConnectionFactory();
+                    jakarta.jms.ConnectionFactory jmsConnectionFactory = new com.ibm.mq.jms.MQConnectionFactory();
                     ((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setHostName(<%=wmqServer%>);
                     try {
                         ((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setPort(<%=wmqPort%>);
@@ -3128,7 +3129,7 @@ if (isProvider) {
                         }
 %>
 
-                    } catch (javax.jms.JMSException e) {
+                    } catch (jakarta.jms.JMSException e) {
                         e.printStackTrace();
                     }
 <%
@@ -3331,7 +3332,7 @@ if (isProvider) {
                 } else if ("Other".equals(mqType)) {
 %>
                     {
-                        javax.jms.ConnectionFactory jmsConnectionFactory;
+                        jakarta.jms.ConnectionFactory jmsConnectionFactory;
                         <%=ElementParameterParser.getValue(node, "__OTHER_CODE__")%>
                         if(camelContext.getComponent(<%=name%>)==null){
                             camelContext.addComponent(<%=name%>,
@@ -3617,13 +3618,13 @@ if (isProvider) {
             if(inOSGi){
            
                 // add handlers for main MIME types
-                javax.activation.MailcapCommandMap mc_<%=cid%> = ( javax.activation.MailcapCommandMap)javax.activation.CommandMap.getDefaultCommandMap();
+                jakarta.activation.MailcapCommandMap mc_<%=cid%> = ( jakarta.activation.MailcapCommandMap)jakarta.activation.CommandMap.getDefaultCommandMap();
                 mc_<%=cid%>.addMailcap("text/html;; x-java-content-handler=com.sun.mail.handlers.text_html");
                 mc_<%=cid%>.addMailcap("text/xml;; x-java-content-handler=com.sun.mail.handlers.text_xml");
                 mc_<%=cid%>.addMailcap("text/plain;; x-java-content-handler=com.sun.mail.handlers.text_plain");
                 mc_<%=cid%>.addMailcap("multipart/*;; x-java-content-handler=com.sun.mail.handlers.multipart_mixed");
                 mc_<%=cid%>.addMailcap("message/rfc822;; x-java-content-handler=com.sun.mail.handlers.message_rfc822");
-                javax.activation.CommandMap.setDefaultCommandMap(mc_<%=cid%>);
+                jakarta.activation.CommandMap.setDefaultCommandMap(mc_<%=cid%>);
                 // add com.sun.mail.handlers to job imports
                 com.sun.mail.handlers.text_plain text_plain_h_<%=cid%> = null;
            }
@@ -3971,7 +3972,7 @@ if (isProvider) {
         String cid = node.getUniqueName();
 %>
 <%@ include file="platform:/plugin/org.talend.designer.camel.components.localprovider/components/cAzureStorageBlob/cAzureStorageBlobConnection.javajet" %>
-        registry.put("blobType_<%=cid%>", org.apache.camel.component.azure.blob.BlobType.<%=ElementParameterParser.getValue(node, "__BLOB_TYPE__")%>);
+        registry.put("blobType_<%=cid%>", org.apache.camel.component.azure.storage.blob.BlobType.<%=ElementParameterParser.getValue(node, "__BLOB_TYPE__")%>);
 <%
         List<Map<String, String>> blobMetadataList = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__BLOB_METADATA__");
         if (blobMetadataList != null && !blobMetadataList.isEmpty()){

@@ -813,7 +813,8 @@ public class ModulesNeededProvider {
             importNeedsListForBeans = getModulesNeededForRoutes(processItem);
 
             importNeedsListForBeans.add(getComponentModuleById("CAMEL", "cxf-core"));
-            importNeedsListForBeans.add(getComponentModuleById("CAMEL", "javax.ws.rs-api"));
+            importNeedsListForBeans.add(getComponentModuleById("CAMEL", "jakarta.ws.rs-api"));
+            importNeedsListForBeans.removeIf(need -> need == null);
             for (ModuleNeeded need : importNeedsListForBeans) {
                 need.setRequired(false);
             }
