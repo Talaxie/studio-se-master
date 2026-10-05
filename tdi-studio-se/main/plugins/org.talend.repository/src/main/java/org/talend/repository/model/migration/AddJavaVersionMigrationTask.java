@@ -16,7 +16,6 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 
 import org.apache.commons.lang.StringUtils;
-import org.eclipse.jdt.core.JavaCore;
 import org.talend.commons.utils.generation.JavaUtils;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.migration.AbstractProjectMigrationTask;
@@ -30,7 +29,7 @@ public class AddJavaVersionMigrationTask extends AbstractProjectMigrationTask {
         ProjectPreferenceManager manager = new ProjectPreferenceManager(project, CoreRuntimePlugin.PLUGIN_ID, false);
         String javaVersion = manager.getValue(JavaUtils.PROJECT_JAVA_VERSION_KEY);
         if (StringUtils.isBlank(javaVersion) || !JavaUtils.AVAILABLE_VERSIONS.contains(javaVersion)) {
-            manager.setValue(JavaUtils.PROJECT_JAVA_VERSION_KEY, JavaCore.VERSION_1_7);
+            manager.setValue(JavaUtils.PROJECT_JAVA_VERSION_KEY, JavaUtils.DEFAULT_VERSION);
             manager.save();
             return ExecutionResult.SUCCESS_NO_ALERT;
         }

@@ -49,6 +49,14 @@ public class MavenTemplateManagerTest {
         manager.setValue(JavaUtils.PROJECT_JAVA_VERSION_KEY, "");
         model = MavenTemplateManager.getCodeProjectTemplateModel(null);
         validateResult(model, JavaCore.VERSION_1_8);
+
+        manager.setValue(JavaUtils.PROJECT_JAVA_VERSION_KEY, JavaCore.VERSION_17);
+        model = MavenTemplateManager.getCodeProjectTemplateModel(null);
+        validateResult(model, JavaCore.VERSION_17);
+
+        manager.setValue(JavaUtils.PROJECT_JAVA_VERSION_KEY, JavaCore.VERSION_21);
+        model = MavenTemplateManager.getCodeProjectTemplateModel(null);
+        validateResult(model, JavaCore.VERSION_21);
     }
 
     private void validateResult(Model model, String expectedValue) {
@@ -57,8 +65,11 @@ public class MavenTemplateManagerTest {
         Object object = plugin.getConfiguration();
         if (object instanceof Xpp3Dom) {
             Xpp3Dom configNode = (Xpp3Dom) object;
+            Xpp3Dom releaseNode = configNode.getChild("release"); //$NON-NLS-1$
             Xpp3Dom sourceNode = configNode.getChild("source"); //$NON-NLS-1$
             Xpp3Dom targetNode = configNode.getChild("target"); //$NON-NLS-1$
+            String expectedRelease = expectedValue.startsWith("1.") ? expectedValue.substring(2) : expectedValue; //$NON-NLS-1$
+            assertEquals(expectedRelease, releaseNode.getValue());
             assertEquals(expectedValue, sourceNode.getValue());
             assertEquals(expectedValue, targetNode.getValue());
         }

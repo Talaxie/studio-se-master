@@ -13,6 +13,8 @@ package org.talend.commons.utils.generation;
 
 import static org.junit.Assert.*;
 
+import java.util.Arrays;
+
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.jdt.core.JavaCore;
@@ -44,6 +46,12 @@ public class JavaUtilsTest {
         assertEquals(JavaCore.VERSION_1_6,
                 CoreRuntimePlugin.getInstance().getProjectPreferenceManager().getValue("talend.project.java.version"));
         assertEquals(JavaCore.VERSION_1_6, JavaUtils.getProjectJavaVersion());
+    }
+
+    @Test
+    public void testAvailableJavaVersions() {
+        assertEquals(Arrays.asList(JavaCore.VERSION_1_8, JavaCore.VERSION_17, JavaCore.VERSION_21),
+                JavaUtils.AVAILABLE_VERSIONS);
     }
 
     @After
