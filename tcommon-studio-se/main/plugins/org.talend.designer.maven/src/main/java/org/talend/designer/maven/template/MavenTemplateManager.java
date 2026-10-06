@@ -282,13 +282,17 @@ public class MavenTemplateManager {
             javaVersion = JavaUtils.DEFAULT_VERSION;
         }
         variablesValuesMap.put(ETalendMavenVariables.JavaVersion, javaVersion);
+        String javaRelease = javaVersion.startsWith("1.") ? javaVersion.substring(2) : javaVersion; //$NON-NLS-1$
+        variablesValuesMap.put(ETalendMavenVariables.JavaRelease, javaRelease);
         Plugin plugin = model.getBuild().getPluginManagement().getPluginsAsMap().get("org.apache.maven.plugins:maven-compiler-plugin"); //$NON-NLS-1$
         Object object = plugin.getConfiguration();
         if (object instanceof Xpp3Dom) {
             Xpp3Dom configNode = (Xpp3Dom) object;
+            Xpp3Dom releaseNode = configNode.getChild("release"); //$NON-NLS-1$
             Xpp3Dom sourceNode = configNode.getChild("source"); //$NON-NLS-1$
             Xpp3Dom targetNode = configNode.getChild("target"); //$NON-NLS-1$
             if (!javaVersion.equals(sourceNode.getValue())) {
+                releaseNode.setValue(ETalendMavenVariables.replaceVariables(releaseNode.getValue(), variablesValuesMap));
                 sourceNode.setValue(ETalendMavenVariables.replaceVariables(sourceNode.getValue(), variablesValuesMap));
                 targetNode.setValue(ETalendMavenVariables.replaceVariables(targetNode.getValue(), variablesValuesMap));
             }

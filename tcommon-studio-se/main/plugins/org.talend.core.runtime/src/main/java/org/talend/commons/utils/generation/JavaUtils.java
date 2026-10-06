@@ -56,7 +56,8 @@ public final class JavaUtils {
 
     public static final String DEFAULT_VERSION = JavaCore.VERSION_1_8;
 
-    public static final List<String> AVAILABLE_VERSIONS = Arrays.asList(JavaCore.VERSION_1_8 );
+    public static final List<String> AVAILABLE_VERSIONS = Arrays.asList(JavaCore.VERSION_1_8, JavaCore.VERSION_17,
+            JavaCore.VERSION_21);
 
     public static final String ALLOW_JAVA_INTERNAL_ACCESS = "allow.java.internal.access"; //$NON-NLS-1$
 
@@ -283,6 +284,12 @@ public final class JavaUtils {
     private static String getJavaVersion(String defaultCompliance, String version) {
         if (version == null) {
             return defaultCompliance;
+        }
+        if (version.startsWith(JavaCore.VERSION_21)) {
+            return JavaCore.VERSION_21;
+        }
+        if (version.startsWith(JavaCore.VERSION_17)) {
+            return JavaCore.VERSION_17;
         }
         if (version.startsWith(JavaCore.VERSION_1_8)) {
             return JavaCore.VERSION_1_8;
