@@ -12,6 +12,9 @@
 // ============================================================================
 package org.talend.core.runtime;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Plugin;
 import org.eclipse.swt.widgets.Display;
@@ -60,6 +63,9 @@ public class CoreRuntimePlugin extends Plugin {
 
     protected ProjectPreferenceManager projectPreferenceManager;
 
+	/** Operations to run on stop (for service de-registration). */
+	private List<Runnable> onStopListeners = new ArrayList<>();
+
     public CoreRuntimePlugin() {
         context = new Context();
     }
@@ -76,9 +82,14 @@ public class CoreRuntimePlugin extends Plugin {
         super.start(context);
         plugin = this;
     }
+    
+    public void addOnStopListener(Runnable listener) {
+    	onStopListeners.add(listener);
+	}
 
     @Override
     public void stop(BundleContext context) throws Exception {
+		onStopListeners.forEach(Runnable::run);
         super.stop(context);
         plugin = null;
     }

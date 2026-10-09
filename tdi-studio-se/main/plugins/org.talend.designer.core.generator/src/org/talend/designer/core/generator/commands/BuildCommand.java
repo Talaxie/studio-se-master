@@ -12,6 +12,7 @@ package org.talend.designer.core.generator.commands;
 
 import static java.text.MessageFormat.format;
 
+import java.io.File;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
@@ -23,6 +24,7 @@ import java.util.stream.Stream;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.emf.codegen.util.CodeGenUtil;
 import org.eclipse.equinox.app.IApplication;
+import org.talend.core.ILibraryManagerUserService;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.properties.FolderItem;
 import org.talend.core.model.properties.ProcessItem;
@@ -135,6 +137,21 @@ public final class BuildCommand implements CLICommand {
 			false, Optional.empty());
 
 	/**
+	 * The noIncludeLibs option for the build command.
+	 */
+	private final OptionDefinition acceptAllLicensesOption = new OptionDefinition("lic",
+			Optional.of("acceptAllLicenses"),
+			"To accept all licenses. Default is `false`, which will prompt the user for license acceptance before downloading a library. Note that accepted licenses are remembered from one build to another and from UI sessions.",
+			false, Optional.empty());
+
+	/**
+	 * The libJars option for the build command.
+	 */
+	private final OptionDefinition libJarsFolderOption = new OptionDefinition("libs", Optional.of("libJarsFolder"),
+			"Full path to a folder where to look for missing library jars to install. The folder is scanned recursively for jar files, so you can use a repository. By default you get a org.talend.designer.runprocess.ProcessorException when a jar is missing.",
+			false, Optional.of("path"));
+
+	/**
 	 * The command to build a project's job.
 	 */
 	private final CommandDefinition buildCommand = new CommandDefinition("build",
@@ -143,7 +160,8 @@ public final class BuildCommand implements CLICommand {
 					jobVersionOption, contextOption, //
 					executeTestsOption, includeTestSourceOption, //
 					noNeedTalendLibrariesOption, noNeedSourceCodeOption, noNeedDependenciesOption, //
-					noBinariesOption, noIncludeLibsOption));
+					noBinariesOption, noIncludeLibsOption, //
+					acceptAllLicensesOption, libJarsFolderOption));
 
 	@Override
 	public CommandDefinition getDefinition() {
@@ -154,6 +172,8 @@ public final class BuildCommand implements CLICommand {
 	public int execute(Map<OptionDefinition, Optional<String>> options) throws Exception {
 		String outputPath = options.get(outputOption).orElseThrow();
 		String projectName = options.get(projectOption).orElseThrow();
+
+		configureLibraryManagerUserService(options);
 
 		AtomicReference<String> successfullZip = new AtomicReference<>();
 		executeWithOpenedProject(projectName, p -> {
@@ -183,9 +203,24 @@ public final class BuildCommand implements CLICommand {
 		// display result and return exit code
 		if (successfullZip.get() != null) {
 			log(format("`{0}` project build completed successfully. The resulting archive is located at `{1}`.",
-							projectName, successfullZip.get()));
+					projectName, successfullZip.get()));
 		}
 		return successfullZip.get() != null ? IApplication.EXIT_OK : fail("Project build failed.");
+	}
+
+	/**
+	 * Configure the library manager user service with the library options from
+	 * command line.
+	 * 
+	 * @param options the command line options
+	 */
+	private void configureLibraryManagerUserService(Map<OptionDefinition, Optional<String>> options) {
+		ILibraryManagerUserService libUserService = ILibraryManagerUserService.getRegistered();
+		if (libUserService != null) {
+			boolean acceptAllLicenses = options.containsKey(acceptAllLicensesOption);
+			Optional<File> libsFolder = options.get(libJarsFolderOption).map(path -> new File(path));
+			libUserService.acceptConfiguration(acceptAllLicenses, libsFolder);
+		}
 	}
 
 	/**

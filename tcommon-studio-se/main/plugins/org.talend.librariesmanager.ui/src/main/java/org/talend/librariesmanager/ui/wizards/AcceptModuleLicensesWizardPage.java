@@ -41,6 +41,7 @@ import org.eclipse.swt.widgets.TreeItem;
 import org.eclipse.ui.PlatformUI;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.core.model.general.ModuleToInstall;
+import org.talend.librariesmanager.prefs.LicenseAcceptancePrefs;
 import org.talend.librariesmanager.ui.LibManagerUiPlugin;
 import org.talend.librariesmanager.ui.i18n.Messages;
 import org.talend.librariesmanager.utils.LicenseTextUtil;
@@ -291,7 +292,7 @@ public class AcceptModuleLicensesWizardPage extends WizardPage {
                         if (licenseType == null) {
                             licenseType = UNKNOWN_LICENSE;
                         }
-                        boolean isLicenseAccepted = LibManagerUiPlugin.getDefault().getPreferenceStore().getBoolean(licenseType);
+						boolean isLicenseAccepted = LibManagerUiPlugin.isAcceptedLicense(licenseType);
                         if (isLicenseAccepted) {
                             continue;
                         }
@@ -392,7 +393,7 @@ public class AcceptModuleLicensesWizardPage extends WizardPage {
             Map.Entry<String, Boolean> entry = iter.next();
             String licenseType = entry.getKey();
             boolean status = entry.getValue();
-            LibManagerUiPlugin.getDefault().getPreferenceStore().setValue(licenseType, status);
+			LicenseAcceptancePrefs.setLicenseAccepted(licenseType, status);
         }
     }
 

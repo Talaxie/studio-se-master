@@ -13,7 +13,7 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Shell;
 import org.talend.core.model.general.ModuleToInstall;
-import org.talend.librariesmanager.ui.LibManagerUiPlugin;
+import org.talend.librariesmanager.prefs.LicenseAcceptancePrefs;
 import org.talend.librariesmanager.ui.i18n.Messages;
 
 /**
@@ -62,7 +62,7 @@ public class AcceptModuleLicensesWizardDialog extends WizardDialog {
             for (ModuleToInstall module : modulesToInstall) {
                 String licenseType = module.getLicenseType();
                 if (licenseType != null) {
-                    LibManagerUiPlugin.getDefault().getPreferenceStore().setValue(licenseType, true);
+					LicenseAcceptancePrefs.setLicenseAccepted(licenseType, true);
                 }
             }
         }

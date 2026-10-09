@@ -23,10 +23,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
+import org.apache.log4j.Priority;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.ops4j.pax.url.mvn.Handler;
-import org.talend.commons.ui.runtime.exception.ExceptionHandler;
+import org.talend.commons.CommonsPlugin;
+import org.talend.commons.exception.CommonExceptionHandler;
+import org.talend.commons.exception.ExceptionService;
 import org.talend.core.download.DownloadListener;
 import org.talend.core.download.IDownloadHelper;
 import org.talend.core.model.general.ModuleNeeded.ELibraryInstallStatus;
@@ -76,7 +80,14 @@ public class ArtifactDownloadManager implements DownloadListener {
             try {
                 Thread.sleep(500);
             } catch (InterruptedException ex) {
-                ExceptionHandler.process(ex);
+				CommonExceptionHandler.process(ex);
+				Priority priority = CommonExceptionHandler.getPriority(ex);
+				if (priority == Level.FATAL && !CommonsPlugin.isHeadless()) {
+					ExceptionService service = CommonsPlugin.getDefault().getExceptionService();
+					if (service != null) {
+						service.showExceptionInMessgeBox(ex);
+					}
+				}
             }
         }
         stop();

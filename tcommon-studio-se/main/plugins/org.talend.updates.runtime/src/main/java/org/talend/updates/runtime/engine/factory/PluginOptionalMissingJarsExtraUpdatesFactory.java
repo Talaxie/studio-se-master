@@ -12,15 +12,16 @@
 // ============================================================================
 package org.talend.updates.runtime.engine.factory;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import org.apache.log4j.Logger;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ICoreRunnable;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.SubMonitor;
-import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.talend.commons.utils.network.NetworkUtil;
 import org.talend.core.model.general.ModuleNeeded;
 import org.talend.core.model.general.ModuleToInstall;
@@ -69,15 +70,16 @@ public class PluginOptionalMissingJarsExtraUpdatesFactory extends AbstractExtraU
             // IRunnableWithProgress should not be part of
             // jface because it adds graphical
             // dependencies.
-            IRunnableWithProgress notInstalledModulesRunnable = RemoteModulesHelper.getInstance().getNotInstalledModulesRunnable(
+			ICoreRunnable notInstalledModulesRunnable = RemoteModulesHelper.getInstance()
+					.getNotInstalledModulesRunnable(
                     unistalledModulesNeeded, modulesRequiredToBeInstalled, false, true, true);
             if (notInstalledModulesRunnable != null) {// some data need to be fetched
                 try {
                     notInstalledModulesRunnable.run(mainSubMonitor.newChild(1));
-                } catch (InvocationTargetException e) {
+				} catch (CoreException e) {
                     log.error("failed to fetch missing third parties jars information", e); //$NON-NLS-1$
                     return;
-                } catch (InterruptedException e) {
+				} catch (OperationCanceledException e) {
                     log.error("failed to fetch missing third parties jars information", e); //$NON-NLS-1$
                     return;
                 }
