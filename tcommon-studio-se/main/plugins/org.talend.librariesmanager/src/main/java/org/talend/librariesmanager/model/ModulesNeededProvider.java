@@ -656,7 +656,11 @@ public class ModulesNeededProvider {
         String context = info.getType().getLabel() + " " + info.getLabel();
         List<IMPORTType> imports = info.getImports();
         for (IMPORTType currentImport : imports) {
-            String value = currentImport.getMVN() != null ? currentImport.getMVN() : currentImport.getMODULE();
+            String value = StringUtils.isNotBlank(currentImport.getMVN()) ? currentImport.getMVN()
+                    : currentImport.getMODULE();
+            if (StringUtils.isBlank(value)) {
+                continue;
+            }
             boolean isRequired = currentImport.isREQUIRED();
             ModuleNeeded toAdd = ModuleNeeded.newInstance(context, value, currentImport.getMESSAGE(), isRequired);
             if (!isRequired) {
