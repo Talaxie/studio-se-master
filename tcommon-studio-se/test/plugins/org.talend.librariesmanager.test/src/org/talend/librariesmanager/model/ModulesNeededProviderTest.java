@@ -24,7 +24,9 @@ import org.talend.core.model.general.ModuleNeeded.ELibraryInstallStatus;
 import org.talend.core.model.general.ModuleStatusProvider;
 import org.talend.core.model.properties.PropertiesFactory;
 import org.talend.core.model.properties.RoutineItem;
+import org.talend.core.model.properties.RoutinesJarItem;
 import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.core.model.routines.CodesJarInfo;
 import org.talend.designer.core.model.utils.emf.component.ComponentFactory;
 import org.talend.designer.core.model.utils.emf.component.IMPORTType;
 
@@ -33,6 +35,41 @@ import org.talend.designer.core.model.utils.emf.component.IMPORTType;
  *
  */
 public class ModulesNeededProviderTest {
+
+    @Test
+    public void testCodesJarExternalDependencies() {
+        RoutinesJarItem jarItem = PropertiesFactory.eINSTANCE.createRoutinesJarItem();
+        jarItem.setRoutinesJarType(PropertiesFactory.eINSTANCE.createRoutinesJarType());
+        jarItem.setProperty(PropertiesFactory.eINSTANCE.createProperty());
+        jarItem.getProperty().setLabel("konvertilo");
+
+        IMPORTType mavenDependency = ComponentFactory.eINSTANCE.createIMPORTType();
+        mavenDependency.setMODULE("i-1.0.70.jar");
+        mavenDependency.setMVN("mvn:com.konvertilo/i/1.0.70/jar");
+        mavenDependency.setREQUIRED(true);
+        jarItem.getRoutinesJarType().getImports().add(mavenDependency);
+
+        IMPORTType localDependency = ComponentFactory.eINSTANCE.createIMPORTType();
+        localDependency.setMODULE("local-library.jar");
+        localDependency.setMVN(" ");
+        localDependency.setREQUIRED(false);
+        jarItem.getRoutinesJarType().getImports().add(localDependency);
+
+        IMPORTType emptyDependency = ComponentFactory.eINSTANCE.createIMPORTType();
+        emptyDependency.setMVN(" ");
+        emptyDependency.setMODULE(" ");
+        jarItem.getRoutinesJarType().getImports().add(emptyDependency);
+
+        Set<ModuleNeeded> modules = ModulesNeededProvider.getCodesJarModuleNeededs(CodesJarInfo.create(jarItem.getProperty()));
+
+        Assert.assertEquals(2, modules.size());
+        ModuleNeeded mavenModule = modules.stream().filter(m -> "i-1.0.70.jar".equals(m.getModuleName())).findFirst().get();
+        Assert.assertEquals("mvn:com.konvertilo/i/1.0.70/jar", mavenModule.getMavenUri());
+        Assert.assertTrue(mavenModule.isRequired());
+        ModuleNeeded localModule = modules.stream().filter(m -> "local-library.jar".equals(m.getModuleName())).findFirst().get();
+        Assert.assertFalse(localModule.isRequired());
+        Assert.assertTrue(localModule.isExcluded());
+    }
 
     @Test
     public void testUpdateModulesNeededForRoutine() throws Exception {

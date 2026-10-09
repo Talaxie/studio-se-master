@@ -22,7 +22,11 @@ public class RoutineRecordLabelProvider extends LabelProvider {
     @Override
     public String getText(Object element) {
         if (element instanceof RoutineItemRecord) {
-            return ((RoutineItemRecord) element).getLabel();
+            RoutineItemRecord record = (RoutineItemRecord) element;
+            if (record.getDetails() != null && !record.getDetails().isEmpty()) {
+                return record.getLabel() + record.getDetails();
+            }
+            return record.getLabel();
         }
         return super.getText(element);
     }

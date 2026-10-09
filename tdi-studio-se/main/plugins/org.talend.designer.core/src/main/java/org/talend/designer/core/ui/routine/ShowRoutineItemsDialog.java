@@ -24,10 +24,12 @@ import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.jface.viewers.ViewerFilter;
+import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.properties.Property;
@@ -74,6 +76,14 @@ public class ShowRoutineItemsDialog extends Dialog {
     @Override
     protected Control createDialogArea(Composite parent) {
         Composite composite = (Composite) super.createDialogArea(parent);
+        boolean isCodesJar = type == ERepositoryObjectType.ROUTINESJAR || type == ERepositoryObjectType.BEANSJAR;
+        if (isCodesJar) {
+            Label usageHint = new Label(composite, SWT.WRAP);
+            usageHint.setText(Messages.getString("ShowRoutineItemsDialog.codesJarUsageHint")); //$NON-NLS-1$
+            GridData hintData = new GridData(GridData.FILL_HORIZONTAL);
+            hintData.widthHint = 520;
+            usageHint.setLayoutData(hintData);
+        }
         viewer = new TreeViewer(composite);
 
         labelProvider = new ShowRoutineItemsLabelProvider(allItems, existedRecords);
@@ -84,7 +94,7 @@ public class ShowRoutineItemsDialog extends Dialog {
         viewer.setFilters(new ViewerFilter[] { new ShowRoutineItemsViewerFilter(allItems) });
         GridData layoutData = new GridData(GridData.FILL_BOTH);
         layoutData.heightHint = 150;
-        layoutData.widthHint = 200;
+        layoutData.widthHint = isCodesJar ? 520 : 200;
         viewer.getTree().setLayoutData(layoutData);
 
         viewer.addSelectionChangedListener(new ISelectionChangedListener() {

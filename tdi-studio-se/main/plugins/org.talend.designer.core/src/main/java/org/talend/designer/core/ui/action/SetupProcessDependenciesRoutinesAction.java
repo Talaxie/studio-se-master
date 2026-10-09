@@ -184,7 +184,7 @@ public class SetupProcessDependenciesRoutinesAction extends AContextualAction {
     }
 
     @SuppressWarnings("unchecked")
-    private void createRoutinesDependencies(ProcessType process, List<RoutineItemRecord> routineRecords) {
+    static void createRoutinesDependencies(ProcessType process, List<RoutineItemRecord> routineRecords) {
         if (routineRecords == null) {
             return;
         }
