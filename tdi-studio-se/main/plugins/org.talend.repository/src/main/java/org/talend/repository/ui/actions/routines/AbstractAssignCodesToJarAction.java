@@ -31,7 +31,6 @@ import org.talend.commons.exception.ExceptionHandler;
 import org.talend.commons.runtime.model.repository.ERepositoryStatus;
 import org.talend.commons.ui.runtime.image.OverlayImageProvider;
 import org.talend.core.GlobalServiceRegister;
-import org.talend.core.PluginChecker;
 import org.talend.core.model.properties.ByteArray;
 import org.talend.core.model.properties.Item;
 import org.talend.core.model.properties.RoutineItem;
@@ -70,7 +69,7 @@ public abstract class AbstractAssignCodesToJarAction extends AContextualAction {
         setEnabled(false);
         IProxyRepositoryFactory factory = ProxyRepositoryFactory.getInstance();
         boolean canWork = true;
-        if (selection.isEmpty() || factory.isUserReadOnlyOnCurrentProject() || !PluginChecker.isTIS()) {
+        if (selection.isEmpty() || factory.isUserReadOnlyOnCurrentProject()) {
             return;
         }
         Iterator<?> iterator = selection.iterator();

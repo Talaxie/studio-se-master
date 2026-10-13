@@ -34,6 +34,7 @@ import org.talend.core.model.properties.Property;
 import org.talend.core.model.properties.RoutineItem;
 import org.talend.core.model.properties.RoutinesJarItem;
 import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.designer.core.model.utils.emf.component.IMPORTType;
 import org.talend.repository.ProjectManager;
 
 /**
@@ -115,9 +116,42 @@ public class ShowRoutineItemsLabelProvider extends LabelProvider implements ICol
             return ((Project) element).getLabel();
         } else if (element instanceof Property) {
             Property property = (Property) element;
-            return property.getLabel();
+            return getPropertyLabel(property);
         }
         return super.getText(element);
+    }
+
+    static String getPropertyLabel(Property property) {
+        return property.getLabel() + getDependencyDetails(property);
+    }
+
+    static String getDependencyDetails(Property property) {
+        if (!(property.getItem() instanceof RoutinesJarItem)) {
+            return ""; //$NON-NLS-1$
+        }
+        RoutinesJarItem routinesJarItem = (RoutinesJarItem) property.getItem();
+        if (routinesJarItem.getRoutinesJarType() == null || routinesJarItem.getRoutinesJarType().getImports().isEmpty()) {
+            return ""; //$NON-NLS-1$
+        }
+        StringBuilder dependencies = new StringBuilder();
+        for (Object importObject : routinesJarItem.getRoutinesJarType().getImports()) {
+            IMPORTType importType = (IMPORTType) importObject;
+            String coordinate = importType.getMVN();
+            if (coordinate == null || coordinate.trim().isEmpty()) {
+                coordinate = importType.getMODULE();
+            }
+            if (coordinate == null || coordinate.trim().isEmpty()) {
+                continue;
+            }
+            if (dependencies.length() > 0) {
+                dependencies.append(", "); //$NON-NLS-1$
+            }
+            dependencies.append(coordinate);
+        }
+        if (dependencies.length() == 0) {
+            return ""; //$NON-NLS-1$
+        }
+        return "  [" + dependencies + "]"; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     public Color getBackground(Object element) {

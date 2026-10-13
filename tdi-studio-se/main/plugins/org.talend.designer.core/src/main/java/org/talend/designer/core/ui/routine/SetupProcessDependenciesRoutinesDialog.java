@@ -47,7 +47,6 @@ import org.talend.commons.exception.PersistenceException;
 import org.talend.commons.ui.runtime.image.EImage;
 import org.talend.commons.ui.runtime.image.ImageProvider;
 import org.talend.core.GlobalServiceRegister;
-import org.talend.core.PluginChecker;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.properties.Item;
 import org.talend.core.model.properties.JobletProcessItem;
@@ -90,8 +89,6 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
 
     private ListViewer globalRoutinesViewer, routinesJarViewer, beansJarViewer;
 
-    private boolean isTIS = false;
-
     private final Map<Project, List<Property>> allRoutineItems = new HashMap<Project, List<Property>>();
 
     private final Map<Project, List<Property>> allRoutinesJarItems = new HashMap<Project, List<Property>>();
@@ -107,7 +104,6 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
                     .getService(ICamelDesignerCoreService.class);
             isRouteProcess = camelService.isInstanceofCamelRoutes(item);
         }
-        isTIS = PluginChecker.isTIS();
         init(item);
     }
 
@@ -148,6 +144,7 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
             record.setName(property.getLabel());
             record.setId(property.getId()); // if system, id is not used
             record.setLabel(property.getLabel());
+            record.setDetails(ShowRoutineItemsLabelProvider.getDependencyDetails(property));
             if (routinesParameter.getType() != null) {
                 record.setType(routinesParameter.getType());
             }
@@ -295,20 +292,18 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
 
         });
 
-        if (isTIS) {
-            if (isRouteProcess) {
-                beansJarTabItem = new CTabItem(folder, SWT.NONE);
-                beansJarTabItem.setText(Messages.getString("SetupProcessDependenciesRoutinesDialog.beansJarLabel")); //$NON-NLS-1$
-            }
+        if (isRouteProcess) {
+            beansJarTabItem = new CTabItem(folder, SWT.NONE);
+            beansJarTabItem.setText(Messages.getString("SetupProcessDependenciesRoutinesDialog.beansJarLabel")); //$NON-NLS-1$
+        }
 
-            routinesJarTabItem = new CTabItem(folder, SWT.NONE);
-            routinesJarTabItem.setText(Messages.getString("SetupProcessDependenciesRoutinesDialog.routinesJarLabel")); //$NON-NLS-1$
+        routinesJarTabItem = new CTabItem(folder, SWT.NONE);
+        routinesJarTabItem.setText(Messages.getString("SetupProcessDependenciesRoutinesDialog.routinesJarLabel")); //$NON-NLS-1$
 
-            if (isRouteProcess) {
-                folder.setSelection(beansJarTabItem);
-            } else {
-                folder.setSelection(routinesJarTabItem);
-            }
+        if (isRouteProcess) {
+            folder.setSelection(beansJarTabItem);
+        } else {
+            folder.setSelection(routinesJarTabItem);
         }
 
         globalRoutinesTabItem = new CTabItem(folder, SWT.NONE);
@@ -326,13 +321,11 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
 
         // global routines
         globalRoutinesViewer = createViewer(globalRoutinesTabItem, globalRoutines, listListener);
-        if (isTIS) {
-            // routines jars
-            routinesJarViewer = createViewer(routinesJarTabItem, routinesJars, listListener);
-            // beans jars
-            if (isRouteProcess) {
-                beansJarViewer = createViewer(beansJarTabItem, beansJars, listListener);
-            }
+        // routines jars
+        routinesJarViewer = createViewer(routinesJarTabItem, routinesJars, listListener);
+        // beans jars
+        if (isRouteProcess) {
+            beansJarViewer = createViewer(beansJarTabItem, beansJars, listListener);
         }
     }
 
@@ -405,6 +398,7 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
                         newOne.setId(p.getId());
                         newOne.setLabel(p.getLabel());
                         newOne.setName(p.getLabel());
+                        newOne.setDetails(ShowRoutineItemsLabelProvider.getDependencyDetails(p));
                         if (type != ERepositoryObjectType.ROUTINES) {
                             // won't store type for global routines to keep compatible
                             newOne.setType(type.name());
@@ -522,10 +516,10 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
         if (selection == globalRoutinesTabItem) {
             return globalRoutinesViewer;
         }
-        if (isTIS && selection == routinesJarTabItem) {
+        if (selection == routinesJarTabItem) {
             return routinesJarViewer;
         }
-        if (isTIS && isRouteProcess && selection == beansJarTabItem) {
+        if (isRouteProcess && selection == beansJarTabItem) {
             return beansJarViewer;
         }
         return null;
@@ -536,10 +530,10 @@ public class SetupProcessDependenciesRoutinesDialog extends Dialog {
         if (selection == globalRoutinesTabItem) {
             return globalRoutines;
         }
-        if (isTIS && selection == routinesJarTabItem) {
+        if (selection == routinesJarTabItem) {
             return routinesJars;
         }
-        if (isTIS && isRouteProcess && selection == beansJarTabItem) {
+        if (isRouteProcess && selection == beansJarTabItem) {
             return beansJars;
         }
         return Collections.emptyList();
