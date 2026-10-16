@@ -10,12 +10,11 @@
 // 9 rue Pages 92150 Suresnes, France
 //
 // ============================================================================
-package org.talend.librariesmanager.ui.service;
+package org.talend.librariesmanager.model.service;
 
 import org.talend.core.language.ECodeLanguage;
 import org.talend.core.model.routines.IRoutineProviderCreator;
 import org.talend.core.model.routines.IRoutinesProvider;
-import org.talend.librariesmanager.model.service.TosJavaRoutinesProvider;
 
 /**
  * bqian class global comment. Detailled comment

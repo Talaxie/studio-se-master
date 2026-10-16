@@ -26,7 +26,6 @@ import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.window.Window;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.ui.PlatformUI;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.commons.ui.runtime.exception.MessageBoxExceptionHandler;
 import org.talend.core.GlobalServiceRegister;
@@ -95,9 +94,7 @@ abstract public class DownloadModuleRunnable implements IRunnableWithProgress {
         List<ModuleToInstall> canBeDownloadList = new ArrayList<ModuleToInstall>();
         for (final ModuleToInstall module : toDownload) {
             boolean isLicenseAccepted = module.isFromCustomNexus()
-                    || (LibManagerUiPlugin.getDefault().getPreferenceStore().contains(module.getLicenseType())
-                            && LibManagerUiPlugin.getDefault().getPreferenceStore().getBoolean(module.getLicenseType())
-                            || disableLicenseAcceptFlag);
+					|| LibManagerUiPlugin.isAcceptedLicense(module.getLicenseType()) || disableLicenseAcceptFlag;
             if (isLicenseAccepted) {
                 canBeDownloadList.add(module);
             }
@@ -141,8 +138,7 @@ abstract public class DownloadModuleRunnable implements IRunnableWithProgress {
                 }
                 String licenseType = module.getLicenseType();
                 if (licenseType != null) {
-                    boolean isLicenseAccepted = LibManagerUiPlugin.getDefault().getPreferenceStore()
-                            .getBoolean(module.getLicenseType());
+					boolean isLicenseAccepted = LibManagerUiPlugin.isAcceptedLicense(module.getLicenseType());
                     if (!isLicenseAccepted) {
                         return true;
                     }

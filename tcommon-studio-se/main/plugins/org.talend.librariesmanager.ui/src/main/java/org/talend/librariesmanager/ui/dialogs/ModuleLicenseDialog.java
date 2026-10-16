@@ -25,7 +25,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.talend.core.model.utils.TalendPropertiesUtil;
-import org.talend.librariesmanager.ui.LibManagerUiPlugin;
+import org.talend.librariesmanager.prefs.LicenseAcceptancePrefs;
 import org.talend.librariesmanager.ui.i18n.Messages;
 import org.talend.librariesmanager.utils.RemoteModulesHelper;
 
@@ -138,7 +138,7 @@ public class ModuleLicenseDialog extends Dialog {
      */
     @Override
     protected void okPressed() {
-        LibManagerUiPlugin.getDefault().getPreferenceStore().setValue(licenseType, true);
+		LicenseAcceptancePrefs.setLicenseAccepted(licenseType, true);
         super.okPressed();
     }
 

@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -38,10 +37,11 @@ import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ICoreRunnable;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
-import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.talend.commons.CommonsPlugin;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.commons.utils.network.NetworkUtil;
@@ -56,9 +56,9 @@ import org.talend.core.nexus.TalendLibsServerManager;
 import org.talend.core.runtime.maven.MavenArtifact;
 import org.talend.core.runtime.maven.MavenConstants;
 import org.talend.core.runtime.maven.MavenUrlHelper;
+import org.talend.librariesmanager.i18n.Messages;
 import org.talend.librariesmanager.librarydata.LibraryDataService;
 import org.talend.librariesmanager.model.service.DynamicDistibutionLicenseUtil;
-import org.talend.librariesmanager.ui.i18n.Messages;
 
 import us.monoid.json.JSONArray;
 import us.monoid.json.JSONException;
@@ -80,7 +80,7 @@ public class RemoteModulesHelper {
      * created by sgandon on 24 sept. 2013 Detailled comment
      *
      */
-    private final class RemoteModulesFetchRunnable implements IRunnableWithProgress {
+	private final class RemoteModulesFetchRunnable implements ICoreRunnable {
         private final boolean collectModulesWithJarName;
 
         private volatile boolean useLocalLicenseData;
@@ -111,9 +111,9 @@ public class RemoteModulesHelper {
             this.useLocalLicenseData = useLocalLicenseData;
             this.onlyUseLocalLicenseData = onlyUseLocalLicenseData;
         }
-
+        
         @Override
-        public void run(IProgressMonitor monitor) throws InvocationTargetException, InterruptedException {
+		public void run(IProgressMonitor monitor) throws CoreException {
             final Set<String> mavenUrisTofetch = new HashSet<String>(contextMap.keySet());
             if (LibraryDataService.isBuildLibrariesData()) {
                 LibraryDataService.getInstance().buildLibraryLicenseData(mavenUrisTofetch);
