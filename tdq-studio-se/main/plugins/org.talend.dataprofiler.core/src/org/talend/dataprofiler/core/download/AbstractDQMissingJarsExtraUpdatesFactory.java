@@ -14,7 +14,6 @@ package org.talend.dataprofiler.core.download;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -23,12 +22,14 @@ import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ICoreRunnable;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.SubMonitor;
-import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.m2e.core.MavenPlugin;
 import org.eclipse.m2e.core.embedder.IMaven;
 import org.osgi.framework.Bundle;
@@ -93,7 +94,7 @@ public abstract class AbstractDQMissingJarsExtraUpdatesFactory extends AbstractE
                 }// else keep going fetch missing jar information from remote web site.
 
                 ArrayList<ModuleToInstall> modulesRequiredToBeInstalled = new ArrayList<ModuleToInstall>();
-                IRunnableWithProgress notInstalledModulesRunnable = RemoteModulesHelper.getInstance()
+                ICoreRunnable notInstalledModulesRunnable = RemoteModulesHelper.getInstance()
                         .getNotInstalledModulesRunnable(allUninstalledModules, modulesRequiredToBeInstalled);
                 // jface because it adds graphical dependencies.
                 runNotInstallModule(mainSubMonitor, notInstalledModulesRunnable);// some data need to be fetched
@@ -198,17 +199,17 @@ public abstract class AbstractDQMissingJarsExtraUpdatesFactory extends AbstractE
      */
     abstract protected String getDownloadName();
 
-    private boolean runNotInstallModule(SubMonitor mainSubMonitor, IRunnableWithProgress notInstalledModulesRunnable) {
+    private boolean runNotInstallModule(SubMonitor mainSubMonitor, ICoreRunnable notInstalledModulesRunnable) {
         if (notInstalledModulesRunnable == null) {
             return false;
         }
         try {
             notInstalledModulesRunnable.run(mainSubMonitor.newChild(1));
             return true;
-        } catch (InvocationTargetException e) {
+        } catch (CoreException e) {
             log.error("failed to fetch missing third parties jars information for " + getJarFileNames().get(0), e); //$NON-NLS-1$
             return false;
-        } catch (InterruptedException e) {
+        } catch (OperationCanceledException e) {
             log.error("failed to fetch missing third parties jars information" + getJarFileNames().get(0), e); //$NON-NLS-1$
             return false;
         }
