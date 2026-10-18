@@ -304,11 +304,15 @@ public class Application implements IApplication {
                 // for local project
                 projectType = System.getProperty("talend.branding.type");
             }
+            // no type (e.g. local project without branding type) is stored as an empty value: otherwise the stored
+            // type (e.g. "NO_TYPE" set after an update) is never replaced and the persisted state (opened views,
+            // layout...) is cleared at each startup
+            if (projectType == null) {
+                projectType = ""; //$NON-NLS-1$
+            }
             if (lastProjectType != null && !"".equals(lastProjectType) && !lastProjectType.equals(projectType)
                     || BrandingChecker.isBrandingChanged()) {
-                if (projectType != null) {
-                    store.putValue("last_started_project_type", projectType);
-                }
+                store.putValue("last_started_project_type", projectType);
                 if (!PluginChecker.isStudioLite() || Boolean.getBoolean(IStudioLiteP2Service.PROP_CLEARPERSISTEDSTATE)) {
                     System.setProperty("clearPersistedState", Boolean.TRUE.toString());
                 }
