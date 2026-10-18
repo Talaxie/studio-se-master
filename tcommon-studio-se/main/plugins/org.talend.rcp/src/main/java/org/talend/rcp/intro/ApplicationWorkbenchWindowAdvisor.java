@@ -122,6 +122,8 @@ public class ApplicationWorkbenchWindowAdvisor extends WorkbenchWindowAdvisor {
 
     private static Logger log = Logger.getLogger(ApplicationWorkbenchWindowAdvisor.class);
 
+    private static final String WINDOW_MAXIMIZED_ON_FIRST_LAUNCH = "WINDOW_MAXIMIZED_ON_FIRST_LAUNCH"; //$NON-NLS-1$
+
     private List<IAction> actions = new ArrayList<IAction>();
 
     ApplicationActionBarAdvisor adviser = null;
@@ -158,6 +160,21 @@ public class ApplicationWorkbenchWindowAdvisor extends WorkbenchWindowAdvisor {
     public ActionBarAdvisor createActionBarAdvisor(IActionBarConfigurer configurer) {
         adviser = new ApplicationActionBarAdvisor(configurer);
         return adviser;
+    }
+
+    /**
+     * Maximizes the main window on the first launch only, the next launches restore the size chosen by the user.
+     */
+    private void maximizeOnFirstLaunch() {
+        IPreferenceStore preferenceStore = CorePlugin.getDefault().getPreferenceStore();
+        if (preferenceStore.getBoolean(WINDOW_MAXIMIZED_ON_FIRST_LAUNCH)) {
+            return;
+        }
+        Shell shell = getWindowConfigurer().getWindow().getShell();
+        if (shell != null && !shell.isDisposed()) {
+            shell.setMaximized(true);
+        }
+        preferenceStore.setValue(WINDOW_MAXIMIZED_ON_FIRST_LAUNCH, true);
     }
 
     @Override
@@ -207,6 +224,7 @@ public class ApplicationWorkbenchWindowAdvisor extends WorkbenchWindowAdvisor {
      */
     @Override
     public void postWindowOpen() {
+        maximizeOnFirstLaunch();
         CommonsPlugin.setWorkbenchCreated(true);
         TimeMeasurePerformance.afterStartup();
         TokenCollectorFactory.getFactory().monitor();
