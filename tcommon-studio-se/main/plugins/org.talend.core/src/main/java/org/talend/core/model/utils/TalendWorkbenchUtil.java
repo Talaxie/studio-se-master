@@ -12,6 +12,9 @@
 // ============================================================================
 package org.talend.core.model.utils;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.talend.commons.exception.PersistenceException;
 import org.talend.commons.utils.VersionUtils;
@@ -50,7 +53,7 @@ public class TalendWorkbenchUtil {
             localProvider = true;
         }
 
-        String buildIdField = " (" + VersionUtils.getVersion() + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+        String buildIdField = " (" + formatVersionForTitle(VersionUtils.getDisplayVersion()) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
         if (GlobalServiceRegister.getDefault().isServiceRegistered(IInstalledPatchService.class)) {
             IInstalledPatchService pachService = (IInstalledPatchService) GlobalServiceRegister.getDefault()
                     .getService(IInstalledPatchService.class);
@@ -82,5 +85,22 @@ public class TalendWorkbenchUtil {
         }
         return title;
     }
+
+    /**
+     * Formats the studio version for the window title, e.g. "8.9.0.20261018-0638-SNAPSHOT" becomes "8.9.0 - 20261018".
+     * The version is returned as is if it does not match the "major.minor.micro.yyyyMMdd..." format.
+     */
+    static String formatVersionForTitle(String version) {
+        if (version == null) {
+            return ""; //$NON-NLS-1$
+        }
+        Matcher matcher = TITLE_VERSION_PATTERN.matcher(version);
+        if (matcher.matches()) {
+            return matcher.group(1) + " - " + matcher.group(2); //$NON-NLS-1$
+        }
+        return version;
+    }
+
+    private static final Pattern TITLE_VERSION_PATTERN = Pattern.compile("(\\d+\\.\\d+\\.\\d+)\\.(\\d{8}).*"); //$NON-NLS-1$
 
 }
