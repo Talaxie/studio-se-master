@@ -14,6 +14,8 @@ package org.talend.repository.items.importexport.ui.wizard.imports;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -51,7 +53,11 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Link;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.ui.PartInitException;
+import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.dialogs.PreferencesUtil;
 import org.osgi.framework.FrameworkUtil;
 import org.talend.commons.exception.CommonExceptionHandler;
 import org.talend.commons.runtime.model.emf.provider.EmfResourcesFactoryReader;
@@ -67,6 +73,7 @@ import org.talend.core.prefs.ITalendCorePrefConstants;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.core.runtime.CoreRuntimePlugin;
 import org.talend.core.ui.CoreUIPlugin;
+import org.talend.core.ui.preference.webhook.WebhookPreferencePage;
 import org.talend.core.ui.webService.Webhook;
 import org.talend.repository.ProjectManager;
 import org.talend.repository.items.importexport.handlers.ImportExportHandlersManager;
@@ -94,6 +101,8 @@ public class ImportEtlToolWizardPage extends WizardPage {
 
     private static final String TALEND_FILE_NAME = "talend.project";
 
+    private static final String DEILINK_URL = "https://deilink.fr"; //$NON-NLS-1$
+
     private IStructuredSelection selection;
 
     private final ImportExportHandlersManager importManager = new ImportExportHandlersManager();
@@ -103,6 +112,10 @@ public class ImportEtlToolWizardPage extends WizardPage {
     private String projectLabel;
 
     private TreeViewer jobTreeViewer;
+
+    private ScrolledComposite scrolledComposite;
+
+    private Composite contentComposite;
 
     private static ImportNodesBuilder nodesBuilder = new ImportNodesBuilder();
 
@@ -166,21 +179,84 @@ public class ImportEtlToolWizardPage extends WizardPage {
         return this.selection;
     }
 
+    /**
+     * Shown when no EtlTool webhook is defined: a button to open the EtlTool tab of the Talaxie > Webhook preferences
+     * and a link to the Deilink site for more information about EtlTool.
+     */
+    private void createNoWebhookControls(Composite composite) {
+        Label noWebhookLabel = new Label(composite, SWT.NONE);
+        noWebhookLabel.setText(Messages.getString("ImportEtlToolWizardPage_noWebhook")); //$NON-NLS-1$
+        noWebhookLabel.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false, 2, 1));
+
+        Button configureButton = new Button(composite, SWT.PUSH);
+        configureButton.setText(Messages.getString("ImportEtlToolWizardPage_configureWebhook")); //$NON-NLS-1$
+        configureButton.setLayoutData(new GridData(SWT.LEFT, SWT.TOP, false, false, 2, 1));
+        configureButton.addSelectionListener(new SelectionAdapter() {
+
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                PreferencesUtil.createPreferenceDialogOn(getShell(), WebhookPreferencePage.PAGE_ID, null,
+                        WebhookPreferencePage.TAB_ETLTOOL).open();
+                // the webhook may have been activated: rebuild the page to show the jobs (asynchronously, as this
+                // button is disposed by the rebuild)
+                if (isEtlToolWebhookEnabled()) {
+                    scrolledComposite.getDisplay().asyncExec(() -> {
+                        if (!scrolledComposite.isDisposed()) {
+                            createContent();
+                        }
+                    });
+                }
+            }
+        });
+
+        Link moreInfoLink = new Link(composite, SWT.NONE);
+        moreInfoLink.setText(Messages.getString("ImportEtlToolWizardPage_moreInfo")); //$NON-NLS-1$
+        moreInfoLink.setLayoutData(new GridData(SWT.LEFT, SWT.TOP, false, false, 2, 1));
+        moreInfoLink.addSelectionListener(new SelectionAdapter() {
+
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                try {
+                    PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(new URL(DEILINK_URL));
+                } catch (PartInitException | MalformedURLException ex) {
+                    CommonExceptionHandler.process(ex);
+                }
+            }
+        });
+    }
+
+    private boolean isEtlToolWebhookEnabled() {
+        return CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED);
+    }
+
     @Override
     public void createControl(Composite parent) {
-        ScrolledComposite scrolledComposite = new ScrolledComposite(parent, SWT.V_SCROLL);
+        scrolledComposite = new ScrolledComposite(parent, SWT.V_SCROLL);
         setControl(scrolledComposite);
         scrolledComposite.setLayout(new GridLayout());
         scrolledComposite.setLayoutData(new GridData(GridData.FILL_BOTH));
+        scrolledComposite.setExpandHorizontal(true);
+        scrolledComposite.setExpandVertical(true);
+
+        createContent();
+    }
+
+    /**
+     * Creates (or re-creates, e.g. after the EtlTool webhook has been activated) the content of the page.
+     */
+    private void createContent() {
+        if (contentComposite != null && !contentComposite.isDisposed()) {
+            contentComposite.dispose();
+        }
+        jobTreeViewer = null;
 
         Composite composite = new Composite(scrolledComposite, SWT.NONE);
+        contentComposite = composite;
         composite.setLayout(new GridLayout(2, false));
         composite.setLayoutData(new GridData(GridData.FILL_BOTH | GridData.GRAB_HORIZONTAL | GridData.GRAB_VERTICAL));
-        scrolledComposite.setContent(composite);
 
-        if (!CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
-            Label noWebhookLabel = new Label(composite, SWT.NONE);
-            noWebhookLabel.setText("No webhook defined !");
+        if (!isEtlToolWebhookEnabled()) {
+            createNoWebhookControls(composite);
         } else {
             Text searchText = new Text(composite, SWT.BORDER);
             searchText.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
@@ -267,14 +343,16 @@ public class ImportEtlToolWizardPage extends WizardPage {
                 }
             });
         }
-        fillJobs();
 
         scrolledComposite.setContent(composite);
-        scrolledComposite.setExpandHorizontal(true);
-        scrolledComposite.setExpandVertical(true);
         scrolledComposite.setMinSize(composite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
 
         Dialog.applyDialogFont(composite);
+        scrolledComposite.layout(true, true);
+
+        if (jobTreeViewer != null) {
+            fillJobs();
+        }
     }
 
     public void fillJobs() {
@@ -405,6 +483,10 @@ public class ImportEtlToolWizardPage extends WizardPage {
     }
 
     public boolean performFinish() {
+        if (jobTreeViewer == null) {
+            // no EtlTool webhook defined, nothing to import
+            return true;
+        }
 
         Webhook webhook = new Webhook();
 

@@ -225,6 +225,7 @@ public class ApplicationWorkbenchWindowAdvisor extends WorkbenchWindowAdvisor {
     @Override
     public void postWindowOpen() {
         maximizeOnFirstLaunch();
+        PreferenceDialogSizer.install(getWindowConfigurer().getWindow().getShell().getDisplay());
         CommonsPlugin.setWorkbenchCreated(true);
         TimeMeasurePerformance.afterStartup();
         TokenCollectorFactory.getFactory().monitor();

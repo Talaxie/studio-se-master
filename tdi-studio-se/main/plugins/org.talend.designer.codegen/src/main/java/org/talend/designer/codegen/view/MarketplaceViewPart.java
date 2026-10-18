@@ -33,6 +33,7 @@ import org.eclipse.core.runtime.Platform;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.jface.resource.ImageDescriptor;
+import org.eclipse.jface.util.IPropertyChangeListener;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CLabel;
 import org.eclipse.swt.events.KeyAdapter;
@@ -50,6 +51,7 @@ import org.eclipse.swt.widgets.Link;
 import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.dialogs.PreferencesUtil;
 import org.eclipse.ui.part.ViewPart;
 import org.talend.commons.ui.runtime.ColorConstants;
 import org.talend.commons.ui.utils.io.archive.Unzipper;
@@ -57,6 +59,7 @@ import org.talend.commons.utils.io.FilesUtils;
 import org.talend.core.ui.webService.Webhook;
 import org.talend.designer.codegen.CodeGeneratorActivator;
 import org.talend.designer.codegen.components.ui.IComponentPreferenceConstant;
+import org.talend.designer.codegen.i18n.Messages;
 
 public class MarketplaceViewPart extends ViewPart {
 
@@ -79,6 +82,23 @@ public class MarketplaceViewPart extends ViewPart {
     private Composite installComposite = null;
 
     private List<HashMap<String, String>> componentInstalleds = null;
+
+    private static final String COMPONENTS_PREFERENCE_PAGE_ID = "org.talend.designer.codegen.components.preference"; //$NON-NLS-1$
+
+    private Composite noComponentPathComposite = null;
+
+    private ExpandBar expandBar = null;
+
+    private final IPropertyChangeListener componentPathListener = event -> {
+        if (IComponentPreferenceConstant.USER_COMPONENTS_FOLDER.equals(event.getProperty()) && display != null
+                && !display.isDisposed()) {
+            display.asyncExec(() -> {
+                if (expandBar != null && !expandBar.isDisposed()) {
+                    componentsInit();
+                }
+            });
+        }
+    };
 
     /**
      * Constructor
@@ -104,7 +124,7 @@ public class MarketplaceViewPart extends ViewPart {
         searchText = new Text(headerComposite, SWT.BORDER | SWT.SEARCH | SWT.ICON_CANCEL);
         searchText.setLayoutData(new GridData(SWT.FILL, SWT.BEGINNING, true, false));
         searchText.setText("");
-        searchText.setMessage("Search...");
+        searchText.setMessage(Messages.getString("MarketplaceViewPart.search")); //$NON-NLS-1$
         searchText.addKeyListener(new KeyAdapter() {
 
             public void keyPressed(KeyEvent e) {
@@ -124,7 +144,23 @@ public class MarketplaceViewPart extends ViewPart {
         searchButton.setLayoutData(new GridData(SWT.RIGHT, SWT.TOP, false, false));
         searchButton.addListener(SWT.Selection, event -> componentsInit());
 
-        ExpandBar expandBar = new ExpandBar(parent, SWT.V_SCROLL);
+        // No user components folder: message and button to the Talaxie > Components preferences
+        noComponentPathComposite = new Composite(parent, SWT.NONE);
+        noComponentPathComposite.setLayout(new GridLayout(1, false));
+        noComponentPathComposite.setLayoutData(new GridData(SWT.FILL, SWT.BEGINNING, true, false));
+        noComponentPathComposite.setBackground(ColorConstants.WHITE_COLOR);
+
+        Label noComponentPathLabel = new Label(noComponentPathComposite, SWT.WRAP);
+        noComponentPathLabel.setText(Messages.getString("MarketplaceViewPart.noComponentPath")); //$NON-NLS-1$
+        noComponentPathLabel.setLayoutData(new GridData(SWT.FILL, SWT.BEGINNING, true, false));
+        noComponentPathLabel.setBackground(ColorConstants.WHITE_COLOR);
+
+        Button preferencesButton = new Button(noComponentPathComposite, SWT.PUSH);
+        preferencesButton.setText(Messages.getString("MarketplaceViewPart.openPreferences")); //$NON-NLS-1$
+        preferencesButton.addListener(SWT.Selection, event -> PreferencesUtil
+                .createPreferenceDialogOn(parent.getShell(), COMPONENTS_PREFERENCE_PAGE_ID, null, null).open());
+
+        expandBar = new ExpandBar(parent, SWT.V_SCROLL);
         expandBar.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         expandBar.setBackground(new Color(255, 255, 255));
 
@@ -133,7 +169,7 @@ public class MarketplaceViewPart extends ViewPart {
         uninstallComposite.setLayout(new GridLayout());
         uninstallComposite.setBackground(new Color(255, 255, 255));
         uninstallExpandItem = new ExpandItem(expandBar, SWT.NONE, 0);
-        uninstallExpandItem.setText("Not installed");
+        uninstallExpandItem.setText(Messages.getString("MarketplaceViewPart.notInstalled")); //$NON-NLS-1$
         uninstallExpandItem.setControl(uninstallComposite);
         uninstallExpandItem.setExpanded(true);
 
@@ -142,9 +178,12 @@ public class MarketplaceViewPart extends ViewPart {
         installComposite.setLayout(new GridLayout());
         installComposite.setBackground(new Color(255, 255, 255));
         installExpandItem = new ExpandItem(expandBar, SWT.NONE, 1);
-        installExpandItem.setText("Installed");
+        installExpandItem.setText(Messages.getString("MarketplaceViewPart.installed")); //$NON-NLS-1$
         installExpandItem.setHeight(installComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT).y);
         installExpandItem.setControl(installComposite);
+
+        // refresh the view when the user components folder is changed in the preferences
+        CodeGeneratorActivator.getDefault().getPreferenceStore().addPropertyChangeListener(componentPathListener);
 
         componentsInit();
     }
@@ -154,13 +193,34 @@ public class MarketplaceViewPart extends ViewPart {
         // TODO
     }
 
+    @Override
+    public void dispose() {
+        CodeGeneratorActivator.getDefault().getPreferenceStore().removePropertyChangeListener(componentPathListener);
+        super.dispose();
+    }
+
+    /**
+     * Shows the message and the button to the preferences when no user components folder is defined, else the lists of
+     * components.
+     */
+    private void updateComponentPathState() {
+        boolean noComponentPath = getComponentPath().isEmpty();
+        noComponentPathComposite.setVisible(noComponentPath);
+        ((GridData) noComponentPathComposite.getLayoutData()).exclude = !noComponentPath;
+        expandBar.setVisible(!noComponentPath);
+        ((GridData) expandBar.getLayoutData()).exclude = noComponentPath;
+        searchText.setEnabled(!noComponentPath);
+        noComponentPathComposite.getParent().layout(true, true);
+    }
+
     private void componentsInit() {
         componentUninstalleds = null;
         componentInstalleds = null;
-        displayList();
+        updateComponentPathState();
         if (getComponentPath().equals("")) {
             return;
         }
+        displayList();
 
         String search = searchText.getText();
         ExecutorService executor = Executors.newFixedThreadPool(1);
@@ -207,15 +267,14 @@ public class MarketplaceViewPart extends ViewPart {
             composite.setBackground(ColorConstants.WHITE_COLOR);
 
             if (getComponentPath().equals("")) {
-                CLabel noComponentPathLabel = new CLabel(composite, SWT.NONE);
-                noComponentPathLabel.setText("No component path defined !");
+                // nothing: the message and the button to the preferences are shown instead of the lists
             } else if (componentUninstalleds == null) {
                 ProgressBar progressBar = new ProgressBar(composite, SWT.INDETERMINATE);
                 progressBar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
                 progressBar.setVisible(true);
             } else if (componentUninstalleds.isEmpty()) {
                 CLabel authorLabel = new CLabel(composite, SWT.NONE);
-                authorLabel.setText("None");
+                authorLabel.setText(Messages.getString("MarketplaceViewPart.none")); //$NON-NLS-1$
                 authorLabel.setBackground(ColorConstants.WHITE_COLOR);
             } else {
                 for (HashMap<String, String> component : componentUninstalleds) {
@@ -255,14 +314,14 @@ public class MarketplaceViewPart extends ViewPart {
                         installButton.setImage(ImageDescriptor
                                 .createFromURL(this.getClass().getResource("/icons/company_16x16.png")).createImage());
                     }
-                    installButton.setText("Installer");
+                    installButton.setText(Messages.getString("MarketplaceViewPart.install")); //$NON-NLS-1$
                     installButton.addListener(SWT.Selection, event -> {
                         installButton.setEnabled(false);
-                        installButton.setText("Installation...");
+                        installButton.setText(Messages.getString("MarketplaceViewPart.installing")); //$NON-NLS-1$
                         if (componentInstall(component))
-                            installButton.setText("Installé");
+                            installButton.setText(Messages.getString("MarketplaceViewPart.installedDone")); //$NON-NLS-1$
                         else {
-                            installButton.setText("Installer");
+                            installButton.setText(Messages.getString("MarketplaceViewPart.install")); //$NON-NLS-1$
                             installButton.setEnabled(true);
                         }
 
@@ -301,7 +360,7 @@ public class MarketplaceViewPart extends ViewPart {
 
                     // Lien
                     Link link = new Link(itemheaderComposite, SWT.NONE);
-                    link.setText("<a href=\"" + component.get("url") + "\">(see info)</a>");
+                    link.setText("<a href=\"" + component.get("url") + "\">" + Messages.getString("MarketplaceViewPart.seeInfo") + "</a>"); //$NON-NLS-1$
                     link.setBackground(ColorConstants.WHITE_COLOR);
                     link.addListener(SWT.Selection, event -> openUrl(event.text));
 
@@ -319,15 +378,14 @@ public class MarketplaceViewPart extends ViewPart {
             compositeInstall.setBackground(ColorConstants.WHITE_COLOR);
 
             if (getComponentPath().equals("")) {
-                CLabel noComponentPathLabel = new CLabel(compositeInstall, SWT.NONE);
-                noComponentPathLabel.setText("No component path defined !");
+                // nothing: the message and the button to the preferences are shown instead of the lists
             } else if (componentInstalleds == null) {
                 ProgressBar progressBar = new ProgressBar(compositeInstall, SWT.INDETERMINATE);
                 progressBar.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
                 progressBar.setVisible(true);
             } else if (componentInstalleds.isEmpty()) {
                 CLabel authorLabel = new CLabel(compositeInstall, SWT.NONE);
-                authorLabel.setText("None");
+                authorLabel.setText(Messages.getString("MarketplaceViewPart.none")); //$NON-NLS-1$
                 authorLabel.setBackground(ColorConstants.WHITE_COLOR);
             } else {
                 for (HashMap<String, String> component : componentInstalleds) {
@@ -368,13 +426,13 @@ public class MarketplaceViewPart extends ViewPart {
                         removeButton.setImage(ImageDescriptor
                                 .createFromURL(this.getClass().getResource("/icons/company_16x16.png")).createImage());
                     }
-                    removeButton.setText("Remove");
+                    removeButton.setText(Messages.getString("MarketplaceViewPart.remove")); //$NON-NLS-1$
                     removeButton.addListener(SWT.Selection, event -> {
                         removeButton.setEnabled(false);
-                        removeButton.setText("Removing...");
+                        removeButton.setText(Messages.getString("MarketplaceViewPart.removing")); //$NON-NLS-1$
                         if (componentsUninstall(component))
-                            promptRestartIfNeeded("Désinstallation du composant OK\nSouhaitez-vous redémarrer maintenant pour mettre à jour le marketplace?");
-                        removeButton.setText("Removed");
+                            promptRestartIfNeeded(Messages.getString("MarketplaceViewPart.uninstallRestart")); //$NON-NLS-1$
+                        removeButton.setText(Messages.getString("MarketplaceViewPart.removed")); //$NON-NLS-1$
                     });
 
                     // Version
@@ -410,7 +468,7 @@ public class MarketplaceViewPart extends ViewPart {
 
                     // Lien
                     Link link = new Link(itemheaderComposite, SWT.NONE);
-                    link.setText("<a href=\"" + component.get("url") + "\">(see info)</a>");
+                    link.setText("<a href=\"" + component.get("url") + "\">" + Messages.getString("MarketplaceViewPart.seeInfo") + "</a>"); //$NON-NLS-1$
                     link.setBackground(ColorConstants.WHITE_COLOR);
                     link.addListener(SWT.Selection, event -> openUrl(event.text));
 
@@ -505,8 +563,7 @@ public class MarketplaceViewPart extends ViewPart {
 
         }
         
-        promptRestartIfNeeded(
-                "L'installation du composant OK\nSouhaitez-vous redémarrer maintenant pour activer le composant dans la palette ?");
+        promptRestartIfNeeded(Messages.getString("MarketplaceViewPart.installRestart")); //$NON-NLS-1$
         return true;
     }
 
@@ -539,7 +596,7 @@ public class MarketplaceViewPart extends ViewPart {
             sb.append("Process finished with code: " + exitCode);
 
             if (exitCode != 0) {
-                String errorMessage = ("Erreur durant l'installation du Composant ");
+                String errorMessage = Messages.getString("MarketplaceViewPart.installError"); //$NON-NLS-1$
                 MessageDialog.openError(PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(), errorMessage,
                         sb.toString());
             }
@@ -558,7 +615,7 @@ public class MarketplaceViewPart extends ViewPart {
         Display.getDefault().asyncExec(() -> {
             boolean restart = MessageDialog.openQuestion(
                 PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(),
-                "Redémarrage nécessaire pour la prise en compte des composants",message
+                Messages.getString("MarketplaceViewPart.restartTitle"), message //$NON-NLS-1$
             );
             if (restart) {
                 PlatformUI.getWorkbench().restart();

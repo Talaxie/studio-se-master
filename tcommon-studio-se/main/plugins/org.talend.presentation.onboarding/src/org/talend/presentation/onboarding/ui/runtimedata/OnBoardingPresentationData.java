@@ -14,6 +14,7 @@ package org.talend.presentation.onboarding.ui.runtimedata;
 
 import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.graphics.Rectangle;
+import org.eclipse.swt.widgets.Display;
 
 /**
  * created by cmeng on Sep 11, 2015 Detailled comment
@@ -73,10 +74,25 @@ public class OnBoardingPresentationData {
                 if (contentArea == null) {
                     contentArea = new Rectangle(0, 0, 0, 0);
                 }
-                contentArea.width = size.x;
-                contentArea.height = size.y;
+                double scale = getBrowserScale();
+                contentArea.width = (int) Math.round(size.x * scale);
+                contentArea.height = (int) Math.round(size.y * scale);
             }
         }
+    }
+
+    /**
+     * The page sizes are designed for a 100% zoom. The content browser is scaled with the real Windows zoom, while SWT
+     * may scale the widgets less (by default SWT only uses 100% or 200%, so nothing at 125% or 150%): the page size is
+     * multiplied by the difference, otherwise the content is truncated.
+     *
+     * Display#getDPI() returns the real DPI divided by the SWT zoom, so DPI / 96 is this difference (1 when SWT scales
+     * the widgets like the browser).
+     */
+    private static double getBrowserScale() {
+        Display display = Display.getCurrent() != null ? Display.getCurrent() : Display.getDefault();
+        double scale = display.getDPI().x / 96.0;
+        return scale > 1 ? scale : 1;
     }
 
 }

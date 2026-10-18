@@ -449,11 +449,12 @@ public class Webhook {
         String finalToken = "";
 
         try {
+            // the given back host (e.g. the value typed in the preferences page for a test), else the saved one
             if (backHost == null || backHost.trim().isEmpty()) {
-                backHost = ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST;
+                backHost = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST);
             }
 
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/User/Login";
+            String serviceUrl = backHost + "/api/User/Login";
 
             JSONObject paramJson = new JSONObject();
             paramJson.put("username", login);

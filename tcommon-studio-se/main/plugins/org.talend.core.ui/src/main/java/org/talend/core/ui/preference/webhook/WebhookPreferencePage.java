@@ -53,6 +53,18 @@ import org.talend.commons.ui.gmf.util.DisplayUtils;
  */
 public class WebhookPreferencePage extends FieldEditorPreferencePage implements IWorkbenchPreferencePage {
 
+    public static final String PAGE_ID = "org.talend.core.prefs.webhook"; //$NON-NLS-1$
+
+    /**
+     * Name of the EtlTool tab, to give as data when opening the page to show this tab
+     * (PreferencesUtil.createPreferenceDialogOn(shell, PAGE_ID, null, TAB_ETLTOOL)).
+     */
+    public static final String TAB_ETLTOOL = "EtlTool"; //$NON-NLS-1$
+
+    private CTabFolder tabFolder;
+
+    private String tabToSelect;
+
     private StringFieldEditor frontHostField;
     private StringFieldEditor backHostField;
     private StringFieldEditor loginField;
@@ -77,7 +89,7 @@ public class WebhookPreferencePage extends FieldEditorPreferencePage implements 
         parent.setLayoutData(new GridData(GridData.FILL_BOTH));
         parent.setLayout(new GridLayout(1, false));
 
-        CTabFolder tabFolder = new CTabFolder(parent, SWT.NULL);
+        tabFolder = new CTabFolder(parent, SWT.NULL);
         tabFolder.setSimple(false);
         tabFolder.setLayoutData(new GridData(GridData.FILL_BOTH));
         tabFolder.setLayout(new GridLayout(1, false));
@@ -125,7 +137,7 @@ public class WebhookPreferencePage extends FieldEditorPreferencePage implements 
 
 	    // EtlTool part
         CTabItem tabItemEtlTool = new CTabItem(tabFolder, SWT.NULL);
-        tabItemEtlTool.setText("EtlTool");
+        tabItemEtlTool.setText(TAB_ETLTOOL);
         tabItemEtlTool.setToolTipText("EtlTool configuration");
         if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
             tabItemEtlTool.setImage(ImageDescriptor.createFromURL(this.getClass().getResource("/icons/circle_actif_16x16.png")).createImage());
@@ -281,6 +293,35 @@ public class WebhookPreferencePage extends FieldEditorPreferencePage implements 
 				}
 			}
         });
+    }
+
+    @Override
+    protected void initialize() {
+        super.initialize();
+        selectTab();
+    }
+
+    /**
+     * Selects the tab named by the data (e.g. {@link #TAB_ETLTOOL}).
+     */
+    @Override
+    public void applyData(Object data) {
+        if (data instanceof String) {
+            tabToSelect = (String) data;
+            selectTab();
+        }
+    }
+
+    private void selectTab() {
+        if (tabToSelect == null || tabFolder == null || tabFolder.isDisposed()) {
+            return;
+        }
+        for (CTabItem item : tabFolder.getItems()) {
+            if (tabToSelect.equals(item.getText())) {
+                tabFolder.setSelection(item);
+                return;
+            }
+        }
     }
 
     /*
