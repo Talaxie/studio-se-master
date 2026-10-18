@@ -23,6 +23,7 @@ import org.eclipse.draw2d.ToolbarLayout;
 import org.eclipse.draw2d.geometry.Dimension;
 import org.eclipse.draw2d.geometry.Insets;
 import org.eclipse.draw2d.geometry.Rectangle;
+import org.talend.designer.gefabstractmap.editor.MapperGraphicalViewer;
 import org.talend.designer.gefabstractmap.part.MapperTablePart;
 import org.talend.designer.mapper.ui.color.ColorInfo;
 import org.talend.designer.xmlmap.model.emf.xmlmap.AbstractInOutTree;
@@ -108,7 +109,7 @@ public class ColumnTitleFigure extends Figure {
                 Rectangle newBounds = new Rectangle(x, y, prefSize.width, maxHeight);
                 child.setBounds(newBounds);
             } else if (numChildren == 2) {
-                int initExpressionWidth = (xmlTreePart.getViewer().getControl().getSize().x / 3 - 80 - 10) / 2;
+                int initExpressionWidth = (MapperGraphicalViewer.getAvailableSize(xmlTreePart.getViewer()).x / 3 - 80 - 10) / 2;
                 IFigure child = (IFigure) children.get(0);
                 Rectangle newBounds = new Rectangle(x, y, initExpressionWidth, maxHeight);
                 child.setBounds(newBounds);

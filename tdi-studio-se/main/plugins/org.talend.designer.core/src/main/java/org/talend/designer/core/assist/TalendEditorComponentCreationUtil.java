@@ -55,6 +55,7 @@ public class TalendEditorComponentCreationUtil {
                 assist.showComponentCreationAssist(e.character);
             }
         };
+        TalendEditorComponentCreationAssist.installMouseLocationTracker(graphicalViewer.getControl());
         graphicalViewer.getControl().addKeyListener(listener);
         graphicalViewer.getControl().setData(COMPONENT_CREATION_ASSIST_LISTENER, listener);
 

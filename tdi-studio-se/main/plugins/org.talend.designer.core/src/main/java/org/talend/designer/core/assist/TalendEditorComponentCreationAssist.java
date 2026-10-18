@@ -29,6 +29,7 @@ import org.eclipse.swt.events.MouseEvent;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Event;
+import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
@@ -74,10 +75,20 @@ public class TalendEditorComponentCreationAssist {
 
     private String filterText;
 
+    private static final String MOUSE_LOCATION_TRACKER = "COMPONENT_CREATION_ASSIST_MOUSE_LOCATION_TRACKER"; //$NON-NLS-1$
+
+    private static final String LAST_MOUSE_LOCATION = "COMPONENT_CREATION_ASSIST_LAST_MOUSE_LOCATION"; //$NON-NLS-1$
+
+    /*
+     * position of the cursor in the editor control when the assist was opened, the component is created there
+     */
+    private org.eclipse.swt.graphics.Point componentLocation;
+
     public TalendEditorComponentCreationAssist(String categoryName, GraphicalViewer viewer, CommandStack commandStack,
             IProcess2 process) {
         this.graphicViewer = viewer;
         this.graphicControl = viewer.getControl();
+        installMouseLocationTracker(graphicControl);
         this.process = process;
         proposalList = new ArrayList<IContentProposal>();
 
@@ -99,6 +110,7 @@ public class TalendEditorComponentCreationAssist {
         if (cursorRelativePosition == null) {
             return;
         }
+        componentLocation = cursorRelativePosition;
 
         /*
          * only one assist text at the same time in all editors
@@ -116,10 +128,34 @@ public class TalendEditorComponentCreationAssist {
         activateAssist(triggerChar);
     }
 
+    /**
+     * Records the last mouse location received by the editor control. The location of a mouse event is in the
+     * coordinates of the control, like the events handled by GEF, while mapping the display cursor location to the
+     * control is wrong when the Windows zoom is > 100% (the draw2d autoscale disables the SWT autoscale of the
+     * control).
+     */
+    public static void installMouseLocationTracker(Control control) {
+        if (control == null || control.isDisposed() || control.getData(MOUSE_LOCATION_TRACKER) != null) {
+            return;
+        }
+        Listener tracker = event -> control.setData(LAST_MOUSE_LOCATION, new org.eclipse.swt.graphics.Point(event.x, event.y));
+        control.addListener(SWT.MouseMove, tracker);
+        control.addListener(SWT.MouseDown, tracker);
+        control.setData(MOUSE_LOCATION_TRACKER, tracker);
+    }
+
     private org.eclipse.swt.graphics.Point calculatePosition() {
         /*
          * calculate the cursor position on current editor
          */
+        if (graphicControl.getDisplay().getCursorControl() != graphicControl) {
+            return null;
+        }
+        Object lastMouseLocation = graphicControl.getData(LAST_MOUSE_LOCATION);
+        if (lastMouseLocation instanceof org.eclipse.swt.graphics.Point) {
+            org.eclipse.swt.graphics.Point location = (org.eclipse.swt.graphics.Point) lastMouseLocation;
+            return new org.eclipse.swt.graphics.Point(location.x, location.y);
+        }
         org.eclipse.swt.graphics.Point cursorAbsLocation = graphicControl.getDisplay().getCursorLocation();
         org.eclipse.swt.graphics.Point cursorRelativePosition = graphicControl.getDisplay().map(null, graphicControl,
                 cursorAbsLocation);
@@ -267,10 +303,9 @@ public class TalendEditorComponentCreationAssist {
             final StitchPseudoComponent stitchPseudoComponent = (StitchPseudoComponent) component;
             openBrowser(stitchPseudoComponent);
         } else {
-            org.eclipse.swt.graphics.Point componentLocation = assistText.getLocation();
-            componentLocation.y += assistText.getLineHeight();
             disposeAssistText();
-            Object createdNode = createComponent(component, componentLocation);
+            Object createdNode = createComponent(component,
+                    new org.eclipse.swt.graphics.Point(componentLocation.x, componentLocation.y));
             selectComponent(createdNode);
         }
     }

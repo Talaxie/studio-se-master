@@ -29,6 +29,7 @@ import org.eclipse.gef.EditPart;
 import org.eclipse.gef.GraphicalEditPart;
 import org.eclipse.gef.MouseWheelHelper;
 import org.eclipse.swt.widgets.Event;
+import org.talend.designer.gefabstractmap.editor.MapperGraphicalViewer;
 import org.talend.designer.gefabstractmap.figures.layout.XmlMapDataLayout;
 import org.talend.designer.gefabstractmap.figures.layout.ZoneContentLayout;
 import org.talend.designer.gefabstractmap.figures.manager.RootModelManager;
@@ -289,7 +290,7 @@ public abstract class MapperRootEditPart extends BaseEditPart implements MouseWh
         @Override
         public void layout(IFigure parent) {
             List children = parent.getChildren();
-            org.eclipse.swt.graphics.Point avilableSize = getViewer().getControl().getSize();
+            org.eclipse.swt.graphics.Point avilableSize = MapperGraphicalViewer.getAvailableSize(getViewer());
             Rectangle clientArea = parent.getClientArea();
             int x = clientArea.x;
             int y = clientArea.y;

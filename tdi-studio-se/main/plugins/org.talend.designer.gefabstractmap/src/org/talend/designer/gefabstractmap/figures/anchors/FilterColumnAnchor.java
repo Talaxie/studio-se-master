@@ -91,7 +91,7 @@ public class FilterColumnAnchor extends ChopboxAnchor {
             BaseConnectionEditPart baseConnectionPart = (BaseConnectionEditPart) connectionPart;
             PolylineConnection connFigure = (PolylineConnection) connectionPart.getFigure();
 
-            org.eclipse.swt.graphics.Point avilableSize = entityManager.getGraphicalViewer().getControl().getSize();
+            org.eclipse.swt.graphics.Point avilableSize = entityManager.getGraphicalViewer().getAvailableSize();
 
             if (ref != null) {
                 if (ref.y < 0) {

@@ -70,7 +70,7 @@ public class FilterTreeAnchor extends ChopboxAnchor {
             BaseConnectionEditPart baseConnectionPart = (BaseConnectionEditPart) connectionPart;
             PolylineConnection connFigure = (PolylineConnection) connectionPart.getFigure();
 
-            org.eclipse.swt.graphics.Point avilableSize = tableManager.getGraphicalViewer().getControl().getSize();
+            org.eclipse.swt.graphics.Point avilableSize = tableManager.getGraphicalViewer().getAvailableSize();
 
             if (ref != null) {
                 if (ref.y < 0) {

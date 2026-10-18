@@ -15,10 +15,11 @@ package org.talend.designer.gefabstractmap.policy;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.draw2d.Figure;
 import org.eclipse.draw2d.Graphics;
 import org.eclipse.draw2d.IFigure;
 import org.eclipse.draw2d.Locator;
+import org.eclipse.draw2d.geometry.Insets;
+import org.eclipse.draw2d.geometry.PrecisionRectangle;
 import org.eclipse.draw2d.geometry.Rectangle;
 import org.eclipse.gef.GraphicalEditPart;
 import org.eclipse.gef.editpolicies.NonResizableEditPolicy;
@@ -43,7 +44,7 @@ public class RowSelectionEditPolicy extends NonResizableEditPolicy {
         return list;
     }
 
-    private IFigure getLocatorFigure(GraphicalEditPart owner) {
+    private Locator createLocator(GraphicalEditPart owner) {
         IFigure figure = owner.getFigure();
         if (owner instanceof TableEntityPart) {
             TableEntityFigure treeNodeFigure = (TableEntityFigure) figure;
@@ -53,24 +54,48 @@ public class RowSelectionEditPolicy extends NonResizableEditPolicy {
             Rectangle treeBounds = parentFigure.getBounds();
             Rectangle rowBounds = treeNodeFigure.getElement().getBounds();
             Rectangle treeNodeBounds = figure.getBounds();
-            figure = new Figure();
             if (treeBounds.x + 1 != treeNodeBounds.x || treeNodeBounds.width > treeBounds.width) {
-                figure.setBounds(new Rectangle(treeBounds.x + 1, treeNodeBounds.y, treeBounds.width - 2, rowBounds.height));
-                return figure;
+                return new RowLocator(figure,
+                        new Rectangle(treeBounds.x + 1, treeNodeBounds.y, treeBounds.width - 2, rowBounds.height));
             } else {
-                figure.setBounds(owner.getFigure().getBounds().getCopy());
-                figure.getBounds().height = rowBounds.height;
-                return figure;
+                Rectangle bounds = treeNodeBounds.getCopy();
+                bounds.height = rowBounds.height;
+                return new RowLocator(figure, bounds);
             }
         } else if (figure instanceof VarEntityFigure) {
-            Rectangle copy = figure.getBounds().getCopy();
-            figure = new Figure();
-            figure.setBounds(copy);
-            return figure;
+            return new RowLocator(figure, figure.getBounds().getCopy());
         }
 
-        return owner.getFigure();
+        return new MoveHandleLocator(figure);
 
+    }
+
+    /**
+     * Same as {@link MoveHandleLocator}, but with bounds which differ from the reference figure ones. The bounds are
+     * translated to absolute coordinates by the reference figure (in the figure tree), so the scroll, the zoom and the
+     * draw2d autoscale (Windows zoom > 100%) are taken into account.
+     */
+    static class RowLocator implements Locator {
+
+        private final IFigure reference;
+
+        private final Rectangle bounds;
+
+        RowLocator(IFigure reference, Rectangle bounds) {
+            this.reference = reference;
+            this.bounds = bounds;
+        }
+
+        @Override
+        public void relocate(IFigure target) {
+            Insets insets = target.getInsets();
+            Rectangle r = new PrecisionRectangle(bounds.getResized(-1, -1));
+            reference.translateToAbsolute(r);
+            target.translateToRelative(r);
+            r.translate(-insets.left, -insets.top);
+            r.resize(insets.getWidth() + 1, insets.getHeight() + 1);
+            target.setBounds(r);
+        }
     }
 
     class RowMoveHandler extends MoveHandle {
@@ -81,7 +106,7 @@ public class RowSelectionEditPolicy extends NonResizableEditPolicy {
 
         @Override
         public Locator getLocator() {
-            setLocator(new MoveHandleLocator(getLocatorFigure(getOwner())));
+            setLocator(createLocator(getOwner()));
             return super.getLocator();
         }
 

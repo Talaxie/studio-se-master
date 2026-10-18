@@ -18,6 +18,7 @@ import java.util.List;
 import org.eclipse.draw2d.ExclusionSearch;
 import org.eclipse.draw2d.IFigure;
 import org.eclipse.gef.EditPart;
+import org.eclipse.gef.EditPartViewer;
 import org.eclipse.gef.ui.parts.GraphicalViewerImpl;
 import org.talend.designer.gefabstractmap.figures.manager.FiguresManager;
 import org.talend.designer.gefabstractmap.manager.AbstractMapperManager;
@@ -34,6 +35,9 @@ import org.talend.designer.gefabstractmap.utils.MapperUtils;
  *
  */
 public abstract class MapperGraphicalViewer extends GraphicalViewerImpl {
+
+    // same as org.eclipse.gef.internal.InternalGEFPlugin.MONITOR_SCALE_PROPERTY (internal API)
+    private static final String MONITOR_SCALE_PROPERTY = "monitorScale"; //$NON-NLS-1$
 
     private FiguresManager listener;
 
@@ -137,5 +141,30 @@ public abstract class MapperGraphicalViewer extends GraphicalViewerImpl {
 
     public FiguresManager getFiguresManager() {
         return this.listener;
+    }
+
+    /**
+     * Returns the size of the viewer control in figure coordinates.
+     * <p>
+     * When the draw2d autoscale is enabled (Windows with a zoom > 100%), the control size is in physical pixels while
+     * the figures are scaled by the monitor zoom, so the control size must be divided by this zoom.
+     */
+    public org.eclipse.swt.graphics.Point getAvailableSize() {
+        org.eclipse.swt.graphics.Point size = getControl().getSize();
+        Object scale = getProperty(MONITOR_SCALE_PROPERTY);
+        if (scale instanceof Double) {
+            double monitorScale = (Double) scale;
+            if (monitorScale > 0 && monitorScale != 1) {
+                return new org.eclipse.swt.graphics.Point((int) (size.x / monitorScale), (int) (size.y / monitorScale));
+            }
+        }
+        return size;
+    }
+
+    public static org.eclipse.swt.graphics.Point getAvailableSize(EditPartViewer viewer) {
+        if (viewer instanceof MapperGraphicalViewer) {
+            return ((MapperGraphicalViewer) viewer).getAvailableSize();
+        }
+        return viewer.getControl().getSize();
     }
 }

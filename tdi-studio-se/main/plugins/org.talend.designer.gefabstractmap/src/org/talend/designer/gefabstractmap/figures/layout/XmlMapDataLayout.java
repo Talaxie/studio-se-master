@@ -52,7 +52,7 @@ public class XmlMapDataLayout extends AbstractHintLayout {
     public void layout(IFigure parent) {
         List children = parent.getChildren();
         int numChildren = children.size();
-        org.eclipse.swt.graphics.Point avilableSize = viewer.getControl().getSize();
+        org.eclipse.swt.graphics.Point avilableSize = viewer.getAvailableSize();
 
         double shrinkWidth = 1;
         if (previousAvilableSize != null && previousAvilableSize != avilableSize) {
@@ -165,7 +165,7 @@ public class XmlMapDataLayout extends AbstractHintLayout {
     @Override
     protected Dimension calculatePreferredSize(IFigure f, int wHint, int hHint) {
 
-        return new Dimension(viewer.getControl().getSize());
+        return new Dimension(viewer.getAvailableSize());
     }
 
     /**
