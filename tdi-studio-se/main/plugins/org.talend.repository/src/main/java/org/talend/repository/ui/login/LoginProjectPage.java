@@ -252,6 +252,9 @@ public class LoginProjectPage extends AbstractLoginActionPage {
     
     private boolean isSSOMode = false;
 
+    /** The connections dialog has been opened automatically because a connection is needed */
+    private boolean connectionsDialogOpenedForEmptyConnection = false;
+
     public static final String CLM_LINK = "https://document-link.us.cloud.talend.com/ts_ug_launch-studio?version=80&lang=en&env=prd";
 
     public LoginProjectPage(Composite parent, LoginDialogV2 dialog, int style) {
@@ -1464,6 +1467,13 @@ public class LoginProjectPage extends AbstractLoginActionPage {
     }
 
     public void handleOpenConnectionsDialog(boolean showError) {
+        handleOpenConnectionsDialog(showError, false);
+    }
+
+    /**
+     * @param focusOnUserField true to give the focus to the user (e-mail) field of the connections dialog
+     */
+    public void handleOpenConnectionsDialog(boolean showError, boolean focusOnUserField) {
         try {
             if (showError && errorManager.isHasAuthException()) {
                 String[] dialogButtonLabels = new String[] { IDialogConstants.YES_LABEL, IDialogConstants.CANCEL_LABEL };
@@ -1485,6 +1495,7 @@ public class LoginProjectPage extends AbstractLoginActionPage {
             Shell shell = getShell();
             ConnectionsDialog connectionsDialog = new ConnectionsDialog(shell, curConn,
                     hasAuthException, this.isSSOMode);
+            connectionsDialog.setFocusOnUserField(focusOnUserField);
             int open = connectionsDialog.open();
             if (shell != null && shell.isDisposed()) {
                 return;
@@ -1912,6 +1923,23 @@ public class LoginProjectPage extends AbstractLoginActionPage {
      * @see org.talend.repository.ui.login.LoginComposite#setStatusArea()
      * @throws PersistenceException
      */
+    /**
+     * When a connection is needed, opens the connections dialog with the focus on the user (e-mail) field. Only once,
+     * so the dialog is not opened again if the user cancels it.
+     */
+    private void openConnectionsDialogForEmptyConnection() {
+        if (connectionsDialogOpenedForEmptyConnection) {
+            return;
+        }
+        connectionsDialogOpenedForEmptyConnection = true;
+        // asynchronously, as the errors are checked during the refresh of the page
+        Display.getDefault().asyncExec(() -> {
+            if (!isDisposed() && getConnection() == null) {
+                handleOpenConnectionsDialog(false, true);
+            }
+        });
+    }
+
     public void checkErrors() throws Exception {
         Exception ex[] = new Exception[1];
         if (hasUpdate) {
@@ -1938,6 +1966,7 @@ public class LoginProjectPage extends AbstractLoginActionPage {
                     }
                 } else {
                     errorManager.setErrMessage(Messages.getString("LoginComposite.connectionEmpty")); //$NON-NLS-1$
+                    openConnectionsDialogForEmptyConnection();
                 }
             } catch (Exception e) {
                 ex[0] = e;

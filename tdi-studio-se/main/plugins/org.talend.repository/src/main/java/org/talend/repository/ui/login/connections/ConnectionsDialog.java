@@ -85,6 +85,8 @@ public class ConnectionsDialog extends TitleAreaDialog {
 
     private boolean ssoMode = false;
 
+    private boolean focusOnUserField = false;
+
     public ConnectionsDialog(Shell parentShell) {
         super(parentShell);
         setShellStyle(getShellStyle() | SWT.RESIZE);
@@ -107,6 +109,26 @@ public class ConnectionsDialog extends TitleAreaDialog {
 
     public boolean isSsoMode() {
         return this.ssoMode;
+    }
+
+    /**
+     * When true, the user (e-mail) field gets the focus when the dialog is opened.
+     */
+    public void setFocusOnUserField(boolean focusOnUserField) {
+        this.focusOnUserField = focusOnUserField;
+    }
+
+    @Override
+    public void create() {
+        super.create();
+        if (focusOnUserField) {
+            // after the dialog is opened, as the focus is then given to the default button
+            getShell().getDisplay().asyncExec(() -> {
+                if (formComposite != null && !formComposite.isDisposed()) {
+                    formComposite.setFocusOnUserField();
+                }
+            });
+        }
     }
 
     protected void setTitleImage() {

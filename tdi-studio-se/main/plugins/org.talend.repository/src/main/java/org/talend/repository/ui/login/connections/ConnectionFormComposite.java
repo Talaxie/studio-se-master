@@ -630,6 +630,16 @@ public class ConnectionFormComposite extends Composite {
         return userText.getText();
     }
 
+    /**
+     * Gives the focus to the user (e-mail) field, if it is shown.
+     */
+    public void setFocusOnUserField() {
+        if (userText != null && !userText.isDisposed() && userText.isVisible() && userText.isEnabled()) {
+            userText.setFocus();
+            userText.selectAll();
+        }
+    }
+
     private String getPassword() {
         return password;
     }
