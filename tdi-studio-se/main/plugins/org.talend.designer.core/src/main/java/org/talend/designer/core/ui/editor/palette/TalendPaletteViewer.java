@@ -37,6 +37,7 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
@@ -61,6 +62,7 @@ import org.talend.designer.core.ui.editor.TalendEditorPaletteFactory.RecentlyUse
 import org.talend.designer.core.ui.preferences.PaletteSettingsPreferencePage;
 import org.talend.designer.core.utils.UnifiedComponentUtil;
 import org.talend.themes.core.elements.stylesettings.TalendPaletteCSSStyleSetting;
+import org.talend.themes.core.elements.utils.TalendThemeUtils;
 
 /**
  *
@@ -168,15 +170,25 @@ public class TalendPaletteViewer extends PaletteViewer {
      * @see org.eclipse.gef.ui.parts.ScrollingGraphicalViewer#creatToolControl(org.eclipse.swt.widgets.Composite)
      */
     public Control creatToolControl(Composite parent) {
-        Composite container = new Composite(parent, SWT.BORDER);
+        // in the dark theme, the native border of Windows is a thick light 3D frame: a thin dark border is drawn instead
+        boolean darkTheme = TalendThemeUtils.isDarkModeTheme();
+        Composite container = new Composite(parent, darkTheme ? SWT.NONE : SWT.BORDER);
         // GridLayout layout = new GridLayout(3, false);
         GridLayout layout = new GridLayout(2, false);
         layout.marginLeft = 0;
         layout.marginRight = 0;
         layout.marginTop = 0;
         layout.marginBottom = 0;
-        layout.marginHeight = 0;
-        layout.marginWidth = 0;
+        layout.marginHeight = darkTheme ? 2 : 0;
+        layout.marginWidth = darkTheme ? 2 : 0;
+        if (darkTheme) {
+            Color borderColor = new Color(67, 69, 74);
+            container.addListener(SWT.Paint, e -> {
+                Rectangle area = container.getClientArea();
+                e.gc.setForeground(borderColor);
+                e.gc.drawRectangle(0, 0, area.width - 1, area.height - 1);
+            });
+        }
 
         container.setLayout(layout);
         final Text text = new Text(container, SWT.NONE);

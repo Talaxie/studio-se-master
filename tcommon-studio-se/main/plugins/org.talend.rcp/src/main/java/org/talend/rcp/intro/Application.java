@@ -30,6 +30,8 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.adaptor.EclipseStarter;
 import org.eclipse.core.runtime.preferences.ConfigurationScope;
+import org.eclipse.core.runtime.preferences.IEclipsePreferences;
+import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -319,6 +321,8 @@ public class Application implements IApplication {
             }
 
             cleanupNonExistingProjects();
+            migrateDarkThemeId();
+            WindowsDarkMode.applyIfDarkTheme(display);
 
             int returnCode = PlatformUI.createAndRunWorkbench(display, new ApplicationWorkbenchAdvisor());
             boolean restart = returnCode == PlatformUI.RETURN_RESTART;
@@ -375,6 +379,23 @@ public class Application implements IApplication {
         }
     }
     
+    /**
+     * The dark theme of Talaxie used the id of the Eclipse dark theme ("org.eclipse.e4.ui.css.theme.e4_dark"), also
+     * registered by org.eclipse.ui.themes: one of them was ignored. It has now its own id, the workspaces which used
+     * the dark theme are moved to it.
+     */
+    private void migrateDarkThemeId() {
+        try {
+            IEclipsePreferences node = InstanceScope.INSTANCE.getNode("org.eclipse.e4.ui.css.swt.theme"); //$NON-NLS-1$
+            if ("org.eclipse.e4.ui.css.theme.e4_dark".equals(node.get("themeid", null))) { //$NON-NLS-1$ //$NON-NLS-2$
+                node.put("themeid", "org.talend.themes.css.talend.dark"); //$NON-NLS-1$ //$NON-NLS-2$
+                node.flush();
+            }
+        } catch (Exception e) {
+            ExceptionHandler.process(e);
+        }
+    }
+
     private void cleanupNonExistingProjects() {
         IProject[] projects = ResourcesPlugin.getWorkspace().getRoot().getProjects();
         for (IProject project : projects) {

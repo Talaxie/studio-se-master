@@ -22,5 +22,5 @@ public class TalendThemeConstants {
 
     public static final String TALEND_DEFAULT_THEME_ID = TALEND_THEME_PREFIX + "css.talend.default"; //$NON-NLS-1$
 
-    public static final String TALEND_DARK_THEME_ID = "org.eclipse.e4.ui.css.theme.e4_dark"; //$NON-NLS-1$
+    public static final String TALEND_DARK_THEME_ID = TALEND_THEME_PREFIX + "css.talend.dark"; //$NON-NLS-1$
 }
