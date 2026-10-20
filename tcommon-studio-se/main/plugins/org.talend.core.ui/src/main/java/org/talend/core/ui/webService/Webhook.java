@@ -80,6 +80,37 @@ public class Webhook {
     private static String deilinkBackUrl = "https://marketplace.deilink.fr";
     private JFrame frame;
 
+    /** URL of a service of the EtlTool back end */
+    private static String getEtlToolBackUrl(String path) {
+        return joinUrl(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST), path);
+    }
+
+    /** URL of a page of the EtlTool front end */
+    private static String getEtlToolFrontUrl(String path) {
+        return joinUrl(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_FRONT_HOST), path);
+    }
+
+    /** URL of a service of Nexus */
+    private static String getNexusUrl(String path) {
+        return joinUrl(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_NEXUS_HOST), path);
+    }
+
+    /**
+     * The host followed by the path with exactly one "/" between them, so that the hosts of the preferences can be
+     * entered with or without "/" at the end.
+     */
+    private static String joinUrl(String host, String path) {
+        String url = host == null ? "" : host.trim();
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        String end = path == null ? "" : path.trim();
+        while (end.startsWith("/")) {
+            end = end.substring(1);
+        }
+        return url + "/" + end;
+    }
+
     public static HashMap<String, String> export(String fileLocation, String Projet, String Sequenceur, String version, String EtltoolRepo, String NexusRepo, IProgressMonitor monitor) {
         IProgressMonitor pMonitor = new NullProgressMonitor();
         if (monitor != null) {
@@ -126,7 +157,7 @@ public class Webhook {
     public static Boolean backTest(String backHost, String login, String password) {
         Boolean result = false;
         try {
-            String serviceUrl = backHost + "/api/Test/BackTest";
+            String serviceUrl = joinUrl(backHost, "/api/Test/BackTest");
             String finalToken = Login(login, password, backHost);
             if (LOGGER.isInfoEnabled()) {
                 LOGGER.info("finalToken: " + finalToken);
@@ -163,7 +194,7 @@ public class Webhook {
     public static String sendFile(String fileLocation) {
         String result = "";
         try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/upload";
+            String serviceUrl = getEtlToolBackUrl("/upload");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
             HttpEntity httpEntity = MultipartEntityBuilder.create()
                 .addPart("file", new FileBody(new File(fileLocation)))
@@ -193,7 +224,7 @@ public class Webhook {
     public static HashMap<String, String> JobArchiveCheck(String fileLocation) {
         HashMap<String, String> jobData = new HashMap<String, String>();
         try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Job/JobArchiveCheck";
+            String serviceUrl = getEtlToolBackUrl("/api/Job/JobArchiveCheck");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
             String fileName = Paths.get(fileLocation).getFileName().toString();
 
@@ -231,7 +262,7 @@ public class Webhook {
         Boolean result = false;
 
         try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Livraison/Deploy";
+            String serviceUrl = getEtlToolBackUrl("/api/Livraison/Deploy");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
 
             String Target = EtltoolRepo;
@@ -272,7 +303,7 @@ public class Webhook {
         if (JobType.equals("ESB")) {
             JobTypeUrl = "ESB";
         }
-        String jobURL = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_FRONT_HOST) + "/#/" + JobTypeUrl + "/View/";
+        String jobURL = getEtlToolFrontUrl("/#/" + JobTypeUrl + "/View/");
         jobURL += "?Environnement=ref_DEV";
         jobURL += "&Projet=" + jobData.get("Projet");
         jobURL += "&Sequenceur=" + jobData.get("Sequenceur");
@@ -293,7 +324,7 @@ public class Webhook {
 		}
 
 		try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Job/CodeReviewAnalyseText";
+            String serviceUrl = getEtlToolBackUrl("/api/Job/CodeReviewAnalyseText");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
             HttpClient client = getHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -352,7 +383,7 @@ public class Webhook {
 		}
 
 		try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Job/ProjetTree";
+            String serviceUrl = getEtlToolBackUrl("/api/Job/ProjetTree");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
 
             HttpClient client = getHttpClient();
@@ -405,7 +436,7 @@ public class Webhook {
 
 		try {
             // Get job inforamtion into EtlTool
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Job/JobArchiveGet";
+            String serviceUrl = getEtlToolBackUrl("/api/Job/JobArchiveGet");
             String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
             HttpClient client = getHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -425,7 +456,7 @@ public class Webhook {
 				JSONObject jobJson = responseBodyJson.getJSONObject("data");
                 job.put("JobLocation", jobJson.getString("JobLocation"));
                 job.put("Path", jobJson.getString("Path"));
-                job.put("fileUrl", CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/" + jobJson.getString("Path"));
+                job.put("fileUrl", getEtlToolBackUrl(jobJson.getString("Path")));
             }
 
             // Get job archive
@@ -454,7 +485,7 @@ public class Webhook {
                 backHost = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST);
             }
 
-            String serviceUrl = backHost + "/api/User/Login";
+            String serviceUrl = joinUrl(backHost, "/api/User/Login");
 
             JSONObject paramJson = new JSONObject();
             paramJson.put("username", login);
@@ -487,7 +518,7 @@ public class Webhook {
 	public static List<HashMap<String, String>> nexusGetItems() {
         List<HashMap<String, String>> items = new ArrayList<>();
 
-        String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_NEXUS_HOST) + "/service/rest/v1/components";
+        String serviceUrl = getNexusUrl("/service/rest/v1/components");
         serviceUrl += "?repository=" + CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_NEXUS_RELEASE_REPO);
 
         if (LOGGER.isInfoEnabled()) {
@@ -579,7 +610,7 @@ public class Webhook {
 
     public static void nexusPostJob(String fileLocation, String Projet, String Sequenceur, String version, String NexusRepo) {
         try {
-            String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_NEXUS_HOST) + "/service/rest/v1/components";
+            String serviceUrl = getNexusUrl("/service/rest/v1/components");
             if (NexusRepo.equals("Snapshot")) {
                 serviceUrl += "?repository=" + CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_NEXUS_SNAPSHOT_REPO);
             } else {
@@ -908,7 +939,7 @@ public class Webhook {
     }
 
     public static String postTest() {
-        String serviceUrl = CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_BACK_HOST) + "/api/Test/debug";
+        String serviceUrl = getEtlToolBackUrl("/api/Test/debug");
         String finalToken = Login(CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_LOGIN), CoreUIPlugin.getDefault().getPreferenceStore().getString(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_PASSWORD), "");
         // serviceUrl = "http://localhost:9010/api/Test/debug";
         // finalToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOjEsIklkZW50aWZpYW50IjoiYWRtaW4iLCJQc2V1ZG8iOiJBZG1pbiIsIlJvbGVJZCI6MSwiQWNjZXNzR3JvdXBJRCI6MCwiaWF0IjoxNjk5OTUyODc5fQ.lVK7WoyXE8t_gCYZRrfAXku6R6g_Wu18SI0QPTKjJTI";

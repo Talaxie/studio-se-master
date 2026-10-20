@@ -21,11 +21,19 @@
 // ============================================================================
 package org.talend.repository.ui.wizards.exportjob.handler;
 
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.eclipse.core.resources.IFile;
@@ -33,15 +41,30 @@ import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.talend.commons.exception.ExceptionHandler;
+import org.talend.commons.utils.generation.JavaUtils;
+import org.talend.commons.utils.io.FilesUtils;
+import org.talend.core.CorePlugin;
+import org.talend.core.model.process.JobInfo;
+import org.talend.core.model.properties.Item;
 import org.talend.core.model.properties.ProcessItem;
+import org.talend.core.model.properties.Project;
+import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.core.model.routines.CodesJarInfo;
+import org.talend.core.model.routines.RoutinesUtil;
+import org.talend.core.runtime.process.ITalendProcessJavaProject;
+import org.talend.core.utils.CodesJarResourceCache;
+import org.talend.designer.core.model.utils.emf.talendfile.RoutinesParameterType;
 import org.talend.designer.maven.launch.MavenPomCommandLauncher;
 import org.talend.designer.maven.model.MavenSystemFolders;
 import org.talend.designer.maven.model.TalendMavenConstants;
 import org.talend.designer.maven.utils.PomIdsHelper;
 import org.talend.designer.runprocess.IProcessor;
+import org.talend.designer.runprocess.IRunProcessService;
 import org.talend.designer.runprocess.ProcessorUtilities;
 import org.talend.repository.documentation.ExportFileResource;
+import org.talend.repository.local.ExportItemUtil;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobScriptsManager;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobScriptsManager.ExportChoice;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.esb.OSGIJavaScriptForESBWithMavenManager;
@@ -52,6 +75,18 @@ import org.talend.repository.ui.wizards.exportjob.scriptsmanager.esb.OSGIJavaScr
  * For OSGi data service - REST
  */
 public class BuildOSGiBundleHandler extends BuildJobHandler {
+
+    /**
+     * Folder of the bundle resources receiving the sources of the sources option, added at the root of the bundle (see
+     * the OSGi assembly template)
+     */
+    private static final String SOURCES_FOLDER = "sources"; //$NON-NLS-1$
+
+    private static final String ITEMS_FOLDER = "items"; //$NON-NLS-1$
+
+    private static final String JAVA_SOURCES_FOLDER = "src/main/java"; //$NON-NLS-1$
+
+    private static final String ROUTINES_PACKAGE = "routines"; //$NON-NLS-1$
 
     private OSGIJavaScriptForESBWithMavenManager osgiMavenManager;
 
@@ -119,7 +154,119 @@ public class BuildOSGiBundleHandler extends BuildJobHandler {
             }
         }
 
+        copySourceCodes(processor, monitor);
+
         return processor;
+    }
+
+    /**
+     * Sources option of the build: copies in bundle-resources/sources, as in a standalone build:
+     * <ul>
+     * <li>items: the items of the job and of its dependencies (sub-jobs, contexts, metadata, routines...)</li>
+     * <li>src/main/java: the java sources of the job, of its sub-jobs and of the routines they use (routines of the
+     * repository and custom routine jars)</li>
+     * </ul>
+     * The assembly adds them at the root of the bundle. Without the option, removes the sources copied by a previous
+     * build.
+     */
+    private void copySourceCodes(IProcessor processor, IProgressMonitor monitor) throws Exception {
+        IFolder bundleResourcesFolder = talendProcessJavaProject.getBundleResourcesFolder();
+        File sourcesFolder = new File(bundleResourcesFolder.getLocation().toFile(), SOURCES_FOLDER);
+        FilesUtils.deleteFile(sourcesFolder, true);
+        if (isOptionChoosed(ExportChoice.needSourceCode)) {
+            ExportItemUtil exportItemUtil = new ExportItemUtil();
+            exportItemUtil.setProjectNameAsLowerCase(isProjectNameLowerCase());
+            exportItemUtil.exportItems(new File(sourcesFolder, ITEMS_FOLDER), getItemsToExport(true), false,
+                    new NullProgressMonitor());
+
+            File javaFolder = new File(sourcesFolder, JAVA_SOURCES_FOLDER);
+            IRunProcessService runProcessService = CorePlugin.getDefault().getRunProcessService();
+            Set<String> projectTechNames = new HashSet<>();
+            Set<String> codesJarIds = new HashSet<>();
+
+            // the job and its sub-jobs: each job has its own java project, except the sub-jobs of a loop dependency
+            copyFolder(talendProcessJavaProject.getSrcFolder(), javaFolder, true);
+            addRoutinesUsed(processItem, projectTechNames, codesJarIds);
+            if (processor != null) {
+                for (JobInfo jobInfo : processor.getBuildChildrenJobs()) {
+                    ProcessItem childItem = jobInfo.getProcessItem();
+                    ITalendProcessJavaProject childProject = childItem == null ? null
+                            : runProcessService.getTalendJobJavaProject(childItem.getProperty());
+                    if (childProject != null && !childProject.getProject().equals(talendProcessJavaProject.getProject())) {
+                        copyFolder(childProject.getSrcFolder(), javaFolder, true);
+                    }
+                }
+                // the joblets are generated in the code of the jobs, but they can use other routines
+                for (JobInfo jobInfo : processor.getBuildChildrenJobsAndJoblets()) {
+                    Item item = jobInfo.getJobletProperty() != null ? jobInfo.getJobletProperty().getItem()
+                            : jobInfo.getProcessItem();
+                    addRoutinesUsed(item, projectTechNames, codesJarIds);
+                }
+            }
+
+            // routines of the repository (package routines), without the framework classes of the package routines.system
+            for (String projectTechName : projectTechNames) {
+                ITalendProcessJavaProject routinesProject = runProcessService
+                        .getTalendCodeJavaProject(ERepositoryObjectType.ROUTINES, projectTechName);
+                if (routinesProject != null) {
+                    copyFolder(routinesProject.getSrcFolder().getFolder(ROUTINES_PACKAGE), new File(javaFolder,
+                            ROUTINES_PACKAGE), false);
+                }
+            }
+
+            // custom routine jars used by the jobs
+            for (String codesJarId : codesJarIds) {
+                CodesJarInfo info = CodesJarResourceCache.getCodesJarById(codesJarId);
+                ITalendProcessJavaProject codesJarProject = info == null ? null
+                        : runProcessService.getTalendCodesJarJavaProject(info);
+                if (codesJarProject != null) {
+                    copyFolder(codesJarProject.getSrcFolder(), javaFolder, true);
+                }
+            }
+        }
+        bundleResourcesFolder.refreshLocal(IResource.DEPTH_INFINITE, monitor);
+    }
+
+    /** Adds the project of the item (for its routines) and the custom routine jars used by the item */
+    private void addRoutinesUsed(Item item, Set<String> projectTechNames, Set<String> codesJarIds) {
+        if (item == null) {
+            return;
+        }
+        Project project = getProject(item);
+        if (project != null) {
+            projectTechNames.add(project.getTechnicalLabel());
+        }
+        List<RoutinesParameterType> routines = RoutinesUtil.getRoutinesParametersFromItem(item);
+        if (routines != null) {
+            for (RoutinesParameterType routine : routines) {
+                // the type is only set for the routines of a custom routine jar
+                if (routine.getType() != null) {
+                    codesJarIds.add(routine.getId());
+                }
+            }
+        }
+    }
+
+    /**
+     * Copies the files of a source folder, except the folder "internal" (temporary files of the code viewers).
+     *
+     * @param recursive false to copy only the files of the folder, not its sub-folders
+     */
+    private static void copyFolder(IFolder folder, File target, boolean recursive) throws IOException {
+        if (folder == null || folder.getLocation() == null || !folder.getLocation().toFile().isDirectory()) {
+            return;
+        }
+        Path source = folder.getLocation().toFile().toPath();
+        try (Stream<Path> files = recursive ? Files.walk(source) : Files.list(source)) {
+            for (Path file : (Iterable<Path>) files::iterator) {
+                Path relativePath = source.relativize(file);
+                if (Files.isRegularFile(file) && !relativePath.startsWith(JavaUtils.JAVA_INTERNAL_DIRECTORY)) {
+                    Path copy = target.toPath().resolve(relativePath);
+                    Files.createDirectories(copy.getParent());
+                    Files.copy(file, copy, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
     }
 
     private void cleanBundelResources(IProgressMonitor monitor) throws CoreException {

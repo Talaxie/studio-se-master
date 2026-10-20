@@ -39,6 +39,8 @@ import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Font;
+import org.eclipse.swt.graphics.Point;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
@@ -48,6 +50,8 @@ import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Listener;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.Widget;
 import org.eclipse.ui.internal.wizards.datatransfer.DataTransferMessages;
@@ -192,6 +196,14 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
     public static final String STORE_WSDL_ID = "JavaJobScriptsExportWizardPage.STORE_WSDL_ID"; //$NON-NLS-1$
 
     public static final String EXTRACT_ZIP_FILE = "JavaJobScriptsExportWizardPage.EXTRACT_ZIP_FILE"; //$NON-NLS-1$
+
+    public static final String STORE_OSGI_SOURCES_ID = "JavaJobScriptsExportWizardPage.STORE_OSGI_SOURCES_ID"; //$NON-NLS-1$
+
+    /**
+     * Sources option of the Talend Runtime (OSGi) build: adds the items and the java sources of the job, of its sub-jobs
+     * and of the routines in the bundle
+     */
+    protected Button osgiSourcesButton;
 
     protected JobExportType exportTypeFixed;
 
@@ -412,6 +424,45 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
         pageComposite.setSize(pageComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
         scrolledComposite.setMinSize(pageComposite.getSize());
         scrolledComposite.setContent(pageComposite);
+
+        // the page size of the dialog is fixed: enlarge it when it opens if the options need more height (the Show
+        // event is sent once the dialog is sized, before it is visible)
+        Shell shell = getShell();
+        if (shell != null && shell.isVisible()) {
+            fitDialogToContent();
+        } else if (shell != null) {
+            shell.addListener(SWT.Show, new Listener() {
+
+                @Override
+                public void handleEvent(Event event) {
+                    shell.removeListener(SWT.Show, this);
+                    fitDialogToContent();
+                }
+            });
+        }
+    }
+
+    /**
+     * Enlarges the dialog when the options need more height than the visible area, so that they are displayed without
+     * scroll bar when the screen is large enough. Also updates the scrolled area after a change of the options.
+     */
+    private void fitDialogToContent() {
+        Shell shell = getShell();
+        if (shell == null || shell.isDisposed() || scrolledComposite == null || scrolledComposite.isDisposed()) {
+            return;
+        }
+        Point contentSize = pageComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT);
+        scrolledComposite.setMinSize(contentSize);
+        int missingHeight = contentSize.y - scrolledComposite.getClientArea().height;
+        if (missingHeight > 0) {
+            Rectangle bounds = shell.getBounds();
+            Rectangle screen = shell.getMonitor().getClientArea();
+            int height = Math.min(bounds.height + missingHeight, screen.height);
+            // keeps the dialog centered where it was, inside the screen
+            int y = bounds.y - (height - bounds.height) / 2;
+            y = Math.max(screen.y, Math.min(y, screen.y + screen.height - height));
+            shell.setBounds(bounds.x, y, bounds.width, height);
+        }
     }
 
     protected void createExportTypeGroup(Composite parent) {
@@ -587,6 +638,7 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
                 createOptionsGroupButtons(pageComposite);
                 pageComposite.setSize(pageComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
                 pageComposite.layout();
+                fitDialogToContent();
                 JobExportType comboType = JobExportType.getTypeFromString(exportTypeCombo.getText());
                 if (comboType != JobExportType.POJO) {
                     chkButton.setVisible(false);
@@ -901,6 +953,9 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
             } else {
                 setDefaultDestinationForOSGI();
             }
+            if (osgiSourcesButton != null && !osgiSourcesButton.isDisposed()) {
+                osgiSourcesButton.setSelection(settings.getBoolean(STORE_OSGI_SOURCES_ID));
+            }
         } else {
             setDefaultDestinationForOSGI();
         }
@@ -1075,6 +1130,9 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
             settings.put(STORE_EXPORTTYPE_ID, getCurrentExportType1().toString());
             settings.put(STORE_DESTINATION_NAMES_ID, directoryNames);
             if (getCurrentExportType1().equals(JobExportType.OSGI)) {
+                if (osgiSourcesButton != null && !osgiSourcesButton.isDisposed()) {
+                    settings.put(STORE_OSGI_SOURCES_ID, osgiSourcesButton.getSelection());
+                }
                 return;
             }
             if (getCurrentExportType1().equals(JobExportType.MSESB)) {
@@ -1128,7 +1186,9 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
             exportChoiceMap.put(ExportChoice.needMetaInfo, true);
             exportChoiceMap.put(ExportChoice.needContext, true);
             exportChoiceMap.put(ExportChoice.needJobItem, false);
-            exportChoiceMap.put(ExportChoice.needSourceCode, false);
+            // items and java sources of the job, of its sub-jobs and of the routines added to the bundle (see
+            // BuildOSGiBundleHandler)
+            exportChoiceMap.put(ExportChoice.needSourceCode, isOsgiSourcesSelected());
             exportChoiceMap.put(ExportChoice.binaries, true);
 
             return exportChoiceMap;
@@ -1277,7 +1337,9 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
         String buildType = (String) getProcessItem().getProperty()
                 .getAdditionalProperties().get(TalendProcessArgumentConstant.ARG_BUILD_TYPE);
 
-        if (("REST_MS".equals(buildType) || buildType == null || "STANDALONE".equals(buildType) || "ROUTE".equals(buildType)) && getCurrentExportType1() != JobExportType.MSESB_IMAGE) {
+        // the OSGi build always has its options group (option "Java sources"), even if the build type of the job is OSGI
+        if (("REST_MS".equals(buildType) || buildType == null || "STANDALONE".equals(buildType) || "ROUTE".equals(buildType)
+                || getCurrentExportType1() == JobExportType.OSGI) && getCurrentExportType1() != JobExportType.MSESB_IMAGE) {
         	// options group
             optionsGroup = new Group(optionsGroupComposite, SWT.NONE);
             GridDataFactory.fillDefaults().grab(true, false).applyTo(optionsGroup);
@@ -1303,7 +1365,7 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
             restoreWidgetValuesForPOJO();
             break;
         case OSGI:
-        	createOptionsForOSGIESB(optionsGroupComposite, font);
+            createOptionsForOSGIESB(left, font);
             restoreWidgetValuesForOSGI();
 
             break;
@@ -1414,10 +1476,22 @@ public class JavaJobScriptsExportWSWizardPage extends JavaJobScriptsExportWizard
     }
 
     private void createOptionsForOSGIESB(Composite optionsComposite, Font font) {
-        if (!PluginChecker.isPluginLoaded(PluginChecker.EXPORT_JOB_PLUGIN_ID)) {
+        if (PluginChecker.isPluginLoaded(PluginChecker.EXPORT_JOB_PLUGIN_ID)) {
+            optionsGroupComposite.setVisible(false);
             return;
         }
-        optionsComposite.setVisible(false);
+        if (optionsComposite == null) {
+            return;
+        }
+        // the sources are copied by BuildOSGiBundleHandler and added to the bundle by the OSGi assembly template
+        osgiSourcesButton = new Button(optionsComposite, SWT.CHECK | SWT.LEFT);
+        osgiSourcesButton.setText(Messages.getString("JavaJobScriptsExportWSWizardPage.osgiJavaSources")); //$NON-NLS-1$
+        osgiSourcesButton.setToolTipText(Messages.getString("JavaJobScriptsExportWSWizardPage.osgiJavaSourcesTooltip")); //$NON-NLS-1$
+        osgiSourcesButton.setFont(font);
+    }
+
+    private boolean isOsgiSourcesSelected() {
+        return osgiSourcesButton != null && !osgiSourcesButton.isDisposed() && osgiSourcesButton.getSelection();
     }
 
     private void createOptionForDockerImage(Composite optionsGroup, Font font) {

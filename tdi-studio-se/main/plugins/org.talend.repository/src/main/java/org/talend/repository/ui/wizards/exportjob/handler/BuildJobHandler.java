@@ -44,6 +44,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.talend.commons.exception.ExceptionHandler;
+import org.talend.commons.exception.PersistenceException;
 import org.talend.commons.ui.runtime.CommonUIPlugin;
 import org.talend.commons.ui.runtime.exception.MessageBoxExceptionHandler;
 import org.talend.commons.utils.generation.JavaUtils;
@@ -247,23 +248,8 @@ public class BuildJobHandler extends AbstractBuildJobHandler {
         }
         IFolder itemsFolder = baseFolder.getFolder("items");//$NON-NLS-1$
         itemsFolder.create(true, true, monitor);
-        List<Item> items = new ArrayList<Item>();
-        items.add(processItem);
+        List<Item> items = getItemsToExport(withDependencies);
         ExportItemUtil exportItemUtil = new ExportItemUtil();
-        if (withDependencies) {
-            IProxyRepositoryFactory factory = CoreRuntimePlugin.getInstance().getProxyRepositoryFactory();
-            Collection<IRepositoryViewObject> allProcessDependencies = ProcessUtils.getAllProcessDependencies(items);
-            for (IRepositoryViewObject repositoryObject : allProcessDependencies) {
-                items.add(repositoryObject.getProperty().getItem());
-                if (ERepositoryObjectType.getAllTypesOfCodesJar().contains(repositoryObject.getRepositoryObjectType())) {
-                    Property codeJarProperty = repositoryObject.getProperty();
-                    List<IRepositoryViewObject> allInnerCodes = factory.getAllInnerCodes(CodesJarInfo.create(codeJarProperty));
-                    if (allInnerCodes != null && !allInnerCodes.isEmpty()) {
-                        allInnerCodes.stream().forEach(codeObject -> items.add(codeObject.getProperty().getItem()));
-                    }
-                }
-            }
-        }
         if (isOptionChoosed(ExportChoice.executeTests)) {
             IPath path = talendProcessJavaProject.getTargetFolder().getFolder("surefire-reports").getLocation();
             File reports = new File(path.toOSString());
@@ -281,6 +267,30 @@ public class BuildJobHandler extends AbstractBuildJobHandler {
         }
         addDQDependencies(itemsFolder, items);
         addTDMDependencies(itemsFolder, items);
+    }
+
+    /**
+     * The item of the job and, with the dependencies, all the items it uses (sub-jobs, contexts, metadata, routines,
+     * inner codes of the custom routine jars...).
+     */
+    protected List<Item> getItemsToExport(boolean withDependencies) throws PersistenceException {
+        List<Item> items = new ArrayList<Item>();
+        items.add(processItem);
+        if (withDependencies) {
+            IProxyRepositoryFactory factory = CoreRuntimePlugin.getInstance().getProxyRepositoryFactory();
+            Collection<IRepositoryViewObject> allProcessDependencies = ProcessUtils.getAllProcessDependencies(items);
+            for (IRepositoryViewObject repositoryObject : allProcessDependencies) {
+                items.add(repositoryObject.getProperty().getItem());
+                if (ERepositoryObjectType.getAllTypesOfCodesJar().contains(repositoryObject.getRepositoryObjectType())) {
+                    Property codeJarProperty = repositoryObject.getProperty();
+                    List<IRepositoryViewObject> allInnerCodes = factory.getAllInnerCodes(CodesJarInfo.create(codeJarProperty));
+                    if (allInnerCodes != null && !allInnerCodes.isEmpty()) {
+                        allInnerCodes.stream().forEach(codeObject -> items.add(codeObject.getProperty().getItem()));
+                    }
+                }
+            }
+        }
+        return items;
     }
 
     /**

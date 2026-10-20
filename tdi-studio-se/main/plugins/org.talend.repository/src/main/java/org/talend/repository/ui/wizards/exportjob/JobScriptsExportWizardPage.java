@@ -626,17 +626,39 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
         if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED)
                 || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)
                 || CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_SCRIPT_ENABLED)) {
-            
-            webhookButton = new Button(optionsComposite, SWT.CHECK | SWT.LEFT);
-            webhookButton.setText("Webhook"); //$NON-NLS-1$
-            webhookButton.setFont(font);
-            GridData webhookGD = new GridData();
-            webhookGD.horizontalSpan = 3;
-            webhookButton.setLayoutData(webhookGD);
+
+            // group like "Options": the check box to send the build, then the options of the enabled webhooks
+            Font groupFont = font != null ? font : optionsComposite.getFont();
+            Group webhookGroup = new Group(optionsComposite, SWT.NONE);
+            webhookGroup.setText(Messages.getString("JobScriptsExportWizardPage.webhookGroup")); //$NON-NLS-1$
+            webhookGroup.setFont(groupFont);
+            int parentColumns = optionsComposite.getLayout() instanceof GridLayout
+                    ? ((GridLayout) optionsComposite.getLayout()).numColumns
+                    : 1;
+            GridDataFactory.fillDefaults().grab(true, false).span(parentColumns, 1).applyTo(webhookGroup);
+            webhookGroup.setLayout(new GridLayout(2, false));
+
+            webhookButton = new Button(webhookGroup, SWT.CHECK | SWT.LEFT);
+            webhookButton.setText(Messages.getString("JobScriptsExportWizardPage.webhookSend")); //$NON-NLS-1$
+            webhookButton.setFont(groupFont);
+            GridDataFactory.fillDefaults().span(2, 1).applyTo(webhookButton);
             webhookButton.setSelection(true);
 
+            // the options are only used when the build is sent
+            final List<Control> webhookOptions = new ArrayList<Control>();
+            webhookButton.addSelectionListener(new SelectionAdapter() {
+
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    for (Control option : webhookOptions) {
+                        option.setEnabled(webhookButton.getSelection());
+                    }
+                }
+            });
+
             if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_ETLTOOL_ENABLED)) {
-                final Combo etltoolCombo = new Combo(optionsComposite, SWT.PUSH);
+                final Combo etltoolCombo = createWebhookCombo(webhookGroup, groupFont,
+                        Messages.getString("JobScriptsExportWizardPage.webhookBranch"), webhookOptions); //$NON-NLS-1$
                 String[] etltoolRepo = { "ref_DEV", "ref_MCO" };
                 etltoolCombo.setItems(etltoolRepo);
                 etltoolCombo.setText(selectedEtltoolRepo);
@@ -654,7 +676,8 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
             }
 
             if (CoreUIPlugin.getDefault().getPreferenceStore().getBoolean(ITalendCorePrefConstants.WEBHOOK_NEXUS_ENABLED)) {
-                final Combo nexusCombo = new Combo(optionsComposite, SWT.PUSH);
+                final Combo nexusCombo = createWebhookCombo(webhookGroup, groupFont,
+                        Messages.getString("JobScriptsExportWizardPage.webhookNexusRepository"), webhookOptions); //$NON-NLS-1$
                 String[] nexusRepo = { "Snapshot", "Release" };
                 nexusCombo.setItems(nexusRepo);
                 nexusCombo.setText(selectedNexusRepo);
@@ -671,6 +694,18 @@ public abstract class JobScriptsExportWizardPage extends WizardFileSystemResourc
                 });
             }
         }
+    }
+
+    /** A label and a read only combo on a row of the webhook group */
+    private Combo createWebhookCombo(Composite webhookGroup, Font font, String label, List<Control> webhookOptions) {
+        Label comboLabel = new Label(webhookGroup, SWT.NONE);
+        comboLabel.setText(label);
+        comboLabel.setFont(font);
+        Combo combo = new Combo(webhookGroup, SWT.READ_ONLY);
+        combo.setFont(font);
+        webhookOptions.add(comboLabel);
+        webhookOptions.add(combo);
+        return combo;
     }
 
     protected void createContextOptions(Font font, Composite optionsComposite) {
