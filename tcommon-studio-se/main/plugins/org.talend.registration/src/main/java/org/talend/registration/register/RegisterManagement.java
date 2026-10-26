@@ -18,6 +18,8 @@ import java.lang.management.ManagementFactory;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.rmi.RemoteException;
 import java.util.HashMap;
 import java.util.Locale;
@@ -37,9 +39,13 @@ import org.talend.commons.utils.VersionUtils;
 import org.talend.commons.utils.network.NetworkUtil;
 import org.talend.commons.utils.platform.PluginChecker;
 import org.talend.core.GlobalServiceRegister;
+import org.talend.core.context.Context;
+import org.talend.core.context.RepositoryContext;
 import org.talend.core.model.general.ConnectionBean;
+import org.talend.core.model.properties.User;
 import org.talend.core.prefs.ITalendCorePrefConstants;
 import org.talend.core.prefs.PreferenceManipulator;
+import org.talend.core.runtime.CoreRuntimePlugin;
 import org.talend.core.ui.branding.IBrandingService;
 import org.talend.core.ui.token.DefaultTokenCollector;
 import org.talend.registration.i18n.Messages;
@@ -477,7 +483,8 @@ public class RegisterManagement {
             uniqueId = uniqueId.replace("=", "%3D");
             uniqueId = uniqueId.replace("?", "%3F");
             uniqueId = uniqueId.replace("\\", "%5C");
-            registURL = new URL("https://www.deilink.fr/#/talaxie/install?uid=" + uniqueId + "&prd=" + brandingService.getAcronym()); //$NON-NLS-1$ //$NON-NLS-2$
+            registURL = new URL("https://www.deilink.fr/#/talaxie/install?uid=" + uniqueId + "&prd=" + brandingService.getAcronym() //$NON-NLS-1$ //$NON-NLS-2$
+                    + getInstallUserParams());
             PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(registURL);
             CommonsPlugin.setMavenOfflineState(false);
         } catch (PartInitException e) {
@@ -500,6 +507,39 @@ public class RegisterManagement {
         } catch (MalformedURLException e) {
             ExceptionHandler.process(e);
         }
+    }
+
+    /**
+     * Parameters added to the install page URL so that deilink.fr can list the installations: login (email), first
+     * name and last name of the connected user, and the studio version. Missing values are simply left out.
+     *
+     * @return "&email=...&firstName=...&lastName=...&version=..." (URL encoded)
+     */
+    private String getInstallUserParams() {
+        StringBuilder params = new StringBuilder();
+        try {
+            RepositoryContext repositoryContext = (RepositoryContext) CoreRuntimePlugin.getInstance().getContext()
+                    .getProperty(Context.REPOSITORY_CONTEXT_KEY);
+            User user = repositoryContext != null ? repositoryContext.getUser() : null;
+            if (user != null) {
+                params.append(urlParam("email", user.getLogin())); //$NON-NLS-1$
+                params.append(urlParam("firstName", user.getFirstName())); //$NON-NLS-1$
+                params.append(urlParam("lastName", user.getLastName())); //$NON-NLS-1$
+            }
+        } catch (Exception e) {
+            // The install page must open even without user information
+            ExceptionHandler.process(e);
+        }
+        params.append(urlParam("version", VersionUtils.getDisplayVersion())); //$NON-NLS-1$
+        return params.toString();
+    }
+
+    private static String urlParam(String name, String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return ""; //$NON-NLS-1$
+        }
+        // Spaces as %20: "+" is not decoded as a space in the page URL fragment
+        return "&" + name + "=" + URLEncoder.encode(value.trim(), StandardCharsets.UTF_8).replace("+", "%20"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
     }
 
     /**
