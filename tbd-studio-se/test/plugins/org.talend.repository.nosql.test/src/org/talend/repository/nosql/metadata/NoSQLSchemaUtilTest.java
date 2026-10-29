@@ -16,7 +16,9 @@ import java.util.List;
 
 import org.eclipse.emf.ecore.EObject;
 import org.junit.Assert;
+import org.junit.ClassRule;
 import org.junit.Before;
+import org.talend.bigdata.test.TestProject;
 import org.junit.Test;
 import org.talend.core.model.metadata.builder.connection.MetadataTable;
 import org.talend.cwm.relational.RelationalFactory;
@@ -27,6 +29,9 @@ import org.talend.repository.model.nosql.NosqlFactory;
  * DOC PLV class global comment. Detailled comment
  */
 public class NoSQLSchemaUtilTest {
+
+    @ClassRule
+    public static final TestProject TEST_PROJECT = new TestProject();
 
     private final String dbName = "DBNAME"; //$NON-NLS-1$
 

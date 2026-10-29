@@ -5,7 +5,9 @@ import static org.junit.Assert.*;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.junit.ClassRule;
 import org.junit.Before;
+import org.talend.bigdata.test.TestProject;
 import org.junit.Test;
 import org.talend.designer.core.model.utils.emf.talendfile.ContextParameterType;
 import org.talend.designer.core.model.utils.emf.talendfile.ContextType;
@@ -18,6 +20,9 @@ import org.talend.utils.json.JSONArray;
 import org.talend.utils.json.JSONObject;
 
 public class NoSQLConnectionContextManagerTest {
+
+    @ClassRule
+    public static final TestProject TEST_PROJECT = new TestProject();
 
     private NoSQLConnectionContextManager manager;
 

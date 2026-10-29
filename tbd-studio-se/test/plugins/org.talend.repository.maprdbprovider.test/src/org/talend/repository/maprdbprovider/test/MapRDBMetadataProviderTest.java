@@ -17,13 +17,19 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.talend.bigdata.test.TestProject;
 import org.talend.repository.maprdbprovider.provider.MapRDBMetadataProvider;
 
 /**
  * DOC hwang  class global comment. Detailled comment
  */
 public class MapRDBMetadataProviderTest {
+
+    @ClassRule
+    public static final TestProject TEST_PROJECT = new TestProject();
+
     @Test
     public void testGetUniqueColumnName() {
         MapRDBMetadataProvider provider = new MapRDBMetadataProvider();

@@ -24,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -34,15 +37,53 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.osgi.framework.BundleContext;
+import org.osgi.framework.FrameworkUtil;
+import org.osgi.framework.ServiceRegistration;
+import org.talend.components.api.service.ComponentService;
+import org.talend.core.model.repository.ERepositoryObjectType;
+import org.talend.sdk.component.server.front.model.ConfigTypeNode;
+import org.talend.sdk.component.studio.metadata.TaCoKitCache;
 import org.talend.core.model.general.Project;
 
 /**
  * Tests for {@link CodeGeneratorApplication}.
  */
 public class CodeGeneratorApplicationTest {
+
+    private static final List<ServiceRegistration<?>> testServices = new ArrayList<>();
+
+    @BeforeClass
+    public static void registerComponentServices() {
+        BundleContext context = FrameworkUtil.getBundle(CodeGeneratorApplicationTest.class).getBundleContext();
+        // These tests exercise CLI import/edit commands, not remote component discovery.
+        if (context.getServiceReference(ComponentService.class) == null) {
+            ComponentService service = Mockito.mock(ComponentService.class);
+            Mockito.when(service.getTopLevelComponentWizards()).thenReturn(Collections.emptySet());
+            testServices.add(context.registerService(ComponentService.class, service, null));
+        }
+        if (context.getServiceReference(TaCoKitCache.class) == null) {
+            ConfigTypeNode jdbc = Mockito.mock(ConfigTypeNode.class);
+            Mockito.when(jdbc.getName()).thenReturn("JDBC");
+            TaCoKitCache cache = Mockito.mock(TaCoKitCache.class);
+            Mockito.when(cache.getConfigTypeNodeMap()).thenReturn(Collections.singletonMap("jdbc", jdbc));
+            Mockito.when(cache.getRepositoryObjectType2ConfigTypeNodeMap()).thenReturn(
+                    Collections.singletonMap(ERepositoryObjectType.METADATA_GENERIC_SCHEMA, jdbc));
+            testServices.add(context.registerService(TaCoKitCache.class, cache, null));
+        }
+    }
+
+    @AfterClass
+    public static void unregisterComponentServices() {
+        testServices.forEach(ServiceRegistration::unregister);
+        testServices.clear();
+    }
+
 
 	/** Original out. */
 	private PrintStream originalOut;
