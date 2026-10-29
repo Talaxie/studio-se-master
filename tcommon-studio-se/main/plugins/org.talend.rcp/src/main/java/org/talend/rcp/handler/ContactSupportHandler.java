@@ -21,7 +21,7 @@ import org.eclipse.swt.program.Program;
 
 public class ContactSupportHandler extends AbstractHandler {
 
-    public static final String CONTACT_SUPPORT = "https://www.talend.com/technical-support/";//$NON-NLS-1$
+    public static final String CONTACT_SUPPORT = "https://deilink.fr/#/contact";//$NON-NLS-1$
 
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {

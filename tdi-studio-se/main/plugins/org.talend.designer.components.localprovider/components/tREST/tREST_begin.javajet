@@ -58,69 +58,92 @@ int statusCode_<%=cid%> = 200;
 try {
 	<% log.info(log.str("Prepare to send request to rest server.")); %>
 
-	// Client HTTP natif Java 11+
-	java.net.http.HttpClient.Builder clientBuilder_<%=cid%> = java.net.http.HttpClient.newBuilder();
+	// Client Apache HttpClient (compatible Java 8, supporte PATCH)
+	org.apache.http.impl.client.HttpClientBuilder clientBuilder_<%=cid%> = org.apache.http.impl.client.HttpClientBuilder.create();
 
 	// Support SSL TrustStore / KeyStore
-	if (trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null) {
-		char[] password_<%=cid%> = null;
-		if (trustStorePWD_<%=cid%> != null) {
-			password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
+	if ((trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null)
+			|| (keyStoreFile_<%=cid%> != null && keyStoreType_<%=cid%> != null)) {
+		javax.net.ssl.TrustManager[] tms_<%=cid%> = null;
+		if (trustStoreFile_<%=cid%> != null && trustStoreType_<%=cid%> != null) {
+			char[] password_<%=cid%> = null;
+			if (trustStorePWD_<%=cid%> != null) {
+				password_<%=cid%> = trustStorePWD_<%=cid%>.toCharArray();
+			}
+			java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
+			try (java.io.FileInputStream fis_<%=cid%> = new java.io.FileInputStream(trustStoreFile_<%=cid%>)) {
+				trustStore_<%=cid%>.load(fis_<%=cid%>, password_<%=cid%>);
+			}
+
+			javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+			tmf_<%=cid%>.init(trustStore_<%=cid%>);
+			tms_<%=cid%> = tmf_<%=cid%>.getTrustManagers();
 		}
-		java.security.KeyStore trustStore_<%=cid%> = java.security.KeyStore.getInstance(trustStoreType_<%=cid%>);
-		trustStore_<%=cid%>.load(new java.io.FileInputStream(trustStoreFile_<%=cid%>), password_<%=cid%>);
-		
-		javax.net.ssl.TrustManagerFactory tmf_<%=cid%> = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
-		tmf_<%=cid%>.init(trustStore_<%=cid%>);
-		
+
+		javax.net.ssl.KeyManager[] kms_<%=cid%> = null;
+		if (keyStoreFile_<%=cid%> != null && keyStoreType_<%=cid%> != null) {
+			char[] password_<%=cid%> = null;
+			if (keyStorePWD_<%=cid%> != null) {
+				password_<%=cid%> = keyStorePWD_<%=cid%>.toCharArray();
+			}
+			java.security.KeyStore keyStore_<%=cid%> = java.security.KeyStore.getInstance(keyStoreType_<%=cid%>);
+			try (java.io.FileInputStream fis_<%=cid%> = new java.io.FileInputStream(keyStoreFile_<%=cid%>)) {
+				keyStore_<%=cid%>.load(fis_<%=cid%>, password_<%=cid%>);
+			}
+
+			javax.net.ssl.KeyManagerFactory kmf_<%=cid%> = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm());
+			kmf_<%=cid%>.init(keyStore_<%=cid%>, password_<%=cid%>);
+			kms_<%=cid%> = kmf_<%=cid%>.getKeyManagers();
+		}
+
 		javax.net.ssl.SSLContext sslContext_<%=cid%> = javax.net.ssl.SSLContext.getInstance("TLS");
-		sslContext_<%=cid%>.init(null, tmf_<%=cid%>.getTrustManagers(), null);
-		clientBuilder_<%=cid%>.sslContext(sslContext_<%=cid%>);
+		sslContext_<%=cid%>.init(kms_<%=cid%>, tms_<%=cid%>, null);
+		clientBuilder_<%=cid%>.setSSLContext(sslContext_<%=cid%>);
 	}
 
-	java.net.http.HttpClient nativeClient_<%=cid%> = clientBuilder_<%=cid%>.build();
-	java.net.http.HttpRequest.Builder reqBuilder_<%=cid%> = java.net.http.HttpRequest.newBuilder()
-		.uri(java.net.URI.create(endpoint_<%=cid%>));
-
-	// Construction du body pour les méthodes avec payload
-	java.net.http.HttpRequest.BodyPublisher bodyPublisher_<%=cid%>;
+	// Construction de la requête selon le verbe HTTP
 <%
 	if ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method)) {
+		String requestClass = "POST".equals(method) ? "HttpPost" : ("PUT".equals(method) ? "HttpPut" : "HttpPatch");
 %>
+		org.apache.http.client.methods.<%=requestClass%> request_<%=cid%> = new org.apache.http.client.methods.<%=requestClass%>(endpoint_<%=cid%>);
 		String requestBody_<%=cid%> = String.valueOf(<%=body%>);
-		bodyPublisher_<%=cid%> = java.net.http.HttpRequest.BodyPublishers.ofString(requestBody_<%=cid%>, java.nio.charset.StandardCharsets.UTF_8);
+		request_<%=cid%>.setEntity(new org.apache.http.entity.StringEntity(requestBody_<%=cid%>, java.nio.charset.StandardCharsets.UTF_8));
 
 		// Ajout automatique du Content-Type JSON si non spécifié
 		if (!headers_<%=cid%>.containsKey("Content-Type") && !headers_<%=cid%>.containsKey("content-type")) {
-			reqBuilder_<%=cid%>.header("Content-Type", "application/json");
+			request_<%=cid%>.setHeader("Content-Type", "application/json");
 		}
+<%
+	} else if ("DELETE".equals(method)) {
+%>
+		org.apache.http.client.methods.HttpDelete request_<%=cid%> = new org.apache.http.client.methods.HttpDelete(endpoint_<%=cid%>);
 <%
 	} else {
 %>
-		bodyPublisher_<%=cid%> = java.net.http.HttpRequest.BodyPublishers.noBody();
+		org.apache.http.client.methods.HttpGet request_<%=cid%> = new org.apache.http.client.methods.HttpGet(endpoint_<%=cid%>);
 <%
 	}
 %>
 
-	// Assignation du verbe HTTP
-	reqBuilder_<%=cid%>.method("<%=method%>", bodyPublisher_<%=cid%>);
-
 	// Ajout des en-têtes personnalisés
 	for (java.util.Map.Entry<String, String> header_<%=cid%> : headers_<%=cid%>.entrySet()) {
-		reqBuilder_<%=cid%>.header(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
+		request_<%=cid%>.setHeader(header_<%=cid%>.getKey(), header_<%=cid%>.getValue());
 	}
 
 	// Exécution de la requête HTTP
-	java.net.http.HttpResponse<String> nativeResponse_<%=cid%> = nativeClient_<%=cid%>.send(
-		reqBuilder_<%=cid%>.build(), 
-		java.net.http.HttpResponse.BodyHandlers.ofString()
-	);
+	try (org.apache.http.impl.client.CloseableHttpClient httpClient_<%=cid%> = clientBuilder_<%=cid%>.build();
+			org.apache.http.client.methods.CloseableHttpResponse httpResponse_<%=cid%> = httpClient_<%=cid%>.execute(request_<%=cid%>)) {
 
-	statusCode_<%=cid%> = nativeResponse_<%=cid%>.statusCode();
-	restResponse_<%=cid%> = nativeResponse_<%=cid%>.body();
+		statusCode_<%=cid%> = httpResponse_<%=cid%>.getStatusLine().getStatusCode();
+		org.apache.http.HttpEntity responseEntity_<%=cid%> = httpResponse_<%=cid%>.getEntity();
+		if (responseEntity_<%=cid%> != null) {
+			restResponse_<%=cid%> = org.apache.http.util.EntityUtils.toString(responseEntity_<%=cid%>, java.nio.charset.StandardCharsets.UTF_8);
+		}
+	}
 
 	if (statusCode_<%=cid%> >= 400) {
-		globalMap.put("<%=cid%>_ERROR_MESSAGE", nativeResponse_<%=cid%>.body());
+		globalMap.put("<%=cid%>_ERROR_MESSAGE", restResponse_<%=cid%>);
 	}
 
 } catch (Exception e) {
