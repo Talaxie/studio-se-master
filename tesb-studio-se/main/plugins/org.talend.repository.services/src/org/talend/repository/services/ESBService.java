@@ -1097,6 +1097,30 @@ public class ESBService implements IESBService {
         return ids;
     }
 
+    @Override
+    public boolean updateServiceJobReferences(Item serviceItem, Map<String, String> oldToNewIds) {
+        if (!(serviceItem instanceof ServiceItem)
+                || !(((ServiceItem) serviceItem).getConnection() instanceof ServiceConnection)) {
+            return false;
+        }
+        boolean modified = false;
+        ServiceConnection connection = (ServiceConnection) ((ServiceItem) serviceItem).getConnection();
+        for (ServicePort port : connection.getServicePort()) {
+            for (ServiceOperation operation : port.getServiceOperation()) {
+                String oldId = operation.getReferenceJobId();
+                if (oldId == null || oldId.isEmpty()) {
+                    continue;
+                }
+                String newId = oldToNewIds.get(oldId);
+                if (newId != null && !newId.trim().isEmpty() && !oldId.equals(newId)) {
+                    operation.setReferenceJobId(newId);
+                    modified = true;
+                }
+            }
+        }
+        return modified;
+    }
+
     /*
      * (non-Javadoc)
      * 
