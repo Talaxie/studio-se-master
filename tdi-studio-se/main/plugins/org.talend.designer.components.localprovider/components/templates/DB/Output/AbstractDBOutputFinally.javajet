@@ -31,6 +31,22 @@ skeleton="@{org.talend.designer.components.localprovider}/components/templates/d
 
     boolean usingStatsLogs = cid.equals("talendLogs_DB") || cid.equals("talendStats_DB") || cid.equals("talendMeter_DB");
 
+if ("RELATIONAL_STRATEGY".equals(dataAction)) {
+%>
+    if (resourceMap.get("relationalBatch_<%=cid%>") != null) {
+        try {
+            ((AutoCloseable)resourceMap.remove("relationalBatch_<%=cid%>")).close();
+        } catch (Exception relationalCleanupError_<%=cid%>) {
+            System.err.println(relationalCleanupError_<%=cid%>.getMessage());
+        }
+        resourceMap.put("statementClosed_<%=cid%>", true);
+<% if (!useExistingConnection) { %>
+        resourceMap.put("finish_<%=cid%>", true);
+<% } %>
+    }
+<%
+}
+
 if (usingStatsLogs) {
 %>
     String keyPsmt_<%=cid %> = null;
@@ -56,7 +72,7 @@ if(!useExistingConnection) {
             }
 <%
         } else {
-            if(("INSERT_OR_UPDATE").equals(dataAction) || ("UPDATE_OR_INSERT").equals(dataAction)) {
+            if(("INSERT_OR_UPDATE").equals(dataAction) || ("UPDATE_OR_INSERT").equals(dataAction) || "RELATIONAL_STRATEGY".equals(dataAction)) {
 %>
                 java.sql.PreparedStatement pstmtUpdateToClose_<%=cid %> = null;
                 if ((pstmtUpdateToClose_<%=cid %> = (java.sql.PreparedStatement) resourceMap.remove("pstmtUpdate_<%=cid%>")) != null) {

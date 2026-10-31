@@ -1,0 +1,62 @@
+<%
+    String relationalStrategyColumn = ElementParameterParser.getValue(node, "__RELATIONAL_STRATEGY_COLUMN__");
+    boolean relationalBatchUse = false;
+    String relationalBatchSize = "50000";
+    if ("RELATIONAL_STRATEGY".equals(dataAction)) {
+        relationalBatchUse = "true".equals(ElementParameterParser.getValue(node, "__USE_BATCH_SIZE__"))
+                && "true".equals(ElementParameterParser.getValue(node, "__DIE_ON_ERROR__"));
+        for (IConnection output : node.getOutgoingSortedConnections()) {
+            // Per-row outputs and rejects must only be emitted after their write has succeeded.
+            if (output.getLineStyle().hasConnectionCategory(org.talend.core.model.process.IConnectionCategory.DATA)) {
+                relationalBatchUse = false;
+            }
+        }
+        if (relationalBatchUse) {
+            String configuredBatchSize = ElementParameterParser.getValue(node, "__RELATIONAL_STRATEGY_BATCH_SIZE__");
+            if (configuredBatchSize != null && configuredBatchSize.trim().length() > 0) {
+                relationalBatchSize = configuredBatchSize;
+            }
+        }
+        if (relationalStrategyColumn == null || relationalStrategyColumn.length() == 0) {
+            relationalStrategyColumn = "relationalStrategy";
+        }
+        if ("true".equals(ElementParameterParser.getValue(node, "__PARALLELIZE__"))) {
+            throw new IllegalArgumentException("Relational strategy requires sequential execution");
+        }
+        if ("true".equals(ElementParameterParser.getValue(node, "__IDENTITY_INSERT__"))
+                || "true".equals(ElementParameterParser.getValue(node, "__SPECIFY_IDENTITY_FIELD__"))) {
+            throw new IllegalArgumentException("Relational strategy does not support explicit identity settings");
+        }
+        boolean strategyFound = false;
+        int keyCount = 0;
+        List<IMetadataColumn> sqlColumns = new ArrayList<IMetadataColumn>();
+        if (columnList != null) {
+            for (IMetadataColumn column : columnList) {
+                if ("id_Dynamic".equals(column.getTalendType())) {
+                    throw new IllegalArgumentException("Relational strategy requires a fixed schema");
+                }
+                if (relationalStrategyColumn.equals(column.getLabel())) {
+                    if (!"id_String".equals(column.getTalendType()) || column.isKey()) {
+                        throw new IllegalArgumentException("Relational strategy column must be a String and cannot be a key");
+                    }
+                    strategyFound = true;
+                } else {
+                    sqlColumns.add(column);
+                    if (column.isKey()) {
+                        keyCount++;
+                    }
+                }
+            }
+        }
+        if (!strategyFound) {
+            throw new IllegalArgumentException("Missing relational strategy column: " + relationalStrategyColumn);
+        }
+        if (keyCount == 0 || keyCount == sqlColumns.size()) {
+            throw new IllegalArgumentException("Relational strategy requires schema keys and at least one non-key SQL column");
+        }
+        columnList = sqlColumns;
+        // Only connected columns and the common schema keys define the SQL.
+        useFieldOptions = false;
+        addCols = null;
+    }
+%>

@@ -92,6 +92,11 @@ skeleton="../../db_output_bulk.skeleton"
 	}
 
 	List<IMetadataColumn> columnList = getColumnList(node);
+    String relationalDb = "mysql";
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConfig.inc.javajet" %>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyValidate.inc.javajet" %>
+<%
 	List<Column> stmtStructure = null;
 	Manager manager = null;
 	if(columnList != null && columnList.size() > 0) {
@@ -206,7 +211,10 @@ java.sql.Connection conn_<%=cid%> = null;
 			<%
 		}
 	}
-	dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
+	%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConnection.inc.javajet" %>
+<%
+    dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
 %>
 <%
 	if (useBatchSize && ("MYSQL_8".equals(dbVersion) || "MYSQL_5".equals(dbVersion) || "MARIADB".equals(dbVersion)) && (("UPDATE").equals(dataAction)||("DELETE").equals(dataAction))) {
@@ -278,7 +286,11 @@ java.sql.Connection conn_<%=cid%> = null;
 
 			boolean supportDuplicateUpdate = "true".equalsIgnoreCase(ElementParameterParser.getValue(node,"__ON_DUPLICATE_KEY_UPDATE__"));
 
-			if(("INSERT").equals(dataAction)) {
+			if ("RELATIONAL_STRATEGY".equals(dataAction)) {
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyPrepare.inc.javajet" %>
+<%
+            } else if(("INSERT").equals(dataAction)) {
 
 				if (supportDuplicateUpdate) {
 					List<Map<String, String>> duplicateKeys = (List<Map<String,String>>)ElementParameterParser.getObjectValue( node,"__DUPLICATED_KEYS__" );

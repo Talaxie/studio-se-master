@@ -1,0 +1,35 @@
+<%
+    String relationalQuote = "mysql".equals(relationalDb) ? "`" : "postgresql".equals(relationalDb) ? "\"" : "";
+%>
+    String insert_<%=cid%> = "INSERT INTO <%=relationalQuote.replace("\"", "\\\"")%>" + tableName_<%=cid%> + "<%=relationalQuote.replace("\"", "\\\"")%> (<%=insertColName%>) VALUES (<%=insertValueStmt%>)";
+    String update_<%=cid%> = "UPDATE <%=relationalQuote.replace("\"", "\\\"")%>" + tableName_<%=cid%> + "<%=relationalQuote.replace("\"", "\\\"")%> SET <%=updateSetStmt%> WHERE <%=updateWhereStmt%>";
+    String delete_<%=cid%> = "DELETE FROM <%=relationalQuote.replace("\"", "\\\"")%>" + tableName_<%=cid%> + "<%=relationalQuote.replace("\"", "\\\"")%> WHERE <%=deleteWhereStmt%>";
+<% if ("mysql".equals(relationalDb)) { %>
+    String relationalExistsSql_<%=cid%> = "SELECT 1 FROM `" + tableName_<%=cid%> + "` WHERE <%=updateWhereStmt%>";
+<% } %>
+<% if ("mysql".equals(relationalDb) && relationalBatchUse) { %>
+    // JDBC transaction support alone does not make a MyISAM target transactional.
+    try (java.sql.PreparedStatement relationalEngine_<%=cid%> = conn_<%=cid%>.prepareStatement(
+            "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?")) {
+        relationalEngine_<%=cid%>.setString(1, tableName_<%=cid%>);
+        try (java.sql.ResultSet relationalEngineResult_<%=cid%> = relationalEngine_<%=cid%>.executeQuery()) {
+            if (!relationalEngineResult_<%=cid%>.next() || !"InnoDB".equalsIgnoreCase(relationalEngineResult_<%=cid%>.getString(1)))
+                throw new java.sql.SQLException("Relational strategy batches require an InnoDB target for rollback support");
+        }
+    }
+<% } %>
+    java.sql.PreparedStatement pstmtInsert_<%=cid%> = conn_<%=cid%>.prepareStatement(insert_<%=cid%>);
+    resourceMap.put("pstmtInsert_<%=cid%>", pstmtInsert_<%=cid%>);
+    java.sql.PreparedStatement pstmtUpdate_<%=cid%> = conn_<%=cid%>.prepareStatement(update_<%=cid%>);
+    resourceMap.put("pstmtUpdate_<%=cid%>", pstmtUpdate_<%=cid%>);
+    java.sql.PreparedStatement pstmt_<%=cid%> = conn_<%=cid%>.prepareStatement(delete_<%=cid%>);
+    resourceMap.put("pstmt_<%=cid%>", pstmt_<%=cid%>);
+<%
+    if ("true".equals(ElementParameterParser.getValue(node,"__SET_QUERY_TIMEOUT__"))) {
+        String relationalTimeout = ElementParameterParser.getValue(node,"__QUERY_TIMEOUT_IN_SECONDS__");
+%>
+    pstmtInsert_<%=cid%>.setQueryTimeout(<%=relationalTimeout%>);
+    pstmtUpdate_<%=cid%>.setQueryTimeout(<%=relationalTimeout%>);
+    pstmt_<%=cid%>.setQueryTimeout(<%=relationalTimeout%>);
+<% } %>
+<%@ include file="../../../tMSSqlOutput/relationalStrategyBuffer.inc.javajet" %>

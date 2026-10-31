@@ -1,5 +1,9 @@
 <%@ jet
 imports="
+ java.util.Map
+ java.util.ArrayList
+ org.talend.core.model.metadata.IMetadataColumn
+
 		org.talend.designer.codegen.config.CodeGeneratorArgument
 		org.talend.core.model.process.INode
 		org.talend.core.model.process.ElementParameterParser
@@ -100,6 +104,12 @@ if ((metadatas!=null)&&(metadatas.size()>0)) {
 }
 
 List<IMetadataColumn> columnList = getColumnList(node);
+    String relationalDb = "postgresql";
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConfig.inc.javajet" %>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyValidate.inc.javajet" %>
+<%
+    if ("RELATIONAL_STRATEGY".equals(dataAction)) savePoint = false;
 List<Column> stmtStructure = null;
 if(columnList != null && columnList.size() > 0) {
     stmtStructure = getManager(dbmsId, cid).createColumnList(columnList, useFieldOptions, fieldOptions, addCols);
@@ -109,10 +119,10 @@ if(columnList != null && columnList.size() > 0) {
     	for(Column column : stmtStructure) {
     		if(column.isReplaced()) {
     			for (Column replacedColumn : column.getReplacement()) {
-    				replacedColumn.setColumnName(replacedColumn.getColumnName().toLowerCase());
+                    replacedColumn.setColumnName(replacedColumn.getColumnName().toLowerCase("RELATIONAL_STRATEGY".equals(dataAction) ? java.util.Locale.ROOT : java.util.Locale.getDefault()));
     			}
     		} else if(!column.isDynamic()){
-    			column.setColumnName(column.getColumnName().toLowerCase());
+                column.setColumnName(column.getColumnName().toLowerCase("RELATIONAL_STRATEGY".equals(dataAction) ? java.util.Locale.ROOT : java.util.Locale.getDefault()));
     		}
     	}
     }
@@ -140,9 +150,9 @@ if(("true").equals(useExistingConn)) {
 
 String tableName_<%=cid%> = null;
 if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
-	tableName_<%=cid%> = (<%=table%>)<%=convertToLowercase ? ".toLowerCase()" : ""%>;
+	tableName_<%=cid%> = (<%=table%>)<%=convertToLowercase ? ("RELATIONAL_STRATEGY".equals(dataAction) ? ".toLowerCase(java.util.Locale.ROOT)" : ".toLowerCase()") : ""%>;
 } else {
-	tableName_<%=cid%> = dbschema_<%=cid%> + "\".\"" + (<%=table%>)<%=convertToLowercase ? ".toLowerCase()" : ""%>;
+	tableName_<%=cid%> = dbschema_<%=cid%> + "\".\"" + (<%=table%>)<%=convertToLowercase ? ("RELATIONAL_STRATEGY".equals(dataAction) ? ".toLowerCase(java.util.Locale.ROOT)" : ".toLowerCase()") : ""%>;
 }
 
 <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/CheckKeysForUpdateAndDelete.javajet"%>
@@ -237,7 +247,10 @@ if(!("true").equals(useExistingConn)) {
         <%
     }
 }
-	dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
+	%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConnection.inc.javajet" %>
+<%
+    dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
 %>
 
 <%if(("true").equals(useExistingConn) && savePoint){%>
@@ -272,7 +285,12 @@ if(columnList != null && columnList.size()>0) {
     StringBuilder updateWhereStmt = actionSQLMap.get(UPDATE_WHERE_STMT);
     StringBuilder deleteWhereStmt = actionSQLMap.get(DELETE_WHERE_STMT);
 
-    if(("INSERT").equals(dataAction) || ("UPSERT").equals(dataAction)) {
+    if ("RELATIONAL_STRATEGY".equals(dataAction)) {
+        boolean useExistingConnection = "true".equals(useExistingConn);
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyPrepare.inc.javajet" %>
+<%
+    } else if(("INSERT").equals(dataAction) || ("UPSERT").equals(dataAction)) {
         %>
         java.lang.StringBuilder sb_<%=cid%> = new java.lang.StringBuilder();
         sb_<%=cid%>.append("INSERT INTO \"").append(tableName_<%=cid%>).append("\" (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)");
