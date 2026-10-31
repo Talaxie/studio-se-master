@@ -42,6 +42,10 @@ public enum GAV {
         return props.getProperty("COMPONENT_RUNTIME_VERSION");
     }
 
+    public String getComponentRuntimeDiVersion() {
+        return props.getProperty("COMPONENT_RUNTIME_DI_VERSION", getComponentRuntimeVersion());
+    }
+
     public String getCliVersion() {
         return props.getProperty("CLI_VERSION");
     }

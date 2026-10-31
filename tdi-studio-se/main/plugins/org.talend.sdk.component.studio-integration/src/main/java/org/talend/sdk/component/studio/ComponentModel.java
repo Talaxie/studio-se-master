@@ -478,7 +478,7 @@ public class ComponentModel extends AbstractBasicComponent implements IAdditiona
                             .map(s -> new ModuleNeeded(getDisplayName(), "", true, s))
                             .collect(toList()));
                     modulesNeeded.add(new ModuleNeeded(getDisplayName(), "", true,
-                            "mvn:org.talend.sdk.component/component-runtime-di/" + GAV.INSTANCE.getComponentRuntimeVersion()));
+                            "mvn:org.talend.sdk.component/component-runtime-di/" + GAV.INSTANCE.getComponentRuntimeDiVersion()));
                     modulesNeeded.add(new ModuleNeeded(getDisplayName(), "", true,
                             "mvn:org.talend.sdk.component/component-runtime-design-extension/"
                                     + GAV.INSTANCE.getComponentRuntimeVersion()));
