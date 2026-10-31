@@ -1,0 +1,32 @@
+<%@ include file="RelationalStrategyContext.inc.javajet" %>
+<%
+    String relationalVersion = ElementParameterParser.getValue(node,"__DB_VERSION__");
+    if (useExistingConnection) {
+        String relationalConnection = ElementParameterParser.getValue(node,"__CONNECTION__");
+        for (INode relationalConnectionNode : node.getProcess().getGeneratingNodes()) {
+            if (relationalConnectionNode.getUniqueName().equals(relationalConnection)) {
+                relationalVersion = ElementParameterParser.getValue(relationalConnectionNode,"__DB_VERSION__");
+                break;
+            }
+        }
+    }
+    getManager(dbmsId,cid,node).setDbVersion(relationalVersion);
+    List<Column> colStruct = getManager(dbmsId,cid).createColumnList(columnList,false,null,null);
+    for (Column column : colStruct) {
+        if ("postgresql".equals(relationalDb) && "true".equals(ElementParameterParser.getValue(node,"__CONVERT_COLUMN_TABLE_TO_LOWERCASE__")))
+            column.setColumnName(column.getColumnName().toLowerCase(java.util.Locale.ROOT));
+        if ("oracle".equals(relationalDb) && "true".equals(ElementParameterParser.getValue(node,"__CONVERT_COLUMN_TABLE_TO_UPPERCASE__")))
+            column.setColumnName(column.getColumnName().toUpperCase(java.util.Locale.ROOT));
+    }
+    String incomingConnName = null;
+    List<? extends IConnection> relationalInputs = node.getIncomingConnections();
+    if (relationalInputs != null && !relationalInputs.isEmpty()) incomingConnName = relationalInputs.get(0).getName();
+    List<? extends IConnection> outgoingConns = node.getOutgoingSortedConnections();
+    for (IConnection output : outgoingConns) {
+        if (output.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
+%>
+    <%=output.getName()%> = null;
+<% }
+    }
+%>
+<%@ include file="RelationalStrategyMain.inc.javajet" %>

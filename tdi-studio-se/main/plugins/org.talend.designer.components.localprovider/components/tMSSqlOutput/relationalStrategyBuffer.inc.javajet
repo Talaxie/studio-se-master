@@ -1,0 +1,91 @@
+    // One queue at a time preserves dependencies between consecutive input rows.
+    class RelationalBatchBuffer_<%=cid%> implements AutoCloseable {
+        final java.sql.Connection connection;
+        final java.sql.PreparedStatement insertStatement, updateStatement, deleteStatement;
+        final boolean enabled = <%=relationalBatchUse%>, ownsConnection = <%=!useExistingConnection%>;
+        final int limit = relationalBatchLimit_<%=cid%>;
+        String action;
+        int pending, inserted, updated, deleted, unknown, uncommittedCount;
+        int committedInserted, committedUpdated, committedDeleted, committedUnknown;
+        boolean failed, finished, closed;
+        RelationalBatchBuffer_<%=cid%>(java.sql.Connection c, java.sql.PreparedStatement i,
+                java.sql.PreparedStatement u, java.sql.PreparedStatement d) {
+            connection=c; insertStatement=i; updateStatement=u; deleteStatement=d;
+        }
+        java.sql.PreparedStatement statement(String a) {
+            return "INSERT".equals(a) ? insertStatement : "UPDATE".equals(a) ? updateStatement : deleteStatement;
+        }
+        void beforeAction(String next) throws java.sql.SQLException {
+            if (failed) throw new java.sql.SQLException("Relational strategy transaction has failed");
+            if (pending > 0 && !next.equals(action)) flush();
+        }
+        void write(String next) throws java.sql.SQLException {
+            if (!enabled) { record(next, statement(next).executeUpdate()); return; }
+            action=next;
+            statement(next).addBatch();
+            if (++pending >= limit) flush();
+        }
+        void record(String a, int count) throws java.sql.SQLException {
+            if (count < 0 && count != java.sql.Statement.SUCCESS_NO_INFO)
+                throw new java.sql.SQLException("Failed relational strategy batch command");
+            if (count == java.sql.Statement.SUCCESS_NO_INFO) { unknown++; return; }
+            if ("INSERT".equals(a)) inserted+=count;
+            else if ("UPDATE".equals(a)) updated+=count;
+            else deleted+=count;
+            uncommittedCount+=count;
+        }
+        void flush() throws java.sql.SQLException {
+            if (pending == 0) return;
+            if (failed) throw new java.sql.SQLException("Cannot replay a failed relational strategy batch");
+            int[] counts=statement(action).executeBatch();
+            if (counts.length != pending) throw new java.sql.SQLException("Incomplete relational strategy batch result");
+            for (int count: counts) record(action, count);
+            statement(action).clearBatch();
+            pending=0;
+        }
+        void committed() {
+            committedInserted=inserted; committedUpdated=updated;
+            committedDeleted=deleted; committedUnknown=unknown; uncommittedCount=0;
+        }
+        void fail(java.sql.SQLException error) {
+            if (failed) return;
+            failed=true;
+            for (java.sql.PreparedStatement s: new java.sql.PreparedStatement[]{insertStatement,updateStatement,deleteStatement}) {
+                try { s.clearBatch(); } catch (java.sql.SQLException cleanup) { error.addSuppressed(cleanup); }
+            }
+            pending=0;
+            if (ownsConnection || enabled) {
+                try {
+                    if (!connection.getAutoCommit()) {
+                        connection.rollback();
+                        inserted=committedInserted; updated=committedUpdated;
+                        deleted=committedDeleted; unknown=committedUnknown; uncommittedCount=0;
+                    }
+                } catch (java.sql.SQLException cleanup) { error.addSuppressed(cleanup); }
+            }
+        }
+        public void close() throws java.sql.SQLException {
+            if (closed) return;
+            closed=true;
+            java.sql.SQLException error=null;
+            if (!finished && !failed) {
+                java.sql.SQLException abort=new java.sql.SQLException("Relational strategy interrupted before completion");
+                fail(abort);
+                if (abort.getSuppressed().length > 0) error=abort;
+            }
+            for (java.sql.PreparedStatement s: new java.sql.PreparedStatement[]{insertStatement,updateStatement,deleteStatement}) {
+                try { s.close(); } catch (java.sql.SQLException cleanup) {
+                    if (error==null) error=cleanup; else error.addSuppressed(cleanup);
+                }
+            }
+            if (ownsConnection) {
+                try { connection.close(); } catch (java.sql.SQLException cleanup) {
+                    if (error==null) error=cleanup; else error.addSuppressed(cleanup);
+                }
+            }
+            if (error!=null) throw error;
+        }
+    }
+    RelationalBatchBuffer_<%=cid%> relationalBatch_<%=cid%> = new RelationalBatchBuffer_<%=cid%>(
+            conn_<%=cid%>, pstmtInsert_<%=cid%>, pstmtUpdate_<%=cid%>, pstmt_<%=cid%>);
+    resourceMap.put("relationalBatch_<%=cid%>", relationalBatch_<%=cid%>);

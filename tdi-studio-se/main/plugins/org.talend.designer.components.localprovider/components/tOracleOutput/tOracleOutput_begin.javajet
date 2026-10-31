@@ -1,5 +1,9 @@
 <%@ jet
 imports="
+ java.util.Map
+ java.util.ArrayList
+ org.talend.core.model.metadata.IMetadataColumn
+
         org.talend.designer.codegen.config.CodeGeneratorArgument
         org.talend.core.model.process.INode
         org.talend.core.model.process.ElementParameterParser
@@ -75,7 +79,7 @@ skeleton="../templates/db_output_bulk.skeleton"
     }
 
 
-    if (useSpatialOptions) {
+    if (useSpatialOptions && !"RELATIONAL_STRATEGY".equals(dataAction)) {
         int targetSRID = -1;
         try {
             targetSRID = Integer.parseInt(ElementParameterParser.getValue(node,"__SRID__"));
@@ -108,6 +112,11 @@ skeleton="../templates/db_output_bulk.skeleton"
     }
 
     List<IMetadataColumn> columnList = getColumnList(node);
+    String relationalDb = "oracle";
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConfig.inc.javajet" %>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyValidate.inc.javajet" %>
+<%
     List<Column> stmtStructure = null;
     Manager manager = null;
 
@@ -119,10 +128,10 @@ skeleton="../templates/db_output_bulk.skeleton"
             for(Column column : stmtStructure) {
                 if(column.isReplaced()) {
                     for (Column replacedColumn : column.getReplacement()) {
-                        replacedColumn.setColumnName(replacedColumn.getColumnName().toUpperCase());
+                        replacedColumn.setColumnName(replacedColumn.getColumnName().toUpperCase("RELATIONAL_STRATEGY".equals(dataAction) ? java.util.Locale.ROOT : java.util.Locale.getDefault()));
                     }
                 } else if(!column.isDynamic()){
-                    column.setColumnName(column.getColumnName().toUpperCase());
+                    column.setColumnName(column.getColumnName().toUpperCase("RELATIONAL_STRATEGY".equals(dataAction) ? java.util.Locale.ROOT : java.util.Locale.getDefault()));
                 }
             }
         }
@@ -300,6 +309,9 @@ skeleton="../templates/db_output_bulk.skeleton"
         }
     }
 
+    %>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyConnection.inc.javajet" %>
+<%
     dbLog.commit().logAutoCommit("conn_"+cid+".getAutoCommit()");
 
     if (useBatch) {
@@ -368,9 +380,9 @@ skeleton="../templates/db_output_bulk.skeleton"
         %>
 
         if(dbschema_<%=cid%> == null || dbschema_<%=cid%>.trim().length() == 0) {
-            tableName_<%=cid%> = (<%=table%>)<%=convertToUppercase ? ".toUpperCase()" : ""%>;
+            tableName_<%=cid%> = (<%=table%>)<%=convertToUppercase ? ("RELATIONAL_STRATEGY".equals(dataAction) ? ".toUpperCase(java.util.Locale.ROOT)" : ".toUpperCase()") : ""%>;
         } else {
-            tableName_<%=cid%> = dbschema_<%=cid%> + "." + (<%=table%>)<%=convertToUppercase ? ".toUpperCase()" : ""%>;
+            tableName_<%=cid%> = dbschema_<%=cid%> + "." + (<%=table%>)<%=convertToUppercase ? ("RELATIONAL_STRATEGY".equals(dataAction) ? ".toUpperCase(java.util.Locale.ROOT)" : ".toUpperCase()") : ""%>;
         }
         <%@ include file="../templates/_hintTableName.javajet" %>
         <%
@@ -385,7 +397,11 @@ skeleton="../templates/db_output_bulk.skeleton"
             StringBuilder updateWhereStmt = actionSQLMap.get(UPDATE_WHERE_STMT);
             StringBuilder deleteWhereStmt = actionSQLMap.get(DELETE_WHERE_STMT);
 
-            if(("INSERT").equals(dataAction)) {
+            if ("RELATIONAL_STRATEGY".equals(dataAction)) {
+%>
+<%@ include file="@{org.talend.designer.components.localprovider}/components/templates/DB/Output/RelationalStrategyPrepare.inc.javajet" %>
+<%
+            } else if(("INSERT").equals(dataAction)) {
             %>
                 String insert_<%=cid%> = "INSERT INTO " + tableName_<%=cid%> + " (<%=insertColName.toString()%>) VALUES (<%=insertValueStmt.toString()%>)";
                 <%@ include file="../templates/_hintInsert.javajet" %>

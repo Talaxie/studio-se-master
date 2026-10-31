@@ -1,0 +1,198 @@
+<%
+    if (incomingConnName == null) {
+        throw new IllegalArgumentException("Relational strategy requires an incoming row connection");
+    }
+%>
+    nb_line_<%=cid%>++;
+    whetherReject_<%=cid%> = false;
+    String relationalStrategy_<%=cid%> = <%=incomingConnName%>.<%=relationalStrategyColumn%>;
+    try {
+        if (relationalStrategy_<%=cid%> != null) {
+            relationalStrategy_<%=cid%> = relationalStrategy_<%=cid%>.trim().toUpperCase(java.util.Locale.ROOT);
+        }
+        if ("UPDATE_OR_INSERT".equals(relationalStrategy_<%=cid%>)) {
+            relationalStrategy_<%=cid%> = "UPSERT";
+        }
+        if (!"INSERT".equals(relationalStrategy_<%=cid%>)
+                && !"UPDATE".equals(relationalStrategy_<%=cid%>)
+                && !"DELETE".equals(relationalStrategy_<%=cid%>)
+                && !"UPSERT".equals(relationalStrategy_<%=cid%>)) {
+            throw new java.sql.SQLException("Invalid relationalStrategy: " + relationalStrategy_<%=cid%>
+                    + ". Expected INSERT, UPDATE, DELETE or UPSERT.", "RS001");
+        }
+        relationalBatch_<%=cid%>.beforeAction(relationalStrategy_<%=cid%>);
+        int relationalUpdated_<%=cid%> = 0;
+        if ("UPDATE".equals(relationalStrategy_<%=cid%>) || "UPSERT".equals(relationalStrategy_<%=cid%>)) {
+<%
+    int relationalIndex = 1;
+    for (Column column : colStruct) {
+        if (column.isUpdatable()) {
+            String type = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+%>
+            {
+            <%=getManager(dbmsId, cid).generateSetStmt(type, String.valueOf(ignoreDateOutofRange), column, relationalIndex++, incomingConnName, cid, UPDATE_TYPE, null)%>
+            }
+<%
+        }
+    }
+    for (Column column : colStruct) {
+        if (column.isUpdateKey()) {
+            if (whereSupportNull && column.getColumn().isNullable()) {
+%>
+            <%=getManager(dbmsId, cid).generateSetBooleanForNullableKeyStmt(column, relationalIndex++, incomingConnName, cid, UPDATE_TYPE)%>
+<%
+            }
+            String type = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+%>
+            {
+            <%=getManager(dbmsId, cid).generateSetStmt(type, String.valueOf(ignoreDateOutofRange), column, relationalIndex++, incomingConnName, cid, UPDATE_TYPE, null)%>
+            }
+<%
+        }
+    }
+    if (isEnableDebug) {
+%>
+            globalMap.put("<%=cid%>_QUERY", update_<%=cid%>);
+<%
+    }
+%>
+            if ("UPSERT".equals(relationalStrategy_<%=cid%>)) {
+                relationalUpdated_<%=cid%> = pstmtUpdate_<%=cid%>.executeUpdate();
+                relationalBatch_<%=cid%>.record("UPDATE", relationalUpdated_<%=cid%>);
+            } else {
+                relationalBatch_<%=cid%>.write("UPDATE");
+            }
+        }
+        if ("INSERT".equals(relationalStrategy_<%=cid%>)
+                || ("UPSERT".equals(relationalStrategy_<%=cid%>) && relationalUpdated_<%=cid%> == 0)) {
+<%
+    relationalIndex = 1;
+    for (Column column : colStruct) {
+        String type = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+%>
+            {
+            <%=getManager(dbmsId, cid).generateSetStmt(type, String.valueOf(ignoreDateOutofRange), column, relationalIndex++, incomingConnName, cid, INSERT_TYPE, null)%>
+            }
+<%
+    }
+    if (isEnableDebug) {
+%>
+            globalMap.put("<%=cid%>_QUERY", insert_<%=cid%>);
+<%
+    }
+%>
+            if ("UPSERT".equals(relationalStrategy_<%=cid%>)) {
+                relationalBatch_<%=cid%>.record("INSERT", pstmtInsert_<%=cid%>.executeUpdate());
+            } else {
+                relationalBatch_<%=cid%>.write("INSERT");
+            }
+        } else if ("DELETE".equals(relationalStrategy_<%=cid%>)) {
+<%
+    relationalIndex = 1;
+    for (Column column : colStruct) {
+        if (column.isDeleteKey()) {
+            if (whereSupportNull && column.getColumn().isNullable()) {
+%>
+            <%=getManager(dbmsId, cid).generateSetBooleanForNullableKeyStmt(column, relationalIndex++, incomingConnName, cid, NORMAL_TYPE)%>
+<%
+            }
+            String type = JavaTypesManager.getTypeToGenerate(column.getColumn().getTalendType(), column.getColumn().isNullable());
+%>
+            {
+            <%=getManager(dbmsId, cid).generateSetStmt(type, String.valueOf(ignoreDateOutofRange), column, relationalIndex++, incomingConnName, cid, NORMAL_TYPE, null)%>
+            }
+<%
+        }
+    }
+    if (isEnableDebug) {
+%>
+            globalMap.put("<%=cid%>_QUERY", delete_<%=cid%>);
+<%
+    }
+%>
+            relationalBatch_<%=cid%>.write("DELETE");
+        }
+    } catch (java.sql.SQLException relationalError_<%=cid%>) {
+        globalMap.put("<%=cid%>_ERROR_MESSAGE", relationalError_<%=cid%>.getMessage());
+<%
+    if ("true".equals(dieOnError)) {
+%>
+        relationalBatch_<%=cid%>.fail(relationalError_<%=cid%>);
+<%
+%>
+        throw relationalError_<%=cid%>;
+<%
+    } else {
+%>
+        whetherReject_<%=cid%> = true;
+        rejectedCount_<%=cid%>++;
+<%
+        if (rejectConnName != null && rejectColumnList != null) {
+%>
+        <%=rejectConnName%> = new <%=rejectConnName%>Struct();
+<%
+            for (IMetadataColumn column : node.getMetadataList().get(0).getListColumns()) {
+%>
+        <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+<%
+            }
+%>
+        <%=rejectConnName%>.errorCode = relationalError_<%=cid%>.getSQLState();
+        <%=rejectConnName%>.errorMessage = "relationalStrategy=" + relationalStrategy_<%=cid%>
+                + ": " + relationalError_<%=cid%>.getMessage();
+<%
+        } else {
+            dbLog.logPrintedException("relationalError_" + cid + ".getMessage()");
+%>
+        System.err.println(relationalError_<%=cid%>.getMessage());
+<%
+        }
+    }
+%>
+    }
+<%
+    if (!useExistingConnection && !"".equals(commitEvery) && !"0".equals(commitEvery)) {
+%>
+    commitCounter_<%=cid%>++;
+    if (commitCounter_<%=cid%> >= commitEvery_<%=cid%>) {
+        try {
+            relationalBatch_<%=cid%>.flush();
+            rowsToCommitCount_<%=cid%> = relationalBatch_<%=cid%>.uncommittedCount;
+            <%dbLog.commit().commitTry(null, dbLog.var("rowsToCommitCount"));%>
+            conn_<%=cid%>.commit();
+            relationalBatch_<%=cid%>.committed();
+            <%dbLog.commit().commitDone(null);%>
+        } catch (java.sql.SQLException relationalCommitError_<%=cid%>) {
+            globalMap.put("<%=cid%>_ERROR_MESSAGE", relationalCommitError_<%=cid%>.getMessage());
+            relationalBatch_<%=cid%>.fail(relationalCommitError_<%=cid%>);
+            throw relationalCommitError_<%=cid%>;
+        }
+        rowsToCommitCount_<%=cid%> = 0;
+        commitCounter_<%=cid%> = 0;
+    }
+<%
+    }
+%>
+    insertedCount_<%=cid%> = relationalBatch_<%=cid%>.inserted;
+    updatedCount_<%=cid%> = relationalBatch_<%=cid%>.updated;
+    deletedCount_<%=cid%> = relationalBatch_<%=cid%>.deleted;
+    rowsToCommitCount_<%=cid%> = relationalBatch_<%=cid%>.uncommittedCount;
+<%
+    for (IConnection outgoingConn : outgoingConns) {
+        if (outgoingConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)
+                && !outgoingConn.getName().equals(rejectConnName)) {
+%>
+    if (!whetherReject_<%=cid%>) {
+        <%=outgoingConn.getName()%> = new <%=outgoingConn.getName()%>Struct();
+<%
+            for (IMetadataColumn column : node.getMetadataList().get(0).getListColumns()) {
+%>
+        <%=outgoingConn.getName()%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+<%
+            }
+%>
+    }
+<%
+        }
+    }
+%>
