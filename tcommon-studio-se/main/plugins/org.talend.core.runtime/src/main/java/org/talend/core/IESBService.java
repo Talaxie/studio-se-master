@@ -13,6 +13,7 @@
 package org.talend.core;
 
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbenchPart;
@@ -51,6 +52,16 @@ public interface IESBService extends IService {
     public StringBuffer getAllTheJObNames(IRepositoryNode jobList);
 
     public List<String> getSerivceRelatedJobIds(Item serviceItem);
+
+    /**
+     * Updates operation references after imported job identifiers have changed.
+     * The caller is responsible for saving the item when this method returns true.
+     *
+     * @return whether a reference was changed
+     */
+    default boolean updateServiceJobReferences(Item serviceItem, Map<String, String> oldToNewIds) {
+        return false;
+    }
 
     public void deleteOldRelation(String jobID);
 

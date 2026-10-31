@@ -27,6 +27,7 @@ import org.apache.log4j.Priority;
 import org.eclipse.emf.common.util.EList;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.core.GlobalServiceRegister;
+import org.talend.core.IESBService;
 import org.talend.core.model.context.link.ContextLinkService;
 import org.talend.core.model.metadata.builder.connection.Connection;
 import org.talend.core.model.process.IContext;
@@ -137,9 +138,6 @@ public class ChangeIdManager {
                 continue;
             }
             String newEffectedId = oldId2NewIdMap.get(oldEffectedId);
-            if (StringUtils.equals(oldEffectedId, newEffectedId)) {
-                continue;
-            }
             if (StringUtils.isBlank(newEffectedId)) {
                 // means the id didn't be changed
                 newEffectedId = oldEffectedId;
@@ -152,7 +150,7 @@ public class ChangeIdManager {
                     Map<String, String> old2NewMap = new HashMap<>();
                     for (String oldId : entry.getValue()) {
                         String newId = oldId2NewIdMap.get(oldId);
-                        if (StringUtils.equals(newId, oldId)) {
+                        if (StringUtils.isBlank(newId) || StringUtils.equals(newId, oldId)) {
                             continue;
                         }
                         old2NewMap.put(oldId, newId);
@@ -222,7 +220,7 @@ public class ChangeIdManager {
         return changeIdMap;
     }
 
-    private List<IRepositoryViewObject> getAllVersion(String id, ERepositoryObjectType repType) throws Exception {
+    protected List<IRepositoryViewObject> getAllVersion(String id, ERepositoryObjectType repType) throws Exception {
         List<IRepositoryViewObject> repViewObjs = null;
         if (repType != null) {
             repViewObjs = ProxyRepositoryFactory.getInstance().getAllVersion(getCurrentProject(), id, null, repType);
@@ -265,10 +263,7 @@ public class ChangeIdManager {
             for (IRepositoryViewObject givenObj : givenObjs) {
                 Item item = givenObj.getProperty().getItem();
                 if (item instanceof ConnectionItem) {
-                    String ctxId = ((ConnectionItem) item).getConnection().getContextId();
-                    if (ctxId != null && !ctxId.isEmpty()) {
-                        relatedIds.add(ctxId);
-                    }
+                    relatedIds.addAll(getRelatedConnectionIds((ConnectionItem) item));
                 } else {
                     throw new Exception("Unsupportted type when importing: " + item.toString());
                 }
@@ -276,6 +271,34 @@ public class ChangeIdManager {
         }
 
         return relatedIds;
+    }
+
+    protected Collection<String> getRelatedConnectionIds(ConnectionItem item) {
+        Collection<String> relatedIds = new HashSet<String>();
+        String contextId = item.getConnection().getContextId();
+        if (StringUtils.isNotEmpty(contextId)) {
+            relatedIds.add(contextId);
+        }
+        IESBService service = getESBService(item);
+        if (service != null) {
+            for (String jobId : service.getSerivceRelatedJobIds(item)) {
+                if (StringUtils.isNotEmpty(jobId)) {
+                    relatedIds.add(jobId);
+                }
+            }
+        }
+        return relatedIds;
+    }
+
+    protected IESBService getESBService(Item item) {
+        if (GlobalServiceRegister.getDefault().isServiceRegistered(IESBService.class)) {
+            IESBService service = (IESBService) GlobalServiceRegister.getDefault().getService(IESBService.class);
+            if (service.getServicesType() != null
+                    && service.getServicesType().equals(ERepositoryObjectType.getItemType(item))) {
+                return service;
+            }
+        }
+        return null;
     }
 
     private List<Relation> getRelations(String id) {
@@ -290,7 +313,7 @@ public class ChangeIdManager {
         return relations;
     }
 
-    private void changeRelated(Map<String, String> old2NewMap, Property property,
+    protected void changeRelated(Map<String, String> old2NewMap, Property property,
             org.talend.core.model.general.Project project) throws Exception {
         Item item = property.getItem();
         boolean modified = false;
@@ -310,17 +333,18 @@ public class ChangeIdManager {
         }
     }
 
-    private boolean changeRelatedConnection(Map<String, String> old2NewMap, ConnectionItem item) throws Exception {
-        boolean modified = false;
+    protected boolean changeRelatedConnection(Map<String, String> old2NewMap, ConnectionItem item) throws Exception {
+        IESBService service = getESBService(item);
+        boolean modified = service != null && service.updateServiceJobReferences(item, old2NewMap);
         Connection conn = item.getConnection();
         String ctxId = conn.getContextId();
         for (Map.Entry<String, String> entry : old2NewMap.entrySet()) {
-            if (StringUtils.equals(entry.getKey(), ctxId)) {
+            if (StringUtils.isNotEmpty(ctxId) && StringUtils.equals(entry.getKey(), ctxId)) {
                 conn.setContextId(entry.getValue());
                 modified = true;
             }
         }
-        if (!modified) {
+        if (!modified && service == null) {
             throw new Exception("Unhandled case for import: " + item.toString()); //$NON-NLS-1$
         }
         return modified;
@@ -585,7 +609,7 @@ public class ChangeIdManager {
         return aimString.replaceAll("\\b" + from + "\\b", to); //$NON-NLS-1$//$NON-NLS-2$
     }
 
-    private void prepareRelationshipItemBuilder(Project project) {
+    protected void prepareRelationshipItemBuilder(Project project) {
         RelationshipItemBuilder itemBuilder = project2RelationshipMap.get(project);
         if (itemBuilder == null) {
             IProxyRepositoryFactory repFactory = ProxyRepositoryFactory.getInstance();
@@ -594,7 +618,7 @@ public class ChangeIdManager {
         }
     }
 
-    private org.talend.core.model.general.Project getCurrentProject() {
+    protected org.talend.core.model.general.Project getCurrentProject() {
         if (currentProject == null) {
             currentProject = ProjectManager.getInstance().getCurrentProject();
         }
