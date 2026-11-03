@@ -437,6 +437,9 @@ public class ModulesNeededProvider {
     public static Set<ModuleNeeded> getCodesModulesNeededForProcess(ProcessItem processItem, IProcess process,
             boolean includeCodesJar) {
         Set<ModuleNeeded> modulesNeeded = new HashSet<ModuleNeeded>();
+        // Generated code uses internal routines (for example PasswordEncryptUtil) even
+        // when the job does not declare any repository routine dependencies.
+        modulesNeeded.addAll(getSystemRunningModules());
         modulesNeeded.addAll(getCodesModulesNeededForProcess(processItem, ERepositoryObjectType.ROUTINES));
         if (includeCodesJar) {
             modulesNeeded.addAll(getCodesJarModulesNeededForProcess(processItem));

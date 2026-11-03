@@ -1,0 +1,47 @@
+<%@ jet imports="org.talend.core.model.process.INode org.talend.core.model.process.IConnection org.talend.core.model.process.IConnectionCategory org.talend.core.model.metadata.IMetadataColumn org.talend.core.model.metadata.IMetadataTable org.talend.designer.codegen.config.CodeGeneratorArgument java.util.List java.util.HashSet java.util.Set" %>
+<%
+INode node = (INode)((CodeGeneratorArgument)argument).getArgument();
+String cid = node.getUniqueName();
+IConnection input = null;
+for (IConnection connection : node.getIncomingConnections()) {
+    if (connection.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { input = connection; break; }
+}
+if (input == null) return "";
+IMetadataTable source = input.getMetadataTable();
+for (IConnection output : node.getOutgoingConnections()) {
+    if (!output.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) continue;
+    IMetadataColumn dynamic = output.getMetadataTable().getDynamicColumn();
+    if (dynamic == null) throw new IllegalArgumentException("tWriteDynamicFields requires a Dynamic output column");
+    String target = output.getName() + "." + dynamic.getLabel();
+    IMetadataColumn existing = source.getDynamicColumn();
+    Set<String> retained = new HashSet<String>();
+    if (existing == null) {
+%>
+<%=target%> = new routines.system.Dynamic();
+<% } else {
+    String container = input.getName() + "." + existing.getLabel(); %>
+<%=target%> = <%=container%> == null ? new routines.system.Dynamic() : <%=container%>.copy();
+<% }
+    for (IMetadataColumn column : output.getMetadataTable().getListColumns()) {
+        if ("id_Dynamic".equals(column.getTalendType())) continue;
+        retained.add(column.getLabel());
+        IMetadataColumn from = source.getColumn(column.getLabel());
+        if (from == null || !column.getTalendType().equals(from.getTalendType())) {
+            throw new IllegalArgumentException("tWriteDynamicFields: static output must match an input field: " + column.getLabel());
+        }
+%>
+<%=output.getName()%>.<%=column.getLabel()%> = <%=input.getName()%>.<%=column.getLabel()%>;
+<% }
+    for (IMetadataColumn column : source.getListColumns()) {
+        if ("id_Dynamic".equals(column.getTalendType()) || retained.contains(column.getLabel())) continue;
+        String dbName = column.getOriginalDbColumnName() == null ? column.getLabel() : column.getOriginalDbColumnName();
+        String dbType = column.getType() == null ? "" : column.getType();
+        String pattern = column.getPattern() == null || column.getPattern().trim().isEmpty() ? "null" : column.getPattern();
+%>
+routines.system.DynamicFields.add(<%=target%>, "<%=column.getLabel()%>", "<%=dbName.replace("\\", "\\\\").replace("\"", "\\\"")%>",
+    "<%=column.getTalendType()%>", "<%=dbType.replace("\\", "\\\\").replace("\"", "\\\"")%>", <%=column.getLength() == null ? -1 : column.getLength()%>,
+    <%=column.getPrecision() == null ? -1 : column.getPrecision()%>, <%=column.isNullable()%>, <%=column.isKey()%>, <%=pattern%>, <%=input.getName()%>.<%=column.getLabel()%>);
+<% }
+}
+%>
+nb_line_<%=cid%>++;

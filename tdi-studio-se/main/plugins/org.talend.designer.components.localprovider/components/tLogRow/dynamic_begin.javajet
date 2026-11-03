@@ -1,0 +1,29 @@
+<%@ jet imports="org.talend.core.model.process.INode org.talend.core.model.process.IConnection org.talend.core.model.process.IConnectionCategory org.talend.core.model.process.ElementParameterParser org.talend.core.model.metadata.IMetadataColumn org.talend.core.model.metadata.types.JavaTypesManager org.talend.designer.codegen.config.CodeGeneratorArgument java.util.List java.util.Map" %>
+<%
+INode dynamicNode = (INode) ((CodeGeneratorArgument) argument).getArgument();
+String dynamicCid = dynamicNode.getUniqueName();
+%>
+<%
+String dynamicLabel = ElementParameterParser.getValue(dynamicNode, "__LABEL__");
+if (dynamicLabel == null || "__UNIQUE_NAME__".equals(dynamicLabel)) dynamicLabel = dynamicCid;
+String dynamicTitle = "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_LABEL__")) ? dynamicLabel
+        : "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_UNIQUE_LABEL__")) ? dynamicCid + "--" + dynamicLabel : dynamicCid;
+String dynamicMode = "true".equals(ElementParameterParser.getValue(dynamicNode, "__TABLE_PRINT__")) ? "TABLE"
+        : "true".equals(ElementParameterParser.getValue(dynamicNode, "__VERTICAL__")) ? "VERTICAL" : "BASIC";
+List<Map<String,String>> dynamicLengths = (List<Map<String,String>>) ElementParameterParser.getObjectValue(dynamicNode, "__LENGTHS__");
+%>
+routines.system.DynamicLogRow dynamicLog_<%=dynamicCid%> = new routines.system.DynamicLogRow(
+    "<%=dynamicCid%>", "<%=dynamicTitle.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")%>", "<%=dynamicMode%>",
+    <%=ElementParameterParser.getValue(dynamicNode, "__FIELDSEPARATOR__")%>,
+    <%= "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_HEADER__")) %>,
+    <%= "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_COLNAMES__")) %>,
+    <%= "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_UNIQUE_NAME__")) %>, new int[] {
+<% if ("true".equals(ElementParameterParser.getValue(dynamicNode, "__USE_FIXED_LENGTH__")) && dynamicLengths != null) {
+    for (Map<String,String> length : dynamicLengths) { %><%=length.get("LENGTH")%>,<% }
+} %> });
+int nb_line_<%=dynamicCid%> = 0;
+java.io.PrintStream dynamicConsole_<%=dynamicCid%> = (java.io.PrintStream) globalMap.get("tLogRow_CONSOLE");
+if (dynamicConsole_<%=dynamicCid%> == null) {
+    dynamicConsole_<%=dynamicCid%> = new java.io.PrintStream(new java.io.BufferedOutputStream(System.out));
+    globalMap.put("tLogRow_CONSOLE", dynamicConsole_<%=dynamicCid%>);
+}

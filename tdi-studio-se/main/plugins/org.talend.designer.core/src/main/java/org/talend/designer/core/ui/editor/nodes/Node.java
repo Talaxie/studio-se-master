@@ -3942,20 +3942,25 @@ public class Node extends Element implements IGraphicalNode {
                             String errorMessage = Messages.getString("Node.onlyOneDynamicPerSchema"); //$NON-NLS-1$
                             Problems.add(ProblemStatus.ERROR, this, errorMessage);
                         }
-                        if (nbDynamic > 0 && service == null) {
-                            String errorMessage = Messages.getString("Node.dynamicNotSupported"); //$NON-NLS-1$
-                            Problems.add(ProblemStatus.ERROR, this, errorMessage);
-                        }
-                        if (nbDynamic > 0 && service != null) {
-                            if (!service.isSupportDynamicType(this)) {
-                                String errorMessage = Messages.getString("Node.componentDoesntSupportDynamic"); //$NON-NLS-1$
-                                Problems.add(ProblemStatus.ERROR, this, errorMessage);
+                        if (nbDynamic > 0) {
+                            if (!org.talend.core.model.metadata.DynamicSchemaSupport.isValidDynamicSchema(this, meta)) {
+                                Problems.add(ProblemStatus.ERROR, this,
+                                        Messages.getString("Node.dynamicMustBeLast")); //$NON-NLS-1$
+                            }
+                            if (!org.talend.core.model.metadata.DynamicSchemaSupport.supports(this)
+                                    && (service == null || !service.isSupportDynamicType(this))) {
+                                Problems.add(ProblemStatus.ERROR, this,
+                                        Messages.getString("Node.componentDoesntSupportDynamic")); //$NON-NLS-1$
                             }
                         }
                     }
 
                 }
             }
+        }
+
+        for (String dynamicProblem : org.talend.core.model.metadata.DynamicSchemaSupport.validateFlow(this)) {
+            Problems.add(ProblemStatus.ERROR, this, dynamicProblem);
         }
 
         // test empty schema in built in connections (several outputs with

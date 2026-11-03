@@ -95,75 +95,17 @@ imports="
 		    		}
 		    	}
 		    %>
-		    routines.system.Dynamic dcg_<%=cid%> =  new routines.system.Dynamic();
-		    dcg_<%=cid%>.setDbmsId("<%=dbms %>");
-		    List<String> listSchema_<%=cid%>=new java.util.ArrayList<String>();
-		    <%
-
-		    for(int i=0; i< columnList.size(); i++) {
-		        if(columnList.get(i).getTalendType().equals("id_Dynamic")){
-		            dynamic_index = i+1;
-		        }else{
-		            IMetadataColumn column = columnList.get(i);
-		            String columName = column.getOriginalDbColumnName();
-		            if(columName==null || "".equals(columName)){
-		                columName = column.getLabel();
-		            }
-	            %>
-		    	    listSchema_<%=cid%>.add("<%=columName.toUpperCase()%>");
-	    	    <%
-		    	}
-			}
-		    %>
-
-			int fixedColumnCount_<%=cid%> = <%=dynamic_index-1%>;
-
-            for (int i = <%=dynamic_index%>; i <= rsmd_<%=cid%>.getColumnCount()-<%=columnList.size()-dynamic_index%>; i++) {
-                if (!(listSchema_<%=cid%>.contains(rsmd_<%=cid%>.getColumnLabel(i).toUpperCase()) )) {
-                	routines.system.DynamicMetadata dcm_<%=cid%>=new routines.system.DynamicMetadata();
-                	dcm_<%=cid%>.setName(rsmd_<%=cid%>.getColumnLabel(i));
-                	dcm_<%=cid%>.setDbName(rsmd_<%=cid%>.getColumnName(i));
-                	dcm_<%=cid%>.setType(routines.system.Dynamic.getTalendTypeFromDBType("<%=dbms %>", rsmd_<%=cid%>.getColumnTypeName(i).toUpperCase(), rsmd_<%=cid%>.getPrecision(i), rsmd_<%=cid%>.getScale(i)));
-                	dcm_<%=cid%>.setDbType(rsmd_<%=cid%>.getColumnTypeName(i));
-                	dcm_<%=cid%>.setDbTypeId(rsmd_<%=cid%>.getColumnType(i));
-                <% if((DynamicDatePattern!=null) && (!"".equals(DynamicDatePattern)) && (!"\"\"".equals(DynamicDatePattern))) {%>
-                	dcm_<%=cid%>.setFormat(<%=DynamicDatePattern%>);
-                <% } %>
 <%
-		if (("oracle_id".equalsIgnoreCase(dbms))) {
+                dynamic_index = columnList.size();
 %>
-			if("NUMBER".equalsIgnoreCase(rsmd_<%=cid%>.getColumnTypeName(i))) {
-				<% // a way to fix TDI-47895 %>
-				int length = rsmd_<%=cid%>.getPrecision(i);
-				dcm_<%=cid%>.setLength(length > 38 ? 38 : length);
-			} else if("LONG".equals(rsmd_<%=cid%>.getColumnTypeName(i).toUpperCase())) {
-				String length = MetadataTalendType.getDefaultDBTypes("oracle_id", "LONG", MetadataTalendType.DEFAULT_LENGTH);
-				if(length!=null && !("".equals(length))) {
-					dcm_<%=cid%>.setLength(Integer.parseInt(length));
-				} else {
-					dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
-				}
-			} else {
-				dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
-			}
+            int fixedColumnCount_<%=cid%> = <%=dynamic_index - 1%>;
+            routines.system.Dynamic dcg_<%=cid%> = <%= "id_MSSQL".equalsIgnoreCase(dbms)
+                    ? "routines.system.DynamicUtils.createMssqlDynamic(rsmd_" + cid + ", fixedColumnCount_" + cid + ")"
+                    : "routines.system.DynamicJdbc.create(rsmd_" + cid + ", fixedColumnCount_" + cid + ", \"" + dbms + "\")" %>;
+
 <%
-		} else {
-%>
-			dcm_<%=cid%>.setLength(rsmd_<%=cid%>.getPrecision(i));
-<%
-		}
-%>
-                	dcm_<%=cid%>.setPrecision(rsmd_<%=cid%>.getScale(i));
-                	dcm_<%=cid%>.setNullable(rsmd_<%=cid%>.isNullable(i) == 0 ? false : true);
-                	dcm_<%=cid%>.setKey(false);
-                	dcm_<%=cid%>.setSourceType(DynamicMetadata.sourceTypes.database);
-                	dcm_<%=cid%>.setColumnPosition(i);
-                	dcg_<%=cid%>.metadatas.add(dcm_<%=cid%>);
-                }
             }
-<%
-		    }
-		    %>
+%>
 		    String tmpContent_<%=cid%> = null;
 		    <%if(isDynamic){%>
 		    	int column_index_<%=cid%> =1;
@@ -209,7 +151,7 @@ imports="
 							<%
 							}
 							%>
-							if(colQtyInRs_<%=cid%> < <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%>) {
+							if(colQtyInRs_<%=cid%> < <%if(isDynamic){%>column_index_<%=cid%><%}else{%><%=currentColNo%><%}%><%if("Dynamic".equals(typeToGenerate)){%> - 1<%}%>) {
 								<%=firstConnName%>.<%=column.getLabel()%> = <%=defVal%>;
 							} else {
 <%
@@ -292,7 +234,8 @@ imports="
 											driver = ElementParameterParser.getValue(node,"__DRIVER__");
 										}
 %>
-										List<String> list_<%=cid %> = new java.util.ArrayList<String>();
+                                        List<String> list_<%=cid %> = new java.util.ArrayList<String>();
+                                        <% if ("JTDS".equals(driver)) { %>
 					    				for(int i_<%=cid %> = <%=metadata.getListColumns().size()%>; i_<%=cid %>  <= rsmd_<%=cid%>.getColumnCount(); i_<%=cid %> ++){
 					    					<% if("JTDS".equals(driver)) { %>
 						 					if ("NTEXT".equals(rsmd_<%=cid%>.getColumnTypeName(i_<%=cid %> ).toUpperCase())) {
@@ -310,7 +253,8 @@ imports="
 						   					}
 						   					<% } %>
    	 				    				}
-                                 		 routines.system.DynamicUtils.readColumnsFromDatabase_Mssql(<%=firstConnName%>.<%=column.getLabel()%>, rs_<%=cid%>, fixedColumnCount_<%=cid%>,list_<%=cid %>,<%=trim%>);
+                                        <% } %>
+                                 routines.system.DynamicUtils.readColumnsFromDatabase_Mssql(<%=firstConnName%>.<%=column.getLabel()%>, rs_<%=cid%>, fixedColumnCount_<%=cid%>,list_<%=cid %>,<%=trim%>);
 <%
 									}else if("access_id".equalsIgnoreCase(dbms)){
 %>
