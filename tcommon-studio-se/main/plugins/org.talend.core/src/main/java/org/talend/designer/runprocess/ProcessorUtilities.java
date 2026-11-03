@@ -771,7 +771,8 @@ public class ProcessorUtilities {
                 // generic component, true always
                 return true;
             }
-            if (service != null && service.isSupportDynamicType(node)) {
+            if (org.talend.core.model.metadata.DynamicSchemaSupport.supports(node)
+                    || (service != null && service.isSupportDynamicType(node))) {
                 IElementParameter mappingParam = node.getElementParameterFromField(EParameterFieldType.MAPPING_TYPE);
                 if (mappingParam != null) {
                     for (IMetadataTable metadataTable : node.getMetadataList()) {

@@ -86,7 +86,8 @@ public final class JavaTypesManager {
 
     public static final JavaType OBJECT = new JavaType(Object.class, false, true);
 
-    public static final JavaType DYNAMIC = new JavaType(Object.class, false, true);
+    /** Resolved through the routines provider extension, independently of Object. */
+    public static JavaType DYNAMIC;
 
     public static final JavaType LIST = new JavaType(List.class, false, true);
 
@@ -189,6 +190,7 @@ public final class JavaTypesManager {
             }
         }
 
+        DYNAMIC = idToJavaType.get("id_Dynamic"); //$NON-NLS-1$
         idToJavaType.put(PASSWORD.getId(), PASSWORD);
         idToJavaType.put(RESOURCE.getId(), RESOURCE);
     }
