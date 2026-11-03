@@ -78,6 +78,7 @@ public final class DynamicSchemaSupport {
         return "tExtractDynamicFields".equals(component) || "tWriteDynamicFields".equals(component)
                 || "tBufferOutput".equals(component)
                 || "tHashInput".equals(component) || "tHashOutput".equals(component)
+                || "tJavaRow".equals(component)
                 || "tMap".equals(component) || "tLogRow".equals(component)
                 || "tReplicate".equals(component) || "tFilterRow".equals(component)
                 || "tFilterColumns".equals(component);

@@ -183,6 +183,14 @@ public class DynamicSchemaSupportTest {
     }
 
     @Test
+    public void customJavaRowsCanReadDynamicContainersOnlyInStandardJobs() {
+        assertTrue(DynamicSchemaSupport.supports(node("tJavaRow", "DI", null, false)));
+        assertFalse(DynamicSchemaSupport.supports(node("tJavaRow", "SPARK", null, false)));
+        MetadataTable mixed = schema(column("AGENCE", "id_String"), column("SQL", "id_Dynamic"));
+        assertTrue(DynamicSchemaSupport.isValidDynamicSchema(node("tJavaRow", "DI", null, false), mixed));
+    }
+
+    @Test
     public void priorityTwoCapabilitiesRemainStandardAndRespectNativeChildResultModes() {
         for (String component : Arrays.asList("tFileInputDelimited", "tFileOutputDelimited", "tExtractDynamicFields",
                 "tWriteDynamicFields", "tRunJob", "tBufferOutput", "tHashInput", "tHashOutput")) {
