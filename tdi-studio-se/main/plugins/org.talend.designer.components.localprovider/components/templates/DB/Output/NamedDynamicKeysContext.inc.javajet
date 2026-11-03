@@ -1,0 +1,39 @@
+<%
+org.talend.core.model.process.INode namedNode = (org.talend.core.model.process.INode)((org.talend.designer.codegen.config.CodeGeneratorArgument)argument).getArgument();
+if (!org.talend.core.model.metadata.DynamicSchemaSupport.supports(namedNode))
+    throw new IllegalArgumentException("Unsupported options for named Dynamic keys.");
+String namedCid = namedNode.getUniqueName();
+String namedDb = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__MAPPING__");
+String namedAction = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__DATA_ACTION__");
+String namedTableAction = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__TABLE_ACTION__");
+String namedTable = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__TABLE__");
+String namedCommit = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__COMMIT_EVERY__");
+if(namedCommit == null || namedCommit.isEmpty()) namedCommit="0";
+String namedBatchSize = org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__BATCH_SIZE__");
+if(namedBatchSize == null || namedBatchSize.isEmpty()) namedBatchSize="1000";
+String namedTimeout = "0";
+if("true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__SET_QUERY_TIMEOUT__"))) {
+    namedTimeout=org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__QUERY_TIMEOUT_IN_SECONDS__");
+}
+boolean namedDie = "true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__DIE_ON_ERROR__"));
+boolean namedBatch = namedDie && "true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__USE_BATCH_SIZE__"));
+boolean namedNullSafe = "true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__SUPPORT_NULL_WHERE__"));
+boolean namedLower = "true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__CONVERT_COLUMN_TABLE_TO_LOWERCASE__"));
+boolean namedUpper = "true".equals(org.talend.core.model.process.ElementParameterParser.getValue(namedNode,"__CONVERT_COLUMN_TABLE_TO_UPPERCASE__"));
+String namedSchema = namedDb.equals("mysql_id") ? "null" : "dbschema_"+namedCid;
+String namedInput=null, namedContainer=null, namedReject=null;
+java.util.List<org.talend.core.model.metadata.IMetadataColumn> namedColumns=namedNode.getMetadataList().get(0).getListColumns();
+for(org.talend.core.model.metadata.IMetadataColumn c:namedColumns) if("id_Dynamic".equals(c.getTalendType())) namedContainer=c.getLabel();
+for(org.talend.core.model.process.IConnection c:namedNode.getIncomingConnections())
+    if(c.getLineStyle().hasConnectionCategory(org.talend.core.model.process.IConnectionCategory.DATA)) {namedInput=c.getName();break;}
+java.util.List<? extends org.talend.core.model.process.IConnection> namedOutputs=namedNode.getOutgoingSortedConnections();
+for(org.talend.core.model.process.IConnection c:namedOutputs) if(c.getLineStyle().hasConnectionCategory(org.talend.core.model.process.IConnectionCategory.DATA)) {
+    namedBatch=false;
+    if("REJECT".equals(c.getConnectorName())) namedReject=c.getName();
+}
+java.util.List<java.util.Map<String,String>> namedKeyRows=(java.util.List<java.util.Map<String,String>>)
+    org.talend.core.model.process.ElementParameterParser.getObjectValue(namedNode,"__DYNAMIC_KEY_COLUMNS__");
+if(namedInput==null || namedContainer==null || namedKeyRows==null || namedKeyRows.isEmpty())
+    throw new IllegalArgumentException("Named dynamic keys require a Dynamic input and at least one physical key name.");
+java.util.function.Function<String,String> namedLiteral = value -> value==null ? "null" : "\""+value.replace("\\","\\\\").replace("\"","\\\"").replace("\r","\\r").replace("\n","\\n").replace("\t","\\t")+"\"";
+%>

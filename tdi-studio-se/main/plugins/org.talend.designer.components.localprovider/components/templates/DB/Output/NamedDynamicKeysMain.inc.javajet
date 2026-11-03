@@ -1,0 +1,54 @@
+<%@ include file="NamedDynamicKeysContext.inc.javajet" %>
+<%for(org.talend.core.model.process.IConnection output:namedOutputs) if(output.getLineStyle().hasConnectionCategory(org.talend.core.model.process.IConnectionCategory.DATA)){%>
+<%=output.getName()%> = null;
+<%}%>
+routines.system.DynamicDml namedWriter_<%=namedCid%> = (routines.system.DynamicDml)resourceMap.get("namedDynamicKeys_<%=namedCid%>");
+if(namedWriter_<%=namedCid%> == null) {
+    namedWriter_<%=namedCid%> = new routines.system.DynamicDml(conn_<%=namedCid%>, "<%=namedDb%>", <%=namedSchema%>, <%=namedTable%>, "<%=namedAction%>",
+        new routines.system.DynamicMetadata[] {
+<%for(org.talend.core.model.metadata.IMetadataColumn c:namedColumns) if(!"id_Dynamic".equals(c.getTalendType())) {
+    String physical=c.getOriginalDbColumnName();if(physical==null||physical.isEmpty())physical=c.getLabel();
+    String nativeType=c.getType();
+    if(nativeType==null || nativeType.isEmpty()) nativeType=org.talend.core.model.metadata.MetadataTalendType.getMappingTypeRetriever(namedDb).getDefaultSelectedDbType(c.getTalendType());
+%>
+            routines.system.DynamicDml.column(<%=namedLiteral.apply(physical)%>, <%=namedLiteral.apply(c.getTalendType())%>, <%=namedLiteral.apply(nativeType)%>, <%=c.getLength()==null ? 0 : c.getLength()%>, <%=c.getPrecision()==null || c.getPrecision()<0 ? ("id_Date".equals(c.getTalendType()) ? 7 : 0) : c.getPrecision()%>, <%=c.isNullable()%>, <%=c.isKey()%>),
+<%}%>
+        }, <%=namedInput%>.<%=namedContainer%>, new String[] {<%for(java.util.Map<String,String> key:namedKeyRows){%><%=namedLiteral.apply(key.get("NAME"))%>,<%}%>},
+        <%=namedNullSafe%>, <%=namedLower%>, <%=namedUpper%>, <%=namedBatch%>, <%=namedBatchSize%>, <%=namedTimeout%>);
+    namedWriter_<%=namedCid%>.tableAction("<%=namedTableAction%>");
+    resourceMap.put("namedDynamicKeys_<%=namedCid%>", namedWriter_<%=namedCid%>);
+}
+whetherReject_<%=namedCid%> = false;
+try {
+    namedWriter_<%=namedCid%>.write(new Object[] {<%for(org.talend.core.model.metadata.IMetadataColumn c:namedColumns) if(!"id_Dynamic".equals(c.getTalendType())){%><%=namedInput%>.<%=c.getLabel()%>,<%}%>}, <%=namedInput%>.<%=namedContainer%>);
+} catch(java.sql.SQLException namedError_<%=namedCid%>) {
+    globalMap.put("<%=namedCid%>_ERROR_MESSAGE", namedError_<%=namedCid%>.getMessage());
+    <%if(namedDie){%>
+    namedWriter_<%=namedCid%>.abort(namedError_<%=namedCid%>);
+    throw namedError_<%=namedCid%>;
+    <%}else{%>
+    whetherReject_<%=namedCid%> = true; namedWriter_<%=namedCid%>.rejected++;
+    <%if(namedReject!=null){%>
+    <%=namedReject%> = new <%=namedReject%>Struct();
+    <%for(org.talend.core.model.metadata.IMetadataColumn c:namedColumns){%>
+    <%=namedReject%>.<%=c.getLabel()%> = <%if("id_Dynamic".equals(c.getTalendType())){%><%=namedInput%>.<%=c.getLabel()%> == null ? null : <%=namedInput%>.<%=c.getLabel()%>.copy()<%}else{%><%=namedInput%>.<%=c.getLabel()%><%}%>;
+    <%}%>
+    <%=namedReject%>.errorCode = namedError_<%=namedCid%>.getSQLState();
+    <%=namedReject%>.errorMessage = namedError_<%=namedCid%>.getMessage();
+    <%}else{%>System.err.println(namedError_<%=namedCid%>.getMessage());<%}%>
+    <%}%>
+}
+namedWriter_<%=namedCid%>.commitEvery(<%=namedCommit%>);
+nb_line_<%=namedCid%> = namedWriter_<%=namedCid%>.inputs;
+insertedCount_<%=namedCid%> = namedWriter_<%=namedCid%>.inserted;
+updatedCount_<%=namedCid%> = namedWriter_<%=namedCid%>.updated;
+deletedCount_<%=namedCid%> = namedWriter_<%=namedCid%>.deleted;
+rejectedCount_<%=namedCid%> = namedWriter_<%=namedCid%>.rejected;
+<%for(org.talend.core.model.process.IConnection output:namedOutputs) if(output.getLineStyle().hasConnectionCategory(org.talend.core.model.process.IConnectionCategory.DATA) && !output.getName().equals(namedReject)){%>
+if(!whetherReject_<%=namedCid%>) {
+    <%=output.getName()%> = new <%=output.getName()%>Struct();
+    <%for(org.talend.core.model.metadata.IMetadataColumn c:namedColumns){%>
+    <%=output.getName()%>.<%=c.getLabel()%> = <%if("id_Dynamic".equals(c.getTalendType())){%><%=namedInput%>.<%=c.getLabel()%> == null ? null : <%=namedInput%>.<%=c.getLabel()%>.copy()<%}else{%><%=namedInput%>.<%=c.getLabel()%><%}%>;
+    <%}%>
+}
+<%}%>

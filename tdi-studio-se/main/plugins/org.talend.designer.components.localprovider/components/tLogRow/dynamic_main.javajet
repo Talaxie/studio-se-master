@@ -1,0 +1,36 @@
+<%@ jet imports="org.talend.core.model.process.INode org.talend.core.model.process.IConnection org.talend.core.model.process.IConnectionCategory org.talend.core.model.process.ElementParameterParser org.talend.core.model.metadata.IMetadataColumn org.talend.core.model.metadata.types.JavaTypesManager org.talend.designer.codegen.config.CodeGeneratorArgument java.util.List java.util.Map" %>
+<%
+INode dynamicNode = (INode) ((CodeGeneratorArgument) argument).getArgument();
+String dynamicCid = dynamicNode.getUniqueName();
+%>
+<%
+for (IConnection dynamicConn : dynamicNode.getIncomingConnections()) {
+    if (!dynamicConn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) continue;
+    List<IMetadataColumn> dynamicColumns = dynamicConn.getMetadataTable().getListColumns();
+    int dynamicIndex = 0;
+    while (!"id_Dynamic".equals(dynamicColumns.get(dynamicIndex).getTalendType())) dynamicIndex++;
+    IMetadataColumn dynamicColumn = dynamicColumns.get(dynamicIndex);
+%>
+String dynamicText_<%=dynamicCid%> = dynamicLog_<%=dynamicCid%>.accept(new String[] {
+<% for (int i = 0; i < dynamicIndex; i++) { %>"<%=dynamicColumns.get(i).getLabel()%>",<% } %>
+}, new String[] {
+<% for (int i = 0; i < dynamicIndex; i++) {
+    IMetadataColumn column = dynamicColumns.get(i);
+    String value = dynamicConn.getName() + "." + column.getLabel();
+    if ("id_Date".equals(column.getTalendType()) && column.getPattern() != null && !column.getPattern().trim().isEmpty()) {
+        value = "(" + value + " == null ? null : FormatterUtils.format_Date(" + value + ", " + column.getPattern() + "))";
+    } else if ("id_BigDecimal".equals(column.getTalendType()) && column.getPrecision() != null) {
+        value = "(" + value + " == null ? null : " + value + ".setScale(" + column.getPrecision() + ", java.math.RoundingMode.HALF_UP))";
+    } %>routines.system.DynamicLogRow.value(<%=value%>),<%
+} %>
+}, <%=dynamicConn.getName()%>.<%=dynamicColumn.getLabel()%>, new String[] {
+<% for (int i = dynamicIndex + 1; i < dynamicColumns.size(); i++) { %>"<%=dynamicColumns.get(i).getLabel()%>",<% } %>
+}, new String[] {
+<% for (int i = dynamicIndex + 1; i < dynamicColumns.size(); i++) { %>routines.system.DynamicLogRow.value(<%=dynamicConn.getName()%>.<%=dynamicColumns.get(i).getLabel()%>),<% } %>
+}, dynamicConsole_<%=dynamicCid%>);
+nb_line_<%=dynamicCid%>++;
+<% if ("true".equals(ElementParameterParser.getValue(dynamicNode.getProcess(), "__LOG4J_ACTIVATE__"))
+        && "true".equals(ElementParameterParser.getValue(dynamicNode, "__PRINT_CONTENT_WITH_LOG4J__"))) { %>
+log.info("<%=dynamicCid%> - Content of row " + nb_line_<%=dynamicCid%> + ": " + dynamicText_<%=dynamicCid%>);
+<% }
+} %>

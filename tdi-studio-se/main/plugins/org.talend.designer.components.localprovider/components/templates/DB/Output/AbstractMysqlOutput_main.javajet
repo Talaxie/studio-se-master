@@ -17,6 +17,11 @@ imports="
 "
 skeleton="../../db_output_bulk.skeleton"
 %>
+<% if ("true".equals(org.talend.core.model.process.ElementParameterParser.getValue(
+    (org.talend.core.model.process.INode)((org.talend.designer.codegen.config.CodeGeneratorArgument)argument).getArgument(), "__USE_DYNAMIC_KEYS__"))) { %>
+<%@ include file="NamedDynamicKeysMain.inc.javajet" %>
+<% } else { %>
+
 <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/Log4j/DBLogUtil.javajet"%>
 <%
     if ("RELATIONAL_STRATEGY".equals(ElementParameterParser.getValue((INode)((CodeGeneratorArgument)argument).getArgument(),"__DATA_ACTION__"))) {
@@ -200,7 +205,10 @@ skeleton="../../db_output_bulk.skeleton"
                         if(conns_dynamic!=null && conns_dynamic.size()>0){
                             IConnection conn = conns_dynamic.get(0);
                             %>
-                            <%=getManager(dbmsId, cid).getInsertQueryForDynamicSchema(conn.getName(), "tableName_", insertColName.toString(), insertValueStmt.toString(), dataAction)%>;
+                            String insert_<%=cid%> = DynamicUtils.getInsertSQL(
+                                routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"),
+                                "<%=insertColName.toString()%>", "<%=insertValueStmt.toString()%>",
+                                <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
                             <%
                         }
                         if (supportDuplicateUpdate) {
@@ -330,7 +338,10 @@ skeleton="../../db_output_bulk.skeleton"
                     if(conns_dynamic!=null && conns_dynamic.size()>0){
                         IConnection conn = conns_dynamic.get(0);
                         %>
-                        <%=getManager(dbmsId, cid).getUpdateQueryForDynamicSchema(conn.getName(), "tableName_", updateSetStmt.toString(), updateWhereStmt.toString(), whereSupportNull)%>;
+                        String update_<%=cid%> = DynamicUtils.getUpdateSQL(routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"),
+                            "<%=updateSetStmt.toString()%>", "<%=updateWhereStmt.toString()%>",
+                            "<%=stmtStructure.stream().filter(c -> c.isUpdateKey()).map(c -> c.getColumnName()).findFirst().orElse("")%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
                         <%
                     }
                     %>
@@ -343,8 +354,13 @@ skeleton="../../db_output_bulk.skeleton"
                     if(conns_dynamic!=null && conns_dynamic.size()>0){
                         IConnection conn = conns_dynamic.get(0);
                         %>
-                        <%=getManager(dbmsId, cid).getInsertQueryForDynamicSchema(conn.getName(), "tableName_", insertColName.toString(), insertValueStmt.toString(), dataAction)%>;
-                        <%=getManager(dbmsId, cid).getUpdateQueryForDynamicSchema(conn.getName(), "tableName_", updateSetStmt.toString(), updateWhereStmt.toString(), whereSupportNull)%>;
+                        String <%= "INSERT_ON_DUPLICATE_KEY_UPDATE".equals(dataAction) || "INSERT_IGNORE".equals(dataAction) ? "insertIgnore_" : "REPLACE".equals(dataAction) ? "replace_" : "insert_" %><%=cid%> = DynamicUtils.getInsertSQL(
+                            routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"), "<%=insertColName.toString()%>", "<%=insertValueStmt.toString()%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
+                        String update_<%=cid%> = DynamicUtils.getUpdateSQL(routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"),
+                            "<%=updateSetStmt.toString()%>", "<%=updateWhereStmt.toString()%>",
+                            "<%=stmtStructure.stream().filter(c -> c.isUpdateKey()).map(c -> c.getColumnName()).findFirst().orElse("")%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
                         <%
                     }
                     %>
@@ -362,8 +378,13 @@ skeleton="../../db_output_bulk.skeleton"
                     if(conns_dynamic!=null && conns_dynamic.size()>0){
                         IConnection conn = conns_dynamic.get(0);
                         %>
-                        <%=getManager(dbmsId, cid).getInsertQueryForDynamicSchema(conn.getName(), "tableName_", insertColName.toString(), insertValueStmt.toString(), dataAction)%>;
-                        <%=getManager(dbmsId, cid).getUpdateQueryForDynamicSchema(conn.getName(), "tableName_", updateSetStmt.toString(), updateWhereStmt.toString(), whereSupportNull)%>;
+                        String <%= "INSERT_ON_DUPLICATE_KEY_UPDATE".equals(dataAction) || "INSERT_IGNORE".equals(dataAction) ? "insertIgnore_" : "REPLACE".equals(dataAction) ? "replace_" : "insert_" %><%=cid%> = DynamicUtils.getInsertSQL(
+                            routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"), "<%=insertColName.toString()%>", "<%=insertValueStmt.toString()%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
+                        String update_<%=cid%> = DynamicUtils.getUpdateSQL(routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"),
+                            "<%=updateSetStmt.toString()%>", "<%=updateWhereStmt.toString()%>",
+                            "<%=stmtStructure.stream().filter(c -> c.isUpdateKey()).map(c -> c.getColumnName()).findFirst().orElse("")%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
                         <%
                     }
                     %>
@@ -404,8 +425,10 @@ skeleton="../../db_output_bulk.skeleton"
                     if(conns_dynamic!=null && conns_dynamic.size()>0){
                         IConnection conn = conns_dynamic.get(0);
                         %>
-                        <%=getManager(dbmsId, cid).getInsertQueryForDynamicSchema(conn.getName(), "tableName_", insertColName.toString(), insertValueStmt.toString(), dataAction)%>;
-                        insertIgnore_<%=cid%> = insertIgnore_<%=cid%> + " ON DUPLICATE KEY UPDATE " + DynamicUtils.getUpdateSet(<%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId %>", new StringBuilder("<%=updateSetStmt.toString()%>"));
+                        String <%= "INSERT_ON_DUPLICATE_KEY_UPDATE".equals(dataAction) || "INSERT_IGNORE".equals(dataAction) ? "insertIgnore_" : "REPLACE".equals(dataAction) ? "replace_" : "insert_" %><%=cid%> = DynamicUtils.getInsertSQL(
+                            routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"), "<%=insertColName.toString()%>", "<%=insertValueStmt.toString()%>",
+                            <%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId%>");
+                        insertIgnore_<%=cid%> = insertIgnore_<%=cid%> + " ON DUPLICATE KEY UPDATE " + DynamicUtils.getUpsertUpdateSet(<%=conn.getName()%>.<%=getDynamicColumn()%>, "<%=dbmsId %>", "<%=updateSetStmt.toString()%>", "<%=stmtStructure.stream().filter(c -> c.isUpdateKey()).map(c -> c.getColumnName()).findFirst().orElse("")%>");
                         <%
                     }
                     %>
@@ -807,7 +830,7 @@ skeleton="../../db_output_bulk.skeleton"
                                 <%
                                 for(IMetadataColumn column : columnList) {
                                  %>
-                                    <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                    <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                                 }
                                 %>
@@ -888,7 +911,7 @@ skeleton="../../db_output_bulk.skeleton"
                             <%
                             for(IMetadataColumn column : columnList) {
                                 %>
-                                <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                             }
                             %>
@@ -1035,7 +1058,7 @@ skeleton="../../db_output_bulk.skeleton"
                     <%
                         for(IMetadataColumn column : columnList) {
                             %>
-                            <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                            <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                             <%
                         }
                         %>
@@ -1200,7 +1223,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                             for(IMetadataColumn column : columnList) {
                                 %>
-                                <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                             }
                             %>
@@ -1275,7 +1298,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                             for(IMetadataColumn column : columnList) {
                                 %>
-                                <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                             }
                             %>
@@ -1390,7 +1413,14 @@ skeleton="../../db_output_bulk.skeleton"
                 updatedCount_<%=cid%> = updatedCount_<%=cid%>+updateFlag_<%=cid%>;
                 rowsToCommitCount_<%=cid%> += updateFlag_<%=cid%>;
 
-            if(updateFlag_<%=cid%> == 0) {
+            boolean dynamicMatched_<%=cid%> = updateFlag_<%=cid%> != 0;
+            <%if(isDynamic){%>
+            if (!dynamicMatched_<%=cid%>) dynamicMatched_<%=cid%> = DynamicUtils.mysqlRowExists(conn_<%=cid%>,
+                routines.system.DynamicJdbc.quote(tableName_<%=cid%>, "<%=dbmsId%>"),
+                new String[] {<%for(Column c:colStruct) if(c.isUpdateKey()){%>"<%=c.getColumnName()%>",<%}%>},
+                new Object[] {<%for(Column c:colStruct) if(c.isUpdateKey()){%><%=incomingConnName%>.<%=c.getName()%>,<%}%>}, <%=whereSupportNull%>);
+            <%}%>
+            if(!dynamicMatched_<%=cid%>) {
 
                 <%
                 if(isEnableDebug) {
@@ -1458,7 +1488,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                             for(IMetadataColumn column : columnList) {
                                 %>
-                                <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                             }
                             %>
@@ -1562,7 +1592,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                         for(IMetadataColumn column : columnList) {
                         %>
-                            <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                            <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
 
                         <%
                         }
@@ -1636,7 +1666,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                         for(IMetadataColumn column : columnList) {
                             %>
-                            <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                            <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                             <%
                         }
                         %>
@@ -1718,6 +1748,7 @@ skeleton="../../db_output_bulk.skeleton"
             } catch(java.lang.Exception e) {
                 globalMap.put("<%=cid%>_ERROR_MESSAGE",e.getMessage());
                 whetherReject_<%=cid%> = true;
+                <%if(isDynamic){%>nb_line_<%=cid%>++;<%}%>
                 <%
                 if (("true").equals(dieOnError)) {
                     %>
@@ -1730,7 +1761,7 @@ skeleton="../../db_output_bulk.skeleton"
                         <%
                         for(IMetadataColumn column : columnList) {
                             %>
-                            <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                            <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                             <%
                         }
                         %>
@@ -1747,12 +1778,14 @@ skeleton="../../db_output_bulk.skeleton"
                 }
                 %>
             }
+            <%if(isDynamic){%>if(!whetherReject_<%=cid%> && count_on_duplicate_key_<%=cid%> > 0) {<%}%>
             if(count_on_duplicate_key_<%=cid%> == 1) {
                 insertedCount_<%=cid%> += count_on_duplicate_key_<%=cid%>;
             } else {
                 insertedCount_<%=cid%> += 1;
                 updatedCount_<%=cid%> += count_on_duplicate_key_<%=cid%> - 1;
             }
+            <%if(isDynamic){%>}<%}%>
             <%
         }else if(("INSERT_IGNORE").equals(dataAction)) {
             int counter = 1;
@@ -1803,7 +1836,7 @@ skeleton="../../db_output_bulk.skeleton"
                             <%
                             for(IMetadataColumn column : columnList) {
                                 %>
-                                <%=rejectConnName%>.<%=column.getLabel()%> = <%=incomingConnName%>.<%=column.getLabel()%>;
+                                <%=rejectConnName%>.<%=column.getLabel()%> = <%if("id_Dynamic".equals(column.getTalendType())){%><%=incomingConnName%>.<%=column.getLabel()%> == null ? null : <%=incomingConnName%>.<%=column.getLabel()%>.copy()<%}else{%><%=incomingConnName%>.<%=column.getLabel()%><%}%>;
                                 <%
                             }
                             %>
@@ -2037,3 +2070,5 @@ skeleton="../../db_output_bulk.skeleton"
 %>
 
 <% } // existing static modes %>
+
+<% } // named dynamic key path %>

@@ -67,6 +67,9 @@ public class ProblemsAnalyser {
         problems.clear();
 
         if (externalData != null) {
+            for (String description : DynamicMappingValidator.validate(externalData)) {
+                addProblem(new Problem(null, description, ProblemStatus.ERROR));
+            }
             checkLookupTablesKeyProblems(externalData);
 
             ICodeProblemsChecker codeChecker = LanguageProvider.getCurrentLanguage().getCodeChecker();
