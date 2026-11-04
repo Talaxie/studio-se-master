@@ -96,6 +96,7 @@ def main():
                  "tRunJob/tRunJob_begin.javajet", "tRunJob/tRunJob_main.javajet", "tRunJob/tRunJob_finally.javajet"]
     templates += [f"{name}/{name}_{part}.javajet" for name in ["tOracleInput", "tMysqlInput", "tPostgresqlInput"] for part in ["begin", "end"]]
     templates += [f"{name}/{name}_{part}.javajet" for name in ["tOracleOutput", "tMysqlOutput", "tPostgresqlOutput"] for part in ["begin", "main", "end"]]
+    templates.append("tJavaRow/tJavaRow_main.javajet")
     emitter_sources = []
     compile_args = []
     for index, relative in enumerate(templates):
@@ -238,6 +239,16 @@ public class CLASS {
                     str(Path(__file__).with_name("GeneratedPipelineSupport.java")), *map(str, pipelines)], check=True)
     for fixed in [0, 1, 2, "static"]:
         subprocess.run(["java", "-cp", cp, "GeneratedPipeline" + str(fixed)], check=True)
+    from create_java_iteration_test_jobs import iteration_code
+    for variant in ["ALL", "MIXED", "EMPTY", "ZERO_ROWS"]:
+        (output / ("java-row-" + variant + ".fragment")).write_text(iteration_code(0 if variant == "ALL" else 2, variant))
+    subprocess.run(["javac", "-proc:none", "-encoding", "UTF-8", "-cp", cp, "-d", str(output),
+                    str(Path(__file__).with_name("GenerateJavaRows.java"))], check=True)
+    subprocess.run(["java", "-cp", cp, "GenerateJavaRows", str(output)], check=True)
+    java_rows = sorted(output.glob("GeneratedJavaIteration*.java"))
+    subprocess.run(["javac", "-proc:none", "-encoding", "UTF-8", "-cp", cp, "-d", str(output), *map(str, java_rows)], check=True)
+    for source in java_rows:
+        subprocess.run(["java", "-cp", cp, source.stem], check=True)
     print("Runtime/mapper/capability tests and generated SQL-to-file pipelines passed.")
 
 

@@ -196,3 +196,45 @@ Validation passed: 88 focused JUnit tests, eight Java 8 runtime sources, 53 real
 create_named_key_test_jobs.py derives 48 private Studio recipes from the preceding DML fixtures. ALL jobs have no static fields; MIXED jobs combine a static AGENCE key and dynamic MOIS key, with a K1/OTHER destination row that must remain untouched. Cases cover both classic upserts, each provider's native modes, REJECT and MySQL unchanged rows/useAffectedRows=true. All 48 ran with the installed ESB Run action, and verify_named_key_results.py passed all decoded CSV comparisons. Recipes are installed in the local DYNAMIC_SCHEMA_TEST workspace project. Queries use synthetic values and dedicated TDYN_NK_/TDYN_DML_/TDYN_KEY_ tables. Final cleanup checks verify that no recipe tables remain. One interrupted native fixture was verified as synthetic and disposed separately; GUI tables must be dropped by the jobs themselves.
 
 The full 385-module Maven DI/ESB clean install passed in 8 min 23 s with qualifier 20261103_1330_dynamic_keys, followed by targeted installs for final generator/runtime corrections. The commands used -Dtos.di=true -Dtos.esb=true -DskipTests -Dmaven.test.skip=true; focused tests ran separately. The temporary macOS Cocoa aarch64 target restriction was restored byte-for-byte. Both installed apps and both unpacked products contain verified final plugins, with prior versions, custom components and configuration/cache backups retained. Archives were repackaged and verified against 9,381 plugin files per product. Logs, connection fixtures and validation-result.json are outside Git under build-logs/dynamic-keys-20261103. Source changes are local in tcommon-studio-se and tdi-studio-se on Feat/dynamic-schema; nothing was committed or pushed.
+
+
+## Custom Java iteration recipes (2026-11-03)
+
+`tJavaRow` is enabled for Dynamic schemas in Standard Java jobs. Its native emitter substitutes `input_row` with the actual incoming flow name and exposes the existing `routines.system.Dynamic` API; no SQL conversion or new row transport is introduced. Custom Java remains responsible for assigning any connected output fields. A plain `tJava` does not consume each incoming row, so it is used only for the final assertions after the input subjob.
+
+`create_java_iteration_test_jobs.py --template <private-mixed-input.item> --output <private-directory>` creates four SQL Server recipes named `TEST_MSSQL_DYNAMIC_JAVA_ALL`, `TEST_MSSQL_DYNAMIC_JAVA_MIXED`, `TEST_MSSQL_DYNAMIC_JAVA_EMPTY` and `TEST_MSSQL_DYNAMIC_JAVA_ZERO_ROWS`. The fixture reuses only the connection/context configuration from the supplied input job. SQL contains synthetic, read-only `EXEC` queries; no destination tables are created. Generated jobs contain the private context and must stay outside Git.
+
+Each flow is `tDBInput -> tJavaRow -> tLogRow`, followed by a `tJava` on `OnSubjobOk` to check the final row/field counts. The Java row explicitly assigns the static prefix and a Dynamic snapshot to its output, so the native row counters and final table display show the two rows. The loop reads every physical field with the public API:
+
+```java
+routines.system.Dynamic dynamic = input_row.SQL;
+for (int i = 0; i < dynamic.getColumnCount(); i++) {
+    routines.system.DynamicMetadata metadata = dynamic.getColumnMetadata(i);
+    Object value = dynamic.getColumnValue(i);
+    System.out.println(metadata.getName() + " [" + metadata.getDbType() + "] = " + value);
+}
+```
+
+The recipes additionally assert JDBC column ordinals, index/name access, the static prefix, exact decimal(38,10) values and metadata, Unicode, NULL versus zero, empty dynamic suffixes and zero input rows. Expected live totals are respectively 2 rows/10 fields, 2 rows/6 fields, 2 rows/0 fields and 0 rows/0 fields. The final `tJava` prints a `PASS` marker only when every assertion succeeds.
+
+The focused suite now runs 89 JUnit tests, compiles 54 actual JET emitters, and executes four additional SQL-input-to-tJavaRow programs using an in-memory JDBC fixture and the same loop code as the recipes. Existing regressions remain included. A targeted Maven install of core runtime and its dependencies also passes.
+
+All four recipes were subsequently executed through the installed ESB Run action against SQL Server. Every final PASS marker and exit code 0 was observed, with the expected 2/10, 2/6, 2/0 and 0/0 row/field totals. The installed DI and ESB runtime/UI plugins were subsequently updated, with previous JARs and OSGi caches backed up outside the installation and launcher INI files preserved.
+
+
+## Runtime database type display (2026-11-03)
+
+The schema editor now displays **Determined at runtime** (**Déterminé à l'exécution** in French) in the database-type cell of a Dynamic container. This cell is read-only and uses the read-only background instead of the orange static type-mismatch warning. Schemas containing Dynamic use a compact database-type column, reduced by two thirds from the translated-label width; the complete label remains available in the cell value. Stored SQL type placeholders are preserved; the runtime still discovers each physical type from JDBC metadata. Static SQL cells retain their existing text, editability and mismatch warnings.
+
+`CustomTableManagerDynamicTest` exercises the actual SWT table label provider and cell modifier in an isolated OSGi configuration. Six tests cover the label, locking only the Dynamic database-type cell, unchanged stored metadata, static warning behavior for SQL Server/Oracle/MySQL/PostgreSQL, changing between Dynamic and static types, English/French resources, and compact column width. Run them with JDK 21 after building `org.talend.core.ui`:
+
+```sh
+python3 dev/dynamic-schema/run_schema_editor_tests.py \
+  --installation /path/to/TOS_ESB.app/Contents/Eclipse \
+  --core-ui tcommon-studio-se/main/plugins/org.talend.core.ui/target/org.talend.core.ui-8.9.0-SNAPSHOT.jar \
+  --output /tmp/talaxie-schema-editor-tests
+```
+
+The supplied installation is read-only for this test harness. Configuration, workspace and extracted test classes remain under `--output`. The Maven install targets core runtime/core UI and their dependencies; packaging reactor tests are skipped, while the six UI tests and the existing 89 focused tests run separately. Local installed DI and ESB plugins are synchronized with backups and unchanged launcher INI files. Distribution archives have not been repackaged for this increment.
+
+All four Java iteration recipes with their tLogRow output were rerun through ESB against SQL Server. ALL, MIXED and EMPTY each pass two rows through tJavaRow; ZERO_ROWS intentionally passes none. The mixed case checks six dynamic values and displays both complete rows. The final compact-width adjustment also passed the six SWT regressions and a targeted Maven install of core UI and its dependencies. Generated archives and private connection fixtures are excluded from the source change.
