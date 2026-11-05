@@ -30,6 +30,9 @@ globalMap.put("<%=cid %>_MAPPINGS_URL", mappings_url_<%=cid %>);
     //TODO recheck it when uniform tsinglestore and tdeltalake which use jdbc component in background in fact
     final boolean isJDBC = node.getComponent().getName().contains("JDBC") || "JDBC".equals(family);
     
+    final int schemaColumnsPerMethod = 50;
+    int schemaHelperIndex = 0;
+
     if (params != null && !params.isEmpty()) {
         for (final ElementParameter p : params) {
             Object pluginValue = p.getTaggedValue("org.talend.sdk.component.source");
@@ -137,75 +140,102 @@ globalMap.put("<%=cid %>_MAPPINGS_URL", mappings_url_<%=cid %>);
                     
                     final boolean isFullSchema = metas.contains("talendType");
                     
-                    if (isFullSchema || !hasDynamic){
+                    if ((isFullSchema || !hasDynamic) && !columns.isEmpty()) {
+                        final String schemaHelperName = "SchemaSettingHelper_" + cid + "_" + (++schemaHelperIndex);
+                        %>
+                        final class <%=schemaHelperName%> {
+                            public void set(final java.util.Map<String, String> configuration) throws java.lang.Exception {
+                        <%
+                        for (int start = 0; start < columns.size(); start += schemaColumnsPerMethod) {
+                        %>
+                                set_<%=start%>(configuration);
+                        <%
+                        }
+                        %>
+                            }
+                        <%
                         for(int i = 0; i < columns.size(); i++) {
+                            if (i % schemaColumnsPerMethod == 0) {
+                            %>
+                            public void set_<%=i%>(final java.util.Map<String, String> configuration) throws java.lang.Exception {
+                            <%
+                            }
                             IMetadataColumn column = columns.get(i);
                             for (String meta : metas){
                                 if (meta.equals("label")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].label", "<%=column.getLabel()%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].label", "<%=column.getLabel()%>");
                                 <%
                                 }
                                 if (meta.equals("originalDbColumnName")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].originalDbColumnName", "<%=org.talend.core.model.utils.TalendTextUtils.escapeJavaText(column.getOriginalDbColumnName())%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].originalDbColumnName", "<%=org.talend.core.model.utils.TalendTextUtils.escapeJavaText(column.getOriginalDbColumnName())%>");
                                 <%
                                 }
                                 if (meta.equals("pattern")){
                                 String pattern = column.getPattern() == null ? "" : column.getPattern();
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].pattern", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(pattern)%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].pattern", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(pattern)%>");
                                 <%
                                 }
                                 if (meta.equals("defaultValue")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].defaultValue", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getDefault())%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].defaultValue", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getDefault())%>");
                                 <%
                                 }
                                 if (meta.equals("key")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].key", "<%=column.isKey()%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].key", "<%=column.isKey()%>");
                                 <%
                                 }
                                 if (meta.equals("nullable")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].nullable", "<%=column.isNullable()%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].nullable", "<%=column.isNullable()%>");
                                 <%
                                 }
                                 if (meta.equals("talendType")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].talendType", "<%=column.getTalendType()%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].talendType", "<%=column.getTalendType()%>");
                                 <%
                                 }
                                 if (meta.equals("type")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].type", "<%=column.getType()%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].type", "<%=column.getType()%>");
                                 <%
                                 }
                                 if (meta.equals("length")){
                                 int length = column.getLength() == null ? -1 : column.getLength();
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].length", "<%=length%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].length", "<%=length%>");
                                 <%
                                 }
                                 if (meta.equals("precision")){
                                 int precision = column.getPrecision() == null ? -1 : column.getPrecision();
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].precision", "<%=precision%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].precision", "<%=precision%>");
                                 <%
                                 }
                                 if (meta.equals("comment")){
                                 %>
-                                configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>].comment", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getComment())%>");
+                                configuration.put("<%=parameterName%>[<%=i%>].comment", "<%=org.talend.core.model.utils.TalendTextUtils.removeQuotes(column.getComment())%>");
                                 <%
                                 }
                             }
                             if (metas.size() == 0){
                             %>
-                            configuration_<%=cid%>.put("<%=parameterName%>[<%=i%>]", "<%=column.getLabel()%>");
+                            configuration.put("<%=parameterName%>[<%=i%>]", "<%=column.getLabel()%>");
+                            <%
+                            }
+                            if ((i + 1) % schemaColumnsPerMethod == 0 || i + 1 == columns.size()) {
+                            %>
+                            }
                             <%
                             }
                         }
+                        %>
+                        }
+                        new <%=schemaHelperName%>().set(configuration_<%=cid%>);
+                        <%
                     }
                 }
             } else {

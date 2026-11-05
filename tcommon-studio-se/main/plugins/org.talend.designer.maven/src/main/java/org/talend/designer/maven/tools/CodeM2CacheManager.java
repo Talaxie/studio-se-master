@@ -23,6 +23,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.eclipse.m2e.core.MavenPlugin;
 import org.talend.commons.exception.ExceptionHandler;
 import org.talend.commons.utils.VersionUtils;
+import org.talend.core.GlobalServiceRegister;
+import org.talend.core.model.general.ILibrariesService;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.repository.ERepositoryObjectType;
 import org.talend.designer.maven.utils.PomIdsHelper;
@@ -32,6 +34,8 @@ import org.talend.utils.io.FilesUtils;
 public class CodeM2CacheManager {
 
     private static final String KEY = "updated"; //$NON-NLS-1$
+
+    private static final String ROUTINES_FINGERPRINT = "systemRoutinesFingerprint"; //$NON-NLS-1$
 
     private static File cacheFolder;
 
@@ -53,7 +57,8 @@ public class CodeM2CacheManager {
             Properties cache = new Properties();
             cache.load(in);
             boolean isUpdated = Boolean.valueOf(cache.getProperty(KEY, Boolean.FALSE.toString()));
-            return !isUpdated;
+            return !isUpdated || (codeType == ERepositoryObjectType.ROUTINES
+                    && !getSystemRoutinesFingerprint().equals(cache.getProperty(ROUTINES_FINGERPRINT)));
         } catch (Throwable t) {
             ExceptionHandler.process(t);
             // if any exception, still update in case breaking build job
@@ -81,10 +86,20 @@ public class CodeM2CacheManager {
         try (OutputStream out = new FileOutputStream(cacheFile)) {
             Properties cache = new Properties();
             cache.setProperty(KEY, Boolean.valueOf(isUpdated).toString());
+            if (isUpdated && codeType == ERepositoryObjectType.ROUTINES) {
+                cache.setProperty(ROUTINES_FINGERPRINT, getSystemRoutinesFingerprint());
+            }
             cache.store(out, StringUtils.EMPTY);
         } catch (Throwable t) {
             ExceptionHandler.process(t);
         }
+    }
+
+    private static String getSystemRoutinesFingerprint() throws Exception {
+        ILibrariesService service = GlobalServiceRegister.getDefault().getService(ILibrariesService.class);
+        // These internal sources have no repository item/change event. An updated Studio
+        // must invalidate the installed routines.jar before Maven compiles a child job.
+        return SystemRoutinesFingerprint.compute(service.getTalendRoutines());
     }
 
     public static File getCacheFile(String projectTechName, ERepositoryObjectType codeType) {

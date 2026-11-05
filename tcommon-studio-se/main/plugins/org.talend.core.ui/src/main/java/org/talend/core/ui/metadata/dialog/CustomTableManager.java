@@ -21,6 +21,7 @@ import org.eclipse.jface.viewers.SelectionChangedEvent;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.RGB;
 import org.talend.commons.ui.runtime.swt.tableviewer.TableViewerCreatorColumnNotModifiable;
 import org.talend.commons.ui.runtime.swt.tableviewer.behavior.DefaultTableLabelProvider;
@@ -34,6 +35,7 @@ import org.talend.core.model.metadata.IMetadataColumn;
 import org.talend.core.model.metadata.IMetadataTable;
 import org.talend.core.model.metadata.MetadataToolHelper;
 import org.talend.core.model.metadata.types.TypesManager;
+import org.talend.core.ui.i18n.Messages;
 import org.talend.core.ui.metadata.editor.AbstractMetadataTableEditorView;
 import org.talend.core.ui.metadata.editor.MetadataTableEditorView;
 
@@ -56,6 +58,7 @@ public class CustomTableManager {
     public static void addCustomManagementToTable(final MetadataTableEditorView tableEditorView, final boolean readOnly) {
         CustomTableLabelProvider tableProvider = new CustomTableLabelProvider(tableEditorView, readOnly);
         tableEditorView.getTableViewerCreator().setLabelProvider(tableProvider);
+        sizeDynamicDbTypeColumn(tableEditorView);
         tableEditorView.getTableViewerCreator().setCellModifier(
                 new CustomTableCellModifier(tableEditorView.getTableViewerCreator()));
     }
@@ -215,6 +218,16 @@ public class CustomTableManager {
             this.tableEditorView = tableEditorView;
         }
 
+        @Override
+        public String getColumnText(Object element, int columnIndex) {
+            TableViewerCreatorColumnNotModifiable tableColumn = (TableViewerCreatorColumnNotModifiable) tableViewerCreator
+                    .getColumns().get(columnIndex);
+            if (isDynamicDbTypeCell(element, tableColumn.getId())) {
+                return Messages.getString("CustomTableManager.DynamicDbType"); //$NON-NLS-1$
+            }
+            return super.getColumnText(element, columnIndex);
+        }
+
         /*
          * (non-Javadoc)
          *
@@ -229,6 +242,9 @@ public class CustomTableManager {
             IMetadataColumn column = (IMetadataColumn) element;
             TableViewerCreatorColumnNotModifiable tableColumn = (TableViewerCreatorColumnNotModifiable) tableViewerCreator
                     .getColumns().get(columnIndex);
+            if (isDynamicDbTypeCell(column, tableColumn.getId())) {
+                return AbstractMetadataTableEditorView.READONLY_CELL_BG_COLOR;
+            }
             if (column.isCustom()) {
                 if (column.isReadOnly() || readOnly || tableColumn.getId().equals(AbstractMetadataTableEditorView.ID_COLUMN_NAME)) {
                     return CELL_READ_ONLY_COLOR;
@@ -248,6 +264,45 @@ public class CustomTableManager {
             }
             return super.getBackground(element, columnIndex);
         }
+    }
+
+    /** Keep the runtime type column compact without changing static-only schemas. */
+    private static void sizeDynamicDbTypeColumn(MetadataTableEditorView view) {
+        TableViewerCreator creator = view.getTableViewerCreator();
+        if (creator.getTable() == null || creator.getInputList() == null) return;
+        boolean dynamic = false;
+        for (Object bean : creator.getInputList()) {
+            if (isDynamicDbTypeCell(bean, AbstractMetadataTableEditorView.ID_COLUMN_DBTYPE)) dynamic = true;
+        }
+        if (!dynamic) return;
+        GC graphics = new GC(creator.getTable());
+        try {
+            graphics.setFont(creator.getTable().getFont());
+            int width = (graphics.textExtent(Messages.getString("CustomTableManager.DynamicDbType")).x + 16) / 3; //$NON-NLS-1$
+            for (Object entry : creator.getColumns()) {
+                TableViewerCreatorColumnNotModifiable column = (TableViewerCreatorColumnNotModifiable) entry;
+                if (AbstractMetadataTableEditorView.ID_COLUMN_DBTYPE.equals(column.getId())) {
+                    column.setMinimumWidth(width);
+                    column.setWeight(3);
+                    if (column.getTableColumn() != null) {
+                        creator.getTable().getDisplay().asyncExec(() -> {
+                            if (!creator.getTable().isDisposed() && !column.getTableColumn().isDisposed()) {
+                                column.getTableColumn().setWidth(width);
+                            }
+                        });
+                    }
+                }
+            }
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    /** Dynamic represents runtime columns, never a single editable SQL column type. */
+    private static boolean isDynamicDbTypeCell(Object element, String property) {
+        return element instanceof IMetadataColumn
+                && AbstractMetadataTableEditorView.ID_COLUMN_DBTYPE.equals(property)
+                && "id_Dynamic".equals(((IMetadataColumn) element).getTalendType()); //$NON-NLS-1$
     }
 
     /**
@@ -270,6 +325,9 @@ public class CustomTableManager {
          */
         @Override
         public boolean canModify(Object element, String property) {
+            if (isDynamicDbTypeCell(element, property)) {
+                return false;
+            }
             if (element instanceof IMetadataColumn) {
                 IMetadataColumn column = (IMetadataColumn) element;
                 if (column.isReadOnly() || (column.isCustom() && property.equals(AbstractMetadataTableEditorView.ID_COLUMN_NAME))) {

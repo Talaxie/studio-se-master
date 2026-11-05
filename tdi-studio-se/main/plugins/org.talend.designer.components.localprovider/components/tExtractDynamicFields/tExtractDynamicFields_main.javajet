@@ -1,0 +1,39 @@
+<%@ jet imports="org.talend.core.model.process.INode org.talend.core.model.process.IConnection org.talend.core.model.process.IConnectionCategory org.talend.core.model.metadata.IMetadataColumn org.talend.core.model.metadata.IMetadataTable org.talend.core.model.metadata.types.JavaTypesManager org.talend.designer.codegen.config.CodeGeneratorArgument java.util.List" %>
+<%
+INode node = (INode)((CodeGeneratorArgument)argument).getArgument();
+String cid = node.getUniqueName();
+IConnection input = null;
+for (IConnection connection : node.getIncomingConnections()) {
+    if (connection.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) { input = connection; break; }
+}
+if (input == null) return "";
+IMetadataTable source = input.getMetadataTable();
+IMetadataColumn dynamic = source.getDynamicColumn();
+if (dynamic == null) throw new IllegalArgumentException("tExtractDynamicFields requires a Dynamic input column");
+String container = input.getName() + "." + dynamic.getLabel();
+for (IConnection output : node.getOutgoingConnections()) {
+    if (!output.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) continue;
+    for (IMetadataColumn column : output.getMetadataTable().getListColumns()) {
+        String target = output.getName() + "." + column.getLabel();
+        if ("id_Dynamic".equals(column.getTalendType())) {
+%>
+<%=target%> = routines.system.DynamicFields.remaining(<%=container%>, new String[] {
+<% for (IMetadataColumn extracted : output.getMetadataTable().getListColumns()) {
+    if (!"id_Dynamic".equals(extracted.getTalendType()) && (source.getColumn(extracted.getLabel()) == null || "id_Dynamic".equals(source.getColumn(extracted.getLabel()).getTalendType()))) { %>"<%=extracted.getLabel()%>",<% }
+} %> });
+<%
+        } else {
+            IMetadataColumn fixed = source.getColumn(column.getLabel());
+            String value = fixed != null && !"id_Dynamic".equals(fixed.getTalendType())
+                    ? input.getName() + "." + column.getLabel()
+                    : "routines.system.DynamicFields.get(" + container + ", \"" + column.getLabel() + "\")";
+            String pattern = column.getPattern() == null || column.getPattern().trim().isEmpty() ? "null" : column.getPattern();
+%>
+<%=target%> = (<%=JavaTypesManager.getTypeToGenerate(column.getTalendType(), true)%>) routines.system.DynamicFields.convert(
+    <%=value%>, "<%=column.getTalendType()%>", <%=pattern%>, <%=column.isNullable()%>);
+<%
+        }
+    }
+}
+%>
+nb_line_<%=cid%>++;
