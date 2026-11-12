@@ -161,9 +161,19 @@ if (conns != null && conns.size() > 0) {
 	if (conn.getLineStyle().hasConnectionCategory(IConnectionCategory.DATA)) {
 		IMetadataTable metadata = conn.getMetadataTable();
 		List<IMetadataColumn> columnList = metadata.getListColumns();
+		// RETURN_CODE : ajoutée au schéma après coup, absente des jobs plus anciens.
+		boolean hasReturnCode = metadata.getColumn("RETURN_CODE") != null;
 %>		
 		<%=conn.getName() %> = new <%=conn.getName() %>Struct();
-		<%=conn.getName() %>.ERROR_CODE = statusCode_<%=cid%>;
+		// ERROR_CODE comme le tREST de Talend (Jersey 1) : vide quand la réponse est un succès ;
+		// le statut à partir de 300, et pour 204 (Jersey refusait de lire une réponse sans contenu).
+		if (statusCode_<%=cid%> >= 300 || statusCode_<%=cid%> == 204) {
+			<%=conn.getName() %>.ERROR_CODE = statusCode_<%=cid%>;
+		}
+<%		if (hasReturnCode) { %>
+		// RETURN_CODE : toujours le statut de la réponse.
+		<%=conn.getName() %>.RETURN_CODE = statusCode_<%=cid%>;
+<%		} %>
 		if (statusCode_<%=cid%> != 204) {
 			<%=conn.getName() %>.Body = restResponse_<%=cid%>;
 		}
